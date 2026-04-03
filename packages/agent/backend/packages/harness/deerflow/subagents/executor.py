@@ -361,17 +361,13 @@ class SubagentExecutor:
         Returns:
             SubagentResult with the execution result.
         """
-        # Run the async execution in a new event loop
-        # This is necessary because:
-        # 1. We may have async-only tools (like MCP tools)
-        # 2. We're running inside a ThreadPoolExecutor which doesn't have an event loop
-        #
-        # Note: _aexecute() catches all exceptions internally, so this outer
-        # try-except only handles asyncio.run() failures (e.g., if called from
-        # an async context where an event loop already exists). Subagent execution
-        # errors are handled within _aexecute() and returned as FAILED status.
+        # Run the async execution in a dedicated event loop.
+        # IMPORTANT: We use new_event_loop + run_until_complete instead of asyncio.run()
+        # because asyncio.run() closes the event loop when done, which can corrupt
+        # shared httpx connection pools used by the main thread's LLM calls.
+        loop = asyncio.new_event_loop()
         try:
-            return asyncio.run(self._aexecute(task, result_holder))
+            return loop.run_until_complete(self._aexecute(task, result_holder))
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} execution failed")
             # Create a result with error if we don't have one
@@ -387,6 +383,9 @@ class SubagentExecutor:
             result.error = str(e)
             result.completed_at = datetime.now()
             return result
+        finally:
+            # Clean up this thread's event loop without affecting the main thread's loop
+            loop.close()
 
     def execute_async(self, task: str, task_id: str | None = None) -> str:
         """Start a task execution in the background.

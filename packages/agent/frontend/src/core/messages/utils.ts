@@ -76,10 +76,13 @@ export function groupMessages<T>(
         if (open) {
           open.messages.push(message);
         } else {
-          console.error(
-            "Unexpected tool message outside a processing group",
-            message,
-          );
+          // Orphaned tool message (e.g. after summarization removed its AI tool_call).
+          // Create a processing group so it renders instead of being dropped.
+          groups.push({
+            id: message.id,
+            type: "assistant:processing",
+            messages: [message],
+          });
         }
       }
       continue;

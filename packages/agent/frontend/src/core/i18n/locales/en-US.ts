@@ -55,11 +55,11 @@ export const enUS: Translations = {
   welcome: {
     greeting: "Hello, again!",
     description:
-      "Welcome to Noldus, an open source super agent. With built-in and custom skills, Noldus helps you search on the web, analyze data, and generate artifacts like slides, web pages and do almost anything.",
+      "Welcome to Noldus Insight, an end-to-end data analysis agent. With customized skills and tools, Noldus Insight helps you analyze behavioral data, generate reports and and do almost anything.",
 
     createYourOwnSkill: "Create Your Own Skill",
     createYourOwnSkillDescription:
-      "Create your own skill to release the power of Noldus. With customized skills,\nNoldus can help you search on the web, analyze data, and generate\n artifacts like slides, web pages and do almost anything.",
+      "Create your own skill to release the power of Noldus Insight. With customized skills, Noldus Insight can help you analyze behavioral data, generate reports, and do almost anything.",
   },
 
   // Clipboard

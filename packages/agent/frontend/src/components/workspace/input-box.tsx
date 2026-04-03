@@ -89,7 +89,8 @@ function getResolvedMode(
   mode: InputMode | undefined,
   supportsThinking: boolean,
 ): InputMode {
-  if (!supportsThinking && mode !== "flash") {
+  // Allow ultra mode even without thinking support (subagents still work)
+  if (!supportsThinking && mode !== "flash" && mode !== "ultra") {
     return "flash";
   }
   if (mode) {

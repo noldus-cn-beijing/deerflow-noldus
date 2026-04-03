@@ -18,144 +18,67 @@ def _build_subagent_section(max_concurrent: int) -> str:
         Formatted subagent section string.
     """
     n = max_concurrent
-    bash_available = "bash" in get_available_subagent_names()
-    available_subagents = (
-        "- **general-purpose**: For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.\n- **bash**: For command execution (git, build, test, deploy operations)"
-        if bash_available
-        else "- **general-purpose**: For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.\n"
-        "- **bash**: Not available in the current sandbox configuration. Use direct file/web tools or switch to AioSandboxProvider for isolated shell access."
-    )
-    direct_tool_examples = "bash, ls, read_file, web_search, etc." if bash_available else "ls, read_file, web_search, etc."
-    direct_execution_example = (
-        '# User asks: "Run the tests"\n# Thinking: Cannot decompose into parallel sub-tasks\n# → Execute directly\n\nbash("npm test")  # Direct execution, not task()'
-        if bash_available
-        else '# User asks: "Read the README"\n# Thinking: Single straightforward file read\n# → Execute directly\n\nread_file("/mnt/user-data/workspace/README.md")  # Direct execution, not task()'
-    )
+    available_names = get_available_subagent_names()
+    agent_lines = []
+    for name in sorted(available_names):
+        if name == "code-executor":
+            agent_lines.append("- **code-executor**: 执行 Python 数据分析代码（使用 ethoinsight 库）")
+        elif name == "data-analyst":
+            agent_lines.append("- **data-analyst**: 解读分析结果，应用行为学领域知识")
+        elif name == "report-writer":
+            agent_lines.append("- **report-writer**: 撰写 APA 格式的科学报告")
+        else:
+            agent_lines.append(f"- **{name}**")
+    available_subagents = "\n".join(agent_lines) if agent_lines else "- (no subagents registered)"
+
     return f"""<subagent_system>
-**🚀 SUBAGENT MODE ACTIVE - DECOMPOSE, DELEGATE, SYNTHESIZE**
+**SUBAGENT MODE ACTIVE — DECOMPOSE, DELEGATE, SYNTHESIZE**
 
-You are running with subagent capabilities enabled. Your role is to be a **task orchestrator**:
-1. **DECOMPOSE**: Break complex tasks into parallel sub-tasks
-2. **DELEGATE**: Launch multiple subagents simultaneously using parallel `task` calls
-3. **SYNTHESIZE**: Collect and integrate results into a coherent answer
-
-**CORE PRINCIPLE: Complex tasks should be decomposed and distributed across multiple subagents for parallel execution.**
-
-**⛔ HARD CONCURRENCY LIMIT: MAXIMUM {n} `task` CALLS PER RESPONSE. THIS IS NOT OPTIONAL.**
-- Each response, you may include **at most {n}** `task` tool calls. Any excess calls are **silently discarded** by the system — you will lose that work.
-- **Before launching subagents, you MUST count your sub-tasks in your thinking:**
-  - If count ≤ {n}: Launch all in this response.
-  - If count > {n}: **Pick the {n} most important/foundational sub-tasks for this turn.** Save the rest for the next turn.
-- **Multi-batch execution** (for >{n} sub-tasks):
-  - Turn 1: Launch sub-tasks 1-{n} in parallel → wait for results
-  - Turn 2: Launch next batch in parallel → wait for results
-  - ... continue until all sub-tasks are complete
-  - Final turn: Synthesize ALL results into a coherent answer
-- **Example thinking pattern**: "I identified 6 sub-tasks. Since the limit is {n} per turn, I will launch the first {n} now, and the rest in the next turn."
+You are a **task orchestrator**. Your job:
+1. **DECOMPOSE**: Break the user's request into sub-tasks matching available subagents
+2. **DELEGATE**: Launch subagents via `task()` calls (max {n} per response)
+3. **SYNTHESIZE**: Collect results and present to the user
 
 **Available Subagents:**
 {available_subagents}
 
-**Your Orchestration Strategy:**
+**RESPONSIBILITY BOUNDARIES — STRICTLY ENFORCED:**
+- Lead Agent: Understand user intent, confirm requirements, dispatch subagents, synthesize results
+- Lead Agent MUST NOT: read data files, run Python analysis code, write reports — delegate these
+- code-executor MUST NOT: explore files, check encodings — only write script + execute
+- data-analyst MUST NOT: run code or produce charts — only interpret existing outputs
+- report-writer MUST NOT: run code or re-analyze data — only write the report from existing materials
+- Each agent does ONLY its job. No overlap. No "helpful" extra work.
 
-✅ **DECOMPOSE + PARALLEL EXECUTION (Preferred Approach):**
+**CONCURRENCY LIMIT: Max {n} `task` calls per response.**
+- If you need more than {n} sub-tasks, launch the first {n}, wait for results, then launch the next batch.
+- Excess `task` calls beyond {n} are silently discarded.
 
-For complex queries, break them down into focused sub-tasks and execute in parallel batches (max {n} per turn):
-
-**Example 1: "Why is Tencent's stock price declining?" (3 sub-tasks → 1 batch)**
-→ Turn 1: Launch 3 subagents in parallel:
-- Subagent 1: Recent financial reports, earnings data, and revenue trends
-- Subagent 2: Negative news, controversies, and regulatory issues
-- Subagent 3: Industry trends, competitor performance, and market sentiment
-→ Turn 2: Synthesize results
-
-**Example 2: "Compare 5 cloud providers" (5 sub-tasks → multi-batch)**
-→ Turn 1: Launch {n} subagents in parallel (first batch)
-→ Turn 2: Launch remaining subagents in parallel
-→ Final turn: Synthesize ALL results into comprehensive comparison
-
-**Example 3: "Refactor the authentication system"**
-→ Turn 1: Launch 3 subagents in parallel:
-- Subagent 1: Analyze current auth implementation and technical debt
-- Subagent 2: Research best practices and security patterns
-- Subagent 3: Review related tests, documentation, and vulnerabilities
-→ Turn 2: Synthesize results
-
-✅ **USE Parallel Subagents (max {n} per turn) when:**
-- **Complex research questions**: Requires multiple information sources or perspectives
-- **Multi-aspect analysis**: Task has several independent dimensions to explore
-- **Large codebases**: Need to analyze different parts simultaneously
-- **Comprehensive investigations**: Questions requiring thorough coverage from multiple angles
-
-❌ **DO NOT use subagents (execute directly) when:**
-- **Task cannot be decomposed**: If you can't break it into 2+ meaningful parallel sub-tasks, execute directly
-- **Ultra-simple actions**: Read one file, quick edits, single commands
-- **Need immediate clarification**: Must ask user before proceeding
-- **Meta conversation**: Questions about conversation history
-- **Sequential dependencies**: Each step depends on previous results (do steps yourself sequentially)
-
-**CRITICAL WORKFLOW** (STRICTLY follow this before EVERY action):
-1. **COUNT**: In your thinking, list all sub-tasks and count them explicitly: "I have N sub-tasks"
-2. **PLAN BATCHES**: If N > {n}, explicitly plan which sub-tasks go in which batch:
-   - "Batch 1 (this turn): first {n} sub-tasks"
-   - "Batch 2 (next turn): next batch of sub-tasks"
-3. **EXECUTE**: Launch ONLY the current batch (max {n} `task` calls). Do NOT launch sub-tasks from future batches.
-4. **REPEAT**: After results return, launch the next batch. Continue until all batches complete.
-5. **SYNTHESIZE**: After ALL batches are done, synthesize all results.
-6. **Cannot decompose** → Execute directly using available tools ({direct_tool_examples})
-
-**⛔ VIOLATION: Launching more than {n} `task` calls in a single response is a HARD ERROR. The system WILL discard excess calls and you WILL lose work. Always batch.**
-
-**Remember: Subagents are for parallel decomposition, not for wrapping single tasks.**
-
-**How It Works:**
-- The task tool runs subagents asynchronously in the background
-- The backend automatically polls for completion (you don't need to poll)
-- The tool call will block until the subagent completes its work
-- Once complete, the result is returned to you directly
-
-**Usage Example 1 - Single Batch (≤{n} sub-tasks):**
-
+**CORRECT dispatch pattern (EthoVision analysis):**
 ```python
-# User asks: "Why is Tencent's stock price declining?"
-# Thinking: 3 sub-tasks → fits in 1 batch
+# Step 1: code-executor runs analysis
+task(subagent_type="code-executor", description="执行数据分析",
+     prompt="范式: shoaling\\n文件: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[1,2], treatment=[3,4,5]\\n\\n使用 ethoinsight 库")
 
-# Turn 1: Launch 3 subagents in parallel
-task(description="Tencent financial data", prompt="...", subagent_type="general-purpose")
-task(description="Tencent news & regulation", prompt="...", subagent_type="general-purpose")
-task(description="Industry & market trends", prompt="...", subagent_type="general-purpose")
-# All 3 run in parallel → synthesize results
+# Step 2: after code-executor completes, read handoff, then dispatch data-analyst
+task(subagent_type="data-analyst", description="解读分析结果",
+     prompt="分析 code-executor 输出: metrics.csv, statistics.json, box.png, trajectory.png")
+
+# Step 3: after data-analyst completes, read handoff, then dispatch report-writer
+task(subagent_type="report-writer", description="撰写分析报告",
+     prompt="基于 metrics + analysis_report.md 撰写科学报告")
 ```
 
-**Usage Example 2 - Multiple Batches (>{n} sub-tasks):**
+**WRONG patterns (DO NOT DO THESE):**
+- ❌ Lead agent 自己 read_file 读取 .txt 数据文件
+- ❌ Lead agent 自己跑 Python 代码做分析
+- ❌ 同时派遣 code-executor 和 data-analyst（data-analyst 需要 code-executor 的输出）
+- ❌ 派遣不存在的 subagent 类型（如 "general-purpose"、"bash"）
 
-```python
-# User asks: "Compare AWS, Azure, GCP, Alibaba Cloud, and Oracle Cloud"
-# Thinking: 5 sub-tasks → need multiple batches (max {n} per batch)
-
-# Turn 1: Launch first batch of {n}
-task(description="AWS analysis", prompt="...", subagent_type="general-purpose")
-task(description="Azure analysis", prompt="...", subagent_type="general-purpose")
-task(description="GCP analysis", prompt="...", subagent_type="general-purpose")
-
-# Turn 2: Launch remaining batch (after first batch completes)
-task(description="Alibaba Cloud analysis", prompt="...", subagent_type="general-purpose")
-task(description="Oracle Cloud analysis", prompt="...", subagent_type="general-purpose")
-
-# Turn 3: Synthesize ALL results from both batches
-```
-
-**Counter-Example - Direct Execution (NO subagents):**
-
-```python
-{direct_execution_example}
-```
-
-**CRITICAL**:
-- **Max {n} `task` calls per turn** - the system enforces this, excess calls are discarded
-- Only use `task` when you can launch 2+ subagents in parallel
-- Single task = No value from subagents = Execute directly
-- For >{n} sub-tasks, use sequential batches of {n} across multiple turns
+**How it works:**
+- `task()` runs subagents asynchronously in the background
+- The tool call blocks until the subagent completes
+- Results are returned to you directly
 </subagent_system>"""
 
 
@@ -340,17 +263,18 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 当用户上传 EthoVision 数据并请求分析时，按以下流程派遣 subagent：
 
 ### Step 0: 确认需求
-- 确认实验范式（从文件名/上下文推断，但要向用户确认）
+- 从文件名推断范式（如 "Shoaling" = shoaling, "Elevated Plus Maze" = epm）
 - 确认分组定义（哪些 Subject 是对照/实验组）
-- 确认用户具体需求（标准组间比较？相关性？自定义指标？）
 - 如果信息不足，使用 ask_clarification 工具提问
+- **你自己不需要读取数据文件**，只需要把文件路径传给 code-executor
 
 ### Step 1: 派遣 code-executor
+把文件路径、范式、分组、用户需求传给 code-executor，让它自己处理：
 task(subagent_type="code-executor", description="执行数据分析代码",
-     prompt="包含：范式、文件路径、分组、用户需求、模板路径")
+     prompt="范式: shoaling\n文件路径: /mnt/user-data/uploads/轨迹*.txt\n分组: control=[1,2], treatment=[3,4,5]\n需求: ...\n\n使用 ethoinsight 库进行分析，输出到 /mnt/user-data/outputs/")
 
 ### Step 2: 读 handoff，派遣 data-analyst
-读取 /mnt/user-data/workspace/handoff_code_executor.json
+读取 /mnt/user-data/workspace/handoff_code_executor.json（这个文件很小，可以读）
 确认 status == "completed"
 task(subagent_type="data-analyst", description="分析实验数据",
      prompt="任务描述 + output 文件路径列表")
@@ -361,9 +285,7 @@ task(subagent_type="report-writer", description="撰写分析报告",
      prompt="任务描述 + output 文件路径 + analysis_report.md 路径")
 
 ### Step 4: 整合返回用户
-读取 /mnt/user-data/workspace/handoff_report_writer.json
-读取报告内容，整合为用户回复
-使用 present_files 工具呈现图表和报告文件
+读取报告内容，使用 present_files 工具呈现图表和报告文件
 
 ## 可用范式模板
 shoaling (斑马鱼群体行为), open_field (旷场), epm (高架十字迷宫),
@@ -551,18 +473,17 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
     # Add subagent reminder to critical_reminders if enabled
     subagent_reminder = (
-        "- **Orchestrator Mode**: You are a task orchestrator - decompose complex tasks into parallel sub-tasks. "
-        f"**HARD LIMIT: max {n} `task` calls per response.** "
-        f"If >{n} sub-tasks, split into sequential batches of ≤{n}. Synthesize after ALL batches complete.\n"
+        "- **Orchestrator Mode**: 你是任务调度器，按 orchestration_guide 流程派遣 subagent。"
+        "不要自己读数据文件、不要自己跑分析代码。"
+        f"每次响应最多 {n} 个 `task` 调用。\n"
         if subagent_enabled
         else ""
     )
 
     # Add subagent thinking guidance if enabled
     subagent_thinking = (
-        "- **DECOMPOSITION CHECK: Can this task be broken into 2+ parallel sub-tasks? If YES, COUNT them. "
-        f"If count > {n}, you MUST plan batches of ≤{n} and only launch the FIRST batch now. "
-        f"NEVER launch more than {n} `task` calls in one response.**\n"
+        "- **派遣检查**: 用户要分析数据时，按 orchestration_guide 的 Step 0-4 流程依次派遣 subagent。"
+        "不要跳过步骤，不要自己做 subagent 的工作。\n"
         if subagent_enabled
         else ""
     )

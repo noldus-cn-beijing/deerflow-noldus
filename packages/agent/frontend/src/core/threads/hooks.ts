@@ -496,6 +496,19 @@ export function useDeleteThread() {
   const apiClient = getAPIClient();
   return useMutation({
     mutationFn: async ({ threadId }: { threadId: string }) => {
+      // Cancel any active runs before deleting to avoid worker 404 errors
+      try {
+        const runs = await apiClient.runs.list(threadId);
+        const activeRuns = runs.filter(
+          (r) => r.status === "pending" || r.status === "running",
+        );
+        for (const run of activeRuns) {
+          await apiClient.runs.cancel(threadId, run.run_id, true);
+        }
+      } catch {
+        // Thread may already be gone or have no runs — safe to proceed
+      }
+
       await apiClient.threads.delete(threadId);
 
       const response = await fetch(

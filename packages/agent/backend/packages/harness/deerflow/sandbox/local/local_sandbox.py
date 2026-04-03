@@ -197,6 +197,17 @@ class LocalSandbox(Sandbox):
         resolved_command = self._resolve_paths_in_command(command)
         shell = self._get_shell()
 
+        # Local sandbox inherits the server process environment.
+        # Ensure the venv that runs the LangGraph server is also visible
+        # to bash subprocesses so `python` resolves to the correct interpreter.
+        import sys
+
+        env = os.environ.copy()
+        venv_bin = os.path.dirname(sys.executable)
+        current_path = env.get("PATH", "")
+        if venv_bin not in current_path:
+            env["PATH"] = venv_bin + os.pathsep + current_path
+
         if os.name == "nt":
             if self._is_powershell(shell):
                 args = [shell, "-NoProfile", "-Command", resolved_command]
@@ -211,6 +222,7 @@ class LocalSandbox(Sandbox):
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env=env,
             )
         else:
             result = subprocess.run(
@@ -220,6 +232,7 @@ class LocalSandbox(Sandbox):
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env=env,
             )
         output = result.stdout
         if result.stderr:
@@ -241,6 +254,10 @@ class LocalSandbox(Sandbox):
         resolved_path = self._resolve_path(path)
         try:
             with open(resolved_path, encoding="utf-8") as f:
+                return f.read()
+        except UnicodeDecodeError:
+            # Fallback for non-UTF-8 files (e.g. EthoVision UTF-16 LE exports)
+            with open(resolved_path, encoding="utf-16-le") as f:
                 return f.read()
         except OSError as e:
             # Re-raise with the original path for clearer error messages, hiding internal resolved paths
