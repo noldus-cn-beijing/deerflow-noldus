@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.local
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+demo-data/
+*.parquet
+
+# DeerFlow runtime
+packages/agent/.deer-flow/
+packages/agent/.ethoinsight/
+
+# Config with secrets
+packages/agent/config.yaml
