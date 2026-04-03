@@ -34,7 +34,7 @@ class ExperimentContextMiddleware(AgentMiddleware[ExperimentContextState]):
     state_schema = ExperimentContextState
 
     @override
-    async def before_model(self, state: ExperimentContextState, **kwargs) -> ExperimentContextState:
+    def before_model(self, state: ExperimentContextState, **kwargs) -> ExperimentContextState:
         uploaded = state.get("uploaded_files") or []
         if not uploaded:
             return state

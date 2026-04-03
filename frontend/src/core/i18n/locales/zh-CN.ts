@@ -55,7 +55,7 @@ export const zhCN: Translations = {
   welcome: {
     greeting: "你好，欢迎回来！",
     description:
-      "欢迎使用 Noldus，一个完全开源的超级智能体。通过内置和自定义的 Skills，\nNoldus 可以帮你搜索网络、分析数据，还能为你生成幻灯片、\n图片、视频、播客及网页等，几乎可以做任何事情。",
+      "欢迎使用Noldus-insight，一个端到端的数据分析agent。通过Noldus定制化skill和工具，可以帮你分析行为学的数据",
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
