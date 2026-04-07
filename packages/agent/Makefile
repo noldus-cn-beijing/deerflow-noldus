@@ -108,9 +108,9 @@ setup-sandbox:
 dev:
 	@$(PYTHON) ./scripts/check.py
 ifeq ($(OS),Windows_NT)
-	@call scripts\run-with-git-bash.cmd ./scripts/serve.sh --dev
+	@call scripts\run-with-git-bash.cmd LANGGRAPH_ALLOW_BLOCKING=1 ./scripts/serve.sh --dev
 else
-	@./scripts/serve.sh --dev
+	@LANGGRAPH_ALLOW_BLOCKING=1 ./scripts/serve.sh --dev
 endif
 
 # Start all services in dev + Gateway mode (experimental: agent runtime embedded in Gateway)

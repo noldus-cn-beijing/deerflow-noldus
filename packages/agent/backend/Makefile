@@ -3,7 +3,7 @@ install:
 	uv pip install -e packages/ethoinsight
 
 dev:
-	uv run langgraph dev --no-browser --no-reload --n-jobs-per-worker 10
+	uv run langgraph dev --no-browser --no-reload --allow-blocking --n-jobs-per-worker 10
 
 gateway:
 	PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001
