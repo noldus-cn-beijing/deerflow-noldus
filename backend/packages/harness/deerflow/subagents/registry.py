@@ -23,14 +23,17 @@ def get_subagent_config(name: str) -> SubagentConfig | None:
     if config is None:
         return None
 
-    # Apply timeout override from config.yaml (lazy import to avoid circular deps)
+    # Apply per-agent timeout override from config.yaml (lazy import to avoid circular deps).
+    # Only override if config.yaml has an explicit per-agent entry; the global default
+    # should NOT replace the code-level SubagentConfig.timeout_seconds.
     from deerflow.config.subagents_config import get_subagents_app_config
 
     app_config = get_subagents_app_config()
-    effective_timeout = app_config.get_timeout_for(name)
-    if effective_timeout != config.timeout_seconds:
-        logger.debug(f"Subagent '{name}': timeout overridden by config.yaml ({config.timeout_seconds}s -> {effective_timeout}s)")
-        config = replace(config, timeout_seconds=effective_timeout)
+    override = app_config.agents.get(name)
+    if override is not None and override.timeout_seconds is not None:
+        if override.timeout_seconds != config.timeout_seconds:
+            logger.debug(f"Subagent '{name}': timeout overridden by config.yaml ({config.timeout_seconds}s -> {override.timeout_seconds}s)")
+            config = replace(config, timeout_seconds=override.timeout_seconds)
 
     return config
 
