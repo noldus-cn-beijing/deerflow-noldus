@@ -228,8 +228,10 @@ class SubagentExecutor:
             state = self._build_initial_state(task)
 
             # Build config with thread_id for sandbox access and recursion limit
+            # LangGraph counts node steps (model=1 + tools=1 per turn), so multiply
+            # max_turns by 3 to allow full conversation depth without premature cutoff
             run_config: RunnableConfig = {
-                "recursion_limit": self.config.max_turns,
+                "recursion_limit": self.config.max_turns * 3,
             }
             context = {}
             if self.thread_id:

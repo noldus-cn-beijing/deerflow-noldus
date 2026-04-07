@@ -1,8 +1,8 @@
 """Shoaling (zebrafish group behavior) analysis template.
 
-code-executor reads this template, modifies the PARAMETERS section,
-and executes it in the sandbox. All parameters are at the top for
-easy LLM modification.
+get_analysis_template tool reads this file, fills the PARAMETERS section,
+and returns a ready-to-run script. Lines marked CUSTOMIZABLE can be
+modified by code-executor via str_replace to meet user-specific needs.
 """
 
 import json
@@ -18,30 +18,53 @@ try:
 except ImportError:
     _HAS_STATISTICS = False
 
-# ===== PARAMETERS (code-executor modifies this section) =====
+# ===== PARAMETERS (code-executor: filled by get_analysis_template, do not modify) =====
 FILE_PATTERN = "/mnt/user-data/uploads/轨迹*.txt"
 PARADIGM = "shoaling"
 GROUPS = {
     "control": ["Subject 1", "Subject 2"],
     "treatment": ["Subject 3", "Subject 4", "Subject 5"],
 }
-METRICS_TO_COMPUTE = [
+# ===== END PARAMETERS =====
+
+METRICS_TO_COMPUTE = [  # CUSTOMIZABLE: add/remove metrics as needed
     "distance_moved",
     "mean_iid",
     "mean_nnd",
     "mean_polarity",
 ]
-CHART_TYPES = ["box_plot"]  # box_plot, violin_plot, bar_chart
+CHART_TYPES = ["box_plot"]  # CUSTOMIZABLE: box_plot, violin_plot, bar_chart
 OUTPUT_DIR = "/mnt/user-data/workspace/output/"
 HANDOFF_PATH = "/mnt/user-data/workspace/handoff_code_executor.json"
 # ===== END PARAMETERS =====
 
 
+def _resolve_path(virtual_path: str) -> str:
+    """Resolve /mnt/... virtual paths using DEERFLOW_PATH_* env vars set by sandbox."""
+    if not virtual_path.startswith("/mnt/"):
+        return virtual_path
+    # Try progressively shorter prefixes: /mnt/user-data/uploads -> /mnt/user-data -> /mnt
+    parts = virtual_path.strip("/").split("/")
+    for end in range(len(parts), 0, -1):
+        key = "DEERFLOW_PATH_" + "_".join(parts[:end]).replace("-", "_").upper()
+        mapped = os.environ.get(key)
+        if mapped:
+            suffix = "/".join(parts[end:])
+            return os.path.join(mapped, suffix) if suffix else mapped
+    return virtual_path
+
+
 def main() -> None:
+    global FILE_PATTERN, OUTPUT_DIR, HANDOFF_PATH
+    # Resolve virtual paths to physical paths via sandbox env vars
+    FILE_PATTERN = _resolve_path(FILE_PATTERN)
+    OUTPUT_DIR = _resolve_path(OUTPUT_DIR)
+    HANDOFF_PATH = _resolve_path(HANDOFF_PATH)
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     errors: list[str] = []
 
-    # 1. Parse
+    # 1. Parse — fixed workflow, do not modify
     print("Step 1: Parsing data...")
     data = parse.parse_batch(FILE_PATTERN)
     print(parse.get_summary(data))
@@ -50,13 +73,13 @@ def main() -> None:
         _write_handoff("failed", "No trajectory files found", [], errors=["No files"])
         return
 
-    # 2. Compute metrics
+    # 2. Compute metrics — fixed workflow, do not modify
     print("\nStep 2: Computing metrics...")
     m = metrics.compute_paradigm_metrics(
         data, PARADIGM, groups=GROUPS, metrics=METRICS_TO_COMPUTE
     )
 
-    # 3. Statistical tests (skip if not available)
+    # 3. Statistical tests — fixed workflow, do not modify
     stat_results = {}
     if _HAS_STATISTICS:
         print("\nStep 3: Running statistical tests...")
@@ -68,7 +91,7 @@ def main() -> None:
     else:
         print("\nStep 3: Statistics module not yet implemented, skipping.")
 
-    # 4. Charts
+    # 4. Charts — fixed workflow, do not modify
     print("\nStep 4: Generating charts...")
     chart_paths = []
     for metric in METRICS_TO_COMPUTE:
@@ -87,7 +110,7 @@ def main() -> None:
                 errors.append(f"Chart error ({metric} {chart_type}): {e}")
                 print(f"  Warning: {metric} {chart_type} failed: {e}")
 
-    # Trajectory plot
+    # Trajectory plot — fixed workflow, do not modify
     try:
         traj_path = charts.trajectory_plot(
             data["all_data"],
@@ -98,7 +121,7 @@ def main() -> None:
     except Exception as e:
         errors.append(f"Trajectory plot error: {e}")
 
-    # Timeseries plots for IID and polarity
+    # Timeseries plots — fixed workflow, do not modify
     for ts_name, y_col in [
         ("inter_individual_distance", "mean_iid"),
         ("group_polarity", "polarity"),
@@ -116,7 +139,12 @@ def main() -> None:
             except Exception as e:
                 errors.append(f"Timeseries plot error ({ts_name}): {e}")
 
-    # 5. Save data
+    # CUSTOMIZABLE: add extra charts or custom analysis below >>>
+    # Example: charts.violin_plot(m, ["mean_iid"], output_path=os.path.join(OUTPUT_DIR, "iid_violin.png"))
+    # Example: charts.bar_chart(m, ["distance_moved"], output_path=os.path.join(OUTPUT_DIR, "distance_bar.png"))
+    # <<<
+
+    # 5. Save data — fixed workflow, do not modify
     print("\nStep 5: Saving outputs...")
     metrics_csv = os.path.join(OUTPUT_DIR, "metrics.csv")
     metrics.save_to_csv(m, metrics_csv)
@@ -128,7 +156,7 @@ def main() -> None:
             json.dump(stat_results, f, ensure_ascii=False, indent=2, default=str)
         print(f"  Saved: {stats_json}")
 
-    # 6. Handoff
+    # 6. Handoff — fixed workflow, do not modify
     _write_handoff(
         status="completed",
         summary_text=f"Analyzed {data['summary']['total_files']} files, "

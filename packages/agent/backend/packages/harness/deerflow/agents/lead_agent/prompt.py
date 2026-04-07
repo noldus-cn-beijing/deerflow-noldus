@@ -269,9 +269,29 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 - **你自己不需要读取数据文件**，只需要把文件路径传给 code-executor
 
 ### Step 1: 派遣 code-executor
-把文件路径、范式、分组、用户需求传给 code-executor，让它自己处理：
+把文件路径、范式、分组、用户需求传给 code-executor，让它自己处理。
+
+**CRITICAL: 文件路径必须使用正确的 glob 模式！**
+- ✅ 正确: `/mnt/user-data/uploads/轨迹*.txt` （包含 `*` 通配符）
+- ✅ 正确: `/mnt/user-data/uploads/Subject*.csv`
+- ❌ 错误: `/mnt/user-data/uploads/.txt` （丢失了文件名前缀）
+- ❌ 错误: `/mnt/user-data/uploads/` （只有目录，没有文件模式）
+
+**prompt 格式要求**：
+```
+范式: <范式名>
+文件路径: /mnt/user-data/uploads/<文件前缀>*.<扩展名>
+分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]
+特殊需求: （用户的额外要求，如无则写"无"）
+
+使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/
+```
+
+**正确示例**：
+```python
 task(subagent_type="code-executor", description="执行数据分析代码",
-     prompt="范式: shoaling\n文件路径: /mnt/user-data/uploads/轨迹*.txt\n分组: control=[1,2], treatment=[3,4,5]\n需求: ...\n\n使用 ethoinsight 库进行分析，输出到 /mnt/user-data/outputs/")
+     prompt="范式: shoaling\n文件路径: /mnt/user-data/uploads/轨迹*.txt\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\n特殊需求: 无\n\n使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/")
+```
 
 ### Step 2: 读 handoff，派遣 data-analyst
 读取 /mnt/user-data/workspace/handoff_code_executor.json（这个文件很小，可以读）
