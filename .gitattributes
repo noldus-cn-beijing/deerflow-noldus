@@ -1,0 +1,8 @@
+# Noldus-specific files: keep ours during subtree merge with upstream deerflow
+# These files don't exist in upstream and would be deleted on merge without this.
+packages/agent/backend/packages/ethoinsight merge=ours
+packages/agent/backend/packages/harness/deerflow/subagents/builtins/code_executor.py merge=ours
+packages/agent/backend/packages/harness/deerflow/subagents/builtins/data_analyst.py merge=ours
+packages/agent/backend/packages/harness/deerflow/subagents/builtins/report_writer.py merge=ours
+packages/agent/backend/packages/harness/deerflow/subagents/builtins/__init__.py merge=ours
+packages/agent/config.yaml merge=ours
