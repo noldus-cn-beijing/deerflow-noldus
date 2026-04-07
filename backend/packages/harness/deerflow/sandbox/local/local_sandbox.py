@@ -192,7 +192,7 @@ class LocalSandbox(Sandbox):
 
         raise RuntimeError("No suitable shell executable found. Tried /bin/zsh, /bin/bash, /bin/sh, and `sh` on PATH.")
 
-    def execute_command(self, command: str) -> str:
+    def execute_command(self, command: str, extra_env: dict[str, str] | None = None) -> str:
         # Resolve container paths in command before execution
         resolved_command = self._resolve_paths_in_command(command)
         shell = self._get_shell()
@@ -207,6 +207,17 @@ class LocalSandbox(Sandbox):
         current_path = env.get("PATH", "")
         if venv_bin not in current_path:
             env["PATH"] = venv_bin + os.pathsep + current_path
+
+        # Expose path mappings as environment variables so Python scripts
+        # can resolve virtual paths at runtime (e.g. glob, open, etc.)
+        for container_path, local_path in self.path_mappings.items():
+            # /mnt/user-data/uploads -> DEERFLOW_PATH_MNT_USER_DATA_UPLOADS
+            env_key = "DEERFLOW_PATH_" + container_path.strip("/").replace("/", "_").replace("-", "_").upper()
+            env[env_key] = local_path
+
+        # Merge caller-provided env vars (e.g. per-thread path mappings)
+        if extra_env:
+            env.update(extra_env)
 
         if os.name == "nt":
             if self._is_powershell(shell):
