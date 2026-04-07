@@ -200,12 +200,14 @@ class SubagentExecutor:
 
         return state
 
-    async def _aexecute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
+    async def _aexecute(self, task: str, result_holder: SubagentResult | None = None, cancel_event: threading.Event | None = None) -> SubagentResult:
         """Execute a task asynchronously.
 
         Args:
             task: The task description for the subagent.
             result_holder: Optional pre-created result object to update during execution.
+            cancel_event: Optional threading.Event set by the scheduler on timeout
+                to signal this coroutine to stop iterating.
 
         Returns:
             SubagentResult with the execution result.
@@ -244,6 +246,11 @@ class SubagentExecutor:
             # This allows us to collect AI messages as they are generated
             final_state = None
             async for chunk in agent.astream(state, config=run_config, context=context, stream_mode="values"):  # type: ignore[arg-type]
+                # Check cancellation between iterations (e.g., after timeout)
+                if cancel_event is not None and cancel_event.is_set():
+                    logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} cancelled by timeout, stopping iteration")
+                    break
+
                 final_state = chunk
 
                 # Extract AI messages from the current state
@@ -350,7 +357,7 @@ class SubagentExecutor:
 
         return result
 
-    def execute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
+    def execute(self, task: str, result_holder: SubagentResult | None = None, cancel_event: threading.Event | None = None) -> SubagentResult:
         """Execute a task synchronously (wrapper around async execution).
 
         This method runs the async execution in a new event loop, allowing
@@ -369,7 +376,7 @@ class SubagentExecutor:
         # shared httpx connection pools used by the main thread's LLM calls.
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(self._aexecute(task, result_holder))
+            return loop.run_until_complete(self._aexecute(task, result_holder, cancel_event))
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} execution failed")
             # Create a result with error if we don't have one
@@ -416,6 +423,8 @@ class SubagentExecutor:
             _background_tasks[task_id] = result
 
         # Submit to scheduler pool
+        cancel_event = threading.Event()
+
         def run_task():
             with _background_tasks_lock:
                 _background_tasks[task_id].status = SubagentStatus.RUNNING
@@ -425,7 +434,7 @@ class SubagentExecutor:
             try:
                 # Submit execution to execution pool with timeout
                 # Pass result_holder so execute() can update it in real-time
-                execution_future: Future = _execution_pool.submit(self.execute, task, result_holder)
+                execution_future: Future = _execution_pool.submit(self.execute, task, result_holder, cancel_event)
                 try:
                     # Wait for execution with timeout
                     exec_result = execution_future.result(timeout=self.config.timeout_seconds)
@@ -437,11 +446,15 @@ class SubagentExecutor:
                         _background_tasks[task_id].ai_messages = exec_result.ai_messages
                 except FuturesTimeoutError:
                     logger.error(f"[trace={self.trace_id}] Subagent {self.config.name} execution timed out after {self.config.timeout_seconds}s")
+                    # Signal the subagent to stop processing at the next iteration
+                    cancel_event.set()
                     with _background_tasks_lock:
                         _background_tasks[task_id].status = SubagentStatus.TIMED_OUT
                         _background_tasks[task_id].error = f"Execution timed out after {self.config.timeout_seconds} seconds"
                         _background_tasks[task_id].completed_at = datetime.now()
-                    # Cancel the future (best effort - may not stop the actual execution)
+                    # Cancel the future (best effort - may not stop the actual execution,
+                    # but cancel_event will stop the astream iteration once the current
+                    # API call returns)
                     execution_future.cancel()
             except Exception as e:
                 logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} async execution failed")

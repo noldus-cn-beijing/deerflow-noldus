@@ -47,5 +47,5 @@ Figure references: "As shown in Figure 1, ..."
                        "web_search", "web_fetch", "bash", "str_replace"],
     model="inherit",
     max_turns=15,
-    timeout_seconds=300,
+    timeout_seconds=600,
 )

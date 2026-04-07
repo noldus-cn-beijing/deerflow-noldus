@@ -44,6 +44,6 @@ IMPORTANT: Return the handoff file path and a brief summary as your final messag
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "bash", "str_replace"],
     model="inherit",
-    max_turns=20,
+    max_turns=10,
     timeout_seconds=600,
 )
