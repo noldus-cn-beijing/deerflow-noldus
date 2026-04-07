@@ -1,26 +1,36 @@
-# [About Noldus Insight](https://www.noldus.com.cn/)
+# 🦌 [About DeerFlow 2.0](https://github.com/bytedance/deer-flow)
 
 > **From Open Source, Back to Open Source**
 
-**Noldus Insight** is an intelligent agent platform built on top of the DeerFlow 2.0 open-source framework.
+**DeerFlow** (**D**eep **E**xploration and **E**fficient **R**esearch **Flow**) is a community-driven SuperAgent harness that researches, codes, and creates.
 With the help of sandboxes, memories, tools and skills, it handles
 different levels of tasks that could take minutes to hours.
 
 ---
 
-## Official Website
+## 🌟 GitHub Repository
 
-Visit the official website: [noldus.com.cn](https://www.noldus.com.cn/)
+Explore DeerFlow on GitHub: [github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
 
-## Support
+## 🌐 Official Website
 
-If you have any questions or need help, please contact us at [support@noldus.com.cn](mailto:support@noldus.com.cn).
+Visit the official website of DeerFlow: [deerflow.tech](https://deerflow.tech/)
+
+## 📧 Support
+
+If you have any questions or need help, please contact us at [support@deerflow.tech](mailto:support@deerflow.tech).
 
 ---
 
-## Acknowledgments
+## 📜 License
 
-Noldus Insight is built upon the outstanding DeerFlow 2.0 open-source project by ByteDance.
+DeerFlow is proudly open source and distributed under the **MIT License**.
+
+---
+
+## 🙌 Acknowledgments
+
+We extend our heartfelt gratitude to the open source projects and contributors who have made DeerFlow a reality. We truly stand on the shoulders of giants.
 
 ### Core Frameworks
 
@@ -31,12 +41,15 @@ Noldus Insight is built upon the outstanding DeerFlow 2.0 open-source project by
 ### UI Libraries
 
 - **[Shadcn](https://ui.shadcn.com/)**: Minimalistic components that power our UI.
+- **[SToneX](https://github.com/stonexer)**: For his invaluable contribution to token-by-token visual effects.
+
+These outstanding projects form the backbone of DeerFlow and exemplify the transformative power of open source collaboration.
 
 ### Special Thanks
 
-We extend our heartfelt gratitude to the core authors of DeerFlow 1.0 and 2.0:
+Finally, we want to express our heartfelt gratitude to the core authors of DeerFlow 1.0 and 2.0:
 
 - **[Daniel Walnut](https://github.com/hetaoBackend/)**
 - **[Henry Li](https://github.com/magiccube/)**
 
-Without their vision, passion and dedication, this project would not be possible.
+Without their vision, passion and dedication, `DeerFlow` would not be what it is today.

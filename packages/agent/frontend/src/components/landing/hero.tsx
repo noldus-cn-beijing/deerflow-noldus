@@ -54,7 +54,7 @@ export function Hero({ className }: { className?: string }) {
               "Learn Anything",
             ]}
           />{" "}
-          <div>with Noldus Insight</div>
+          <div>with DeerFlow</div>
         </h1>
         <p
           className="mt-8 scale-105 text-center text-2xl text-shadow-sm"

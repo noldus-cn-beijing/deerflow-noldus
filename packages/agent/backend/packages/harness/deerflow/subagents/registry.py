@@ -23,17 +23,32 @@ def get_subagent_config(name: str) -> SubagentConfig | None:
     if config is None:
         return None
 
-    # Apply per-agent timeout override from config.yaml (lazy import to avoid circular deps).
-    # Only override if config.yaml has an explicit per-agent entry; the global default
-    # should NOT replace the code-level SubagentConfig.timeout_seconds.
+    # Apply timeout override from config.yaml (lazy import to avoid circular deps)
     from deerflow.config.subagents_config import get_subagents_app_config
 
     app_config = get_subagents_app_config()
-    override = app_config.agents.get(name)
-    if override is not None and override.timeout_seconds is not None:
-        if override.timeout_seconds != config.timeout_seconds:
-            logger.debug(f"Subagent '{name}': timeout overridden by config.yaml ({config.timeout_seconds}s -> {override.timeout_seconds}s)")
-            config = replace(config, timeout_seconds=override.timeout_seconds)
+    effective_timeout = app_config.get_timeout_for(name)
+    effective_max_turns = app_config.get_max_turns_for(name, config.max_turns)
+
+    overrides = {}
+    if effective_timeout != config.timeout_seconds:
+        logger.debug(
+            "Subagent '%s': timeout overridden by config.yaml (%ss -> %ss)",
+            name,
+            config.timeout_seconds,
+            effective_timeout,
+        )
+        overrides["timeout_seconds"] = effective_timeout
+    if effective_max_turns != config.max_turns:
+        logger.debug(
+            "Subagent '%s': max_turns overridden by config.yaml (%s -> %s)",
+            name,
+            config.max_turns,
+            effective_max_turns,
+        )
+        overrides["max_turns"] = effective_max_turns
+    if overrides:
+        config = replace(config, **overrides)
 
     return config
 
