@@ -245,13 +245,15 @@ class SubagentExecutor:
             # Use stream instead of invoke to get real-time updates
             # This allows us to collect AI messages as they are generated
             final_state = None
-            async for chunk in agent.astream(state, config=run_config, context=context, stream_mode="values"):  # type: ignore[arg-type]
-                # Check cancellation between iterations (e.g., after timeout)
-                if cancel_event is not None and cancel_event.is_set():
-                    logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} cancelled by timeout, stopping iteration")
-                    break
+            astream_gen = agent.astream(state, config=run_config, context=context, stream_mode="values")  # type: ignore[arg-type]
+            try:
+                async for chunk in astream_gen:
+                    # Check cancellation between iterations (e.g., after timeout)
+                    if cancel_event is not None and cancel_event.is_set():
+                        logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} cancelled by timeout, stopping iteration")
+                        break
 
-                final_state = chunk
+                    final_state = chunk
 
                 # Extract AI messages from the current state
                 messages = chunk.get("messages", [])
@@ -273,6 +275,10 @@ class SubagentExecutor:
                         if not is_duplicate:
                             result.ai_messages.append(message_dict)
                             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} captured AI message #{len(result.ai_messages)}")
+            finally:
+                # Properly close the async generator to avoid "Task was destroyed but it is pending"
+                # errors that can corrupt shared httpx connection pools
+                await astream_gen.aclose()
 
             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} completed async execution")
 
