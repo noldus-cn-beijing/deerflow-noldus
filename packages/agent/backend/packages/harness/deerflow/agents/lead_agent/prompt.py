@@ -174,19 +174,50 @@ def _build_subagent_section(max_concurrent: int) -> str:
         Formatted subagent section string.
     """
     n = max_concurrent
-    bash_available = "bash" in get_available_subagent_names()
-    available_subagents = (
-        "- **general-purpose**: For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.\n- **bash**: For command execution (git, build, test, deploy operations)"
-        if bash_available
-        else "- **general-purpose**: For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.\n"
-        "- **bash**: Not available in the current sandbox configuration. Use direct file/web tools or switch to AioSandboxProvider for isolated shell access."
-    )
+    available_names = get_available_subagent_names()
+    bash_available = "bash" in available_names
+
+    # Build dynamic subagent list with Noldus-specific descriptions
+    noldus_descriptions = {
+        "code-executor": "code-executor**: 执行 Python 数据分析代码（使用 ethoinsight 库）",
+        "data-analyst": "data-analyst**: 解读分析结果，应用行为学领域知识",
+        "report-writer": "report-writer**: 撰写 APA 格式的科学报告",
+    }
+    agent_lines = []
+    for name in sorted(available_names):
+        if name in noldus_descriptions:
+            agent_lines.append(f"- **{noldus_descriptions[name]}")
+        elif name == "general-purpose":
+            agent_lines.append("- **general-purpose**: For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.")
+        elif name == "bash":
+            agent_lines.append("- **bash**: For command execution (git, build, test, deploy operations)")
+        else:
+            agent_lines.append(f"- **{name}**")
+    available_subagents = "\n".join(agent_lines) if agent_lines else "- (no subagents registered)"
     direct_tool_examples = "bash, ls, read_file, web_search, etc." if bash_available else "ls, read_file, web_search, etc."
     direct_execution_example = (
         '# User asks: "Run the tests"\n# Thinking: Cannot decompose into parallel sub-tasks\n# → Execute directly\n\nbash("npm test")  # Direct execution, not task()'
         if bash_available
         else '# User asks: "Read the README"\n# Thinking: Single straightforward file read\n# → Execute directly\n\nread_file("/mnt/user-data/workspace/README.md")  # Direct execution, not task()'
     )
+    # Check if Noldus custom subagents are available
+    has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer"} & set(available_names))
+    noldus_rules = ""
+    if has_noldus_agents:
+        noldus_rules = """
+**Noldus EthoVision 分析系统 — 角色分工**
+
+你是调度员。你的工作是理解用户需求，然后派遣正确的专员去执行。
+
+| 角色 | 职责 | 绝不做的事 |
+|------|------|-----------|
+| 你（调度员） | 理解需求 → 派遣专员 → 传达结果 | 自己跑代码、自己读数据文件、自己探索环境 |
+| code-executor | 调用模板 → 执行分析脚本 | 探索文件系统、从头写代码 |
+| data-analyst | 阅读分析结果 → 撰写专业解读 | 跑代码、画图 |
+| report-writer | 阅读解读+数据 → 撰写科学报告 | 跑代码、重新分析 |
+
+派遣顺序：code-executor → data-analyst → report-writer（每步读 handoff 再派下一个）
+"""
     return f"""<subagent_system>
 **🚀 SUBAGENT MODE ACTIVE - DECOMPOSE, DELEGATE, SYNTHESIZE**
 
@@ -312,7 +343,7 @@ task(description="Oracle Cloud analysis", prompt="...", subagent_type="general-p
 - Only use `task` when you can launch 2+ subagents in parallel
 - Single task = No value from subagents = Execute directly
 - For >{n} sub-tasks, use sequential batches of {n} across multiple turns
-</subagent_system>"""
+{noldus_rules}</subagent_system>"""
 
 
 SYSTEM_PROMPT_TEMPLATE = """
@@ -489,6 +520,8 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 - ✅ ALWAYS add `[citation:Title](URL)` after claims from external sources
 - ✅ ALWAYS include a "Sources" section listing all references
 </citations>
+
+{orchestration_guide}
 
 <critical_reminders>
 - **Clarification First**: ALWAYS clarify unclear/missing/ambiguous requirements BEFORE starting work - never assume or guess
@@ -679,23 +712,95 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
     n = max_concurrent_subagents
     subagent_section = _build_subagent_section(n) if subagent_enabled else ""
 
+    # Check if Noldus custom subagents are available
+    available_names = get_available_subagent_names()
+    has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer"} & set(available_names))
+
     # Add subagent reminder to critical_reminders if enabled
     subagent_reminder = (
-        "- **Orchestrator Mode**: You are a task orchestrator - decompose complex tasks into parallel sub-tasks. "
-        f"**HARD LIMIT: max {n} `task` calls per response.** "
-        f"If >{n} sub-tasks, split into sequential batches of ≤{n}. Synthesize after ALL batches complete.\n"
-        if subagent_enabled
-        else ""
+        "- **调度员模式**: 检测到数据分析需求时，按 orchestration_guide 派遣专员。你自己不跑代码、不读数据。\n"
+        if subagent_enabled and has_noldus_agents
+        else (
+            "- **Orchestrator Mode**: You are a task orchestrator - decompose complex tasks into parallel sub-tasks. "
+            f"**HARD LIMIT: max {n} `task` calls per response.** "
+            f"If >{n} sub-tasks, split into sequential batches of ≤{n}. Synthesize after ALL batches complete.\n"
+            if subagent_enabled
+            else ""
+        )
     )
 
     # Add subagent thinking guidance if enabled
     subagent_thinking = (
-        "- **DECOMPOSITION CHECK: Can this task be broken into 2+ parallel sub-tasks? If YES, COUNT them. "
-        f"If count > {n}, you MUST plan batches of ≤{n} and only launch the FIRST batch now. "
-        f"NEVER launch more than {n} `task` calls in one response.**\n"
-        if subagent_enabled
-        else ""
+        "- **派遣优先**: 涉及数据分析、图表、报告时，直接派遣对应专员，不要自己尝试。\n"
+        if subagent_enabled and has_noldus_agents
+        else (
+            "- **DECOMPOSITION CHECK: Can this task be broken into 2+ parallel sub-tasks? If YES, COUNT them. "
+            f"If count > {n}, you MUST plan batches of ≤{n} and only launch the FIRST batch now. "
+            f"NEVER launch more than {n} `task` calls in one response.**\n"
+            if subagent_enabled
+            else ""
+        )
     )
+
+    # Build Noldus orchestration guide if custom subagents are available
+    orchestration_guide = ""
+    if subagent_enabled and has_noldus_agents:
+        orchestration_guide = """<orchestration_guide>
+## EthoVision 数据分析派遣流程
+
+当用户上传 EthoVision 数据并请求分析时，按以下流程派遣 subagent：
+
+### Step 0: 确认需求
+- 从文件名推断范式（如 "Shoaling" = shoaling, "Elevated Plus Maze" = epm）
+- 确认分组定义（哪些 Subject 是对照/实验组）
+- 如果信息不足，使用 ask_clarification 工具提问
+- **你自己不需要读取数据文件**，只需要把文件路径传给 code-executor
+
+### Step 1: 派遣 code-executor
+把文件路径、范式、分组、用户需求传给 code-executor，让它自己处理。
+
+**CRITICAL: 文件路径必须使用正确的 glob 模式！**
+- 正确: `/mnt/user-data/uploads/轨迹*.txt` （包含 `*` 通配符）
+- 正确: `/mnt/user-data/uploads/Subject*.csv`
+- 错误: `/mnt/user-data/uploads/.txt` （丢失了文件名前缀）
+- 错误: `/mnt/user-data/uploads/` （只有目录，没有文件模式）
+
+**prompt 格式要求**：
+```
+范式: <范式名>
+文件路径: /mnt/user-data/uploads/<文件前缀>*.<扩展名>
+分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]
+特殊需求: （用户的额外要求，如无则写"无"）
+
+使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/
+```
+
+**正确示例**：
+```python
+task(subagent_type="code-executor", description="执行数据分析代码",
+     prompt="范式: shoaling\\n文件路径: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\\n特殊需求: 无\\n\\n使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/")
+```
+
+### Step 2: 读 handoff，派遣 data-analyst
+读取 /mnt/user-data/workspace/handoff_code_executor.json（这个文件很小，可以读）
+确认 status == "completed"
+task(subagent_type="data-analyst", description="分析实验数据",
+     prompt="任务描述 + output 文件路径列表")
+
+### Step 3: 读 handoff，派遣 report-writer
+读取 /mnt/user-data/workspace/handoff_data_analyst.json
+task(subagent_type="report-writer", description="撰写分析报告",
+     prompt="任务描述 + output 文件路径 + analysis_report.md 路径")
+
+### Step 4: 整合返回用户
+读取报告内容，使用 present_files 工具呈现图表和报告文件
+
+## 可用范式模板
+shoaling (斑马鱼群体行为), open_field (旷场), epm (高架十字迷宫),
+novel_object (新物体识别), y_maze (Y迷宫), forced_swim (强迫游泳),
+o_maze (O迷宫), light_dark (明暗箱), social_interaction (社会互动),
+morris_water_maze (水迷宫), three_chamber (三箱社交)
+</orchestration_guide>"""
 
     # Get skills section
     skills_section = get_skills_prompt_section(available_skills)
@@ -710,7 +815,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
     # Format the prompt with dynamic skills and memory
     prompt = SYSTEM_PROMPT_TEMPLATE.format(
-        agent_name=agent_name or "DeerFlow 2.0",
+        agent_name=agent_name or "EthoInsight",
         soul=get_agent_soul(agent_name),
         skills_section=skills_section,
         deferred_tools_section=deferred_tools_section,
@@ -719,6 +824,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,
         acp_section=acp_and_mounts_section,
+        orchestration_guide=orchestration_guide,
     )
 
     return prompt + f"\n<current_date>{datetime.now().strftime('%Y-%m-%d, %A')}</current_date>"

@@ -15,9 +15,8 @@ __all__ = [
 ]
 
 # Registry of built-in subagents
+# EthoInsight uses dedicated subagents; DeerFlow defaults disabled
 BUILTIN_SUBAGENTS = {
-    "general-purpose": GENERAL_PURPOSE_CONFIG,
-    "bash": BASH_AGENT_CONFIG,
     "code-executor": CODE_EXECUTOR_CONFIG,
     "data-analyst": DATA_ANALYST_CONFIG,
     "report-writer": REPORT_WRITER_CONFIG,

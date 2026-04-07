@@ -6,3 +6,9 @@ packages/agent/backend/packages/harness/deerflow/subagents/builtins/data_analyst
 packages/agent/backend/packages/harness/deerflow/subagents/builtins/report_writer.py merge=ours
 packages/agent/backend/packages/harness/deerflow/subagents/builtins/__init__.py merge=ours
 packages/agent/config.yaml merge=ours
+# Files customized for Noldus that also exist in upstream — keep ours on merge.
+packages/agent/backend/packages/harness/deerflow/agents/lead_agent/prompt.py merge=ours
+packages/agent/backend/packages/harness/deerflow/sandbox/tools.py merge=ours
+packages/agent/backend/packages/harness/deerflow/sandbox/local/local_sandbox.py merge=ours
+packages/agent/backend/packages/harness/deerflow/sandbox/sandbox.py merge=ours
+packages/agent/frontend/src/components/workspace/artifacts/artifact-file-list.tsx merge=ours

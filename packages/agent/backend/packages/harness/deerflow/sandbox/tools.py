@@ -459,6 +459,22 @@ def _thread_actual_to_virtual_mappings(thread_data: ThreadDataState) -> dict[str
     return {actual: virtual for virtual, actual in _thread_virtual_to_actual_mappings(thread_data).items()}
 
 
+def _build_path_env(thread_data: ThreadDataState | None) -> dict[str, str]:
+    """Build DEERFLOW_PATH_* env vars from thread virtual-to-actual mappings.
+
+    These env vars let Python scripts resolve virtual paths at runtime
+    (e.g. inside glob.glob or open calls) without relying on bash-level
+    string replacement.
+    """
+    if thread_data is None:
+        return {}
+    env: dict[str, str] = {}
+    for container_path, local_path in _thread_virtual_to_actual_mappings(thread_data).items():
+        key = "DEERFLOW_PATH_" + container_path.strip("/").replace("/", "_").replace("-", "_").upper()
+        env[key] = local_path
+    return env
+
+
 def mask_local_paths_in_output(output: str, thread_data: ThreadDataState | None) -> str:
     """Mask host absolute paths from local sandbox output using virtual paths.
 
@@ -1009,7 +1025,8 @@ def bash_tool(runtime: ToolRuntime[ContextT, ThreadState], description: str, com
             validate_local_bash_command_paths(command, thread_data)
             command = replace_virtual_paths_in_command(command, thread_data)
             command = _apply_cwd_prefix(command, thread_data)
-            output = sandbox.execute_command(command)
+            path_env = _build_path_env(thread_data)
+            output = sandbox.execute_command(command, extra_env=path_env)
             try:
                 from deerflow.config.app_config import get_app_config
 

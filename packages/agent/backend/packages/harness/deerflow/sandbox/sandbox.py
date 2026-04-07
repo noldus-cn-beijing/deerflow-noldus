@@ -16,11 +16,12 @@ class Sandbox(ABC):
         return self._id
 
     @abstractmethod
-    def execute_command(self, command: str) -> str:
+    def execute_command(self, command: str, extra_env: dict[str, str] | None = None) -> str:
         """Execute bash command in sandbox.
 
         Args:
             command: The command to execute.
+            extra_env: Optional extra environment variables to set for the command.
 
         Returns:
             The standard or error output of the command.
