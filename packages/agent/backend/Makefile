@@ -1,5 +1,6 @@
 install:
 	uv sync
+	uv pip install -e packages/ethoinsight
 
 dev:
 	uv run langgraph dev --no-browser --no-reload --n-jobs-per-worker 10

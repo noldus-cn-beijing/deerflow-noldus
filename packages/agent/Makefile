@@ -58,6 +58,7 @@ check:
 install:
 	@echo "Installing backend dependencies..."
 	@cd backend && uv sync
+	@cd backend && uv pip install -e packages/ethoinsight
 	@echo "Installing frontend dependencies..."
 	@cd frontend && pnpm install
 	@echo "✓ All dependencies installed"
