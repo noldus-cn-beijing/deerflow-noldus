@@ -6,7 +6,6 @@ from langchain_core.runnables import RunnableConfig
 
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
-from deerflow.agents.middlewares.experiment_context import ExperimentContextMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
@@ -218,9 +217,6 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         List of middleware instances.
     """
     middlewares = build_lead_runtime_middlewares(lazy_init=True)
-
-    # Add ExperimentContextMiddleware to auto-extract EthoVision metadata from uploads
-    middlewares.append(ExperimentContextMiddleware())
 
     # Add summarization middleware if enabled
     summarization_middleware = _create_summarization_middleware()

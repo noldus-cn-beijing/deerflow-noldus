@@ -102,22 +102,10 @@ async def upload_files(
                 "artifact_url": upload_artifact_url(thread_id, safe_filename),
             }
 
-            # Detect EthoVision data files — skip markitdown conversion
-            # to preserve the raw UTF-16 LE format for ethoinsight parsing.
-            is_ethovision = False
-            try:
-                from ethoinsight.parse import detect_ethovision
-                is_ethovision = detect_ethovision(str(file_path))
-            except ImportError:
-                pass
-
-            if is_ethovision:
-                file_info["ethovision"] = "true"
-
             logger.info(f"Saved file: {safe_filename} ({len(content)} bytes) to {file_info['path']}")
 
             file_ext = file_path.suffix.lower()
-            if file_ext in CONVERTIBLE_EXTENSIONS and not is_ethovision:
+            if file_ext in CONVERTIBLE_EXTENSIONS:
                 md_path = await convert_file_to_markdown(file_path)
                 if md_path:
                     md_virtual_path = upload_virtual_path(md_path.name)
