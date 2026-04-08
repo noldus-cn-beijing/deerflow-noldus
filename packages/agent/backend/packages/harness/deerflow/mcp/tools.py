@@ -21,6 +21,34 @@ _SYNC_TOOL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=10, thre
 # Register shutdown hook for the global executor
 atexit.register(lambda: _SYNC_TOOL_EXECUTOR.shutdown(wait=False))
 
+# Maximum character length for MCP tool results (aligned with web_fetch tools)
+MCP_TOOL_RESULT_MAX_CHARS = 4096
+
+
+def _truncate_result(result: Any) -> Any:
+    """Truncate MCP tool result if it exceeds the maximum character limit."""
+    if isinstance(result, str) and len(result) > MCP_TOOL_RESULT_MAX_CHARS:
+        return result[:MCP_TOOL_RESULT_MAX_CHARS] + "\n\n... [truncated — result exceeded 4096 chars]"
+    return result
+
+
+def _wrap_tool_with_truncation(tool: BaseTool) -> BaseTool:
+    """Wrap an MCP tool to truncate oversized results, preventing context bloat."""
+    original_func = getattr(tool, "func", None)
+    original_coro = getattr(tool, "coroutine", None)
+
+    if original_func is not None:
+        def truncated_func(*args: Any, **kwargs: Any) -> Any:
+            return _truncate_result(original_func(*args, **kwargs))
+        tool.func = truncated_func
+
+    if original_coro is not None:
+        async def truncated_coro(*args: Any, **kwargs: Any) -> Any:
+            return _truncate_result(await original_coro(*args, **kwargs))
+        tool.coroutine = truncated_coro
+
+    return tool
+
 
 def _make_sync_tool_wrapper(coro: Callable[..., Any], tool_name: str) -> Callable[..., Any]:
     """Build a synchronous wrapper for an asynchronous tool coroutine.
@@ -105,6 +133,9 @@ async def get_mcp_tools() -> list[BaseTool]:
         for tool in tools:
             if getattr(tool, "func", None) is None and getattr(tool, "coroutine", None) is not None:
                 tool.func = _make_sync_tool_wrapper(tool.coroutine, tool.name)
+
+        # Wrap each MCP tool to truncate oversized results
+        tools = [_wrap_tool_with_truncation(t) for t in tools]
 
         return tools
 

@@ -33,7 +33,7 @@ METRICS_TO_COMPUTE = [  # CUSTOMIZABLE: add/remove metrics as needed
     "mean_nnd",
     "mean_polarity",
 ]
-CHART_TYPES = ["box_plot"]  # CUSTOMIZABLE: box_plot, violin_plot, bar_chart
+CHART_TYPES = ["box_plot"]  # CUSTOMIZABLE: box_plot, violin_plot, bar_chart, raincloud_plot, beeswarm_plot, correlogram
 OUTPUT_DIR = "/mnt/user-data/workspace/output/"
 HANDOFF_PATH = "/mnt/user-data/workspace/handoff_code_executor.json"
 # ===== END PARAMETERS =====

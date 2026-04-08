@@ -57,7 +57,7 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
 
 1. get_analysis_template(paradigm="shoaling", file_pattern="/mnt/user-data/uploads/轨迹*.txt",
      groups='{{"control": ["Subject 1", "Subject 2"], "treatment": ["Subject 3", "Subject 4", "Subject 5"]}}',
-     metrics="distance_moved", chart_types="box_plot,violin_plot")
+     metrics="distance_moved", chart_types="box_plot,violin_plot,raincloud_plot")
 2. write_file("/mnt/user-data/workspace/analysis.py", <第1步返回的结果>)
 3. bash("python /mnt/user-data/workspace/analysis.py")
 </参数化定制示例>
@@ -78,6 +78,15 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
 - 禁止修改任何标注为"固定流程，不要改"的代码
 - 如果用户没有特殊需求 → 不要修改脚本，直接执行
 </定制规则>
+
+<图表选择>
+参考 system prompt 中的 ethoinsight-charts skill 选择图表类型。
+关键规则：
+- 发表级别/正式报告 → 用 raincloud_plot 替代默认的 box_plot
+- 小样本（n < 15）→ 优先 beeswarm_plot
+- 用户未指定图表类型 → 默认使用 raincloud_plot
+- 修改方式：用 str_replace 将 CHART_TYPES 行替换为你选择的图表类型
+</图表选择>
 
 <ethoinsight库>
 备用方案：只有当 get_analysis_template 返回"不支持此范式"时才使用。

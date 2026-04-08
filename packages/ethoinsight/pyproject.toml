@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.7",
     "numpy>=1.24",
     "pyyaml>=6.0",
+    "seaborn>=0.13",
 ]
 
 [project.optional-dependencies]

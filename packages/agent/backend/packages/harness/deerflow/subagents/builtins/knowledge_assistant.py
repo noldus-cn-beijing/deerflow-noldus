@@ -42,6 +42,14 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
 - 简单问题（定义、解释、追问）：直接在消息中回答
 - 深度问题（范式对比、方法论综述、文献综述）：写入 /mnt/user-data/workspace/knowledge_response.md，并在消息中给出摘要
 
+## 工具使用原则（重要！）
+- **优先使用 system prompt 中已注入的 ethoinsight skill 知识**，这些内容不消耗工具调用
+- 只有当 skill 知识不够回答时，才调用 noldus-kb MCP 工具
+- 调用 search_knowledge 时，**limit 参数不超过 3**
+- **每次回答最多调用 2 次 MCP 工具**，不要反复查询
+- 如果一次查询结果已经足够回答问题，不要再查第二次
+- 对于简单的术语定义、范式概述，直接用 skill 知识回答，不需要查询
+
 ## 回答风格
 - 使用中文回答，专业术语附英文原文（如"高架十字迷宫 (Elevated Plus Maze, EPM)"）
 - 引用具体数值时注明来源（skill 知识 / 知识库查询 / 已有分析结果）
@@ -56,6 +64,6 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
         "get_analysis_template", # 不做分析
     ],
     model="inherit",
-    max_turns=10,
+    max_turns=6,
     timeout_seconds=300,
 )

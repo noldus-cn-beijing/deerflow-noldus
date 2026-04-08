@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+import seaborn as sns  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Style configuration
@@ -323,6 +324,214 @@ def add_significance_markers(ax: plt.Axes, comparisons: list[dict]) -> None:
     # Extend y-axis to fit markers
     if comparisons:
         ax.set_ylim(top=y_max + step * (len(comparisons) + 1.5))
+
+
+def raincloud_plot(
+    metrics: dict,
+    metrics_to_plot: list[str],
+    significance: dict | None = None,
+    output_path: str | None = None,
+) -> str:
+    """Raincloud plot — half-violin + box + jittered scatter.
+
+    A publication-quality composite plot that shows distribution shape,
+    summary statistics, and individual data points simultaneously.
+    """
+    _setup_style()
+    n = len(metrics_to_plot)
+    fig, axes = plt.subplots(1, max(n, 1), figsize=(4.5 * max(n, 1), 5), squeeze=False)
+    axes = axes.flatten()
+
+    for idx, mname in enumerate(metrics_to_plot):
+        ax = axes[idx]
+        groups, values = _extract_group_data(metrics, mname)
+        if not groups or all(len(v) == 0 for v in values):
+            ax.set_title(mname)
+            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            continue
+
+        positions = np.arange(len(groups))
+        for i, (grp, vals) in enumerate(zip(groups, values)):
+            if not vals:
+                continue
+            vals_arr = np.array(vals, dtype=float)
+            color = PALETTE[i % len(PALETTE)]
+
+            # Half-violin (right side only)
+            parts = ax.violinplot([vals_arr], positions=[positions[i]], showmeans=False,
+                                  showmedians=False, showextrema=False, widths=0.6)
+            for body in parts.get("bodies", []):
+                m_path = body.get_paths()[0]
+                m_path.vertices[:, 0] = np.clip(m_path.vertices[:, 0], positions[i], positions[i] + 0.4)
+                body.set_facecolor(color)
+                body.set_alpha(0.4)
+
+            # Box plot (narrow, center)
+            bp = ax.boxplot([vals_arr], positions=[positions[i]], widths=0.12,
+                            patch_artist=True, showfliers=False,
+                            boxprops=dict(facecolor=color, alpha=0.8),
+                            medianprops=dict(color="white", linewidth=1.5),
+                            whiskerprops=dict(linewidth=0.8),
+                            capprops=dict(linewidth=0.8))
+
+            # Jittered scatter (left side)
+            jitter = np.random.default_rng(42).uniform(-0.15, -0.02, size=len(vals_arr))
+            ax.scatter(positions[i] + jitter, vals_arr, s=15, color=color,
+                       alpha=0.7, edgecolor="white", linewidth=0.3, zorder=3)
+
+        ax.set_xticks(positions)
+        ax.set_xticklabels(groups)
+        ax.set_title(mname.replace("_", " ").title())
+        ax.set_ylabel(mname)
+
+        if significance:
+            _add_significance_from_stats(ax, groups, mname, significance)
+
+    for idx in range(n, len(axes)):
+        axes[idx].set_visible(False)
+
+    fig.tight_layout()
+    path = _resolve_output_path(output_path, "raincloud_plot")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
+def beeswarm_plot(
+    metrics: dict,
+    metrics_to_plot: list[str],
+    significance: dict | None = None,
+    output_path: str | None = None,
+) -> str:
+    """Beeswarm plot — individual data points with mean ± SEM overlay.
+
+    Each data point is shown as a non-overlapping dot, ideal for small
+    sample sizes typical in animal behavior experiments (n=5-15).
+    """
+    _setup_style()
+    n = len(metrics_to_plot)
+    fig, axes = plt.subplots(1, max(n, 1), figsize=(4 * max(n, 1), 5), squeeze=False)
+    axes = axes.flatten()
+
+    for idx, mname in enumerate(metrics_to_plot):
+        ax = axes[idx]
+        groups, values = _extract_group_data(metrics, mname)
+        if not groups or all(len(v) == 0 for v in values):
+            ax.set_title(mname)
+            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            continue
+
+        # Build DataFrame for seaborn
+        rows = []
+        for grp, vals in zip(groups, values):
+            for v in vals:
+                rows.append({"group": grp, "value": v})
+        df = pd.DataFrame(rows)
+
+        # Swarm plot
+        sns.swarmplot(data=df, x="group", y="value", ax=ax, size=6,
+                      palette=PALETTE[:len(groups)], alpha=0.8, zorder=3)
+
+        # Mean ± SEM overlay
+        for i, (grp, vals) in enumerate(zip(groups, values)):
+            if not vals:
+                continue
+            vals_arr = np.array(vals, dtype=float)
+            mean = np.mean(vals_arr)
+            sem = np.std(vals_arr, ddof=1) / np.sqrt(len(vals_arr)) if len(vals_arr) > 1 else 0
+            ax.hlines(mean, i - 0.25, i + 0.25, color="black", linewidth=1.5, zorder=4)
+            ax.vlines(i, mean - sem, mean + sem, color="black", linewidth=1.2, zorder=4)
+
+        ax.set_xlabel("")
+        ax.set_title(mname.replace("_", " ").title())
+        ax.set_ylabel(mname)
+
+        if significance:
+            _add_significance_from_stats(ax, groups, mname, significance)
+
+    for idx in range(n, len(axes)):
+        axes[idx].set_visible(False)
+
+    fig.tight_layout()
+    path = _resolve_output_path(output_path, "beeswarm_plot")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
+def correlogram(
+    metrics: dict,
+    metrics_to_plot: list[str] | None = None,
+    output_path: str | None = None,
+) -> str:
+    """Correlation matrix heatmap across behavioral metrics.
+
+    Computes Pearson correlations between metrics using per-subject values
+    across all groups. Upper triangle is masked to avoid redundancy.
+    """
+    _setup_style()
+
+    # Build subject-level DataFrame from all groups
+    group_summary = metrics.get("group_summary", {})
+    all_metrics: dict[str, list[float]] = {}
+    for grp_metrics in group_summary.values():
+        for mname, minfo in grp_metrics.items():
+            vals = minfo.get("values", [])
+            if mname not in all_metrics:
+                all_metrics[mname] = []
+            all_metrics[mname].extend(vals)
+
+    if metrics_to_plot:
+        all_metrics = {k: v for k, v in all_metrics.items() if k in metrics_to_plot}
+
+    if len(all_metrics) < 2:
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.text(0.5, 0.5, "Need ≥2 metrics for correlogram",
+                ha="center", va="center", transform=ax.transAxes)
+        path = _resolve_output_path(output_path, "correlogram")
+        fig.savefig(path)
+        plt.close(fig)
+        return path
+
+    # Align lengths (use min length across all metrics)
+    min_len = min(len(v) for v in all_metrics.values())
+    df = pd.DataFrame({k: v[:min_len] for k, v in all_metrics.items()})
+    corr = df.corr()
+
+    # Upper triangle mask
+    mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
+
+    fig, ax = plt.subplots(figsize=(max(6, len(corr) * 0.8), max(5, len(corr) * 0.7)))
+    cmap = plt.cm.RdBu_r
+
+    im = ax.imshow(corr.where(~mask, np.nan).values, cmap=cmap, vmin=-1, vmax=1, aspect="auto")
+    fig.colorbar(im, ax=ax, shrink=0.8, label="Pearson r")
+
+    # Labels
+    labels = [m.replace("_", " ") for m in corr.columns]
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontsize=8)
+
+    # Annotate cells with values
+    for i in range(len(corr)):
+        for j in range(len(corr)):
+            if mask[i, j]:
+                continue
+            val = corr.iloc[i, j]
+            if np.isnan(val):
+                continue
+            color = "white" if abs(val) > 0.6 else "black"
+            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
+                    fontsize=7, color=color)
+
+    ax.set_title("Metric Correlation Matrix")
+    fig.tight_layout()
+    path = _resolve_output_path(output_path, "correlogram")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
 
 
 # ---------------------------------------------------------------------------

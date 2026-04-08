@@ -76,7 +76,7 @@ def render_template(
     if metrics is not None:
         param_lines.append(f'METRICS_TO_COMPUTE = {metrics!r}  # CUSTOMIZABLE: add/remove metrics')
     if chart_types is not None:
-        param_lines.append(f'CHART_TYPES = {chart_types!r}  # CUSTOMIZABLE: box_plot, violin_plot, bar_chart')
+        param_lines.append(f'CHART_TYPES = {chart_types!r}  # CUSTOMIZABLE: box_plot, violin_plot, bar_chart, raincloud_plot, beeswarm_plot, correlogram')
 
     param_lines.append(f'OUTPUT_DIR = {output_dir!r}')
     param_lines.append(f'HANDOFF_PATH = {handoff_path!r}')
