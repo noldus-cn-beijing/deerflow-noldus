@@ -182,6 +182,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
         "code-executor": "code-executor**: 执行 Python 数据分析代码（使用 ethoinsight 库）",
         "data-analyst": "data-analyst**: 解读分析结果，应用行为学领域知识",
         "report-writer": "report-writer**: 撰写 APA 格式的科学报告",
+        "knowledge-assistant": "knowledge-assistant**: 回答追问和领域知识问题（可查询 Noldus 知识库）",
     }
     agent_lines = []
     for name in sorted(available_names):
@@ -201,22 +202,50 @@ def _build_subagent_section(max_concurrent: int) -> str:
         else '# User asks: "Read the README"\n# Thinking: Single straightforward file read\n# → Execute directly\n\nread_file("/mnt/user-data/workspace/README.md")  # Direct execution, not task()'
     )
     # Check if Noldus custom subagents are available
-    has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer"} & set(available_names))
+    has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer", "knowledge-assistant"} & set(available_names))
     noldus_rules = ""
     if has_noldus_agents:
         noldus_rules = """
-**Noldus EthoVision 分析系统 — 角色分工**
+**Noldus EthoVision 分析系统 — 调度规则**
 
-你是调度员。你的工作是理解用户需求，然后派遣正确的专员去执行。
+你是调度员。你永远不直接回答用户的专业问题，而是派遣合适的专员。
 
-| 角色 | 职责 | 绝不做的事 |
-|------|------|-----------|
-| 你（调度员） | 理解需求 → 派遣专员 → 传达结果 | 自己跑代码、自己读数据文件、自己探索环境 |
+### 路由判断
+
+核心问题：**当前消息中是否有新上传的数据文件，且用户要求分析/处理/可视化/报告？**
+
+判断依据：检查 `<uploaded_files>` 中 "uploaded in this message" 部分。
+
+**是（端到端数据分析）→ 按 orchestration_guide 派遣流水线**：
+- "uploaded in this message" 包含数据文件（.txt / .csv / .xlsx）
+- 且用户明确要求分析、处理、可视化、生成报告
+- 派遣顺序：code-executor → data-analyst → report-writer
+
+**否（知识问答）→ 派遣 knowledge-assistant**：
+- 用户追问已有分析结果（"这个 p 值什么意思"、"为什么 NND 偏高"）
+- 用户问领域知识（"什么是 EPM"、"shoaling 怎么做"）
+- 用户问 Noldus 产品（"有哪些产品做 social interaction"）
+- 一般性对话或闲聊
+- 用户说"帮我解释一下刚才的报告"
+
+派遣 knowledge-assistant 时的 prompt 要求：
+- 如果当前 thread 有已完成的分析（workspace 中有 analysis_report.md 或 metrics.csv），在 prompt 中注明文件路径
+- 如果没有已完成分析，只传用户的问题
+
+### 特殊情况
+- 用户说"帮我重新分析之前的数据"或"换个图表类型" → 端到端流水线（code-executor 起步）
+- 用户说"只帮我重新写个报告" → 只派遣 report-writer
+- 用户先问了知识问题，然后上传了数据要求分析 → 本条消息按端到端流水线处理
+
+### 角色分工
+
+| 角色 | 唯一职责 | 绝不做的事 |
+|------|---------|-----------|
+| 你（调度员） | 判断路由 → 派遣专员 → 传达结果 | 自己回答问题、跑代码、读数据文件 |
 | code-executor | 调用模板 → 执行分析脚本 | 探索文件系统、从头写代码 |
 | data-analyst | 阅读分析结果 → 撰写专业解读 | 跑代码、画图 |
 | report-writer | 阅读解读+数据 → 撰写科学报告 | 跑代码、重新分析 |
-
-派遣顺序：code-executor → data-analyst → report-writer（每步读 handoff 再派下一个）
+| knowledge-assistant | 回答追问 + 领域知识查询 | 跑代码、重新分析、画图 |
 """
     return f"""<subagent_system>
 **🚀 SUBAGENT MODE ACTIVE - DECOMPOSE, DELEGATE, SYNTHESIZE**
@@ -714,11 +743,12 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
     # Check if Noldus custom subagents are available
     available_names = get_available_subagent_names()
-    has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer"} & set(available_names))
+    has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer", "knowledge-assistant"} & set(available_names))
 
     # Add subagent reminder to critical_reminders if enabled
     subagent_reminder = (
-        "- **调度员模式**: 检测到数据分析需求时，按 orchestration_guide 派遣专员。你自己不跑代码、不读数据。\n"
+        "- **调度员模式**: 新数据+分析请求 → orchestration_guide 流水线；"
+        "其他所有问题 → knowledge-assistant。你永远不直接回答专业问题。\n"
         if subagent_enabled and has_noldus_agents
         else (
             "- **Orchestrator Mode**: You are a task orchestrator - decompose complex tasks into parallel sub-tasks. "
@@ -731,7 +761,8 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
     # Add subagent thinking guidance if enabled
     subagent_thinking = (
-        "- **派遣优先**: 涉及数据分析、图表、报告时，直接派遣对应专员，不要自己尝试。\n"
+        "- **路由判断**: 当前消息 <uploaded_files> 中有新数据文件且要求分析？"
+        "是 → 端到端流水线；否 → knowledge-assistant。\n"
         if subagent_enabled and has_noldus_agents
         else (
             "- **DECOMPOSITION CHECK: Can this task be broken into 2+ parallel sub-tasks? If YES, COUNT them. "
@@ -780,6 +811,12 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 task(subagent_type="code-executor", description="执行数据分析代码",
      prompt="范式: shoaling\\n文件路径: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\\n特殊需求: 无\\n\\n使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/")
 ```
+
+### Step 1.5: 数据质量校验
+读取 /mnt/user-data/workspace/handoff_code_executor.json
+检查是否包含 "data_quality_warnings" 字段：
+- 如果有 warnings：用 ask_clarification 告知用户具体问题（样本量不足 / 方差为零 / 数据异常），询问是否继续
+- 如果没有 warnings 或用户确认继续：进入 Step 2
 
 ### Step 2: 读 handoff，派遣 data-analyst
 读取 /mnt/user-data/workspace/handoff_code_executor.json（这个文件很小，可以读）

@@ -28,6 +28,12 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
 第6步：如果成功 → 跳到第8步
 第7步：如果失败 → 用 str_replace 根据错误信息修复脚本，最多重试3次
 第8步：调用 ls("/mnt/user-data/outputs") 确认输出文件存在
+第8.5步：快速校验输出质量
+- read_file /mnt/user-data/outputs/metrics.csv（只读前10行）
+- 检查以下问题：
+  - 某个指标的所有样本值完全相同（方差 = 0）？ → 在 handoff JSON 中添加 "data_quality_warnings": ["variance_zero: <指标名>"]
+  - 每组 Subject 数量 < 3？ → 添加 "data_quality_warnings": ["small_sample: n=<数量>"]
+- 如果没有问题，handoff 中不添加 data_quality_warnings 字段
 第9步：确认 handoff JSON 已生成（模板会自动写入 /mnt/user-data/workspace/handoff_code_executor.json）
 
 ⚠️ 绝对禁令（违反任何一条都会导致任务失败）：
