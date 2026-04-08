@@ -133,7 +133,7 @@ def _restrict_read_file_for_subagent(tools: list[BaseTool]) -> list[BaseTool]:
                 return orig_invoke(input, config=config, **kwargs)
             return restricted_invoke
 
-        tool.invoke = _make_restricted_invoke(original_invoke)
+        object.__setattr__(tool, "invoke", _make_restricted_invoke(original_invoke))
         result.append(tool)
 
     return result
