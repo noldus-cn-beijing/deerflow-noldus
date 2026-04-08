@@ -79,12 +79,9 @@ export function groupMessages<T>(
         const open = lastOpenGroup();
         if (open) {
           open.messages.push(message);
-        } else {
-          console.error(
-            "Unexpected tool message outside a processing group",
-            message,
-          );
         }
+        // Silently ignore orphaned tool messages (e.g. after LLM timeout
+        // returns a plain AIMessage without tool_calls).
       }
       continue;
     }

@@ -31,6 +31,9 @@ _BUSY_PATTERNS = (
     "overloaded",
     "high demand",
     "rate limit",
+    "readtimeout",
+    "read timed out",
+    "connect timed out",
     "负载较高",
     "服务繁忙",
     "稍后重试",
@@ -84,6 +87,9 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
             "APITimeoutError",
             "APIConnectionError",
             "InternalServerError",
+            "ReadTimeout",
+            "ConnectTimeout",
+            "RemoteProtocolError",
         }:
             return True, "transient"
         if status_code in _RETRIABLE_STATUS_CODES:
