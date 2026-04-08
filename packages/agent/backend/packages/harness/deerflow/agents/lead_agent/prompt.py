@@ -253,6 +253,12 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 你负责将 data-analyst 的分析摘要写入 /mnt/shared/analysis_summary.md
 - subagent 通过 read_file 按需读取这些共享文件
 - prompt 中使用 {{shared://filename}} 占位符，系统自动替换为 /mnt/shared/filename
+
+### 输出规则（面向用户的消息）
+- **禁止在消息中复述 bash 命令、JSON 数据内容、代码片段或 subagent 的原始输出**
+- 写共享文件时，只使用 write_file 工具，不要用 bash cat/echo 重定向
+- 用户可见的消息只包含：当前步骤的简短状态说明（如"正在执行数据分析..."、"分析完成，正在生成报告..."）
+- subagent 返回结果后，只向用户转述关键结论，不暴露中间数据或文件内容
 """
     return f"""<subagent_system>
 **🚀 SUBAGENT MODE ACTIVE - DECOMPOSE, DELEGATE, SYNTHESIZE**
@@ -824,12 +830,13 @@ task(subagent_type="code-executor", description="执行数据分析代码",
 2. 检查 "data_quality_warnings" 字段：
    - 如果有 warnings：用 ask_clarification 告知用户，询问是否继续
    - 如果没有 warnings 或用户确认：继续
-3. **写共享摘要**：用 write_file 将 handoff 中的关键数据写入共享 workspace：
+3. **写共享摘要**（必须使用 write_file 工具，禁止用 bash）：
    ```
    write_file("/mnt/shared/code_summary.json", <JSON 字符串，包含以下字段>)
    ```
    code_summary.json 包含：paradigm, groups, metrics_summary, statistics, chart_paths, data_quality_warnings
    （从 handoff 中直接提取这些字段，不要包含 output_files.metrics 等原始文件路径）
+   **注意：不要在回复消息中复述 JSON 内容，直接调用 write_file 即可**
 
 ### Step 2: 派遣 data-analyst
 ```python

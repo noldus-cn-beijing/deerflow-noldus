@@ -14,6 +14,7 @@ DATA_ANALYST_CONFIG = SubagentConfig(
 输入:
   - {{shared://code_summary.json}} — 系统替换为 /mnt/shared/code_summary.json，用 read_file 读取
   - 该文件包含: metrics_summary（各组 mean/std/n）、statistics（p 值/效应量）、chart_paths、data_quality_warnings
+  - **code_summary.json 是唯一且完整的数据源，包含全部分析结果。无需逐一验证各字段是否存在，也不要反复读取同一文件。一次 read_file 即可获取全部所需数据。**
 
 输出:
   - /mnt/user-data/workspace/analysis/analysis_report.md — 详细分析报告（含洞察）
@@ -24,11 +25,12 @@ DATA_ANALYST_CONFIG = SubagentConfig(
   - 运行 Python 代码或 bash 命令
   - 画图或生成可视化
   - 编造文献引用
+  - **反复多次读取同一文件确认数据**
 </contract>
 
 <workflow>
-1. read_file /mnt/shared/code_summary.json（prompt 中的占位符已被系统替换为此路径）
-2. 从 metrics_summary 中理解各组的数据概况（mean/std/n）
+1. read_file /mnt/shared/code_summary.json — 一次性读取全部数据（仅此一次）
+2. 直接基于读取到的数据进行分析，从 metrics_summary 中理解各组的数据概况（mean/std/n）
 3. 从 statistics 中理解组间差异的统计检验结果
 4. **数据解读**：应用领域知识解读统计结果的生物学含义
 5. **数据洞察**（关键！）：主动发现数据中的深层模式和问题：
@@ -53,6 +55,6 @@ DATA_ANALYST_CONFIG = SubagentConfig(
                        "bash", "str_replace",
                        "web_search", "web_fetch", "image_search"],
     model="inherit",
-    max_turns=10,
+    max_turns=6,
     timeout_seconds=600,
 )

@@ -66,6 +66,7 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
     retry_max_attempts: int = 3
     retry_base_delay_ms: int = 1000
     retry_cap_delay_ms: int = 8000
+    retry_total_timeout_s: float = 180.0
 
     def _classify_error(self, exc: BaseException) -> tuple[bool, str]:
         detail = _extract_error_detail(exc)
@@ -139,6 +140,7 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelCallResult:
         attempt = 1
+        start_time = time.monotonic()
         while True:
             try:
                 return handler(request)
@@ -147,7 +149,8 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
                 raise
             except Exception as exc:
                 retriable, reason = self._classify_error(exc)
-                if retriable and attempt < self.retry_max_attempts:
+                elapsed = time.monotonic() - start_time
+                if retriable and attempt < self.retry_max_attempts and elapsed < self.retry_total_timeout_s:
                     wait_ms = self._build_retry_delay_ms(attempt, exc)
                     logger.warning(
                         "Transient LLM error on attempt %d/%d; retrying in %dms: %s",
@@ -160,12 +163,20 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
                     time.sleep(wait_ms / 1000)
                     attempt += 1
                     continue
-                logger.warning(
-                    "LLM call failed after %d attempt(s): %s",
-                    attempt,
-                    _extract_error_detail(exc),
-                    exc_info=exc,
-                )
+                if elapsed >= self.retry_total_timeout_s:
+                    logger.warning(
+                        "LLM call aborted after %.0fs (total timeout %.0fs): %s",
+                        elapsed,
+                        self.retry_total_timeout_s,
+                        _extract_error_detail(exc),
+                    )
+                else:
+                    logger.warning(
+                        "LLM call failed after %d attempt(s): %s",
+                        attempt,
+                        _extract_error_detail(exc),
+                        exc_info=exc,
+                    )
                 return AIMessage(content=self._build_user_message(exc, reason))
 
     @override
@@ -175,6 +186,7 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelCallResult:
         attempt = 1
+        start_time = time.monotonic()
         while True:
             try:
                 return await handler(request)
@@ -183,7 +195,8 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
                 raise
             except Exception as exc:
                 retriable, reason = self._classify_error(exc)
-                if retriable and attempt < self.retry_max_attempts:
+                elapsed = time.monotonic() - start_time
+                if retriable and attempt < self.retry_max_attempts and elapsed < self.retry_total_timeout_s:
                     wait_ms = self._build_retry_delay_ms(attempt, exc)
                     logger.warning(
                         "Transient LLM error on attempt %d/%d; retrying in %dms: %s",
@@ -196,12 +209,20 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
                     await asyncio.sleep(wait_ms / 1000)
                     attempt += 1
                     continue
-                logger.warning(
-                    "LLM call failed after %d attempt(s): %s",
-                    attempt,
-                    _extract_error_detail(exc),
-                    exc_info=exc,
-                )
+                if elapsed >= self.retry_total_timeout_s:
+                    logger.warning(
+                        "LLM call aborted after %.0fs (total timeout %.0fs): %s",
+                        elapsed,
+                        self.retry_total_timeout_s,
+                        _extract_error_detail(exc),
+                    )
+                else:
+                    logger.warning(
+                        "LLM call failed after %d attempt(s): %s",
+                        attempt,
+                        _extract_error_detail(exc),
+                        exc_info=exc,
+                    )
                 return AIMessage(content=self._build_user_message(exc, reason))
 
 
