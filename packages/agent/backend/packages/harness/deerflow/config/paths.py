@@ -5,6 +5,7 @@ from pathlib import Path, PureWindowsPath
 
 # Virtual path prefix seen by agents inside the sandbox
 VIRTUAL_PATH_PREFIX = "/mnt/user-data"
+SHARED_PATH_PREFIX = "/mnt/shared"
 
 _SAFE_THREAD_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -65,6 +66,7 @@ class Paths:
         │       └── memory.json
         └── threads/
             └── {thread_id}/
+                ├── shared/            <-- mounted as /mnt/shared/ (lead agent ↔ subagent data relay)
                 └── user-data/         <-- mounted as /mnt/user-data/ inside sandbox
                     ├── workspace/     <-- /mnt/user-data/workspace/
                     ├── uploads/       <-- /mnt/user-data/uploads/
@@ -190,6 +192,14 @@ class Paths:
         """
         return self.thread_dir(thread_id) / "user-data"
 
+    def shared_dir(self, thread_id: str) -> Path:
+        """
+        Host path for the shared workspace between lead agent and subagents.
+        Host: `{base_dir}/threads/{thread_id}/shared/`
+        Sandbox: `/mnt/shared/`
+        """
+        return self.thread_dir(thread_id) / "shared"
+
     def host_thread_dir(self, thread_id: str) -> str:
         """Host path for a thread directory, preserving Windows path syntax."""
         return _join_host_path(self._host_base_dir_str(), "threads", _validate_thread_id(thread_id))
@@ -232,6 +242,7 @@ class Paths:
             self.sandbox_uploads_dir(thread_id),
             self.sandbox_outputs_dir(thread_id),
             self.acp_workspace_dir(thread_id),
+            self.shared_dir(thread_id),
         ]:
             d.mkdir(parents=True, exist_ok=True)
             d.chmod(0o777)

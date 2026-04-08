@@ -167,6 +167,7 @@ def main() -> None:
         stat_results=stat_results,
         errors=errors,
         data_summary=data["summary"],
+        group_summary=m.get("group_summary"),
     )
 
 
@@ -178,7 +179,17 @@ def _write_handoff(
     stat_results: dict | None = None,
     errors: list[str] | None = None,
     data_summary: dict | None = None,
+    group_summary: dict | None = None,
 ) -> None:
+    # Build metrics_summary: group means/SD/N (strip raw values to keep JSON small)
+    compact_group_summary = {}
+    if group_summary:
+        for grp, metric_dict in group_summary.items():
+            compact_group_summary[grp] = {
+                metric: {k: v for k, v in vals.items() if k != "values"}
+                for metric, vals in metric_dict.items()
+            }
+
     handoff = {
         "status": status,
         "summary": summary_text,
@@ -187,6 +198,8 @@ def _write_handoff(
             "statistics": os.path.join(OUTPUT_DIR, "statistics.json") if stat_results else "",
             "charts": chart_paths,
         },
+        "metrics_summary": compact_group_summary,
+        "statistics": stat_results or {},
         "metadata": {
             "paradigm": PARADIGM,
             "n_files": (data_summary or {}).get("total_files", 0),

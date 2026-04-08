@@ -2,7 +2,7 @@ import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
@@ -287,22 +287,94 @@ export function useThreadStream({
     },
   });
 
+  // ---------------------------------------------------------------------------
+  // Message cache: preserve messages that SummarizationMiddleware removes from
+  // the backend state.  We keep a Map<id, Message> that only grows (never
+  // deletes) and an ordered list of IDs so we can reconstruct the original
+  // chronological order.  When the thread changes we reset the cache.
+  // ---------------------------------------------------------------------------
+  const messageCacheRef = useRef<Map<string, Message>>(new Map());
+  const messageOrderRef = useRef<string[]>([]);
+  const cachedThreadIdRef = useRef<string | null | undefined>(threadId);
+  const archivedLoadedRef = useRef<string | null>(null);
+  const [archiveVersion, setArchiveVersion] = useState(0);
+
+  // Reset cache when thread changes
+  if (cachedThreadIdRef.current !== threadId) {
+    messageCacheRef.current = new Map();
+    messageOrderRef.current = [];
+    cachedThreadIdRef.current = threadId;
+  }
+
+  // Load archived messages from backend on thread mount (survives page refresh)
+  useEffect(() => {
+    if (!threadId || archivedLoadedRef.current === threadId) return;
+    archivedLoadedRef.current = threadId;
+
+    const url = `${getBackendBaseURL()}/api/threads/${encodeURIComponent(threadId)}/archived-messages`;
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { messages: Message[] } | null) => {
+        if (!data?.messages?.length) return;
+        const cache = messageCacheRef.current;
+        const order = messageOrderRef.current;
+        // Prepend archived messages (they are older, so insert at the front)
+        const newIds: string[] = [];
+        for (const msg of data.messages) {
+          const id = msg.id;
+          if (!id || cache.has(id)) continue;
+          cache.set(id, msg);
+          newIds.push(id);
+        }
+        if (newIds.length > 0) {
+          messageOrderRef.current = [...newIds, ...order];
+          setArchiveVersion((v) => v + 1);
+        }
+      })
+      .catch(() => {
+        // Non-critical: archived messages are a nice-to-have
+      });
+  }, [threadId]);
+
+  // Merge incoming messages into the cache (only add/update, never remove)
+  const cachedMessages = useMemo(() => {
+    const cache = messageCacheRef.current;
+    const order = messageOrderRef.current;
+
+    for (const msg of thread.messages) {
+      if (!msg.id) continue;
+      if (!cache.has(msg.id)) {
+        order.push(msg.id);
+      }
+      cache.set(msg.id, msg);
+    }
+
+    // Rebuild the list in insertion order
+    const result: Message[] = [];
+    for (const id of order) {
+      const msg = cache.get(id);
+      if (msg) result.push(msg);
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread.messages, archiveVersion]);
+
   // Optimistic messages shown before the server stream responds
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const sendInFlightRef = useRef(false);
   // Track message count before sending so we know when server has responded
-  const prevMsgCountRef = useRef(thread.messages.length);
+  const prevMsgCountRef = useRef(cachedMessages.length);
 
   // Clear optimistic when server messages arrive (count increases)
   useEffect(() => {
     if (
       optimisticMessages.length > 0 &&
-      thread.messages.length > prevMsgCountRef.current
+      cachedMessages.length > prevMsgCountRef.current
     ) {
       setOptimisticMessages([]);
     }
-  }, [thread.messages.length, optimisticMessages.length]);
+  }, [cachedMessages.length, optimisticMessages.length]);
 
   const sendMessage = useCallback(
     async (
@@ -319,7 +391,7 @@ export function useThreadStream({
       const text = message.text.trim();
 
       // Capture current count before showing optimistic messages
-      prevMsgCountRef.current = thread.messages.length;
+      prevMsgCountRef.current = cachedMessages.length;
 
       // Build optimistic files list with uploading status
       const optimisticFiles: FileInMessage[] = (message.files ?? []).map(
@@ -491,17 +563,20 @@ export function useThreadStream({
         sendInFlightRef.current = false;
       }
     },
-    [thread, _handleOnStart, t.uploads.uploadingFiles, context, queryClient],
+    [thread, _handleOnStart, t.uploads.uploadingFiles, context, queryClient, cachedMessages],
   );
 
-  // Merge thread with optimistic messages for display
+  // Merge thread with cached + optimistic messages for display
   const mergedThread =
     optimisticMessages.length > 0
       ? ({
           ...thread,
-          messages: [...thread.messages, ...optimisticMessages],
+          messages: [...cachedMessages, ...optimisticMessages],
         } as typeof thread)
-      : thread;
+      : ({
+          ...thread,
+          messages: cachedMessages,
+        } as typeof thread);
 
   return [mergedThread, sendMessage, isUploading] as const;
 }

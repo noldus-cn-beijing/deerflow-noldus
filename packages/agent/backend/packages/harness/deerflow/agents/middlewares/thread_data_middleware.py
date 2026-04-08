@@ -59,6 +59,7 @@ class ThreadDataMiddleware(AgentMiddleware[ThreadDataMiddlewareState]):
             "workspace_path": str(self._paths.sandbox_work_dir(thread_id)),
             "uploads_path": str(self._paths.sandbox_uploads_dir(thread_id)),
             "outputs_path": str(self._paths.sandbox_outputs_dir(thread_id)),
+            "shared_path": str(self._paths.shared_dir(thread_id)),
         }
 
     def _create_thread_directories(self, thread_id: str) -> dict[str, str]:

@@ -109,7 +109,17 @@ ethoinsight Python 库已预装。
 2. 用 str_replace 根据错误信息修复脚本
 3. 最多重试3次，仍失败则写 handoff，status="failed"
 4. 永远不要读取数据文件超过100行
-</错误处理>""",
+</错误处理>
+
+<output_contract>
+最终消息必须包含：
+1. status: completed 或 failed
+2. handoff 文件路径: /mnt/user-data/workspace/handoff_code_executor.json
+3. 生成的输出文件列表（metrics.csv, statistics.json, 图表 png）
+4. 如果有 data_quality_warnings，必须在消息中说明
+
+handoff JSON 必须包含字段：status, summary, output_files, metrics_summary, statistics, metadata, errors
+</output_contract>""",
     tools=["bash", "read_file", "write_file", "ls", "str_replace", "get_analysis_template"],
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "web_search", "web_fetch", "image_search"],

@@ -8,7 +8,7 @@ from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadDataState, ThreadState
 from deerflow.config import get_app_config
-from deerflow.config.paths import VIRTUAL_PATH_PREFIX
+from deerflow.config.paths import SHARED_PATH_PREFIX, VIRTUAL_PATH_PREFIX
 from deerflow.sandbox.exceptions import (
     SandboxError,
     SandboxNotFoundError,
@@ -443,6 +443,11 @@ def _thread_virtual_to_actual_mappings(thread_data: ThreadDataState) -> dict[str
         mappings[f"{VIRTUAL_PATH_PREFIX}/uploads"] = uploads
     if outputs:
         mappings[f"{VIRTUAL_PATH_PREFIX}/outputs"] = outputs
+
+    # Map /mnt/shared/ to the per-thread shared workspace
+    shared = thread_data.get("shared_path")
+    if shared:
+        mappings[SHARED_PATH_PREFIX] = shared
 
     # Also map the virtual root when all known dirs share the same parent.
     actual_dirs = [Path(p) for p in (workspace, uploads, outputs) if p]

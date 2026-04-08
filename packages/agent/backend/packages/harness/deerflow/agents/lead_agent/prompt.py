@@ -237,15 +237,22 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 用户说"只帮我重新写个报告" → 只派遣 report-writer
 - 用户先问了知识问题，然后上传了数据要求分析 → 本条消息按端到端流水线处理
 
-### 角色分工
+### 角色分工与契约
 
-| 角色 | 唯一职责 | 绝不做的事 |
-|------|---------|-----------|
-| 你（调度员） | 判断路由 → 派遣专员 → 传达结果 | 自己回答问题、跑代码、读数据文件 |
-| code-executor | 调用模板 → 执行分析脚本 | 探索文件系统、从头写代码 |
-| data-analyst | 阅读分析结果 → 撰写专业解读 | 跑代码、画图 |
-| report-writer | 阅读解读+数据 → 撰写科学报告 | 跑代码、重新分析 |
-| knowledge-assistant | 回答追问 + 领域知识查询 | 跑代码、重新分析、画图 |
+| 角色 | 输入 | 输出 | 禁止 |
+|------|------|------|------|
+| 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 自己回答、跑代码、读原始数据 |
+| code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 探索文件系统、从头写代码 |
+| data-analyst | {{shared://code_summary.json}} | analysis_report.md + 摘要文本 | 读原始数据、跑代码 |
+| report-writer | {{shared://code_summary.json}} + {{shared://analysis_summary.md}} | report.md | 读原始数据、跑代码 |
+| knowledge-assistant | 问题 + 可选 {{shared://code_summary.json}} | 文本回答 | 跑代码、画图 |
+
+### 共享 workspace 机制
+- /mnt/shared/ 是 lead agent 和 subagent 之间的数据中继目录
+- 你负责将 code-executor 的 handoff 精简后写入 /mnt/shared/code_summary.json
+- 你负责将 data-analyst 的分析摘要写入 /mnt/shared/analysis_summary.md
+- subagent 通过 read_file 按需读取这些共享文件
+- prompt 中使用 {{shared://filename}} 占位符，系统自动替换为 /mnt/shared/filename
 """
     return f"""<subagent_system>
 **🚀 SUBAGENT MODE ACTIVE - DECOMPOSE, DELEGATE, SYNTHESIZE**
@@ -812,22 +819,35 @@ task(subagent_type="code-executor", description="执行数据分析代码",
      prompt="范式: shoaling\\n文件路径: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\\n特殊需求: 无\\n\\n使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/")
 ```
 
-### Step 1.5: 数据质量校验
-读取 /mnt/user-data/workspace/handoff_code_executor.json
-检查是否包含 "data_quality_warnings" 字段：
-- 如果有 warnings：用 ask_clarification 告知用户具体问题（样本量不足 / 方差为零 / 数据异常），询问是否继续
-- 如果没有 warnings 或用户确认继续：进入 Step 2
+### Step 1.5: 数据质量校验 + 写共享摘要
+1. read_file /mnt/user-data/workspace/handoff_code_executor.json
+2. 检查 "data_quality_warnings" 字段：
+   - 如果有 warnings：用 ask_clarification 告知用户，询问是否继续
+   - 如果没有 warnings 或用户确认：继续
+3. **写共享摘要**：用 write_file 将 handoff 中的关键数据写入共享 workspace：
+   ```
+   write_file("/mnt/shared/code_summary.json", <JSON 字符串，包含以下字段>)
+   ```
+   code_summary.json 包含：paradigm, groups, metrics_summary, statistics, chart_paths, data_quality_warnings
+   （从 handoff 中直接提取这些字段，不要包含 output_files.metrics 等原始文件路径）
 
-### Step 2: 读 handoff，派遣 data-analyst
-读取 /mnt/user-data/workspace/handoff_code_executor.json（这个文件很小，可以读）
-确认 status == "completed"
+### Step 2: 派遣 data-analyst
+```python
 task(subagent_type="data-analyst", description="分析实验数据",
-     prompt="任务描述 + output 文件路径列表")
+     prompt="请分析 {{shared://code_summary.json}} 中的实验数据结果。\\n范式: <范式名>\\n请写出专业的行为学解读，关注效应量的实际意义和可能的混杂因素。")
+```
 
-### Step 3: 读 handoff，派遣 report-writer
-读取 /mnt/user-data/workspace/handoff_data_analyst.json
+### Step 2.5: 写分析摘要到共享 workspace
+data-analyst 完成后，将其返回文本（"Task Succeeded. Result: ..." 中的内容）写入共享 workspace：
+```
+write_file("/mnt/shared/analysis_summary.md", <data-analyst 返回的关键发现摘要>)
+```
+
+### Step 3: 派遣 report-writer
+```python
 task(subagent_type="report-writer", description="撰写分析报告",
-     prompt="任务描述 + output 文件路径 + analysis_report.md 路径")
+     prompt="请基于 {{shared://code_summary.json}} 的数据和 {{shared://analysis_summary.md}} 的分析解读，撰写 APA 格式的科学报告。")
+```
 
 ### Step 4: 整合返回用户
 读取报告内容，使用 present_files 工具呈现图表和报告文件

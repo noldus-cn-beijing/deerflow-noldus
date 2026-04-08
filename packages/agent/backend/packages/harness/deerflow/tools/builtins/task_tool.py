@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import uuid
 from dataclasses import replace
 from typing import Annotated
@@ -17,6 +18,17 @@ from deerflow.subagents import SubagentExecutor, get_available_subagent_names, g
 from deerflow.subagents.executor import SubagentStatus, cleanup_background_task, get_background_task_result, request_cancel_background_task
 
 logger = logging.getLogger(__name__)
+
+_SHARED_PLACEHOLDER_RE = re.compile(r"\{\{shared://([^}]+)\}\}")
+
+
+def _resolve_placeholders(prompt: str) -> str:
+    """Replace ``{{shared://filename}}`` with ``/mnt/shared/filename``.
+
+    Subagents use their existing ``read_file`` tool to access the file on demand.
+    This keeps prompts minimal and avoids inflating token usage.
+    """
+    return _SHARED_PLACEHOLDER_RE.sub(lambda m: f"/mnt/shared/{m.group(1)}", prompt)
 
 
 @tool("task", parse_docstring=True)
@@ -120,6 +132,9 @@ async def task_tool(
         thread_id=thread_id,
         trace_id=trace_id,
     )
+
+    # Resolve {{shared://...}} placeholders to /mnt/shared/... paths
+    prompt = _resolve_placeholders(prompt)
 
     # Start background execution (always async to prevent blocking)
     # Use tool_call_id as task_id for better traceability

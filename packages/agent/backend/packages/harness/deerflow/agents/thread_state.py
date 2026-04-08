@@ -11,6 +11,7 @@ class ThreadDataState(TypedDict):
     workspace_path: NotRequired[str | None]
     uploads_path: NotRequired[str | None]
     outputs_path: NotRequired[str | None]
+    shared_path: NotRequired[str | None]
 
 
 class ViewedImageData(TypedDict):

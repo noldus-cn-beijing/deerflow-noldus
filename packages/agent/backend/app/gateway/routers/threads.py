@@ -12,6 +12,7 @@ matching the LangGraph Platform wire format expected by the
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -680,3 +681,39 @@ async def get_thread_history(thread_id: str, body: ThreadHistoryRequest, request
         raise HTTPException(status_code=500, detail="Failed to get thread history")
 
     return entries
+
+
+@router.get("/{thread_id}/archived-messages")
+async def get_archived_messages(thread_id: str) -> dict[str, Any]:
+    """Return messages archived by SummarizationMiddleware.
+
+    Reads all JSON files from the thread's ``archived_messages/`` directory,
+    merges them in chronological order, and deduplicates by message ID.
+
+    Messages are returned in the flat LangGraph SDK wire format so the
+    frontend can use them directly (``{type, id, content, ...}``).
+    """
+    paths = get_paths()
+    archive_dir = paths.thread_dir(thread_id) / "archived_messages"
+
+    if not archive_dir.is_dir():
+        return {"messages": []}
+
+    seen_ids: set[str] = set()
+    all_messages: list[dict[str, Any]] = []
+
+    for archive_file in sorted(archive_dir.glob("*.json")):
+        try:
+            data = json.loads(archive_file.read_text(encoding="utf-8"))
+            for msg in data.get("messages", []):
+                # messages_to_dict produces {type, data: {id, content, ...}}
+                # Flatten to {type, id, content, ...} for frontend compatibility
+                flat = msg.get("data", msg) if isinstance(msg, dict) else msg
+                msg_id = flat.get("id")
+                if msg_id and msg_id not in seen_ids:
+                    seen_ids.add(msg_id)
+                    all_messages.append(flat)
+        except Exception:
+            logger.warning("Failed to read archive file %s", archive_file, exc_info=True)
+
+    return {"messages": all_messages}

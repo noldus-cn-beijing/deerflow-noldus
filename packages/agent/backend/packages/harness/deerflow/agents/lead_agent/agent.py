@@ -1,10 +1,11 @@
 import logging
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.runnables import RunnableConfig
 
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
+from deerflow.agents.middlewares.archiving_summarization import ArchivingSummarizationMiddleware
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
@@ -38,7 +39,7 @@ def _resolve_model_name(requested_model_name: str | None = None) -> str:
     return default_model_name
 
 
-def _create_summarization_middleware() -> SummarizationMiddleware | None:
+def _create_summarization_middleware() -> ArchivingSummarizationMiddleware | None:
     """Create and configure the summarization middleware from config."""
     config = get_summarization_config()
 
@@ -77,7 +78,7 @@ def _create_summarization_middleware() -> SummarizationMiddleware | None:
     if config.summary_prompt is not None:
         kwargs["summary_prompt"] = config.summary_prompt
 
-    return SummarizationMiddleware(**kwargs)
+    return ArchivingSummarizationMiddleware(**kwargs)
 
 
 def _create_todo_list_middleware(is_plan_mode: bool) -> TodoMiddleware | None:
