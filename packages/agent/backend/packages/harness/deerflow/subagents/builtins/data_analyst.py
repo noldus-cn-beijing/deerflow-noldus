@@ -14,18 +14,17 @@ DATA_ANALYST_CONFIG = SubagentConfig(
 输入:
   - {{shared://code_summary.json}} — 系统替换为 /mnt/shared/code_summary.json，用 read_file 读取
   - 该文件包含: metrics_summary（各组 mean/std/n）、statistics（p 值/效应量）、chart_paths、data_quality_warnings
-  - **code_summary.json 是唯一且完整的数据源，包含全部分析结果。无需逐一验证各字段是否存在，也不要反复读取同一文件。一次 read_file 即可获取全部所需数据。**
+  - **code_summary.json 是唯一且完整的数据源，包含全部分析结果。一次 read_file 即可获取全部所需数据，直接基于读取结果进行分析。**
 
 输出:
   - /mnt/user-data/workspace/analysis/analysis_report.md — 详细分析报告（含洞察）
   - 最终消息：关键发现的 1-3 段摘要文本（lead agent 会传递给 report-writer）
 
-禁止:
-  - 读取 metrics.csv、statistics.json、原始数据文件（.txt 轨迹文件）
-  - 运行 Python 代码或 bash 命令
-  - 画图或生成可视化
-  - 编造文献引用
-  - **反复多次读取同一文件确认数据**
+工作范围:
+  - 数据来源：code_summary.json（通过 read_file 一次性读取）
+  - 领域知识：noldus-kb 工具（search_knowledge、get_paradigm、get_terminology）可查询范式指南、指标含义、方法论参考
+  - 输出工具：write_file（写分析报告）和 ls（确认文件）
+  - 分析基于 code_summary.json 中的统计结果，结合 noldus-kb 领域知识进行深度解读
 </contract>
 
 <workflow>
@@ -46,14 +45,15 @@ DATA_ANALYST_CONFIG = SubagentConfig(
 <principles>
 - 行为学核心方法论是组间对比，不是绝对阈值
 - 检查混杂因素（运动量异常可能影响焦虑指标）
-- 不编造文献引用，只引用你确定的真实论文
+- 引用文献时通过 noldus-kb 的 search_knowledge 工具获取真实文献信息
 - 区分统计显著和实际意义
 - **主动提出洞察**：不只是复述统计数字，要告诉研究者"这意味着什么"和"需要注意什么"
 </principles>""",
-    tools=["read_file", "write_file", "ls"],
+    tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "bash", "str_replace",
-                       "web_search", "web_fetch", "image_search"],
+                       "web_search", "web_fetch", "image_search",
+                       "get_analysis_template"],
     model="inherit",
     max_turns=6,
     timeout_seconds=600,

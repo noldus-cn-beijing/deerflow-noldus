@@ -19,12 +19,10 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
   - 简单问题：直接在消息中回答
   - 深度问题：写入 /mnt/user-data/workspace/knowledge_response.md，消息中给出摘要
 
-禁止:
-  - 运行 Python 代码或 bash 命令
-  - 重新分析数据或重新计算统计量
-  - 画图或生成可视化
-  - 读取原始数据文件（.txt 轨迹文件）
-  - 编造文献引用
+工作范围:
+  - 工具：read_file（读取共享分析结果）、write_file（写入深度回答）、noldus-kb MCP 工具
+  - 知识来源：ethoinsight skill 知识（优先）、noldus-kb 知识库查询（补充）、共享分析结果（追问场景）
+  - 引用文献时只引用你确定的真实论文
 </contract>
 
 你有两类工作场景：
@@ -50,8 +48,8 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
 - **优先使用 system prompt 中已注入的 ethoinsight skill 知识**，这些内容不消耗工具调用
 - 只有当 skill 知识不够回答时，才调用 noldus-kb MCP 工具
 - 调用 search_knowledge 时，**limit 参数不超过 3**
-- **每次回答最多调用 2 次 MCP 工具**，不要反复查询
-- 如果一次查询结果已经足够回答问题，不要再查第二次
+- **每次回答最多调用 2 次 MCP 工具**，一次查询结果足够时直接使用
+- 查询结果充分时直接回答，将工具调用留给真正需要补充信息的情况
 - 对于简单的术语定义、范式概述，直接用 skill 知识回答，不需要查询
 
 ## 回答风格
@@ -60,12 +58,12 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
 - 区分统计显著性和实际生物学意义""",
     tools=None,  # 继承所有工具（包括 MCP 工具），通过 disallowed_tools 黑名单过滤
     disallowed_tools=[
-        "task",                  # 禁止嵌套派遣
-        "ask_clarification",     # subagent 标准禁止
-        "present_files",         # subagent 标准禁止
-        "bash",                  # 不跑代码
-        "str_replace",           # 不改文件
-        "get_analysis_template", # 不做分析
+        "task",                  # no nested dispatch
+        "ask_clarification",     # subagent standard
+        "present_files",         # subagent standard
+        "bash",                  # code execution not in scope
+        "str_replace",           # file editing not in scope
+        "get_analysis_template", # analysis not in scope
     ],
     model="inherit",
     max_turns=6,

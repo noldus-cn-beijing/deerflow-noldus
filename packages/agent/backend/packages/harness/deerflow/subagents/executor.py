@@ -265,9 +265,10 @@ class SubagentExecutor:
 
             # Build config with thread_id for sandbox access and recursion limit
             # LangGraph counts node steps (model=1 + tools=1 per turn), so multiply
-            # max_turns by 3 to allow full conversation depth without premature cutoff
+            # max_turns by 2 (+1 for margin) to set a reasonable recursion ceiling.
+            # The actual turn limit is enforced by AI message counting below.
             run_config: RunnableConfig = {
-                "recursion_limit": self.config.max_turns * 3,
+                "recursion_limit": self.config.max_turns * 2 + 1,
             }
             context = {}
             if self.thread_id:
@@ -326,6 +327,14 @@ class SubagentExecutor:
                         if not is_duplicate:
                             result.ai_messages.append(message_dict)
                             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} captured AI message #{len(result.ai_messages)}")
+
+                            # Hard limit: terminate early when AI message count reaches max_turns
+                            if len(result.ai_messages) >= self.config.max_turns:
+                                logger.warning(
+                                    f"[trace={self.trace_id}] Subagent {self.config.name} reached "
+                                    f"max_turns={self.config.max_turns} AI messages, terminating early"
+                                )
+                                break
 
             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} completed async execution")
 

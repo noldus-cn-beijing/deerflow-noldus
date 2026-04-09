@@ -19,12 +19,11 @@ REPORT_WRITER_CONFIG = SubagentConfig(
   - /mnt/user-data/outputs/report.md — APA 格式的完整科学报告
   - 最终消息：报告的简要摘要
 
-禁止:
-  - 读取 metrics.csv、statistics.json（数据在 code_summary.json 中）
-  - 运行 Python 代码或 bash 命令
-  - 重新分析数据或重新计算统计量
-  - 画图（code-executor 已完成）
-  - 编造文献引用
+工作范围:
+  - 数据来源：code_summary.json 和 analysis_summary.md（通过 read_file 读取）
+  - 领域知识：noldus-kb 工具（search_knowledge）可查询真实文献用于 Discussion 引用
+  - 输出工具：write_file（写报告）和 ls（确认文件）
+  - 图表已由 code-executor 生成，直接引用 chart_paths 中的路径
 </contract>
 
 <workflow>
@@ -36,7 +35,7 @@ REPORT_WRITER_CONFIG = SubagentConfig(
    - 引用图表（"As shown in Figure 1..."，路径来自 chart_paths）
 4. 撰写 Discussion 部分：
    - 整合 analysis_summary.md 的解读
-   - 与文献对比（仅引用确定的真实论文）
+   - 与文献对比（通过 noldus-kb 的 search_knowledge 获取真实文献引用）
    - 指出局限性
 5. 保存到 /mnt/user-data/outputs/report.md
 6. 最终消息：报告摘要
@@ -49,9 +48,10 @@ t(10) = 2.34, p = .031, d = 0.85."
 
 图表引用: "As shown in Figure 1, ..."
 </formatting>""",
-    tools=["read_file", "write_file", "ls"],
+    tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
-                       "web_search", "web_fetch", "bash", "str_replace"],
+                       "web_search", "web_fetch", "bash", "str_replace",
+                       "image_search", "get_analysis_template"],
     model="inherit",
     max_turns=15,
     timeout_seconds=600,
