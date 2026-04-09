@@ -24,6 +24,25 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
    - 每组 Subject 数量 < 3 → 记录 warning
 □ Step 8: 确认 handoff JSON 已生成于 /mnt/user-data/workspace/handoff_code_executor.json，返回结果
 
+## 统计方法选择（根据实验设计调整脚本）
+
+从任务描述中识别实验设计类型，必要时用 str_replace 修改脚本中的统计调用：
+
+1. **识别设计类型**:
+   - "训练曲线/多天/多时间点/longitudinal" → 重复测量设计
+   - "前后对比/给药前后/baseline" → 配对设计
+   - "多剂量/多处理组/3组以上" → 多组独立设计
+   - "对照 vs 实验" → 两组独立设计
+
+2. **重复测量设计时**:
+   - stats.compare_groups() 不适用于重复测量
+   - 改用 pingouin: `import pingouin; pingouin.rm_anova()`
+   - 或 statsmodels: `from statsmodels.stats.anova import AnovaRM`
+
+3. **NOR 辨别指数**: 先用 `scipy.stats.ttest_1samp(di_values, 0)` 做单样本 t 检验
+
+4. **样本量 < 5/组 → 优先使用非参数方法**
+
 ## 定制规则
 - 用户有特殊需求时（如"只分析 distance_moved"、"加 violin plot"）→ 在 Step 2 的参数中传入 metrics/chart_types
 - 也可在 Step 3 之后用 str_replace 修改脚本中带 "# CUSTOMIZABLE" 标记的行

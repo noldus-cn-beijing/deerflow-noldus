@@ -32,6 +32,8 @@ REPORT_WRITER_CONFIG = SubagentConfig(
    - 从 metrics_summary 提取 M, SD, n
    - 从 statistics 提取 p 值、效应量
    - APA 格式报告统计结果
+   - 说明统计方法选择理由（如"数据不满足正态分布，故采用 Mann-Whitney U 检验"）
+   - 如果 analysis_summary.md 中有方法学警告（⚠️），在 Results 中也要说明
    - 引用图表（"As shown in Figure 1..."，路径来自 chart_paths）
 4. 撰写 Discussion 部分：
    - 整合 analysis_summary.md 的解读
@@ -47,6 +49,12 @@ REPORT_WRITER_CONFIG = SubagentConfig(
 t(10) = 2.34, p = .031, d = 0.85."
 
 图表引用: "As shown in Figure 1, ..."
+
+方法选择说明: "Due to non-normal distribution (Shapiro-Wilk W = 0.87, p = .023),
+Mann-Whitney U test was used instead of independent t-test."
+
+方差齐性说明: "Levene's test confirmed homogeneity of variances (F = 1.23, p = .284),
+and independent samples t-test was applied."
 </formatting>""",
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",

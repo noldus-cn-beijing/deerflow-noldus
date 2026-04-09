@@ -74,6 +74,31 @@ class TestNormality:
 
 
 # ---------------------------------------------------------------------------
+# Test: test_homogeneity (Levene)
+# ---------------------------------------------------------------------------
+
+
+class TestHomogeneity:
+    def test_equal_variances(self):
+        g1 = [10.0, 11.0, 12.0, 10.5, 11.5]
+        g2 = [20.0, 21.0, 22.0, 20.5, 21.5]
+        result = statistics.test_homogeneity(g1, g2)
+        assert result["test"] == "levene"
+        assert result["is_homogeneous"] is True
+        assert result["p_value"] > 0.05
+
+    def test_unequal_variances(self):
+        g1 = [10.0, 10.1, 10.2, 10.0, 10.1]
+        g2 = [5.0, 15.0, 25.0, 35.0, 45.0]
+        result = statistics.test_homogeneity(g1, g2)
+        assert result["is_homogeneous"] is False
+
+    def test_too_few_groups(self):
+        result = statistics.test_homogeneity([1.0, 2.0])
+        assert result["is_homogeneous"] is None
+
+
+# ---------------------------------------------------------------------------
 # Test: compare_two_groups
 # ---------------------------------------------------------------------------
 
@@ -162,6 +187,114 @@ class TestEffectSizes:
         assert result["eta_squared"] is not None
         assert 0 <= result["eta_squared"] <= 1
         assert result["magnitude"] == "large"
+
+
+# ---------------------------------------------------------------------------
+# Test: Hedges' g
+# ---------------------------------------------------------------------------
+
+
+class TestHedgesG:
+    def test_small_sample_correction(self):
+        g1 = [10.0, 12.0, 14.0, 16.0, 18.0]
+        g2 = [20.0, 22.0, 24.0, 26.0, 28.0]
+        d = statistics.compute_cohens_d(g1, g2)
+        g = statistics.compute_hedges_g(g1, g2)
+        assert g["g"] is not None
+        assert g["g"] < d["d"]  # Hedges' g should be slightly smaller
+
+    def test_large_sample_converges(self):
+        rng = np.random.default_rng(42)
+        g1 = rng.normal(10, 2, 200).tolist()
+        g2 = rng.normal(12, 2, 200).tolist()
+        d = statistics.compute_cohens_d(g1, g2)
+        g = statistics.compute_hedges_g(g1, g2)
+        assert abs(g["g"] - d["d"]) < 0.02  # converge for large n
+
+    def test_magnitude_labels(self):
+        g1 = [10.0, 11.0, 12.0, 10.5]
+        g2 = [20.0, 21.0, 22.0, 20.5]
+        result = statistics.compute_hedges_g(g1, g2)
+        assert result["magnitude"] == "large"
+
+
+# ---------------------------------------------------------------------------
+# Test: Omega-squared
+# ---------------------------------------------------------------------------
+
+
+class TestOmegaSquared:
+    def test_basic(self):
+        g1 = [10.0, 11.0, 12.0, 10.5, 11.5]
+        g2 = [20.0, 21.0, 22.0, 20.5, 21.5]
+        g3 = [30.0, 31.0, 32.0, 30.5, 31.5]
+        result = statistics.compute_omega_squared([g1, g2, g3])
+        assert result["omega_squared"] is not None
+        eta = statistics.compute_eta_squared([g1, g2, g3])
+        assert result["omega_squared"] < eta["eta_squared"]  # less biased
+
+    def test_magnitude(self):
+        g1 = [10.0, 11.0, 12.0]
+        g2 = [10.1, 11.1, 12.1]
+        g3 = [10.2, 11.2, 12.2]
+        result = statistics.compute_omega_squared([g1, g2, g3])
+        assert result["magnitude"] == "negligible"
+
+
+# ---------------------------------------------------------------------------
+# Test: compare_two_groups with Levene
+# ---------------------------------------------------------------------------
+
+
+class TestCompareTwoGroupsLevene:
+    def test_equal_variance_uses_independent_t(self):
+        g1 = [10.0, 11.0, 12.0, 13.0, 14.0, 10.5, 11.5, 12.5]
+        g2 = [15.0, 16.0, 17.0, 18.0, 19.0, 15.5, 16.5, 17.5]
+        result = statistics.compare_two_groups(g1, g2)
+        assert result["test_used"] == "independent-t-test"
+        assert "variance_homogeneity" in result
+
+    def test_unequal_variance_uses_welch(self):
+        g1 = [10.0, 10.1, 10.2, 10.0, 10.1, 10.05, 10.15, 10.08]
+        g2 = [5.0, 15.0, 25.0, 35.0, 45.0, 10.0, 30.0, 50.0]
+        result = statistics.compare_two_groups(g1, g2)
+        assert result["test_used"] == "welch-t-test"
+        assert result["variance_homogeneity"]["is_homogeneous"] is False
+
+    def test_hedges_g_in_output(self):
+        g1 = [10.0, 12.0, 14.0, 16.0, 18.0]
+        g2 = [20.0, 22.0, 24.0, 26.0, 28.0]
+        result = statistics.compare_two_groups(g1, g2)
+        assert "effect_size_hedges_g" in result
+
+
+# ---------------------------------------------------------------------------
+# Test: post-hoc selection
+# ---------------------------------------------------------------------------
+
+
+class TestPostHocSelection:
+    def test_equal_variance_has_homogeneity(self):
+        g1 = [10.0, 11.0, 12.0, 13.0, 14.0]
+        g2 = [15.0, 16.0, 17.0, 18.0, 19.0]
+        g3 = [20.0, 21.0, 22.0, 23.0, 24.0]
+        result = statistics.compare_multiple_groups([g1, g2, g3])
+        assert result["significant"] is True
+        assert "variance_homogeneity" in result
+
+    def test_posthoc_in_compare_groups(self):
+        """compare_groups should include post-hoc entries when omnibus is significant."""
+        metrics_result = {
+            "group_summary": {
+                "control": {"distance": {"mean": 10, "std": 2, "n": 5, "values": [9, 10, 11, 10, 10]}},
+                "low_dose": {"distance": {"mean": 15, "std": 2, "n": 5, "values": [14, 15, 16, 15, 15]}},
+                "high_dose": {"distance": {"mean": 25, "std": 2, "n": 5, "values": [24, 25, 26, 25, 25]}},
+            }
+        }
+        result = statistics.compare_groups(metrics_result)
+        distance_results = result["comparisons"]["distance"]
+        posthoc_entries = [r for r in distance_results if r.get("post_hoc")]
+        assert len(posthoc_entries) > 0
 
 
 # ---------------------------------------------------------------------------
