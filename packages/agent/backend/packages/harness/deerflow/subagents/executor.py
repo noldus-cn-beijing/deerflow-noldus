@@ -107,38 +107,6 @@ def _filter_tools(
     return filtered
 
 
-_SKILLS_PREFIX = "/mnt/skills"
-
-
-def _restrict_read_file_for_subagent(tools: list[BaseTool]) -> list[BaseTool]:
-    """Wrap read_file tool to block /mnt/skills/ access in subagent context.
-
-    Subagents receive skill content via system prompt injection (task_tool.py
-    appends skills_section to subagent's system_prompt). They should NOT
-    read skill files directly — it wastes an LLM turn and is redundant.
-    """
-    result = []
-    for tool in tools:
-        if tool.name != "read_file":
-            result.append(tool)
-            continue
-
-        original_invoke = tool.invoke
-
-        def _make_restricted_invoke(orig_invoke):
-            def restricted_invoke(input, config=None, **kwargs):
-                path = input.get("path", "") if isinstance(input, dict) else ""
-                if isinstance(path, str) and (path == _SKILLS_PREFIX or path.startswith(f"{_SKILLS_PREFIX}/")):
-                    return f"Error: Skill 内容已注入到你的 system prompt 中，不需要读取 skill 文件。请直接使用 system prompt 中的知识完成任务。"
-                return orig_invoke(input, config=config, **kwargs)
-            return restricted_invoke
-
-        object.__setattr__(tool, "invoke", _make_restricted_invoke(original_invoke))
-        result.append(tool)
-
-    return result
-
-
 def _get_model_name(config: SubagentConfig, parent_model: str | None) -> str | None:
     """Resolve the model name for a subagent.
 
@@ -192,9 +160,6 @@ class SubagentExecutor:
             config.tools,
             config.disallowed_tools,
         )
-        # Restrict read_file to block /mnt/skills/ access in subagent context
-        self.tools = _restrict_read_file_for_subagent(self.tools)
-
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
     def _create_agent(self):

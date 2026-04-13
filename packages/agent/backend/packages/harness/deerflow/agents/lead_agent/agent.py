@@ -340,9 +340,20 @@ def make_lead_agent(config: RunnableConfig):
         )
 
     # Default lead agent (unchanged behavior)
+    # Resolve tool groups: custom agent config > config.yaml tool_groups > None (all)
+    lead_tool_groups = None
+    if agent_config and agent_config.tool_groups:
+        lead_tool_groups = agent_config.tool_groups
+    elif not agent_config:
+        # Use declared tool_groups from config.yaml as default filter for lead agent,
+        # so tools in undeclared groups (e.g. ethoinsight:executor) are not visible.
+        app_config = get_app_config()
+        declared_groups = [g.name for g in app_config.tool_groups] if app_config.tool_groups else None
+        lead_tool_groups = declared_groups if declared_groups else None
+
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
-        tools=get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled),
+        tools=get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled),
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None

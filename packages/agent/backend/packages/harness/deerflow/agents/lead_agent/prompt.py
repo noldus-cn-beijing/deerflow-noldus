@@ -265,7 +265,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 | 角色 | 输入 | 输出 | 工作范围 | 失败降级 |
 |------|------|------|----------|----------|
 | 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 只做路由和文件中转 | — |
-| code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 通过 get_analysis_template 获取脚本并执行 | 返回 failed → 告知用户"代码执行中断"，建议简化需求或检查数据格式 |
+| code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 执行行为数据分析并生成结果 | 返回 failed → 告知用户"代码执行中断"，建议简化需求或检查数据格式 |
 | data-analyst | {{shared://code_summary.json}} | analysis_report.md + 摘要文本 | 解读统计结果 + 查询 noldus-kb | 超时/空返回 → 跳过分析，直接将 code_summary.json 的统计摘要呈现给用户 |
 | report-writer | {{shared://code_summary.json}} + {{shared://analysis_summary.md}} | report.md | 撰写 APA 报告 + 查询 noldus-kb 文献 | 超时 → 用 data-analyst 的分析摘要作为最终输出 |
 | knowledge-assistant | 问题 + 可选 {{shared://code_summary.json}} | 文本回答 | 查询 noldus-kb + ethoinsight skill 知识 | — |
@@ -370,7 +370,7 @@ For complex queries, break them down into focused sub-tasks and execute in paral
 
 # Turn 1: 派遣 code-executor
 task(subagent_type="code-executor", description="执行旷场数据分析",
-     prompt="范式: open_field\n文件路径: /mnt/user-data/uploads/轨迹*.txt\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4]\n特殊需求: 无\n\n使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/")
+     prompt="范式: open_field\n文件路径: /mnt/user-data/uploads/轨迹*.txt\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4]\n特殊需求: 无")
 
 # Turn 2: 读取 handoff，写共享摘要，派遣 data-analyst
 task(subagent_type="data-analyst", description="解读分析结果",
@@ -845,7 +845,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 **正确示例**：
 ```python
 task(subagent_type="code-executor", description="执行数据分析代码",
-     prompt="范式: shoaling\\n文件路径: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\\n特殊需求: 无\\n\\n使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/")
+     prompt="范式: shoaling\\n文件路径: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\\n特殊需求: 无")
 ```
 
 ### Step 1.5: 数据质量校验 + 写共享摘要
