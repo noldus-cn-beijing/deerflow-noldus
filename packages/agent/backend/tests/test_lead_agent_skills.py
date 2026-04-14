@@ -66,7 +66,7 @@ def test_get_skills_prompt_section_includes_self_evolution_rules(monkeypatch):
     )
 
     result = get_skills_prompt_section(available_skills=None)
-    assert "Skill Self-Evolution" in result
+    assert "技能自进化" in result
 
 
 def test_get_skills_prompt_section_includes_self_evolution_rules_without_skills(monkeypatch):
@@ -80,7 +80,7 @@ def test_get_skills_prompt_section_includes_self_evolution_rules_without_skills(
     )
 
     result = get_skills_prompt_section(available_skills=None)
-    assert "Skill Self-Evolution" in result
+    assert "技能自进化" in result
 
 
 def test_get_skills_prompt_section_cache_respects_skill_evolution_toggle(monkeypatch):
@@ -93,11 +93,11 @@ def test_get_skills_prompt_section_cache_respects_skill_evolution_toggle(monkeyp
     monkeypatch.setattr("deerflow.config.get_app_config", lambda: config)
 
     enabled_result = get_skills_prompt_section(available_skills=None)
-    assert "Skill Self-Evolution" in enabled_result
+    assert "技能自进化" in enabled_result
 
     config.skill_evolution.enabled = False
     disabled_result = get_skills_prompt_section(available_skills=None)
-    assert "Skill Self-Evolution" not in disabled_result
+    assert "技能自进化" not in disabled_result
 
 
 def test_make_lead_agent_empty_skills_passed_correctly(monkeypatch):

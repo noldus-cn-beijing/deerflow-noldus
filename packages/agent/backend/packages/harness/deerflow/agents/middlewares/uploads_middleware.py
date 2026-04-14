@@ -267,11 +267,28 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
             # Simple case: string content, just prepend files message
             updated_content = f"{files_message}\n\n{original_content}"
         elif isinstance(original_content, list):
-            # Complex case: list content (multimodal), preserve all blocks
-            # Prepend files message as the first text block
-            files_block = {"type": "text", "text": f"{files_message}\n\n"}
-            # Keep all original blocks (including images)
-            updated_content = [files_block, *original_content]
+            # Complex case: list content (multimodal).
+            # Check if the model supports vision (multimodal content).
+            # If not, flatten all text blocks into a single string to avoid
+            # sending list-format content to models that don't support it
+            # (e.g., GLM-5.1 returns empty responses for list content).
+            has_non_text = any(
+                isinstance(block, dict) and block.get("type") not in ("text", None)
+                for block in original_content
+            )
+            if has_non_text:
+                # Preserve list format for multimodal content (images, etc.)
+                files_block = {"type": "text", "text": f"{files_message}\n\n"}
+                updated_content = [files_block, *original_content]
+            else:
+                # All blocks are text — flatten to a single string for compatibility
+                text_parts = []
+                for block in original_content:
+                    if isinstance(block, dict) and block.get("type") in ("text", None):
+                        text_parts.append(block.get("text", ""))
+                    elif isinstance(block, str):
+                        text_parts.append(block)
+                updated_content = f"{files_message}\n\n" + "\n".join(text_parts)
         else:
             # Other types, preserve as-is
             updated_content = original_content
