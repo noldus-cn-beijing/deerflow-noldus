@@ -110,6 +110,40 @@ def _filter_tools(
     return filtered
 
 
+def _load_skill_contents(skill_names: list[str]) -> str:
+    """Load and inline skill file contents for subagent prompt injection.
+
+    Reads SKILL.md files for the requested skill names, strips YAML frontmatter,
+    and wraps each in a <skill> XML tag for clean prompt injection.
+
+    Returns:
+        Concatenated skill content string, or empty string if no skills loaded.
+    """
+    from deerflow.skills.loader import load_skills
+
+    all_skills = load_skills(enabled_only=True)
+    skill_map = {s.name: s for s in all_skills}
+
+    sections = []
+    for name in skill_names:
+        skill = skill_map.get(name)
+        if not skill:
+            logger.warning("Skill '%s' not found or not enabled, skipping injection for subagent", name)
+            continue
+        try:
+            content = skill.skill_file.read_text(encoding="utf-8")
+            # Strip YAML frontmatter (--- ... ---)
+            if content.startswith("---"):
+                end = content.find("---", 3)
+                if end != -1:
+                    content = content[end + 3 :].strip()
+            sections.append(f'<skill name="{name}">\n{content}\n</skill>')
+        except Exception:
+            logger.warning("Failed to read skill file for '%s'", name, exc_info=True)
+
+    return "\n\n".join(sections)
+
+
 def _get_model_name(config: SubagentConfig, parent_model: str | None) -> str | None:
     """Resolve the model name for a subagent.
 
@@ -175,13 +209,33 @@ class SubagentExecutor:
         # Reuse shared middleware composition with lead agent.
         middlewares = build_subagent_runtime_middlewares(lazy_init=True)
 
+        # Build system prompt with inline skill injection
+        system_prompt = self._build_system_prompt()
+
         return create_agent(
             model=model,
             tools=self.tools,
             middleware=middlewares,
-            system_prompt=self.config.system_prompt,
+            system_prompt=system_prompt,
             state_schema=ThreadState,
         )
+
+    def _build_system_prompt(self) -> str:
+        """Build system prompt with inline skill content injection.
+
+        If the subagent config declares skill names, their SKILL.md content
+        is loaded and appended to the base system_prompt so the subagent
+        has full skill knowledge without spending turns on read_file.
+        """
+        base_prompt = self.config.system_prompt
+        if not self.config.skills:
+            return base_prompt
+
+        skill_sections = _load_skill_contents(self.config.skills)
+        if not skill_sections:
+            return base_prompt
+
+        return f"{base_prompt}\n\n{skill_sections}"
 
     def _build_initial_state(self, task: str) -> dict[str, Any]:
         """Build the initial state for agent execution.

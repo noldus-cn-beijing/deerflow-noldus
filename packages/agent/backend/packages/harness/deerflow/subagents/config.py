@@ -26,3 +26,4 @@ class SubagentConfig:
     model: str = "inherit"
     max_turns: int = 50
     timeout_seconds: int = 900
+    skills: list[str] | None = None

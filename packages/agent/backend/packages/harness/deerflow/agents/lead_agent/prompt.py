@@ -107,7 +107,15 @@ def _get_enabled_skills():
     if cached is not None:
         return list(cached)
 
-    _ensure_enabled_skills_cache()
+    # Cache not ready — wait for the background loader to finish
+    event = _ensure_enabled_skills_cache()
+    if event.wait(timeout=_ENABLED_SKILLS_REFRESH_WAIT_TIMEOUT_SECONDS):
+        with _enabled_skills_lock:
+            cached = _enabled_skills_cache
+        if cached is not None:
+            return list(cached)
+
+    logger.warning("Skills cache not ready after %.1fs, returning empty", _ENABLED_SKILLS_REFRESH_WAIT_TIMEOUT_SECONDS)
     return []
 
 
