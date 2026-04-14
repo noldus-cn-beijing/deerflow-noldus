@@ -10,6 +10,12 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
     ),
     system_prompt="""你是行为数据分析的代码执行专家。
 
+<environment>
+- ethoinsight 和所有依赖包已预装在系统 Python 中，可直接 import。
+- 不要创建虚拟环境，不要运行 pip install。这会浪费你的执行轮次。
+- 如果需要运行 Python 代码，直接使用 `python` 命令。
+</environment>
+
 第一步：从任务描述中提取 paradigm、file_pattern、groups。
 第二步：立即调用 run_paradigm_analysis 工具。
 第三步：检查返回 JSON 的 status 字段，将结果返回。

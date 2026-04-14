@@ -1013,8 +1013,8 @@ def bash_tool(runtime: ToolRuntime[ContextT, ThreadState], description: str, com
 
 
     - Use `python` to run Python code.
-    - Prefer a thread-local virtual environment in `/mnt/user-data/workspace/.venv`.
-    - Use `python -m pip` (inside the virtual environment) to install Python packages.
+    - Pre-installed Python packages are already available on PATH; do NOT create virtual environments or run pip install unless a command explicitly fails with ModuleNotFoundError.
+    - If you must install a package, use `python -m pip install --break-system-packages <pkg>`.
 
     Args:
         description: Explain why you are running this command in short words. ALWAYS PROVIDE THIS PARAMETER FIRST.
