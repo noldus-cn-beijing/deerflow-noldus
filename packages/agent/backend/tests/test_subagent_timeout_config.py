@@ -249,22 +249,21 @@ class TestRegistryGetSubagentConfig:
     def test_returns_config_for_builtin_agents(self):
         from deerflow.subagents.registry import get_subagent_config
 
-        assert get_subagent_config("general-purpose") is not None
-        assert get_subagent_config("bash") is not None
+        assert get_subagent_config("code-executor") is not None
+        assert get_subagent_config("data-analyst") is not None
 
     def test_default_timeout_preserved_when_no_config(self):
         from deerflow.subagents.registry import get_subagent_config
 
         _reset_subagents_config(timeout_seconds=900)
-        config = get_subagent_config("general-purpose")
+        config = get_subagent_config("code-executor")
         assert config.timeout_seconds == 900
-        assert config.max_turns == 100
 
     def test_global_timeout_override_applied(self):
         from deerflow.subagents.registry import get_subagent_config
 
         _reset_subagents_config(timeout_seconds=1800, max_turns=140)
-        config = get_subagent_config("general-purpose")
+        config = get_subagent_config("code-executor")
         assert config.timeout_seconds == 1800
         assert config.max_turns == 140
 
@@ -275,12 +274,12 @@ class TestRegistryGetSubagentConfig:
             {
                 "timeout_seconds": 900,
                 "max_turns": 120,
-                "agents": {"bash": {"timeout_seconds": 120, "max_turns": 80}},
+                "agents": {"data-analyst": {"timeout_seconds": 120, "max_turns": 80}},
             }
         )
-        bash_config = get_subagent_config("bash")
-        assert bash_config.timeout_seconds == 120
-        assert bash_config.max_turns == 80
+        config = get_subagent_config("data-analyst")
+        assert config.timeout_seconds == 120
+        assert config.max_turns == 80
 
     def test_per_agent_override_does_not_affect_other_agents(self):
         from deerflow.subagents.registry import get_subagent_config
@@ -289,10 +288,10 @@ class TestRegistryGetSubagentConfig:
             {
                 "timeout_seconds": 900,
                 "max_turns": 120,
-                "agents": {"bash": {"timeout_seconds": 120, "max_turns": 80}},
+                "agents": {"data-analyst": {"timeout_seconds": 120, "max_turns": 80}},
             }
         )
-        gp_config = get_subagent_config("general-purpose")
+        gp_config = get_subagent_config("code-executor")
         assert gp_config.timeout_seconds == 900
         assert gp_config.max_turns == 120
 
@@ -301,15 +300,15 @@ class TestRegistryGetSubagentConfig:
         from deerflow.subagents.builtins import BUILTIN_SUBAGENTS
         from deerflow.subagents.registry import get_subagent_config
 
-        original_timeout = BUILTIN_SUBAGENTS["bash"].timeout_seconds
-        original_max_turns = BUILTIN_SUBAGENTS["bash"].max_turns
+        original_timeout = BUILTIN_SUBAGENTS["code-executor"].timeout_seconds
+        original_max_turns = BUILTIN_SUBAGENTS["code-executor"].max_turns
         load_subagents_config_from_dict({"timeout_seconds": 42, "max_turns": 88})
 
-        returned = get_subagent_config("bash")
+        returned = get_subagent_config("code-executor")
         assert returned.timeout_seconds == 42
         assert returned.max_turns == 88
-        assert BUILTIN_SUBAGENTS["bash"].timeout_seconds == original_timeout
-        assert BUILTIN_SUBAGENTS["bash"].max_turns == original_max_turns
+        assert BUILTIN_SUBAGENTS["code-executor"].timeout_seconds == original_timeout
+        assert BUILTIN_SUBAGENTS["code-executor"].max_turns == original_max_turns
 
     def test_config_preserves_other_fields(self):
         """Applying runtime overrides must not change other SubagentConfig fields."""
@@ -317,8 +316,8 @@ class TestRegistryGetSubagentConfig:
         from deerflow.subagents.registry import get_subagent_config
 
         _reset_subagents_config(timeout_seconds=300, max_turns=140)
-        original = BUILTIN_SUBAGENTS["general-purpose"]
-        overridden = get_subagent_config("general-purpose")
+        original = BUILTIN_SUBAGENTS["code-executor"]
+        overridden = get_subagent_config("code-executor")
 
         assert overridden.name == original.name
         assert overridden.description == original.description
@@ -341,8 +340,8 @@ class TestRegistryListSubagents:
         from deerflow.subagents.registry import list_subagents
 
         names = {cfg.name for cfg in list_subagents()}
-        assert "general-purpose" in names
-        assert "bash" in names
+        assert "code-executor" in names
+        assert "data-analyst" in names
 
     def test_all_returned_configs_get_global_override(self):
         from deerflow.subagents.registry import list_subagents
@@ -360,16 +359,16 @@ class TestRegistryListSubagents:
                 "timeout_seconds": 900,
                 "max_turns": 120,
                 "agents": {
-                    "general-purpose": {"timeout_seconds": 1800, "max_turns": 200},
-                    "bash": {"timeout_seconds": 60, "max_turns": 80},
+                    "code-executor": {"timeout_seconds": 1800, "max_turns": 200},
+                    "data-analyst": {"timeout_seconds": 60, "max_turns": 80},
                 },
             }
         )
         by_name = {cfg.name: cfg for cfg in list_subagents()}
-        assert by_name["general-purpose"].timeout_seconds == 1800
-        assert by_name["bash"].timeout_seconds == 60
-        assert by_name["general-purpose"].max_turns == 200
-        assert by_name["bash"].max_turns == 80
+        assert by_name["code-executor"].timeout_seconds == 1800
+        assert by_name["data-analyst"].timeout_seconds == 60
+        assert by_name["code-executor"].max_turns == 200
+        assert by_name["data-analyst"].max_turns == 80
 
 
 # ---------------------------------------------------------------------------

@@ -513,6 +513,9 @@ You: "好的，正在启动旷场实验分析流水线..." [继续执行]
 - Use `read_file` tool to read uploaded files using their paths from the list
 - For PDF, PPT, Excel, and Word files, converted Markdown versions (*.md) are available alongside originals
 - All temporary work happens in `/mnt/user-data/workspace`
+- Treat `/mnt/user-data/workspace` as your default current working directory for coding and file-editing tasks
+- When writing scripts or commands that create/read files from the workspace, prefer relative paths such as `hello.txt`, `../uploads/data.csv`, and `../outputs/report.md`
+- Avoid hardcoding `/mnt/user-data/...` inside generated scripts when a relative path from the workspace is enough
 - Final deliverables must be copied to `/mnt/user-data/outputs` and presented using `present_file` tool
 {acp_section}
 </working_directory>

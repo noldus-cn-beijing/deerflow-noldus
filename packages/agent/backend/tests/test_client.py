@@ -225,7 +225,7 @@ class TestStream:
 
         agent.stream.assert_called_once()
         call_kwargs = agent.stream.call_args.kwargs
-        assert call_kwargs["stream_mode"] == ["values", "custom"]
+        assert call_kwargs["stream_mode"] == ["values", "messages", "custom"]
 
         assert events[0].type == "custom"
         assert events[0].data == {"type": "task_started", "task_id": "task-1"}
