@@ -56,6 +56,29 @@ esac
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# ── Resolve symlinks for Docker COPY ─────────────────────────────────────────
+# Docker COPY cannot follow symlinks whose targets are outside the build context.
+# Replace symlinks under backend/packages/ with real copies from the monorepo.
+_ethoinsight_link="$REPO_ROOT/backend/packages/ethoinsight"
+if [ -L "$_ethoinsight_link" ]; then
+    _target="$(readlink -f "$_ethoinsight_link")"
+    if [ -d "$_target" ]; then
+        echo "Resolving symlink: backend/packages/ethoinsight → $_target"
+        rm "$_ethoinsight_link"
+        cp -r "$_target" "$_ethoinsight_link"
+        _restore_ethoinsight=1
+    fi
+fi
+
+# Restore symlink on exit (keep the worktree clean)
+cleanup_ethoinsight() {
+    if [ "${_restore_ethoinsight:-0}" = "1" ] && [ -d "$_ethoinsight_link" ]; then
+        rm -rf "$_ethoinsight_link"
+        ln -s ../../../ethoinsight "$_ethoinsight_link"
+    fi
+}
+trap cleanup_ethoinsight EXIT
+
 DOCKER_DIR="$REPO_ROOT/docker"
 COMPOSE_CMD=(docker compose -p deer-flow -f "$DOCKER_DIR/docker-compose.yaml")
 
