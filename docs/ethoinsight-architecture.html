@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EthoInsight — 行为学洞察的 AI Agent 架构</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #fff; color: #1a1a2e; padding: 40px; max-width: 1200px; margin: 0 auto; }
+
+  h1 { font-size: 28px; text-align: center; margin-bottom: 8px; color: #16213e; }
+  .subtitle { text-align: center; font-size: 15px; color: #666; margin-bottom: 36px; }
+  h2 { font-size: 20px; color: #16213e; margin: 32px 0 16px; padding-bottom: 6px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #333; margin: 20px 0 10px; }
+
+  /* 上层价值流程图 */
+  .value-flow { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 24px 0 32px; flex-wrap: wrap; }
+  .flow-group { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .flow-group-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .flow-card { border-radius: 12px; padding: 14px 18px; text-align: center; min-width: 140px; max-width: 180px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .flow-card .icon { font-size: 28px; margin-bottom: 6px; }
+  .flow-card .title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+  .flow-card .desc { font-size: 11px; color: #666; line-height: 1.4; }
+  .flow-input { background: #e8f4fd; border: 1.5px solid #90caf9; }
+  .flow-ai { background: #fff3e0; border: 1.5px solid #ffcc80; }
+  .flow-output { background: #e8f5e9; border: 1.5px solid #a5d6a7; }
+  .flow-arrow { font-size: 24px; color: #bbb; flex-shrink: 0; }
+
+  /* 对比表 */
+  .compare-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  .compare-table th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #ddd; }
+  .compare-table td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+  .compare-table tr:hover { background: #fafafa; }
+  .tag-old { background: #ffebee; color: #c62828; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+  .tag-new { background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+
+  /* 技术架构图 */
+  .arch-container { margin: 24px 0; }
+  .arch-row { display: flex; gap: 12px; margin-bottom: 12px; justify-content: center; flex-wrap: wrap; }
+  .arch-box { border-radius: 10px; padding: 16px; flex: 1; min-width: 200px; max-width: 280px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+  .arch-box .box-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.1); }
+  .arch-box .box-item { font-size: 11.5px; line-height: 1.6; color: #444; }
+  .arch-box .box-item code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+  .bg-blue { background: #e3f2fd; border: 1.5px solid #90caf9; }
+  .bg-purple { background: #f3e5f5; border: 1.5px solid #ce93d8; }
+  .bg-yellow { background: #fff8e1; border: 1.5px solid #ffe082; }
+  .bg-red { background: #fce4ec; border: 1.5px solid #ef9a9a; }
+  .bg-green { background: #f1f8e9; border: 1.5px solid #c5e1a5; }
+  .bg-teal { background: #e0f2f1; border: 1.5px solid #80cbc4; }
+  .bg-orange { background: #fff3e0; border: 1.5px solid #ffcc80; }
+
+  /* 流水线 */
+  .pipeline { margin: 20px 0; }
+  .pipeline-step { display: flex; align-items: flex-start; margin-bottom: 0; position: relative; }
+  .pipeline-step:not(:last-child)::after { content: ''; position: absolute; left: 19px; top: 40px; bottom: -12px; width: 2px; background: #ddd; }
+  .pipeline-number { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; margin-right: 14px; z-index: 1; }
+  .pipeline-content { flex: 1; padding: 8px 0 24px; }
+  .pipeline-content .step-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .pipeline-content .step-desc { font-size: 12px; color: #666; line-height: 1.5; }
+  .step-blue { background: #1976D2; }
+  .step-orange { background: #F57C00; }
+  .step-green { background: #388E3C; }
+  .step-purple { background: #7B1FA2; }
+  .step-teal { background: #00897B; }
+
+  /* 设计决策 */
+  .decision-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  .decision-card { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px; }
+  .decision-card .q { font-size: 12px; color: #999; margin-bottom: 4px; }
+  .decision-card .a { font-size: 13px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
+  .decision-card .reason { font-size: 11.5px; color: #666; line-height: 1.4; }
+
+  /* 页脚 */
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #eee; text-align: center; font-size: 11px; color: #999; }
+
+  /* 打印优化 */
+  @media print {
+    body { padding: 0; }
+    .page-break { page-break-before: always; }
+  }
+</style>
+</head>
+<body>
+
+<h1>EthoInsight — 行为学洞察的 AI Agent 架构</h1>
+<p class="subtitle">Noldus Information Technology · 从数据到论文级报告的 AI 全自动分析流水线</p>
+
+<!-- ═══════════ 第一部分：价值视角 ═══════════ -->
+<h2>研究员的新工作方式</h2>
+<p style="font-size:14px; color:#555; margin-bottom:20px;">上传 EthoVision XT 导出的轨迹数据，用自然语言描述实验，AI 自动完成统计分析、专业解读、科学报告撰写。</p>
+
+<div class="value-flow">
+  <div class="flow-group">
+    <div class="flow-group-label">研究员操作</div>
+    <div class="flow-card flow-input">
+      <div class="icon">📂</div>
+      <div class="title">上传轨迹数据</div>
+      <div class="desc">EthoVision XT<br/>导出的 .txt / .xlsx</div>
+    </div>
+  </div>
+
+  <span class="flow-arrow">＋</span>
+
+  <div class="flow-group">
+    <div class="flow-group-label">&nbsp;</div>
+    <div class="flow-card flow-input">
+      <div class="icon">💬</div>
+      <div class="title">描述实验</div>
+      <div class="desc">"分析 Shoaling 范式<br/>对照组 vs 实验组"</div>
+    </div>
+  </div>
+
+  <span class="flow-arrow">→</span>
+
+  <div class="flow-group">
+    <div class="flow-group-label">AI 自动完成</div>
+    <div class="flow-card flow-ai">
+      <div class="icon">🔬</div>
+      <div class="title">数据分析</div>
+      <div class="desc">统计检验<br/>图表生成</div>
+    </div>
+  </div>
+
+  <span class="flow-arrow">→</span>
+
+  <div class="flow-group">
+    <div class="flow-group-label">&nbsp;</div>
+    <div class="flow-card flow-ai">
+      <div class="icon">🧠</div>
+      <div class="title">专业解读</div>
+      <div class="desc">结合行为学知识<br/>发现数据洞察</div>
+    </div>
+  </div>
+
+  <span class="flow-arrow">→</span>
+
+  <div class="flow-group">
+    <div class="flow-group-label">&nbsp;</div>
+    <div class="flow-card flow-ai">
+      <div class="icon">📝</div>
+      <div class="title">科学报告</div>
+      <div class="desc">APA 格式<br/>Results + Discussion</div>
+    </div>
+  </div>
+
+  <span class="flow-arrow">→</span>
+
+  <div class="flow-group">
+    <div class="flow-group-label">研究员获得</div>
+    <div class="flow-card flow-output">
+      <div class="icon">📊</div>
+      <div class="title">发表级图表</div>
+      <div class="desc">Raincloud / Violin<br/>Trajectory / Timeseries</div>
+    </div>
+  </div>
+
+  <span class="flow-arrow">＋</span>
+
+  <div class="flow-group">
+    <div class="flow-group-label">&nbsp;</div>
+    <div class="flow-card flow-output">
+      <div class="icon">📄</div>
+      <div class="title">论文级报告</div>
+      <div class="desc">统计结果 + 效应量<br/>文献引用</div>
+    </div>
+  </div>
+</div>
+
+<!-- 对比表 -->
+<h3>传统方式 vs EthoInsight</h3>
+<table class="compare-table">
+  <tr>
+    <th style="width:18%"></th>
+    <th style="width:41%"><span class="tag-old">传统方式</span></th>
+    <th style="width:41%"><span class="tag-new">EthoInsight</span></th>
+  </tr>
+  <tr><td><strong>分析时间</strong></td><td>数小时（手动写 Python/R 脚本）</td><td>几分钟（AI 自动执行）</td></tr>
+  <tr><td><strong>统计专业度</strong></td><td>取决于研究员统计功底</td><td>自动选择正确的检验方法</td></tr>
+  <tr><td><strong>图表质量</strong></td><td>需要 matplotlib/ggplot 经验</td><td>一键生成发表级图表</td></tr>
+  <tr><td><strong>领域知识</strong></td><td>需要翻阅文献查参考范围</td><td>内置 Noldus 行为学知识库</td></tr>
+  <tr><td><strong>报告撰写</strong></td><td>手动撰写，格式不统一</td><td>APA 格式，含效应量和文献引用</td></tr>
+  <tr><td><strong>可重复性</strong></td><td>依赖个人脚本</td><td>标准化流水线，结果可复现</td></tr>
+</table>
+
+<!-- ═══════════ 第二部分：技术架构 ═══════════ -->
+<div class="page-break"></div>
+<h2>系统架构</h2>
+
+<div class="arch-container">
+  <!-- 第一行：用户层 -->
+  <div class="arch-row">
+    <div class="arch-box bg-blue" style="max-width:360px;">
+      <div class="box-title">🌐 前端 (Next.js)</div>
+      <div class="box-item">
+        Web 界面：文件上传 + 实时对话<br/>
+        SSE 流式响应，实时显示分析进度<br/>
+        支持 13 种行为学范式的数据上传
+      </div>
+    </div>
+    <div class="arch-box bg-purple" style="max-width:360px;">
+      <div class="box-title">⚡ API 网关 (FastAPI)</div>
+      <div class="box-item">
+        文件上传：自动格式识别 + 转换<br/>
+        SSE 流：实时推送 Agent 执行进度<br/>
+        模型/MCP/Skills/Memory 管理 API
+      </div>
+    </div>
+  </div>
+
+  <!-- 第二行：Agent 层 -->
+  <div class="arch-row">
+    <div class="arch-box bg-yellow" style="max-width:740px;">
+      <div class="box-title">🤖 Lead Agent — 任务规划与调度（GLM-5.1）</div>
+      <div class="box-item">
+        <strong>Plan Mode</strong>：解析用户意图 → 制定分析计划 → 串行分派子代理<br/>
+        <strong>调度逻辑</strong>：code-executor → data-analyst → report-writer<br/>
+        <strong>追问模式</strong>：分析完成后，用户可继续提问 → 分派 knowledge-assistant
+      </div>
+    </div>
+  </div>
+
+  <!-- 第三行：子代理 -->
+  <div class="arch-row">
+    <div class="arch-box bg-red">
+      <div class="box-title">⚙️ code-executor</div>
+      <div class="box-item">
+        <code>run_paradigm_analysis</code> 工具<br/>
+        统计检验 + 效应量计算<br/>
+        生成 8 种发表级图表<br/>
+        输出 → <code>code_summary.json</code>
+      </div>
+    </div>
+    <div class="arch-box bg-red">
+      <div class="box-title">🧠 data-analyst</div>
+      <div class="box-item">
+        读取统计结果 JSON<br/>
+        查询 Noldus 知识库 (MCP)<br/>
+        应用领域知识深度解读<br/>
+        输出 → <code>analysis_summary.md</code>
+      </div>
+    </div>
+    <div class="arch-box bg-red">
+      <div class="box-title">📝 report-writer</div>
+      <div class="box-item">
+        整合数据 + 解读 + 文献<br/>
+        撰写 APA 格式科学报告<br/>
+        Results + Discussion 段落<br/>
+        输出 → <code>report.md</code>
+      </div>
+    </div>
+    <div class="arch-box bg-red">
+      <div class="box-title">💡 knowledge-assistant</div>
+      <div class="box-item">
+        范式/术语/方法论问答<br/>
+        基于已有结果的追问<br/>
+        查询 Noldus 知识库<br/>
+        按需分派
+      </div>
+    </div>
+  </div>
+
+  <!-- 第四行：知识层 + 输出层 -->
+  <div class="arch-row">
+    <div class="arch-box bg-teal">
+      <div class="box-title">📚 知识层</div>
+      <div class="box-item">
+        <strong>Skills (YAML)</strong>：ethoinsight / ethoinsight-analysis / ethoinsight-charts<br/>
+        静态方法论注入：范式解读规则、统计决策树、图表选择指南<br/><br/>
+        <strong>noldus-kb (MCP)</strong>：6200+ 论文知识库<br/>
+        动态知识检索：范式指南、术语定义、方法论参考、文献引用
+      </div>
+    </div>
+    <div class="arch-box bg-green">
+      <div class="box-title">📂 共享工作区</div>
+      <div class="box-item">
+        <code>/mnt/shared/</code> — 子代理间数据传递<br/>
+        <code>code_summary.json</code> — 指标 + 统计 + 图表路径<br/>
+        <code>analysis_summary.md</code> — 专业解读报告<br/><br/>
+        <code>/mnt/user-data/outputs/</code> — 最终交付物<br/>
+        发表级图表 (300 DPI PNG) + APA 报告
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 第三部分：数据流水线 ═══════════ -->
+<h2>数据分析流水线</h2>
+<p style="font-size:13px; color:#666; margin-bottom:16px;">以 Shoaling（群体聚集行为）范式为例，展示从上传数据到产出报告的完整过程。</p>
+
+<div class="pipeline">
+  <div class="pipeline-step">
+    <div class="pipeline-number step-blue">1</div>
+    <div class="pipeline-content">
+      <div class="step-title">研究员上传数据 + 描述实验</div>
+      <div class="step-desc">上传 5 个 EthoVision XT 导出的轨迹文件，输入"分析 Shoaling 行为，对照组 vs 实验组"</div>
+    </div>
+  </div>
+
+  <div class="pipeline-step">
+    <div class="pipeline-number step-orange">2</div>
+    <div class="pipeline-content">
+      <div class="step-title">Lead Agent 规划任务</div>
+      <div class="step-desc">识别实验设计：paradigm=shoaling, groups=[control, treatment]，制定三步分析计划，串行分派子代理</div>
+    </div>
+  </div>
+
+  <div class="pipeline-step">
+    <div class="pipeline-number step-green">3</div>
+    <div class="pipeline-content">
+      <div class="step-title">code-executor 执行分析</div>
+      <div class="step-desc">
+        调用 <code>run_paradigm_analysis</code> → 自动解析数据 → 正态性检验 → 选择统计方法 (Mann-Whitney U) → 计算效应量 (Cohen's d) → 生成 Raincloud / Violin / Trajectory 等图表<br/>
+        输出：<code>code_summary.json</code>（含全部指标、统计结果、图表路径）
+      </div>
+    </div>
+  </div>
+
+  <div class="pipeline-step">
+    <div class="pipeline-number step-purple">4</div>
+    <div class="pipeline-content">
+      <div class="step-title">data-analyst 专业解读</div>
+      <div class="step-desc">
+        读取统计结果 → 查询 Noldus 知识库获取 Shoaling 范式正常范围 → 判断组间差异的生物学意义 → 识别大效应量 (d > 0.5) 的关键指标<br/>
+        输出：<code>analysis_summary.md</code>（含专业洞察）
+      </div>
+    </div>
+  </div>
+
+  <div class="pipeline-step">
+    <div class="pipeline-number step-teal">5</div>
+    <div class="pipeline-content">
+      <div class="step-title">report-writer 撰写报告</div>
+      <div class="step-desc">
+        整合数据结果 + 专业解读 + 文献引用 → 撰写 APA 格式科学报告（Results: 统计数值 + 效应量 + 图表引用；Discussion: 解读 + 文献对比 + 局限性）<br/>
+        输出：<code>report.md</code> + 全部图表文件
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 第四部分：设计决策 ═══════════ -->
+<h2>关键设计决策</h2>
+
+<div class="decision-grid">
+  <div class="decision-card">
+    <div class="q">为什么用 4 个专业子代理而不是 1 个通用 Agent？</div>
+    <div class="a">专业分工，质量可控</div>
+    <div class="reason">每个子代理只做一件事，prompt 精准，行为可预测。code-executor 专注代码执行，不会在分析中途跑偏去写报告。</div>
+  </div>
+  <div class="decision-card">
+    <div class="q">统计方法怎么保证选对？</div>
+    <div class="a">确定性规则引擎 + AI 兜底</div>
+    <div class="reason">正态性检验、方差齐性检验等有明确规则的决策由 Python 代码处理（100% 可审计）。边界情况由 AI 推理。两层互补。</div>
+  </div>
+  <div class="decision-card">
+    <div class="q">领域知识怎么注入？</div>
+    <div class="a">Skill 静态注入 + MCP 动态检索</div>
+    <div class="reason">方法论规则（"何时用非参数检验"）通过 Skill 文件注入 prompt。具体文献和参考值通过 MCP 从 6200+ 论文知识库实时检索。</div>
+  </div>
+  <div class="decision-card">
+    <div class="q">为什么不是传统软件？</div>
+    <div class="a">自然语言交互 + 领域推理 + 持续追问</div>
+    <div class="reason">传统软件是固定流水线。Agent 能理解"为什么对照组速度方差这么大？"并结合数据和领域知识给出解释。这是 AI 的本质优势。</div>
+  </div>
+</div>
+
+<!-- ═══════════ 第五部分：未来路线 ═══════════ -->
+<h2>技术演进路线</h2>
+
+<div class="pipeline">
+  <div class="pipeline-step">
+    <div class="pipeline-number step-blue">现在</div>
+    <div class="pipeline-content">
+      <div class="step-title">云端大模型驱动 (GLM-5.1 API)</div>
+      <div class="step-desc">快速迭代 Agent 流程，完善 13 个范式支持，积累真实用户数据和专家反馈</div>
+    </div>
+  </div>
+  <div class="pipeline-step">
+    <div class="pipeline-number step-orange">Q3</div>
+    <div class="pipeline-content">
+      <div class="step-title">微调专用小模型 (Qwen3-8B)</div>
+      <div class="step-desc">用积累的数据微调行为学专用模型，SFT + DPO 两阶段训练，在 Fireworks.ai 平台完成</div>
+    </div>
+  </div>
+  <div class="pipeline-step">
+    <div class="pipeline-number step-green">Q4</div>
+    <div class="pipeline-content">
+      <div class="step-title">本地部署，去除 API 依赖</div>
+      <div class="step-desc">微调模型部署到本地 GPU (RTX 4090)，数据全程不出服务器，满足企业级数据合规要求</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  EthoInsight · Noldus Information Technology · 2026
+</div>
+
+</body>
+</html>
