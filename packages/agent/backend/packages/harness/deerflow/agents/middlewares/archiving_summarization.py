@@ -30,7 +30,18 @@ def _get_thread_id(runtime: Runtime) -> str | None:
 
 
 class ArchivingSummarizationMiddleware(SummarizationMiddleware):
-    """SummarizationMiddleware that archives removed messages to disk."""
+    """SummarizationMiddleware that archives removed messages to disk.
+
+    Optionally accepts a ``loop_detection`` middleware instance.  When set,
+    the loop-detection tracking state for the current thread is cleared after
+    every summarization so that the reduced context and the detector stay in
+    sync (otherwise the detector could carry stale counts from messages that
+    were already removed).
+    """
+
+    def __init__(self, *args: Any, loop_detection: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._loop_detection = loop_detection
 
     @override
     async def abefore_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
@@ -49,6 +60,9 @@ class ArchivingSummarizationMiddleware(SummarizationMiddleware):
 
         # Archive messages before they are removed
         self._archive_messages(messages_to_summarize, runtime)
+
+        # Reset loop detection so stale counts don't survive compaction
+        self._reset_loop_detection(runtime)
 
         # Proceed with normal summarization
         summary = await self._acreate_summary(messages_to_summarize)
@@ -83,6 +97,9 @@ class ArchivingSummarizationMiddleware(SummarizationMiddleware):
         # Archive messages before they are removed
         self._archive_messages(messages_to_summarize, runtime)
 
+        # Reset loop detection so stale counts don't survive compaction
+        self._reset_loop_detection(runtime)
+
         # Proceed with normal summarization
         summary = self._create_summary(messages_to_summarize)
         new_messages = self._build_new_messages(summary)
@@ -97,6 +114,18 @@ class ArchivingSummarizationMiddleware(SummarizationMiddleware):
                 *preserved_messages,
             ]
         }
+
+    def _reset_loop_detection(self, runtime: Runtime) -> None:
+        """Clear loop-detection state for this thread after summarization."""
+        if self._loop_detection is None:
+            return
+        thread_id = _get_thread_id(runtime)
+        if thread_id:
+            try:
+                self._loop_detection.reset(thread_id)
+                logger.debug("Reset loop detection for thread %s after summarization", thread_id)
+            except Exception:
+                logger.exception("Failed to reset loop detection for thread %s", thread_id)
 
     def _archive_messages(self, messages_to_archive: list, runtime: Runtime) -> None:
         """Persist messages to a JSON file in the thread's data directory."""

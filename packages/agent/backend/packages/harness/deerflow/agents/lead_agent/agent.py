@@ -219,9 +219,14 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     """
     middlewares = build_lead_runtime_middlewares(lazy_init=True)
 
+    # LoopDetectionMiddleware — detect and break repetitive tool call loops.
+    # Created early so it can be passed to summarization middleware for reset-on-compact.
+    loop_detection = LoopDetectionMiddleware()
+
     # Add summarization middleware if enabled
     summarization_middleware = _create_summarization_middleware()
     if summarization_middleware is not None:
+        summarization_middleware._loop_detection = loop_detection
         middlewares.append(summarization_middleware)
 
     # Add TodoList middleware if plan mode is enabled
@@ -259,8 +264,8 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         max_concurrent_subagents = config.get("configurable", {}).get("max_concurrent_subagents", 3)
         middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
 
-    # LoopDetectionMiddleware — detect and break repetitive tool call loops
-    middlewares.append(LoopDetectionMiddleware())
+    # LoopDetectionMiddleware — append the instance created earlier
+    middlewares.append(loop_detection)
 
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:

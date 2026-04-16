@@ -9,6 +9,7 @@ from ethoinsight.templates.tool import (
     get_analysis_template_tool,
     get_available_paradigms,
     render_template,
+    run_paradigm_analysis_core,
 )
 
 
@@ -167,3 +168,44 @@ class TestGetAnalysisTemplateTool:
             "chart_types": "box_plot,violin_plot",
         })
         assert "CHART_TYPES = ['box_plot', 'violin_plot']" in result
+
+
+# ---------------------------------------------------------------------------
+# Test: run_paradigm_analysis_core — paradigm validation gate
+# ---------------------------------------------------------------------------
+
+
+class TestRunParadigmAnalysisCoreGate:
+    """Verify that unsupported paradigms are rejected early with structured errors."""
+
+    def test_unknown_paradigm_returns_failed(self):
+        result = run_paradigm_analysis_core(
+            paradigm="nonexistent_paradigm",
+            file_pattern="/tmp/fake/*.txt",
+            groups={"g": ["s1"]},
+        )
+        assert result["status"] == "failed"
+        assert "available_paradigms" in result
+        assert isinstance(result["available_paradigms"], list)
+        assert "shoaling" in result["available_paradigms"]
+
+    def test_epm_paradigm_rejected_without_template(self):
+        """EPM has partial metrics code but no template — should be gated."""
+        result = run_paradigm_analysis_core(
+            paradigm="epm",
+            file_pattern="/tmp/fake/*.txt",
+            groups={"g": ["s1"]},
+        )
+        assert result["status"] == "failed"
+        assert any("尚未支持" in e or "支持完整分析" in e for e in result["errors"])
+
+    def test_error_message_lists_available_paradigms(self):
+        result = run_paradigm_analysis_core(
+            paradigm="open_field",
+            file_pattern="/tmp/fake/*.txt",
+            groups={"g": ["s1"]},
+        )
+        assert result["status"] == "failed"
+        # The error should mention which paradigms ARE available
+        errors_text = " ".join(result["errors"])
+        assert "shoaling" in errors_text

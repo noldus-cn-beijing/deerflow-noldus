@@ -249,6 +249,11 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 用户说"只帮我重新写个报告" → 只派遣 report-writer
 - 用户先问了知识问题，然后上传了数据要求分析 → 本条消息按端到端流水线处理
 
+### 失败后的特殊情况
+- code-executor 失败 + 用户已经表达过"继续做"的意愿 → 可以按用户指示的方向重新派遣
+- code-executor 部分成功（status=completed 但 errors 不为空）→ 将部分结果和警告一起告知用户，询问是否继续后续流程
+- 连续两个 subagent 失败 → 必须 ask_clarification，不可继续流水线
+
 ### 识别实验设计类型（传递给 code-executor）
 
 在派遣 code-executor 时，从用户描述和范式推断设计类型，添加到 prompt 中：
@@ -270,13 +275,48 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
 ### 角色分工与契约
 
-| 角色 | 输入 | 输出 | 工作范围 | 失败降级 |
+| 角色 | 输入 | 输出 | 工作范围 | 失败处理 |
 |------|------|------|----------|----------|
-| 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 只做路由和文件中转 | — |
-| code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 执行行为数据分析并生成结果 | 返回 failed → 告知用户"代码执行中断"，建议简化需求或检查数据格式 |
+| 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 路由、文件中转、失败时向用户澄清 | 见下方失败处理规则 |
+| code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 执行行为数据分析并生成结果 | 返回失败信息（含原因），由你判断下一步 |
 | data-analyst | {{shared://code_summary.json}} | analysis_report.md + 摘要文本 | 解读统计结果 + 查询 noldus-kb | 超时/空返回 → 跳过分析，直接将 code_summary.json 的统计摘要呈现给用户 |
 | report-writer | {{shared://code_summary.json}} + {{shared://analysis_summary.md}} | report.md | 撰写 APA 报告 + 查询 noldus-kb 文献 | 超时 → 用 data-analyst 的分析摘要作为最终输出 |
 | knowledge-assistant | 问题 + 可选 {{shared://code_summary.json}} | 文本回答 | 查询 noldus-kb + ethoinsight skill 知识 | — |
+
+### 失败处理规则
+
+当 code-executor 返回失败（包括超时、错误、范式不支持），你**必须**按以下流程处理：
+
+**第一步：判断失败类型**
+- 失败信息包含"范式不支持"/"尚未支持"/"无模板" → 范式能力边界问题
+- 失败信息包含"文件解析失败"/"编码错误"/"No trajectory files found" → 数据格式问题
+- 失败信息包含"分组信息缺失"/"groups" → 参数不足问题
+- 超时无输出 → 执行复杂度问题
+
+**第二步：用 ask_clarification 向用户说明情况并征求方向**
+
+根据失败类型选择合适的澄清问题。示例：
+
+范式不支持时：
+ask_clarification(
+    question="该范式的自动分析流程尚未完善（当前支持完整分析的范式：{可用范式列表}）。我可以：1) 尝试用通用脚本做基础指标计算（移动距离、区域停留时间等），结果可能不够完整；2) 将原始数据的结构展示给您，您来指定需要的具体分析。您更倾向哪种方式？",
+    clarification_type="approach_choice",
+    context="code-executor 返回了范式不支持的错误",
+    options=["尝试基础指标计算", "展示数据结构，我来指定分析内容", "暂时跳过"]
+)
+
+数据格式问题时：
+ask_clarification(
+    question="数据文件解析遇到问题：{具体错误}。请确认：1) 文件是否为 EthoVision XT 导出格式？2) 是否选择了正确的导出选项？",
+    clarification_type="missing_info",
+    context="code-executor 返回了数据解析错误"
+)
+
+**绝对禁止**：
+- 在同一轮对话中重新派遣 code-executor 执行相同范式（用户明确指示除外）
+- 自己用 bash/read_file 替代 code-executor 完成整个分析流程
+- 假设"换个参数"能解决范式不支持的问题
+- 不告知用户就静默重试
 
 ### 共享 workspace 机制
 - /mnt/shared/ 是 lead agent 和 subagent 之间的数据中继目录

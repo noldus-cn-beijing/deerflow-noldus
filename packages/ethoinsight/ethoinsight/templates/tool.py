@@ -134,7 +134,7 @@ def get_analysis_template_tool(
     special requirements.
 
     Args:
-        paradigm: Analysis paradigm name. Examples: "shoaling", "open_field", "epm", "novel_object", "y_maze", "forced_swim".
+        paradigm: Analysis paradigm name. Unsupported paradigms return an error with the list of available ones.
         file_pattern: Glob pattern for input data files. Example: "/mnt/user-data/uploads/*.txt"
         groups: JSON string mapping group names to subject lists. Example: '{"control": ["Subject 1", "Subject 2"], "treatment": ["Subject 3", "Subject 4"]}'
         metrics: Optional comma-separated metric names to compute. If omitted, uses paradigm defaults. Example: "distance_moved,mean_iid,mean_nnd"
@@ -202,6 +202,19 @@ def run_paradigm_analysis_core(
         Dict with keys: status, summary, output_files, metrics_summary,
         statistics, assessment, metadata, errors.
     """
+    # Gate: reject paradigms that have no analysis template (incomplete support)
+    available = get_available_paradigms()
+    if paradigm not in available:
+        return {
+            "status": "failed",
+            "summary": f"范式 '{paradigm}' 尚未支持完整自动分析",
+            "errors": [
+                f"当前支持完整分析的范式: {', '.join(available)}",
+                "建议：请告知用户该范式暂不支持，征求用户意见后再决定下一步",
+            ],
+            "available_paradigms": available,
+        }
+
     from ethoinsight import parse, metrics as etho_metrics, charts as etho_charts
 
     try:
@@ -409,11 +422,11 @@ def run_paradigm_analysis_tool(
 
     Executes parse, metrics, statistics, charts, and assessment, then returns
     structured JSON results. Use this instead of get_analysis_template for
-    supported paradigms (shoaling, open_field, epm). Falls back gracefully
-    on partial failures.
+    supported paradigms. Returns status="failed" with available_paradigms list
+    when the requested paradigm is not yet supported.
 
     Args:
-        paradigm: Paradigm name. Supported: "shoaling", "open_field", "epm". Example: "shoaling"
+        paradigm: Paradigm name. Call with any name; unsupported paradigms return a clear error with the list of available ones. Example: "shoaling"
         file_pattern: Glob pattern for input trajectory files. Example: "/mnt/user-data/uploads/*.txt"
         groups: JSON string mapping group names to subject lists. Example: '{"control": ["Subject 1"], "treatment": ["Subject 3"]}'
         metrics: Optional comma-separated metric names. If omitted, uses paradigm defaults. Example: "distance_moved,mean_iid"
