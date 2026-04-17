@@ -864,6 +864,26 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
     orchestration_guide = ""
     if subagent_enabled and has_noldus_agents:
         orchestration_guide = """<orchestration_guide>
+## 规划先于派遣（MANDATORY）
+
+当本轮消息 `<uploaded_files>` 包含新上传的数据文件 **且** 用户请求分析/统计/可视化/报告时，
+你 **必须** 先加载 `ethoinsight-planning` skill 并按它的流程规划：
+
+1. **立即调用**: `read_file("/mnt/skills/ethoinsight-planning/SKILL.md")`
+2. **遵循 6 步规划流程**: 意图分类 → 完整性检查 → 选模板 → 质量门控 → 单行摘要 → 执行
+3. **仅两种情况必须反问用户**:
+   - 范式推断失败（文件名看不出范式）
+   - 分组无法推断（无命名规律且用户未明示）
+   - 其他情况走默认，**不要过度反问**
+4. **输出单行计划给用户**（格式：`将对 <范式> 数据执行 <操作>，约 X 分钟`）
+5. **执行时遵循本文档后续的派遣流程**
+
+**跳过规划的场景**（直接派遣 knowledge-assistant）：
+- 无新上传文件 + 追问已有结果或概念问题
+- 用户闲聊、确认、感谢
+
+**规划本身不占用 `task` 调用配额**——它只是读 skill + 可能的 `ask_clarification`。
+
 ## EthoVision 数据分析派遣流程
 
 当用户上传 EthoVision 数据并请求分析时，按以下流程派遣 subagent：
