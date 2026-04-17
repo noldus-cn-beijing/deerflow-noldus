@@ -1,0 +1,52 @@
+"""Verify ethoinsight-analysis skill wiring stays consistent with code-executor."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+SKILLS_DIR = Path(__file__).resolve().parent.parent.parent / "skills" / "custom" / "ethoinsight-analysis"
+
+
+def test_skill_md_exists():
+    assert (SKILLS_DIR / "SKILL.md").exists()
+
+
+def test_references_files_exist():
+    refs_dir = SKILLS_DIR / "references"
+    required = {"tool-reference.md", "quality-checks.md", "error-recovery.md", "fallback-workflow.md"}
+    present = {p.name for p in refs_dir.glob("*.md")}
+    missing = required - present
+    assert not missing, f"Missing references: {missing}"
+
+
+def test_old_data_quality_checks_removed():
+    assert not (SKILLS_DIR / "references" / "data-quality-checks.md").exists(), \
+        "Old data-quality-checks.md should be replaced by quality-checks.md"
+
+
+def test_skill_references_all_tools():
+    skill_md = (SKILLS_DIR / "SKILL.md").read_text(encoding="utf-8")
+    for tool in ["parse_trajectories", "compute_metrics", "run_statistics",
+                 "generate_charts", "assess_and_handoff"]:
+        assert tool in skill_md, f"SKILL.md missing reference to {tool}"
+
+
+def test_code_executor_declares_matching_tools():
+    import sys
+    from unittest.mock import MagicMock
+    _executor_mock = MagicMock()
+    _executor_mock.SubagentExecutor = MagicMock
+    _executor_mock.SubagentResult = MagicMock
+    _executor_mock.SubagentStatus = MagicMock
+    _executor_mock.MAX_CONCURRENT_SUBAGENTS = 3
+    sys.modules["deerflow.subagents.executor"] = _executor_mock
+    from deerflow.subagents.builtins.code_executor import CODE_EXECUTOR_CONFIG as c
+    required = {"parse_trajectories", "compute_metrics", "run_statistics",
+                "generate_charts", "assess_and_handoff"}
+    declared = set(c.tools or [])
+    missing = required - declared
+    assert not missing, f"code_executor missing tools: {missing}"
+    assert c.max_turns == 12, f"max_turns should be 12 for 5-step pipeline, got {c.max_turns}"
+    assert "ethoinsight-analysis" in (c.skills or [])

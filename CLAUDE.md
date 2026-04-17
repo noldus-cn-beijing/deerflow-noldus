@@ -1,0 +1,174 @@
+# CLAUDE.md
+
+本文档为 Claude Code 在 `noldus-insight` 仓库工作时提供上下文。
+
+## 项目定位
+
+**EthoInsight** — 面向行为学研究员的 AI 分析助手。研究员上传 EthoVision XT 导出的轨迹数据，Agent 自动完成统计分析、专业解读、APA 格式报告生成。
+
+- **当前状态**：端到端流水线可用，`shoaling` 范式完整；EPM/OFT 等 10+ 范式待补全
+- **愿景**：从"数据分析工具"演进为"全生命周期行为学研究助手"（实验指导 → 数据分析 → 追问 → 知识问答 → 跨范式证据链）
+- **关键里程碑**：2026 年 9 月 v0.1 可用版本
+- **路线图**：见 [docs/roadmap.md](docs/roadmap.md)
+
+## 仓库结构
+
+```
+noldus-insight/
+├── packages/
+│   ├── agent/              # DeerFlow fork（LangGraph agent 框架，作为 subtree 引入）
+│   │   ├── backend/        # Python 后端（LangGraph + Gateway）
+│   │   ├── frontend/       # Next.js 前端
+│   │   ├── skills/
+│   │   │   ├── public/     # 上游公共 skill（已提交）
+│   │   │   └── custom/     # 项目定制 skill（**在 git 中**，ethoinsight* 等）
+│   │   ├── config.yaml     # 主配置（模型、工具、sandbox 等）
+│   │   └── extensions_config.json  # MCP 服务器 + skill 启用状态
+│   └── ethoinsight/        # 行为学数据分析库（Python）
+│       ├── ethoinsight/
+│       │   ├── parse.py          # EthoVision XT 文件解析
+│       │   ├── metrics.py        # 行为指标计算
+│       │   ├── statistics.py     # 统计决策树（Shapiro-Wilk → 自动选择参数/非参数）
+│       │   ├── charts.py         # 发表级图表生成
+│       │   ├── assess.py         # 领域阈值判断（正常/异常）
+│       │   └── templates/        # 范式模板（shoaling.py 等）
+│       └── tests/
+├── docs/
+│   ├── roadmap.md          # 12 个月产品路线图
+│   ├── prd.md              # 产品需求文档
+│   ├── architecture-diagram.md  # 架构图（上层价值 + 下层技术）
+│   ├── plans/              # 设计文档
+│   ├── specs/              # 技术规格
+│   ├── handoffs/           # 会话交接文档（按日期排序）
+│   ├── milestone/          # 里程碑总结
+│   ├── problems/           # 问题记录
+│   ├── sop/                # 操作手册
+│   └── EthoInsight-技术文档/
+├── demo-data/              # 测试用的 EthoVision 导出数据
+└── scripts/
+    └── sync-deerflow.sh    # DeerFlow 上游选择性同步工具
+```
+
+## 架构核心
+
+### Agent 分析流水线
+
+```
+Lead Agent（GLM-5.1，路由判断：有数据→分析，无数据→知识）
+    ↓
+code-executor（按 ethoinsight-analysis skill 依次调用 5 个细粒度 tool：parse_trajectories → compute_metrics → run_statistics → generate_charts → assess_and_handoff，中间状态经 /mnt/user-data/workspace/ 文件传递）
+    ↓
+data-analyst（审核统计方法、排查混杂因素、发现洞察）
+    ↓
+report-writer（APA 报告 + 文献引用）
+```
+
+专家思维分三层：
+
+1. **自动统计决策树**（`ethoinsight/statistics.py`）— Shapiro-Wilk 正态性检验 → 自动选择参数/非参数检验
+2. **领域知识驱动解读**（Skills + `ethoinsight/assess.py`）— 表型推断、混杂因素排查、效应量判断
+3. **质量审核关卡**（data-analyst）— 统计方法适配性检查、异常检测
+
+### 知识注入三层
+
+1. **System prompt 注入**（静态）— skill reference 文件直接在 context 中
+2. **Knowledge-assistant 专用 prompt** — 优先用 skill 知识，其次调 MCP
+3. **noldus-kb MCP**（**当前禁用**）— 6200+ 论文，深度知识来源
+
+### DeerFlow fork 策略
+
+`packages/agent/` 是 DeerFlow 上游的 subtree fork，在其基础上做了定制：
+
+- **受保护文件**（有 Noldus 定制）：`agents/lead_agent/prompt.py`、`subagents/builtins/__init__.py`、`mcp/tools.py`、`sandbox/tools.py` 等
+- **同步方式**：用 `scripts/sync-deerflow.sh` 选择性合入上游改动（区分"安全文件"和"受保护文件"）
+- **上游架构详情**：见 [packages/agent/backend/CLAUDE.md](packages/agent/backend/CLAUDE.md)
+
+## 常用命令
+
+### 启动完整应用（项目根）
+
+```bash
+cd packages/agent
+make dev           # 启动所有服务（LangGraph + Gateway + Frontend + Nginx），访问 localhost:2026
+make stop          # 停止所有服务
+```
+
+### 后端开发（backend 目录）
+
+```bash
+cd packages/agent/backend
+source .venv/bin/activate
+make dev           # 仅 LangGraph server (port 2024)
+make gateway       # 仅 Gateway API (port 8001)
+make test          # 运行所有后端测试
+make lint          # ruff 检查
+```
+
+### ethoinsight 库
+
+```bash
+cd packages/ethoinsight
+pytest tests/      # 运行分析库测试
+```
+
+### DeerFlow 上游同步
+
+```bash
+./scripts/sync-deerflow.sh --dry-run       # 预览
+./scripts/sync-deerflow.sh                 # 交互式合入
+```
+
+## 开发规范
+
+### Python
+
+- **Python 3.10+**（ethoinsight）/ **3.12+**（agent backend）
+- ruff 格式化，line length 240
+- 双引号、空格缩进、类型注解
+
+### 测试
+
+- **TDD 强制**：每个新功能/bug 修复都必须带单测，放在 `packages/agent/backend/tests/` 或 `packages/ethoinsight/tests/`
+- 运行：`make test`（agent backend）或 `pytest tests/`（ethoinsight）
+- 现在测试全绿（test_client.py 的两个 pre-existing 失败已在 2026-04-17 修复）
+
+### Git
+
+- 主分支：`feature/etho-skills`（当前工作分支）
+- 提交前跑 `make test` 和 `make lint`
+- commit message 用中文，简洁描述改动意图
+
+### 文档
+
+- 代码改动后同步更新相关 `docs/` 下文档
+- 重要会话结束后在 `docs/handoffs/` 写交接文档（文件名 `YYYY-MM-DD-<topic>-handoff.md`）
+
+## 重要注意事项
+
+1. **skills/custom/ 是项目定制 skill 的目录** — `ethoinsight`、`ethoinsight-analysis`、`ethoinsight-charts`、`ethoinsight-planning` 这 4 个定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）
+2. **noldus-kb 当前禁用** — `extensions_config.json` 里 `"enabled": false`，等 `180.184.84.124:7001` 恢复后再启用。禁用状态不要提交为 true
+3. **受保护文件修改后同步要小心** — `scripts/sync-deerflow.sh` 会把它们标为"需人工判断"
+4. **v0.1 是 9 月硬指标** — Phase 0（当前阶段）要完成 EPM + OFT 范式 + 鲁棒性验证 + 基础设施修复
+5. **微调方案已锁定** — Qwen3-8B Dense + Fireworks.ai（SFT 先行，DPO 推迟到 v0.1 后）
+6. **429 重试策略** — 当前 1s/2s 太短，Phase 0 要改为 5s/15s/30s（`llm_error_handling_middleware.py`）
+7. **GLM-5.1 的正面提示** — 不要用"禁止 X""不要 X"，会反向激活；必须用正面指令描述想要的行为
+
+## 快速上手
+
+新开会话建议的读取顺序：
+
+1. 本文档 — 了解全貌
+2. [docs/roadmap.md](docs/roadmap.md) — 了解 12 个月规划和 v0.1 里程碑
+3. `docs/handoffs/` 下最新日期的文档 — 了解上次会话到哪了
+4. 根据当前 Phase 的优先级开始工作
+
+## 相关文档
+
+- [docs/roadmap.md](docs/roadmap.md) — 产品路线图
+- [docs/prd.md](docs/prd.md) — 产品需求文档
+- [docs/architecture-diagram.md](docs/architecture-diagram.md) — 架构图
+- [docs/specs/paradigm-analysis-tools-spec.md](docs/specs/paradigm-analysis-tools-spec.md) — 范式分析工具规格
+- [docs/specs/llm-finetuning-strategy.md](docs/specs/llm-finetuning-strategy.md) — 微调策略
+- [docs/plans/2026-04-13-fine-tuning-small-model-design.md](docs/plans/2026-04-13-fine-tuning-small-model-design.md) — 微调设计
+- [docs/sop/deerflow-sync-sop.md](docs/sop/deerflow-sync-sop.md) — DeerFlow 同步 SOP
+- [packages/agent/backend/CLAUDE.md](packages/agent/backend/CLAUDE.md) — DeerFlow 后端架构细节

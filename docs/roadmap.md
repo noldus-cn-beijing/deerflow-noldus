@@ -64,7 +64,7 @@ Apr      May      Jun   Jul      Aug      Sep      Oct  Nov  Dec     Jan  Feb  M
 
 | 里程碑 | 具体任务 | 验收标准 |
 |--------|---------|---------|
-| **M0.1** 鲁棒性验证 | E2E 测试 EPM 降级路径；修复 2 个 pre-existing 测试（`test_client.py` 中 `subagent_enabled` 断言）；429 重试策略优化（1s/2s → 5s/15s/30s） | agent 遇到不支持范式时优雅降级，不循环 |
+| **M0.1** 鲁棒性验证 | E2E 测试 EPM 降级路径；修复 2 个 pre-existing 测试（`test_client.py` 中 `subagent_enabled` 断言）；429 重试策略优化（1s/2s → 5s/15s/30s）；**ethoinsight-planning skill（端到端分析规划框架，3 层实装，2026-04-17）** | agent 遇到不支持范式时优雅降级，不循环 |
 | **M0.2** EPM 范式补全 | 创建 `epm.py` 模板；补全 `metrics.py` 6 个函数（closed_arm_time_ratio、center_time、entries 等）；补全 `assess.py` 阈值 | EPM 数据端到端分析跑通 |
 | **M0.3** Open Field 范式 | open_field 模板/指标/阈值 | 累计 3 个范式完整可用（shoaling + epm + open_field） |
 | **M0.4** 基础设施 | `read_file` UTF-16 fallback；恢复 noldus-kb（等 `180.184.84.124:7001` 恢复）；提交积压代码 | noldus-kb 可查询；无未提交改动 |
