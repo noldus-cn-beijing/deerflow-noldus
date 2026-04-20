@@ -14,6 +14,7 @@ import {
   hasContent,
   hasPresentFiles,
   hasReasoning,
+  stripClarificationOptionsFromContent,
 } from "@/core/messages/utils";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import type { Subtask } from "@/core/tasks";
@@ -106,7 +107,10 @@ export function MessageList({
               return (
                 <div key={group.id}>
                   <MarkdownContent
-                    content={extractContentFromMessage(message)}
+                    content={stripClarificationOptionsFromContent(
+                      extractContentFromMessage(message),
+                      options ?? [],
+                    )}
                     isLoading={thread.isLoading}
                     rehypePlugins={rehypePlugins}
                   />

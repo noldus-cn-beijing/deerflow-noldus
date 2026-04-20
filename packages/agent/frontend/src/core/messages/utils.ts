@@ -287,6 +287,44 @@ export function isClarificationToolMessage(message: Message) {
   return message.type === "tool" && message.name === "ask_clarification";
 }
 
+/**
+ * Strip the backend-rendered "  1. opt\n  2. opt" numbered options block from
+ * a clarification ToolMessage's content so the frontend doesn't show options
+ * twice (once as text, once as {@link ClarificationOptions} buttons).
+ *
+ * Matches the exact format produced by
+ * `ClarificationMiddleware._format_clarification_message` (backend): a blank
+ * line followed by lines like `  {N}. {option}` for each option in order.
+ * IM channels still consume the full content (without button UI), so the
+ * backend format is unchanged — this strip happens only at render time.
+ *
+ * Returns the trimmed content if the trailing block matched, or the original
+ * content if it didn't (defensive — never lose the question text).
+ */
+export function stripClarificationOptionsFromContent(
+  content: string,
+  options: readonly string[],
+): string {
+  if (!options.length || !content) return content;
+
+  const lines = content.split("\n");
+  // The numbered list is at the end, one line per option; last option is
+  // last non-empty line. Walk from the tail and require exact match.
+  let cursor = lines.length - 1;
+  for (let i = options.length - 1; i >= 0; i--) {
+    const expected = `  ${i + 1}. ${options[i]}`;
+    if (cursor < 0 || lines[cursor] !== expected) {
+      return content;
+    }
+    cursor--;
+  }
+  // The backend inserts a blank line before the numbered block — drop it too.
+  if (cursor >= 0 && lines[cursor] === "") {
+    cursor--;
+  }
+  return lines.slice(0, cursor + 1).join("\n");
+}
+
 export function extractPresentFilesFromMessage(message: Message) {
   if (message.type !== "ai" || !hasPresentFiles(message)) {
     return [];
