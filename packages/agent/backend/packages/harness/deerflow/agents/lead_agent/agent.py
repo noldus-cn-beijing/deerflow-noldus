@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.middlewares.archiving_summarization import ArchivingSummarizationMiddleware
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
+from deerflow.agents.middlewares.internal_notes_middleware import InternalNotesMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
@@ -266,6 +267,12 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
 
     # LoopDetectionMiddleware — append the instance created earlier
     middlewares.append(loop_detection)
+
+    # InternalNotesMiddleware — tag lead's internal status-note AI messages
+    # (e.g. "## 提取的关键上下文" dumps) as hide_from_ui so frontend skips them.
+    # Messages stay in LangGraph state so the model continues to see its own
+    # notes on subsequent turns.
+    middlewares.append(InternalNotesMiddleware())
 
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:

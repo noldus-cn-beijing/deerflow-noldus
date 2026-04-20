@@ -14,7 +14,7 @@ from typing import Any, override
 
 from langchain.agents.middleware.summarization import SummarizationMiddleware
 from langchain.agents.middleware.types import AgentState
-from langchain_core.messages import messages_to_dict
+from langchain_core.messages import HumanMessage, messages_to_dict
 from langgraph.runtime import Runtime
 
 from deerflow.config.paths import get_paths
@@ -126,6 +126,25 @@ class ArchivingSummarizationMiddleware(SummarizationMiddleware):
                 logger.debug("Reset loop detection for thread %s after summarization", thread_id)
             except Exception:
                 logger.exception("Failed to reset loop detection for thread %s", thread_id)
+
+    @override
+    def _build_new_messages(self, summary: str) -> list[HumanMessage]:
+        """Construct the summary HumanMessage and tag it as hide_from_ui.
+
+        Upstream SummarizationMiddleware injects a HumanMessage prefixed with
+        "Here is a summary of the conversation to date:" so the model can see
+        the compacted history. That message is internal plumbing — it must
+        not render as a user bubble in the frontend. Tagging it here (in the
+        single place where it is constructed) is more robust than pattern-
+        matching downstream.
+        """
+        upstream_messages = super()._build_new_messages(summary)
+        tagged: list[HumanMessage] = []
+        for msg in upstream_messages:
+            existing_kwargs = dict(getattr(msg, "additional_kwargs", None) or {})
+            existing_kwargs["hide_from_ui"] = True
+            tagged.append(msg.model_copy(update={"additional_kwargs": existing_kwargs}))
+        return tagged
 
     def _archive_messages(self, messages_to_archive: list, runtime: Runtime) -> None:
         """Persist messages to a JSON file in the thread's data directory."""
