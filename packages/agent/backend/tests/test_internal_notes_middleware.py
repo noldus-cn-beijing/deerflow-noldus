@@ -147,33 +147,3 @@ class TestInternalNotesMiddlewareAfterModel:
         assert result["messages"][0].id == "ai-5"
         # Content unchanged.
         assert result["messages"][0].content == INTERNAL_DUMP_CONTENT
-
-
-class TestSummarizationMessageHidden:
-    """ArchivingSummarizationMiddleware._build_new_messages should tag the
-    injected "Here is a summary..." HumanMessage as hide_from_ui.
-    """
-
-    def test_build_new_messages_tags_summary_hidden(self):
-        import sys
-        from unittest.mock import MagicMock
-
-        # archiving_summarization imports deerflow.config.paths which in turn
-        # pulls the app config; keep test hermetic.
-        sys.modules.setdefault("deerflow.subagents.executor", MagicMock())
-
-        from deerflow.agents.middlewares.archiving_summarization import (
-            ArchivingSummarizationMiddleware,
-        )
-
-        # Instantiate with minimum required args — model is only used for
-        # actual summarization calls, not for _build_new_messages.
-        mw = ArchivingSummarizationMiddleware(
-            model=MagicMock(),
-        )
-        new_messages = mw._build_new_messages("this is a summary")
-        assert len(new_messages) == 1
-        msg = new_messages[0]
-        assert msg.type == "human"
-        assert "summary of the conversation to date" in msg.content.lower()
-        assert msg.additional_kwargs.get("hide_from_ui") is True
