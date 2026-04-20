@@ -295,6 +295,11 @@ export const enUS: Translations = {
     failed: "Subtask failed",
   },
 
+  clarification: {
+    chooseOption: "Choose an option",
+    orTypeCustom: "Or type a custom reply below",
+  },
+
   // Token Usage
   tokenUsage: {
     title: "Token Usage",

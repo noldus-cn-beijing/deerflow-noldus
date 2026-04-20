@@ -113,6 +113,9 @@ export default function ChatPage() {
                 threadId={threadId}
                 thread={thread}
                 paddingBottom={messageListPaddingBottom}
+                onSelectClarificationOption={(optionText) => {
+                  void sendMessage(threadId, { text: optionText, files: [] });
+                }}
               />
             </div>
             <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">

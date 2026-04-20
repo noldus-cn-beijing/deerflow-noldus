@@ -226,6 +226,12 @@ export interface Translations {
     failed: string;
   };
 
+  // Clarification
+  clarification: {
+    chooseOption: string;
+    orTypeCustom: string;
+  };
+
   // Token Usage
   tokenUsage: {
     title: string;

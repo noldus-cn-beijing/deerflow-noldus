@@ -324,6 +324,26 @@ export function findToolCallResult(toolCallId: string, messages: Message[]) {
   return undefined;
 }
 
+/**
+ * Look up the tool_call args that produced the ToolMessage with the given id.
+ * Useful when rendering a tool message's UI needs data that only lives on the
+ * originating AIMessage (e.g. ask_clarification's options list).
+ */
+export function findToolCallArgs(
+  toolCallId: string,
+  messages: Message[],
+): Record<string, unknown> | undefined {
+  for (const message of messages) {
+    if (message.type !== "ai") continue;
+    for (const toolCall of message.tool_calls ?? []) {
+      if (toolCall.id === toolCallId) {
+        return toolCall.args;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function isHiddenFromUIMessage(message: Message) {
   return message.additional_kwargs?.hide_from_ui === true;
 }

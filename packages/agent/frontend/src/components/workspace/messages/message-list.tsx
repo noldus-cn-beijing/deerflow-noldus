@@ -9,6 +9,7 @@ import {
   extractContentFromMessage,
   extractPresentFilesFromMessage,
   extractTextFromMessage,
+  findToolCallArgs,
   groupMessages,
   hasContent,
   hasPresentFiles,
@@ -23,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
 import { StreamingIndicator } from "../streaming-indicator";
 
+import { ClarificationOptions } from "./clarification-options";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
@@ -37,11 +39,18 @@ export function MessageList({
   threadId,
   thread,
   paddingBottom = MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
+  onSelectClarificationOption,
 }: {
   className?: string;
   threadId: string;
   thread: BaseStream<AgentThreadState>;
   paddingBottom?: number;
+  /**
+   * Optional callback fired when the user clicks one of the option buttons
+   * rendered under an `ask_clarification` message. Receives the raw option
+   * text, which the page is expected to forward as the next user message.
+   */
+  onSelectClarificationOption?: (optionText: string) => void;
 }) {
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
@@ -69,13 +78,46 @@ export function MessageList({
           } else if (group.type === "assistant:clarification") {
             const message = group.messages[0];
             if (message && hasContent(message)) {
+              const toolCallId =
+                message.type === "tool" ? message.tool_call_id : undefined;
+              const toolArgs = toolCallId
+                ? findToolCallArgs(toolCallId, messages)
+                : undefined;
+              const rawOptions = toolArgs?.options;
+              // Options may arrive as a JSON-encoded string from certain LLMs
+              // (see ClarificationMiddleware._format_clarification_message).
+              let options: string[] | undefined;
+              if (Array.isArray(rawOptions)) {
+                options = rawOptions.filter(
+                  (opt): opt is string => typeof opt === "string",
+                );
+              } else if (typeof rawOptions === "string") {
+                try {
+                  const parsed = JSON.parse(rawOptions);
+                  if (Array.isArray(parsed)) {
+                    options = parsed.filter(
+                      (opt): opt is string => typeof opt === "string",
+                    );
+                  }
+                } catch {
+                  options = [rawOptions];
+                }
+              }
               return (
-                <MarkdownContent
-                  key={group.id}
-                  content={extractContentFromMessage(message)}
-                  isLoading={thread.isLoading}
-                  rehypePlugins={rehypePlugins}
-                />
+                <div key={group.id}>
+                  <MarkdownContent
+                    content={extractContentFromMessage(message)}
+                    isLoading={thread.isLoading}
+                    rehypePlugins={rehypePlugins}
+                  />
+                  {onSelectClarificationOption && (
+                    <ClarificationOptions
+                      options={options}
+                      onSelect={onSelectClarificationOption}
+                      disabled={thread.isLoading}
+                    />
+                  )}
+                </div>
               );
             }
             return null;

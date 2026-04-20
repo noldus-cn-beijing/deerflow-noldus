@@ -281,6 +281,11 @@ export const zhCN: Translations = {
     failed: "子任务失败",
   },
 
+  clarification: {
+    chooseOption: "选择一个选项",
+    orTypeCustom: "或在下方输入框自定义回复",
+  },
+
   // Token Usage
   tokenUsage: {
     title: "Token 用量",

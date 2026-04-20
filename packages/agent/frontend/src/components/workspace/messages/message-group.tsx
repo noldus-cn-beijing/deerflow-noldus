@@ -441,6 +441,33 @@ interface CoTToolCallStep extends GenericCoTStep<"toolCall"> {
 
 type CoTStep = CoTReasoningStep | CoTToolCallStep;
 
+/**
+ * Tool calls that are internal plumbing — the lead agent uses them heavily
+ * to shuffle files and run commands, but users don't care. Filtering them
+ * out of the Chain-of-Thought timeline dramatically declutters the UI.
+ *
+ * Semantic tools users DO care about (`task`, `ask_clarification`,
+ * `present_files`, `write_todos`) are NOT listed here and continue to render.
+ */
+const HIDDEN_TOOL_CALL_NAMES = new Set<string>([
+  // Low-level I/O — pure plumbing, never interesting to the user.
+  "read_file",
+  "write_file",
+  "str_replace",
+  "bash",
+  "ls",
+  "glob",
+  "grep",
+  // ethoinsight fine-grained analysis pipeline — each run emits all five.
+  // The high-level outcome is visible via subagent progress + present_files.
+  "get_analysis_template",
+  "parse_trajectories",
+  "compute_metrics",
+  "run_statistics",
+  "generate_charts",
+  "assess_and_handoff",
+]);
+
 function convertToSteps(messages: Message[]): CoTStep[] {
   const steps: CoTStep[] = [];
   for (const message of messages) {
@@ -456,7 +483,12 @@ function convertToSteps(messages: Message[]): CoTStep[] {
         steps.push(step);
       }
       for (const tool_call of message.tool_calls ?? []) {
+        // `task` is a subagent dispatch — rendered as a dedicated subtask
+        // card elsewhere, not in the CoT timeline.
         if (tool_call.name === "task") {
+          continue;
+        }
+        if (HIDDEN_TOOL_CALL_NAMES.has(tool_call.name)) {
           continue;
         }
         const step: CoTToolCallStep = {

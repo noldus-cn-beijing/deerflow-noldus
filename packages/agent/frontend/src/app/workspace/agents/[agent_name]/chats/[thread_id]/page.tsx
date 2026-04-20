@@ -139,6 +139,13 @@ export default function AgentChatPage() {
                 threadId={threadId}
                 thread={thread}
                 paddingBottom={messageListPaddingBottom}
+                onSelectClarificationOption={(optionText) => {
+                  void sendMessage(
+                    threadId,
+                    { text: optionText, files: [] },
+                    { agent_name },
+                  );
+                }}
               />
             </div>
 
