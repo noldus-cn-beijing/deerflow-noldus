@@ -374,28 +374,37 @@ def compute_paradigm_metrics(
 
     # Compute shoaling group-level timeseries
     timeseries: dict[str, pd.DataFrame] = {}
-    if paradigm == "shoaling" and len(subjects) >= 2:
-        iid = compute_inter_individual_distance(subjects)
-        if iid is not None:
-            timeseries["inter_individual_distance"] = iid
-        nnd = compute_nearest_neighbor_distance(subjects)
-        if nnd is not None:
-            timeseries["nearest_neighbor_distance"] = nnd
-        pol = compute_group_polarity(subjects)
-        if pol is not None:
-            timeseries["group_polarity"] = pol
-
-        # Add shoaling summary scalars per subject from timeseries
-        if nnd is not None:
-            for name in per_subject:
-                sub_nnd = nnd.loc[nnd["subject"] == name, "nnd"]
-                per_subject[name]["mean_nnd"] = float(sub_nnd.mean()) if not sub_nnd.empty else None
-        if iid is not None:
-            for name in per_subject:
-                per_subject[name]["mean_iid"] = float(iid["mean_iid"].mean())
-        if pol is not None:
-            for name in per_subject:
-                per_subject[name]["mean_polarity"] = float(pol["polarity"].mean())
+    group_level_metrics: dict[str, float | dict] = {}
+    if paradigm == "shoaling":
+        n_sub = len(subjects)
+        if n_sub >= 2:
+            iid = compute_inter_individual_distance(subjects)
+            if iid is not None:
+                timeseries["inter_individual_distance"] = iid
+                group_level_metrics["mean_iid"] = float(iid["mean_iid"].mean())
+            nnd = compute_nearest_neighbor_distance(subjects)
+            if nnd is not None:
+                timeseries["nearest_neighbor_distance"] = nnd
+                # NND is genuinely per-subject (each fish has its own nearest neighbour).
+                for name in per_subject:
+                    sub_nnd = nnd.loc[nnd["subject"] == name, "nnd"]
+                    per_subject[name]["mean_nnd"] = float(sub_nnd.mean()) if not sub_nnd.empty else None
+            pol = compute_group_polarity(subjects)
+            if pol is not None:
+                timeseries["group_polarity"] = pol
+                group_level_metrics["mean_polarity"] = float(pol["polarity"].mean())
+        else:
+            # Single-subject (or empty) input — IID / polarity are not applicable.
+            # These are group metrics that require ≥2 simultaneously tracked subjects.
+            # DO NOT fabricate zero-variance per-subject scalars.
+            group_level_metrics["mean_iid"] = {
+                "applicable": False,
+                "reason": "group metric requires ≥2 simultaneously tracked subjects",
+            }
+            group_level_metrics["mean_polarity"] = {
+                "applicable": False,
+                "reason": "group metric requires ≥2 simultaneously tracked subjects",
+            }
 
     # Filter metrics if requested
     if metrics:
@@ -440,11 +449,39 @@ def compute_paradigm_metrics(
         for k, v in subj.items() if v is not None
     })
 
+    # Data quality warnings — surface critical sample-size concerns without blocking.
+    data_quality_warnings: list[dict] = []
+    for grp_name, grp_metrics in group_summary.items():
+        if not grp_metrics:
+            continue
+        # All metrics within a group share the same n (they come from the same subjects)
+        sample_n = next(iter(grp_metrics.values())).get("n", 0)
+        if sample_n < 3:
+            data_quality_warnings.append({
+                "severity": "critical",
+                "metric": "all",
+                "message": (
+                    f"Group '{grp_name}' has n={sample_n} (<3). "
+                    "Statistical inference will be unreliable; descriptive statistics only."
+                ),
+            })
+    if paradigm == "shoaling" and len(subjects) < 2:
+        data_quality_warnings.append({
+            "severity": "warning",
+            "metric": "mean_iid,mean_polarity",
+            "message": (
+                "Shoaling group metrics (IID, polarity) are not applicable: "
+                "only 1 subject detected. Group metrics require ≥2 simultaneously tracked subjects."
+            ),
+        })
+
     return {
         "paradigm": paradigm,
         "per_subject": per_subject,
         "group_summary": group_summary,
+        "group_level_metrics": group_level_metrics,
         "timeseries": timeseries,
+        "data_quality_warnings": data_quality_warnings,
         "metadata": {
             "n_subjects": len(subjects),
             "n_files": summary.get("total_files", 0),

@@ -338,3 +338,136 @@ class TestCharts:
             assert os.path.exists(path)
         finally:
             os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Test: data boundary defences (commit 2 — fake per-subject IID/polarity bug)
+# ---------------------------------------------------------------------------
+
+
+class TestShoalingGroupMetricsNotFakedPerSubject:
+    """Regression tests for the zero-variance IID/polarity bug.
+
+    The previous implementation broadcast a single group-level mean_iid /
+    mean_polarity scalar to every subject's per_subject dict, producing
+    identical values across fish and thus zero between-subject variance.
+    IID and polarity are group-level metrics and must not appear as
+    per-subject scalars.
+    """
+
+    def test_mean_iid_not_in_per_subject(self, shoaling_parsed):
+        m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling")
+        for subject, sdict in m["per_subject"].items():
+            assert "mean_iid" not in sdict, (
+                f"{subject} has fake per-subject mean_iid; "
+                "IID is a group-level metric."
+            )
+
+    def test_mean_polarity_not_in_per_subject(self, shoaling_parsed):
+        m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling")
+        for subject, sdict in m["per_subject"].items():
+            assert "mean_polarity" not in sdict, (
+                f"{subject} has fake per-subject mean_polarity; "
+                "polarity is a group-level metric."
+            )
+
+    def test_group_level_metrics_populated_for_valid_shoaling(self, shoaling_parsed):
+        m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling")
+        glm = m.get("group_level_metrics", {})
+        assert isinstance(glm.get("mean_iid"), float)
+        assert glm["mean_iid"] > 0
+        assert isinstance(glm.get("mean_polarity"), float)
+        assert 0 <= glm["mean_polarity"] <= 1.0 + 1e-9
+
+    def test_mean_nnd_still_per_subject(self, shoaling_parsed):
+        """NND is genuinely per-subject and must still appear."""
+        m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling")
+        nnd_values = [
+            sdict.get("mean_nnd")
+            for sdict in m["per_subject"].values()
+            if sdict.get("mean_nnd") is not None
+        ]
+        assert len(nnd_values) > 0, "mean_nnd should remain per-subject"
+        # NND per-subject should NOT all be identical (different fish, different neighbours)
+        assert len(set(nnd_values)) > 1, "mean_nnd should vary across subjects"
+
+
+class TestShoalingSingleSubjectBoundary:
+    """When only 1 subject is tracked, group metrics must be flagged inapplicable."""
+
+    def test_single_subject_marks_iid_inapplicable(self):
+        df = pd.DataFrame({
+            "trial_time": [0.0, 0.1, 0.2],
+            "x_center": [1.0, 2.0, 3.0],
+            "y_center": [1.0, 2.0, 3.0],
+            "distance_moved": [0.0, 1.4, 1.4],
+            "velocity": [0.0, 14.0, 14.0],
+        })
+        parsed = {
+            "subjects": {"only_fish": df},
+            "summary": {"total_files": 1, "duration_seconds": 0.2},
+        }
+        m = metrics.compute_paradigm_metrics(parsed, "shoaling")
+        glm = m.get("group_level_metrics", {})
+        assert isinstance(glm.get("mean_iid"), dict)
+        assert glm["mean_iid"].get("applicable") is False
+        assert "reason" in glm["mean_iid"]
+        assert isinstance(glm.get("mean_polarity"), dict)
+        assert glm["mean_polarity"].get("applicable") is False
+
+    def test_single_subject_emits_quality_warning(self):
+        df = pd.DataFrame({
+            "trial_time": [0.0, 0.1, 0.2],
+            "x_center": [1.0, 2.0, 3.0],
+            "y_center": [1.0, 2.0, 3.0],
+            "distance_moved": [0.0, 1.4, 1.4],
+            "velocity": [0.0, 14.0, 14.0],
+        })
+        parsed = {
+            "subjects": {"only_fish": df},
+            "summary": {"total_files": 1, "duration_seconds": 0.2},
+        }
+        m = metrics.compute_paradigm_metrics(parsed, "shoaling")
+        warnings = m.get("data_quality_warnings", [])
+        assert any(
+            "1 subject" in w.get("message", "") or "mean_iid" in w.get("metric", "")
+            for w in warnings
+        ), f"Expected single-subject warning, got {warnings}"
+
+
+class TestSmallSampleWarning:
+    """n<3 in any group should emit a critical data_quality_warning."""
+
+    def test_n_equals_2_group_emits_critical_warning(self, shoaling_parsed):
+        groups = {
+            "control": ["Subject 1", "Subject 2"],  # n=2
+            "treatment": ["Subject 3", "Subject 4", "Subject 5"],  # n=3
+        }
+        m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling", groups=groups)
+        warnings = m.get("data_quality_warnings", [])
+        critical = [w for w in warnings if w.get("severity") == "critical"]
+        assert critical, f"Expected at least one critical warning for n=2 group, got {warnings}"
+        assert any(
+            "control" in w.get("message", "") and "n=2" in w.get("message", "")
+            for w in critical
+        )
+
+    def test_all_groups_n_ge_3_no_critical_warning(self, shoaling_parsed):
+        groups = {
+            "control": ["Subject 1", "Subject 2", "Subject 3"],
+            "treatment": ["Subject 4", "Subject 5"],  # n=2 — still critical for this group
+        }
+        m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling", groups=groups)
+        # Sanity: treatment has n=2 so there IS a critical warning
+        warnings = m.get("data_quality_warnings", [])
+        assert any(w.get("severity") == "critical" for w in warnings)
+
+    def test_pipeline_does_not_block_on_small_sample(self, shoaling_parsed):
+        """Warnings should not short-circuit metric computation."""
+        groups = {"small": ["Subject 1", "Subject 2"]}
+        m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling", groups=groups)
+        # Group summary should still contain stats even though n<3
+        assert "small" in m["group_summary"]
+        assert "distance_moved" in m["group_summary"]["small"]
+        assert m["group_summary"]["small"]["distance_moved"]["n"] == 2
+

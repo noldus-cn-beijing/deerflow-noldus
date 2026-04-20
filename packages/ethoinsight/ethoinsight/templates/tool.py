@@ -365,6 +365,7 @@ def run_paradigm_analysis_core(
             "charts": chart_paths,
         },
         "metrics_summary": compact_group_summary,
+        "group_level_metrics": m_result.get("group_level_metrics", {}),
         "statistics": stat_results,
         "assessment": assessment,
         "metadata": {
@@ -372,6 +373,7 @@ def run_paradigm_analysis_core(
             "n_files": n_files,
             "groups": groups,
         },
+        "data_quality_warnings": m_result.get("data_quality_warnings", []),
         "errors": errors,
     }
 
@@ -683,6 +685,9 @@ def compute_metrics_tool(
                 quality_warnings.append(f"group '{grp}' metric '{mname}': n={vals.get('n')} — underpowered")
             if vals.get("std", 1.0) == 0:
                 quality_warnings.append(f"group '{grp}' metric '{mname}': zero variance — all subjects identical")
+    # Structured warnings from compute_paradigm_metrics (e.g. single-subject shoaling).
+    for w in m_result.get("data_quality_warnings", []):
+        quality_warnings.append(f"[{w.get('severity', 'info')}] {w.get('metric', '?')}: {w.get('message', '')}")
 
     summary_path = os.path.join(real_workspace, "metrics_summary.json")
     computed = m_result.get("metadata", {}).get("computed_metrics", [])
@@ -1023,6 +1028,7 @@ def assess_and_handoff_tool(
             "charts": chart_paths,
         },
         "metrics_summary": compact,
+        "group_level_metrics": m_result.get("group_level_metrics", {}),
         "statistics": stat_results,
         "assessment": assessment,
         "metadata": {
@@ -1030,6 +1036,7 @@ def assess_and_handoff_tool(
             "n_files": n_files,
             "groups": groups_dict,
         },
+        "data_quality_warnings": m_result.get("data_quality_warnings", []),
         "errors": errors,
     }
     _write_json(real_handoff, handoff)
