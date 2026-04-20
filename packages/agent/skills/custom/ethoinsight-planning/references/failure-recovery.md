@@ -12,6 +12,42 @@
 | 超时无输出 / timeout | 执行复杂度 | 降级选项 D |
 | 其他 | 未知 | 降级选项 E |
 
+## data-analyst 失败
+
+```python
+ask_clarification(
+    question="分析解读步骤遇到问题：<简短原因>。以下几种处理方式，您倾向哪一种？",
+    clarification_type="approach_choice",
+    context="data-analyst 失败",
+    options=[
+        "重试一次（通常是临时性错误）",
+        "直接展示 code-executor 的原始统计结果（跳过专家解读）",
+        "中止本次分析"
+    ]
+)
+```
+
+- ❌ 不要 bypass data-analyst 继续派 report-writer：没有专家解读，报告质量必然劣化
+- ❌ 不要静默重试（浪费 token 且用户无感）
+
+## report-writer 失败
+
+```python
+ask_clarification(
+    question="APA 报告生成遇到问题：<简短原因>。以下几种处理方式，您倾向哪一种？",
+    clarification_type="approach_choice",
+    context="report-writer 失败",
+    options=[
+        "重试一次",
+        "只要分析洞察就够了（不要报告）",
+        "中止"
+    ]
+)
+```
+
+- ❌ 不要把 analysis_summary.md 原文当作最终报告返回给用户（用户期望的是 APA 格式）
+- ❌ 不要输出残缺的报告（比如只有 Results 没有 Discussion）
+
 ## 降级选项
 
 ### A. 能力边界（范式不支持）
