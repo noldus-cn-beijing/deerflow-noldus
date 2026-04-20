@@ -5,6 +5,7 @@ from pathlib import Path
 
 from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
+from pydantic import BaseModel, Field
 
 from deerflow.agents.thread_state import ThreadDataState, ThreadState
 from deerflow.config import get_app_config
@@ -1276,7 +1277,54 @@ def read_file_tool(
         return f"Error: Unexpected error reading file: {_sanitize_error(e, runtime)}"
 
 
-@tool("write_file", parse_docstring=True)
+# write_file: per-call content size cap.
+# Sonnet sometimes fails to emit the `content` field when serialising very large
+# strings (10K+ chars, e.g. long APA reports). Explicit cap gives the model a
+# clear error + instruction to split into chunks using append=True.
+WRITE_FILE_MAX_CONTENT_CHARS = 8000
+
+
+class _WriteFileArgs(BaseModel):
+    """Explicit args schema for write_file.
+
+    Preferred over @tool(parse_docstring=True) because Sonnet's tool-call schema
+    inference is more reliable when field descriptions and requirements are
+    stated directly instead of parsed from a docstring.
+    """
+
+    description: str = Field(
+        description=(
+            "Explain in one short sentence why you are writing this file. "
+            "ALWAYS PROVIDE THIS PARAMETER FIRST."
+        ),
+    )
+    path: str = Field(
+        description=(
+            "The absolute path to the file to write. "
+            "ALWAYS PROVIDE THIS PARAMETER SECOND."
+        ),
+    )
+    content: str = Field(
+        description=(
+            f"The text content to write. REQUIRED — must always be provided, "
+            f"may be empty string but never omitted. "
+            f"Maximum {WRITE_FILE_MAX_CONTENT_CHARS} characters per call; "
+            f"for longer files, call write_file multiple times: first call with "
+            f"append=False and the first chunk, subsequent calls with append=True "
+            f"and the remaining chunks. ALWAYS PROVIDE THIS PARAMETER THIRD."
+        ),
+        min_length=0,
+    )
+    append: bool = Field(
+        default=False,
+        description=(
+            "If True, append content to existing file; if False (default), overwrite. "
+            "Use append=True when splitting large content across multiple calls."
+        ),
+    )
+
+
+@tool("write_file", args_schema=_WriteFileArgs)
 def write_file_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
     description: str,
@@ -1284,13 +1332,15 @@ def write_file_tool(
     content: str,
     append: bool = False,
 ) -> str:
-    """Write text content to a file.
-
-    Args:
-        description: Explain why you are writing to this file in short words. ALWAYS PROVIDE THIS PARAMETER FIRST.
-        path: The **absolute** path to the file to write to. ALWAYS PROVIDE THIS PARAMETER SECOND.
-        content: The content to write to the file. ALWAYS PROVIDE THIS PARAMETER THIRD.
-    """
+    """Write text content to a file (optionally appending)."""
+    if len(content) > WRITE_FILE_MAX_CONTENT_CHARS:
+        return (
+            f"Error: Content exceeds {WRITE_FILE_MAX_CONTENT_CHARS} chars "
+            f"(got {len(content)}). Please split and call write_file multiple times:\n"
+            "1. First call: append=False with the first chunk (<= "
+            f"{WRITE_FILE_MAX_CONTENT_CHARS} chars)\n"
+            "2. Subsequent calls: append=True with the remaining chunks"
+        )
     try:
         sandbox = ensure_sandbox_initialized(runtime)
         ensure_thread_directories_exist(runtime)
