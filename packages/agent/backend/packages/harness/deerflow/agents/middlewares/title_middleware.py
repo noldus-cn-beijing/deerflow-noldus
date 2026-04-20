@@ -1,13 +1,13 @@
 """Middleware for automatic thread title generation."""
 
 import logging
-import re
 from typing import NotRequired, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langgraph.runtime import Runtime
 
+from deerflow.agents.middlewares.think_tag_middleware import strip_think_tags
 from deerflow.config.title_config import get_title_config
 from deerflow.models import create_chat_model
 
@@ -89,7 +89,7 @@ class TitleMiddleware(AgentMiddleware[TitleMiddlewareState]):
 
     def _strip_think_tags(self, text: str) -> str:
         """Remove <think>...</think> blocks emitted by reasoning models (e.g. minimax, DeepSeek-R1)."""
-        return re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE).strip()
+        return strip_think_tags(text)
 
     def _parse_title(self, content: object) -> str:
         """Normalize model output into a clean title string."""

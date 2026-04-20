@@ -11,6 +11,7 @@ from deerflow.agents.middlewares.internal_notes_middleware import InternalNotesM
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
+from deerflow.agents.middlewares.think_tag_middleware import ThinkTagMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
 from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
 from deerflow.agents.middlewares.token_usage_middleware import TokenUsageMiddleware
@@ -267,6 +268,11 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
 
     # LoopDetectionMiddleware — append the instance created earlier
     middlewares.append(loop_detection)
+
+    # ThinkTagMiddleware — route inline <think>...</think> content from
+    # assistant text into additional_kwargs.reasoning_content so the frontend
+    # renders it in a collapsible Reasoning block rather than the main bubble.
+    middlewares.append(ThinkTagMiddleware())
 
     # InternalNotesMiddleware — tag lead's internal status-note AI messages
     # (e.g. "## 提取的关键上下文" dumps) as hide_from_ui so frontend skips them.
