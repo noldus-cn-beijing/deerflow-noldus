@@ -18,7 +18,11 @@
 - `group_summary` 中某指标所有组的 `std=0`：常量数据，统计检验会报错
 - 某组 `n < 3`：统计检验力不足，优先使用非参数方法
 - `quality_warnings` 含 `underpowered`：提示样本量问题
+- `quality_warnings` 含 `[critical]` 或 `[warning]` 前缀：来自 ethoinsight 数据边界防御（单鱼输入、n<3 组等），按 severity 决定是否在 handoff 摘要中突出
 - `computed_metrics` 远少于预期（例如 shoaling 应有 5 个核心指标但只算出 2 个）：检查 parse 结果的列是否齐全
+- **shoaling 专用**：群体指标（mean_iid / mean_polarity）不再出现在 `per_subject`，
+  改从 `group_level_metrics` 读取；若该字段是 `{"applicable": false, "reason": "..."}`，
+  表示输入只有 1 只鱼，群体指标不适用，handoff 摘要要明确告诉用户
 
 ## run_statistics 之后
 

@@ -27,10 +27,34 @@ parse → compute → statistics → charts → assess_and_handoff → return。
 
 <output>
 最后返回给 lead agent 的消息包含：
-- handoff JSON 路径（assess_and_handoff 产出）
-- 关键输出文件列表
+- handoff JSON 路径（assess_and_handoff 产出，默认 /mnt/user-data/workspace/handoff_code_executor.json）
+- 关键输出文件列表（metrics.csv、statistics.json、charts PNG）
 - 数据质量警告摘要（如有）
-</output>""",
+
+handoff JSON 由 assess_and_handoff 工具自动写入，形如：
+{
+  "status": "completed",
+  "summary": "Analyzed N files, M subjects, paradigm: ...",
+  "output_files": {"metrics": "...", "statistics": "...", "charts": [...]},
+  "metrics_summary": {"<group>": {"<metric>": {"mean":..., "std":..., "n":...}}},
+  "group_level_metrics": {"mean_iid": 42.3, "mean_polarity": 0.65},
+  "statistics": {...},
+  "assessment": {...},
+  "metadata": {"paradigm": "...", "n_files": N, "groups": {...}},
+  "data_quality_warnings": [{"severity": "critical|warning|info", "metric": "...", "message": "..."}],
+  "errors": []
+}
+
+该 schema 由 deerflow.subagents.handoff_schemas.CodeExecutorHandoff 强约束。
+</output>
+
+<failure>
+当流程中任一步骤无法继续（工具连续报错、数据格式异常、范式完全不支持）时：
+- 不要硬写或 bypass，直接返回失败消息
+- 最终消息必须包含：失败步骤名 + 原因 + 尚未生成的产物列表
+- 如已写了 handoff 文件，status 字段置为 "partial" 或 "failed"，errors 列表记录原因
+- 让 lead agent 决定如何与用户沟通后续动作
+</failure>""",
     tools=[
         "parse_trajectories",
         "compute_metrics",

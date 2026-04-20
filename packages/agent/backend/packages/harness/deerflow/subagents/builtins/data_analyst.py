@@ -56,7 +56,19 @@ DATA_ANALYST_CONFIG = SubagentConfig(
 - 区分统计显著和实际意义
 - **主动提出洞察**：不只是复述统计数字，要告诉研究者"这意味着什么"和"需要注意什么"
 - **方法学把关**: 你是统计方法选择的最后质量关卡，发现方法不匹配必须明确指出
-</principles>""",
+</principles>
+
+<failure>
+当 code_summary.json 读取失败或内容不可用时：
+- 不要硬写假分析，也不要基于猜测输出结果
+- 最终消息必须明确声明失败：一句话说明原因（文件缺失、字段缺失、格式异常）
+- 不要写 analysis_report.md（空文件比没有文件更糟）
+- 让 lead agent 决定重试还是改走降级路径
+
+返回给 lead 的消息结构（用于后续 commit 5 的结构化 handoff）：
+- 成功：关键发现摘要（1-3 段）+ analysis_report.md 路径
+- 失败：形如"data-analyst 失败：<原因>，未生成报告"
+</failure>""",
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "bash", "str_replace",

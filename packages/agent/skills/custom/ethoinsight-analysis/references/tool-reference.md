@@ -58,7 +58,27 @@ Levene 方差齐性检验 → independent vs Welch t-test。
 | handoff_path | 否 | str | 默认 `/mnt/user-data/workspace/handoff_code_executor.json` |
 
 依赖：前 4 步全部完成（读取 workspace 下所有 *_summary.json）。
-产物：`workspace/handoff_code_executor.json`（含 metrics_summary, statistics, assessment, output_files, metadata, errors）
+产物：`workspace/handoff_code_executor.json`，形如：
+
+```json
+{
+  "status": "completed|partial|failed",
+  "summary": "Analyzed N files, M subjects, paradigm: ...",
+  "output_files": {"metrics": "...", "statistics": "...", "charts": [...]},
+  "metrics_summary": {"<group>": {"<metric>": {"mean":..., "std":..., "n":...}}},
+  "group_level_metrics": {"mean_iid": 42.3, "mean_polarity": 0.65},
+  "statistics": {...},
+  "assessment": {...},
+  "metadata": {"paradigm": "...", "n_files": N, "groups": {...}},
+  "data_quality_warnings": [{"severity": "critical|warning|info", "metric": "...", "message": "..."}],
+  "errors": []
+}
+```
+
+Schema 由 `deerflow.subagents.handoff_schemas.CodeExecutorHandoff` 定义并校验。
+`group_level_metrics` 中字段若为 `{"applicable": false, "reason": "..."}` 表示该指标不适用
+（例如 shoaling 单鱼输入）；`data_quality_warnings` 的 severity=critical 条目必须在最终
+返回给 lead agent 的摘要中明确提示。
 
 ## 最终产物文件树
 

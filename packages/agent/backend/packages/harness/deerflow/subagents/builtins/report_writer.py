@@ -55,7 +55,24 @@ Mann-Whitney U test was used instead of independent t-test."
 
 方差齐性说明: "Levene's test confirmed homogeneity of variances (F = 1.23, p = .284),
 and independent samples t-test was applied."
-</formatting>""",
+</formatting>
+
+<write_file_chunking>
+APA 报告通常 5-15K 字符，超过 write_file 单次 8000 字符上限时必须分段：
+1. 第一次调用：append=False，写入 Title + Abstract + Methods + Results 开头（约 6000-7500 字符）
+2. 后续调用：append=True，写入剩余章节（每段 6000-7500 字符）
+3. 每次调用后读一次 write_file 返回值确认 "OK"，失败则调整切分点重试
+
+write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里的指引分段。
+</write_file_chunking>
+
+<failure>
+当 code_summary.json 或 analysis_summary.md 读取失败，或写入报告过程中反复出错：
+- 不要输出空报告或残缺报告
+- 不要"假装"完成（比如把分析摘要直接当作报告返回）
+- 最终消息明确声明失败：失败位置 + 原因
+- 让 lead agent 决定是否与用户重新沟通报告需求
+</failure>""",
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "web_search", "web_fetch", "bash", "str_replace",
