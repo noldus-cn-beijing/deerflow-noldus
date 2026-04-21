@@ -374,14 +374,11 @@ export function ToolCall({
   } else if (name === "bash") {
     const description: string | undefined = (args as { description: string })
       ?.description;
-    if (!description) {
-      return t.toolCalls.executeCommand;
-    }
     const command: string | undefined = (args as { command: string })?.command;
     return (
       <ChainOfThoughtStep
         key={id}
-        label={description}
+        label={description ?? t.toolCalls.executeCommand}
         icon={SquareTerminalIcon}
       >
         {command && (
