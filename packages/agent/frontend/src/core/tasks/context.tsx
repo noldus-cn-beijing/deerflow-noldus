@@ -1,3 +1,4 @@
+import type { AIMessage } from "@langchain/langgraph-sdk";
 import { createContext, useCallback, useContext, useState } from "react";
 
 import type { Subtask } from "./types";
@@ -45,60 +46,47 @@ export function useUpdateSubtask() {
       const existing = tasks[update.id];
       const incoming = update.latestMessage;
 
+      // SSE path: a new AIMessage arrived via task_running. Append to the
+      // accumulated messages array (dedup on id) and commit via setTasks —
+      // SubtaskCard needs to re-render to show streaming progress.
       if (incoming) {
         const prevMessages = existing?.messages ?? [];
-        const alreadyHas =
-          incoming.id != null &&
-          prevMessages.some((m) => m.id === incoming.id);
-        const nextMessages = alreadyHas
-          ? prevMessages
-          : [...prevMessages, incoming];
-        const next = {
+        const existingIndex =
+          incoming.id != null
+            ? prevMessages.findIndex((m) => m.id === incoming.id)
+            : -1;
+        let nextMessages: AIMessage[];
+        if (existingIndex >= 0) {
+          // Same id, updated content (streaming chunk). Replace in place so
+          // partial text/tool_call state reflects the latest server-side
+          // view instead of getting frozen at the first chunk.
+          nextMessages = prevMessages.slice();
+          nextMessages[existingIndex] = incoming;
+        } else {
+          nextMessages = [...prevMessages, incoming];
+        }
+        tasks[update.id] = {
           ...(existing ?? ({} as Subtask)),
           ...update,
           messages: nextMessages,
           latestMessage: nextMessages[nextMessages.length - 1],
         } as Subtask;
-        if (existing && isSameSubtask(existing, next)) {
-          return;
-        }
-        tasks[update.id] = next;
         setTasks({ ...tasks });
         return;
       }
 
-      const next = {
+      // Render-time path: MessageList walks thread.messages during render and
+      // calls updateSubtask to reflect task_init / task_completed metadata
+      // derived from lead-side tool_calls. Mutating in place (without
+      // setTasks) avoids a render-loop; the next SSE event will propagate
+      // the merged state to subscribers.
+      tasks[update.id] = {
         ...(existing ?? ({ messages: [] } as unknown as Subtask)),
         ...update,
         messages: existing?.messages ?? [],
       } as Subtask;
-      if (existing && isSameSubtask(existing, next)) {
-        return;
-      }
-      tasks[update.id] = next;
-      setTasks({ ...tasks });
     },
     [tasks, setTasks],
   );
   return updateSubtask;
-}
-
-/**
- * Shallow-compare two Subtask objects so callers that re-fire the same update
- * (e.g. render-time `updateSubtask({ id, status: "in_progress" })`) don't
- * trigger a Context setState storm. `messages` is compared by reference — the
- * update path above guarantees the array is reused when nothing new arrived.
- */
-function isSameSubtask(a: Subtask, b: Subtask): boolean {
-  return (
-    a.id === b.id &&
-    a.status === b.status &&
-    a.subagent_type === b.subagent_type &&
-    a.description === b.description &&
-    a.prompt === b.prompt &&
-    a.result === b.result &&
-    a.error === b.error &&
-    a.messages === b.messages &&
-    a.latestMessage === b.latestMessage
-  );
 }
