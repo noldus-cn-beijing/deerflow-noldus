@@ -72,6 +72,29 @@
   .decision-card .a { font-size: 13px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
   .decision-card .reason { font-size: 11.5px; color: #666; line-height: 1.4; }
 
+  /* 能力边界表 */
+  .boundary-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+  .boundary-table th { background: #16213e; color: #fff; padding: 8px 10px; text-align: left; font-weight: 600; font-size: 12px; }
+  .boundary-table td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: top; line-height: 1.5; }
+  .boundary-table tr:nth-child(even) { background: #fafafa; }
+  .boundary-table code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .badge-auto { background: #e8f5e9; color: #2e7d32; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+  .badge-assist { background: #fff3e0; color: #e65100; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+  .badge-manual { background: #ffebee; color: #c62828; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+
+  /* Schema 卡片 */
+  .schema-card { background: #f8f9fa; border-left: 4px solid #16213e; border-radius: 4px; padding: 12px 14px; margin: 10px 0; font-size: 12px; }
+  .schema-card .schema-title { font-weight: 700; color: #16213e; margin-bottom: 6px; font-size: 13px; }
+  .schema-card code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+  .schema-card pre { background: #1a1a2e; color: #e8e8e8; padding: 10px; border-radius: 4px; font-size: 10.5px; overflow-x: auto; margin-top: 6px; line-height: 1.5; }
+
+  /* 可信度机制卡片 */
+  .trust-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+  .trust-card { background: #fff; border: 1px solid #e0e0e0; border-left: 3px solid #1976D2; border-radius: 4px; padding: 10px 12px; font-size: 12px; }
+  .trust-card .trust-title { font-weight: 700; color: #16213e; font-size: 12.5px; margin-bottom: 4px; }
+  .trust-card .trust-desc { color: #555; line-height: 1.5; }
+  .trust-card code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+
   /* 页脚 */
   .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #eee; text-align: center; font-size: 11px; color: #999; }
 
@@ -212,11 +235,11 @@
   <!-- 第二行：Agent 层 -->
   <div class="arch-row">
     <div class="arch-box bg-yellow" style="max-width:740px;">
-      <div class="box-title">🤖 Lead Agent — 任务规划与调度（GLM-5.1）</div>
+      <div class="box-title">🤖 Lead Agent — 任务规划与调度（当前 Claude Sonnet · 9 月后切自研小模型）</div>
       <div class="box-item">
         <strong>Plan Mode</strong>：解析用户意图 → 制定分析计划 → 串行分派子代理<br/>
-        <strong>调度逻辑</strong>：code-executor → data-analyst → report-writer<br/>
-        <strong>追问模式</strong>：分析完成后，用户可继续提问 → 分派 knowledge-assistant
+        <strong>调度逻辑</strong>：code-executor → data-analyst →（按需）report-writer<br/>
+        <strong>澄清优先</strong>：分析完成后主动 ask_clarification，失败统一走澄清而非静默 bypass
       </div>
     </div>
   </div>
@@ -266,10 +289,11 @@
     <div class="arch-box bg-teal">
       <div class="box-title">📚 知识层</div>
       <div class="box-item">
-        <strong>Skills (YAML)</strong>：ethoinsight / ethoinsight-analysis / ethoinsight-charts<br/>
+        <strong>Skills (YAML)</strong>：ethoinsight / ethoinsight-analysis / ethoinsight-charts / ethoinsight-planning<br/>
         静态方法论注入：范式解读规则、统计决策树、图表选择指南<br/><br/>
-        <strong>noldus-kb (MCP)</strong>：6200+ 论文知识库<br/>
-        动态知识检索：范式指南、术语定义、方法论参考、文献引用
+        <strong>noldus-kb (MCP · v0.1 启用)</strong>：6200+ 论文知识库<br/>
+        动态知识检索：范式指南、术语定义、方法论参考、文献引用<br/>
+        <span style="font-size:10.5px; color:#888;">当前状态：基础设施就绪，服务端恢复后启用</span>
       </div>
     </div>
     <div class="arch-box bg-green">
@@ -340,6 +364,270 @@
   </div>
 </div>
 
+<!-- ═══════════ 新增：能力边界 ═══════════ -->
+<div class="page-break"></div>
+<h2>能力边界与人工复核规则</h2>
+<p style="font-size:13px; color:#555; margin-bottom:14px;">
+我们不声称 AI "万能"。下表明确列出每一类分析任务的自动化程度、适用边界、以及何时必须人工复核。边界清晰，是可信度的前提。
+</p>
+
+<table class="boundary-table">
+  <tr>
+    <th style="width:18%">能力</th>
+    <th style="width:10%">自动化</th>
+    <th style="width:36%">适用边界（代码确定性保证）</th>
+    <th style="width:36%">边界外的处理与人工复核</th>
+  </tr>
+  <tr>
+    <td><strong>正态性判断</strong><br/><code>test_normality</code></td>
+    <td><span class="badge-auto">全自动</span></td>
+    <td>Shapiro-Wilk，n ≥ 3；返回 <code>is_normal</code>、<code>p_value</code>、<code>W</code> 全部可审计</td>
+    <td>n &lt; 3：跳过检验，默认走非参数路径，并在报告打 <code>data_quality_warnings.severity=warning</code></td>
+  </tr>
+  <tr>
+    <td><strong>两组比较检验</strong><br/><code>compare_two_groups</code></td>
+    <td><span class="badge-auto">全自动</span></td>
+    <td>
+      决策树：两组正态 → Levene → 等方差 t / Welch t；<br/>
+      非正态 → Mann-Whitney U；<br/>
+      配对 → paired-t 或 Wilcoxon
+    </td>
+    <td>
+      n₁+n₂ &lt; 6：自动标注"统计效力严重受限，II 型错误风险高"；<br/>
+      效应量 |d| &gt; 0.5 但 p &gt; α：自动标注"可能真实效应，建议扩大样本"
+    </td>
+  </tr>
+  <tr>
+    <td><strong>多组比较</strong><br/><code>compare_multiple_groups</code></td>
+    <td><span class="badge-auto">全自动</span></td>
+    <td>全组正态 + 方差齐 → One-way ANOVA + Tukey HSD；否则 → Kruskal-Wallis + Dunn 事后检验</td>
+    <td>组数 &gt; 5 或含有序组别（剂量梯度）：提示考虑趋势检验，需研究员确认设计</td>
+  </tr>
+  <tr>
+    <td><strong>多重检验校正</strong></td>
+    <td><span class="badge-auto">全自动</span></td>
+    <td>指标数 ≥ 2 时自动 Bonferroni 校正，α 按指标数平分</td>
+    <td>高相关性指标（如 distance_moved / velocity）：Bonferroni 偏保守，在报告中说明该局限性</td>
+  </tr>
+  <tr>
+    <td><strong>组指标 vs 个体指标</strong><br/><code>group_level_metrics</code></td>
+    <td><span class="badge-auto">全自动</span></td>
+    <td>IID、polarity 等群体级时序指标**只保留在群体层**，不广播到 per_subject（杜绝"零方差伪数据"）</td>
+    <td>单鱼文件：<code>group_level_metrics.applicable=False</code>，报告中明确说明</td>
+  </tr>
+  <tr>
+    <td><strong>领域阈值判断</strong><br/><code>assess.py</code></td>
+    <td><span class="badge-assist">AI 辅助</span></td>
+    <td>已知范式（Shoaling / EPM / OFT 等）的参考范围由 YAML 知识库定义，确定性比对</td>
+    <td>新范式或超出阈值表：由 data-analyst 基于 MCP 文献检索给出参考，**报告中明确标注"基于文献推断，非库内固化阈值"**</td>
+  </tr>
+  <tr>
+    <td><strong>异常个体识别</strong></td>
+    <td><span class="badge-assist">AI 辅助</span></td>
+    <td>Z-score &gt; 2 或 IQR 外的个体自动标记</td>
+    <td>排除决定：系统**不自动排除**，只提示研究员人工确认。排除前后的结果都保留在报告中</td>
+  </tr>
+  <tr>
+    <td><strong>生物学解读</strong></td>
+    <td><span class="badge-assist">AI 辅助</span></td>
+    <td>基于统计结果 + 领域知识库生成自然语言洞察；每条洞察附引用锚点</td>
+    <td>**报告定位为"研究员的草稿助手，非论文最终版"**，所有解读需研究员复核后方可投稿</td>
+  </tr>
+  <tr>
+    <td><strong>实验设计评价</strong></td>
+    <td><span class="badge-manual">人工为主</span></td>
+    <td>系统仅报告样本量、平衡性、缺失率等客观指标</td>
+    <td>实验设计是否合理、是否有混杂因素：系统提示常见风险清单，最终判断由研究员承担</td>
+  </tr>
+  <tr>
+    <td><strong>因果推断</strong></td>
+    <td><span class="badge-manual">人工为主</span></td>
+    <td>系统只做关联性分析（组间差异）</td>
+    <td>因果结论（"药物 X 导致行为 Y"）**不在 AI 输出范围**，需研究员结合实验设计独立判断</td>
+  </tr>
+</table>
+
+<p style="font-size:12px; color:#666; margin-top:10px; padding:10px; background:#fffbe6; border-left:3px solid #ffc107; border-radius:3px;">
+<strong>核心原则</strong>：确定性规则能处理的交给 Python 代码（100% 可审计、可复现）；边界外的情况 AI 辅助生成参考意见，但在报告中标注来源与不确定性；涉及科学判断的环节（因果、投稿结论）由研究员最终拍板。
+</p>
+
+<!-- ═══════════ 新增：中间产物契约 ═══════════ -->
+<h2>中间产物契约（Schema + 版本化）</h2>
+<p style="font-size:13px; color:#555; margin-bottom:14px;">
+子代理之间通过结构化 JSON / Markdown 文件在共享工作区传递数据。**所有 handoff 文件都有 Pydantic schema 契约**，lead agent 在读入时强制校验，契约失败不静默吞掉，直接走澄清流程。
+</p>
+
+<div class="schema-card">
+  <div class="schema-title">📄 code_summary.json · <code>CodeExecutorHandoff</code></div>
+  <div>code-executor 产出。lead agent 用 Pydantic 校验后传给 data-analyst。</div>
+<pre>{
+  "status": "completed | partial | failed",      // 枚举约束
+  "summary": "string",                             // 一句话状态
+  "output_files": {                                // 分类文件清单
+    "metrics": "metrics.csv",
+    "statistics": "statistics.json",
+    "charts": ["boxplot_distance.png", ...]
+  },
+  "metrics_summary": {                             // group → metric → stats
+    "control":   { "mean_nnd": { "mean": 37.97, "std": 2.67, "n": 2 } },
+    "treatment": { "mean_nnd": { "mean": 48.16, "std": 18.95, "n": 3 } }
+  },
+  "statistics": { ... },                           // 检验结果（test_used/p/效应量）
+  "data_quality_warnings": [                       // 严重度分级
+    { "severity": "warning", "metric": "all", "message": "n&lt;3 无法做正态性检验" }
+  ],
+  "confidence": 0.0 ~ 1.0                          // 可选整体置信度
+}</pre>
+  <div style="margin-top:6px; color:#666; font-size:11.5px;">
+    <strong>版本管理</strong>：<code>extra="allow"</code> 允许向前兼容新字段；破坏性变更需升级 schema 主版本（例如字段重命名）。
+    <strong>依赖关系</strong>：data-analyst 和 report-writer 都从该文件读取，不可跳过生成。
+  </div>
+</div>
+
+<div class="schema-card">
+  <div class="schema-title">📄 analysis_summary.md + handoff JSON · <code>DataAnalystHandoff</code></div>
+  <div>data-analyst 产出。Markdown 给人读，结构化 JSON 给 lead 渲染洞察用。</div>
+<pre>{
+  "status": "completed | failed",
+  "analysis_summary_path": "analysis_summary.md",  // 人读版
+  "key_findings": ["<=5 bullet 关键发现"],
+  "excluded_metrics": [                            // 被剔除的指标及理由
+    { "metric": "mean_iid", "reason": "单鱼样本不适用群体指标" }
+  ],
+  "references": [                                  // 引用锚点
+    { "claim": "NND &gt; 50mm 提示凝聚性下降",
+      "source": "noldus-kb://shoaling/nnd-reference",
+      "citation_key": "Miller2017" }
+  ],
+  "confidence_per_finding": { ... }                // 每条洞察的置信度
+}</pre>
+  <div style="margin-top:6px; color:#666; font-size:11.5px;">
+    <strong>上游</strong>：code_summary.json。<strong>下游</strong>：report-writer 读取后写入 Discussion 段。<strong>引用锚点</strong>：<code>references</code> 直接指向知识库条目或文献 citation_key，可被前端渲染为脚注。
+  </div>
+</div>
+
+<div class="schema-card">
+  <div class="schema-title">📄 report.md · APA 格式报告</div>
+  <div>report-writer 最终产出。结构固定：Methods / Results / Discussion / References。</div>
+  <div style="margin-top:6px; color:#666; font-size:11.5px;">
+    <strong>约束</strong>：每个统计陈述必须附 <code>test_used, statistic, p, effect_size</code>；每条解读必须有 <code>[citation_key]</code> 引用锚点；无法引用的推论以"探索性假设"明确标记。
+    <strong>上游</strong>：code_summary.json + analysis_summary.md。<strong>版本策略</strong>：输出带时间戳文件名 <code>report_YYYYMMDD_HHMMSS.md</code>，历次运行可审计对比。
+  </div>
+</div>
+
+<!-- ═══════════ 新增：稳定性保障 ═══════════ -->
+<div class="page-break"></div>
+<h2>流程稳定性保障</h2>
+<p style="font-size:13px; color:#555; margin-bottom:14px;">
+Agent 流水线跑 3~5 分钟，中间每一步都有可能失败。我们通过 LangGraph 的中间件链 + 持久化 checkpoint 保证失败不丢数据、可恢复、可追溯。
+</p>
+
+<div class="trust-grid">
+  <div class="trust-card">
+    <div class="trust-title">⚙️ 阶段状态流转</div>
+    <div class="trust-desc">
+      每个 subagent 任务有显式状态：<code>pending → running → completed | failed</code>。lead agent 读取状态后决定是否推进或澄清。**绝不静默 bypass 失败**。
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">🔁 失败重试与澄清</div>
+    <div class="trust-desc">
+      LLM 429 / 网络错误：<code>llm_error_handling_middleware</code> 5s/15s/30s 三级退避；<br/>
+      工具失败：<code>tool_error_handling_middleware</code> 捕获 + 结构化错误反馈给 lead；<br/>
+      业务失败（如数据不符预期）：统一走 <code>ask_clarification</code>，**不自动重试同一 subagent 避免循环**
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">💾 阶段恢复（Checkpoint）</div>
+    <div class="trust-desc">
+      AsyncSqliteSaver 持久化每次 LLM 调用后的 state；前端意外断线后可从最后 checkpoint 继续，不重跑已完成阶段；<code>archiving_summarization</code> 压缩长对话时同步归档到 <code>archived_messages/</code> 便于前端历史恢复
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">🛡️ 循环检测</div>
+    <div class="trust-desc">
+      <code>loop_detection_middleware</code> 用稳定 key hash 检测连续重复调用；<code>subagent_limit_middleware</code> 限制单 subagent max_turns（code-executor=12, data-analyst=6）；超限自动 abort 并报告
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">🏠 并发隔离（共享工作区）</div>
+    <div class="trust-desc">
+      每个会话 <code>thread_id</code> 对应独立沙箱目录 <code>{thread_dir}/user-data/workspace/</code>；虚拟路径 <code>/mnt/user-data/workspace/</code> 映射到物理隔离目录，**不同会话零互相污染**；<code>sandbox_audit_middleware</code> 审计所有 shell 命令
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">📦 write_file 鲁棒性</div>
+    <div class="trust-desc">
+      显式 Pydantic <code>_WriteFileArgs</code> schema + 8000 字符阈值 fail-fast；超长内容自动指引 append 分段，避免 LLM 截断导致静默写入残缺文件
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 新增：知识检索与证据链 ═══════════ -->
+<h2>知识检索与证据链设计</h2>
+<p style="font-size:13px; color:#555; margin-bottom:14px;">
+"AI 写的报告引用从哪来？靠不靠谱？" —— 这是可信度的核心问题。我们用**三层证据链**确保每条引用都可追溯。
+</p>
+
+<table class="boundary-table">
+  <tr>
+    <th style="width:18%">层级</th>
+    <th style="width:28%">来源</th>
+    <th style="width:28%">检索与过滤规则</th>
+    <th style="width:26%">在报告中的表现</th>
+  </tr>
+  <tr>
+    <td><strong>L1 · 代码级事实</strong></td>
+    <td>ethoinsight 库直接计算的统计量、效应量、样本量</td>
+    <td>**无 LLM 参与**，直接从 <code>statistics.json</code> 读数</td>
+    <td>"对照组 mean_nnd = 37.97 ± 2.67 (n=2)" · 可点击跳转到原始数据文件</td>
+  </tr>
+  <tr>
+    <td><strong>L2 · 库内固化知识</strong></td>
+    <td>Skills YAML 里的范式参考范围、阈值表、标准方法论</td>
+    <td>精确匹配：按 <code>paradigm + metric</code> 查表；命中则必引</td>
+    <td>"NND 正常范围 30~60 mm（基于 Noldus 行为学库）" · 引用锚点 <code>skill://ethoinsight-analysis#shoaling-nnd</code></td>
+  </tr>
+  <tr>
+    <td><strong>L3 · MCP 文献检索</strong></td>
+    <td>noldus-kb 6200+ 同行评审论文（v0.1 启用）</td>
+    <td>
+      向量检索 + 元数据过滤（期刊、年份、物种、范式）；<br/>
+      **只保留 score &gt; 阈值且元数据匹配的结果**；<br/>
+      每条结果附 DOI + 摘要 + 相似度
+    </td>
+    <td>每条 Discussion 陈述必须有 [citation_key]，点击跳转到原文链接 + 摘要预览</td>
+  </tr>
+</table>
+
+<h3 style="margin-top:20px;">引用锚点与审核机制</h3>
+<div class="trust-grid">
+  <div class="trust-card">
+    <div class="trust-title">🔗 引用锚点（Citation Anchor）</div>
+    <div class="trust-desc">
+      每条 AI 生成的解读都有 <code>{claim, source, citation_key}</code> 三元组。<code>source</code> 取值：<code>code://</code>（代码计算）/ <code>skill://</code>（库内知识）/ <code>noldus-kb://</code>（MCP 文献）。无法归因的陈述自动标记为"探索性推论（无直接文献支持）"
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">🧪 事实一致性检查（v0.1 后）</div>
+    <div class="trust-desc">
+      report-writer 输出后，独立 verifier 对比报告中的数值 vs <code>statistics.json</code>，任何不一致（如 p 值写错、效应量虚构）直接拒收重写。**不允许 LLM 自由发挥数字**
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">📋 统计决策依据展示</div>
+    <div class="trust-desc">
+      报告 Methods 段自动生成："采用 X 检验，原因：Shapiro-Wilk 检验 p=0.03 拒绝正态性，因此选择非参数 Mann-Whitney U"。**决策路径完全可审计**，研究员能看到每一步判断的依据
+    </div>
+  </div>
+  <div class="trust-card">
+    <div class="trust-title">👥 人工复核标记</div>
+    <div class="trust-desc">
+      报告最终段自动附"AI 辅助声明"：列出哪些结论是代码事实、哪些是库内知识、哪些是 AI 推断；研究员在投稿前可逐条确认或修改
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ 第四部分：设计决策 ═══════════ -->
 <h2>关键设计决策</h2>
 
@@ -351,13 +639,13 @@
   </div>
   <div class="decision-card">
     <div class="q">统计方法怎么保证选对？</div>
-    <div class="a">确定性规则引擎 + AI 兜底</div>
-    <div class="reason">正态性检验、方差齐性检验等有明确规则的决策由 Python 代码处理（100% 可审计）。边界情况由 AI 推理。两层互补。</div>
+    <div class="a">确定性规则引擎 + 明确边界标注</div>
+    <div class="reason">正态性检验、方差齐性、检验选择都由 Python 代码按规则执行（100% 可审计，见 <code>ethoinsight/statistics.py</code>）。小样本、边界情况不让 AI "猜"，而是自动打 warning 标签，提示研究员复核。边界定义见上文《能力边界》章节。</div>
   </div>
   <div class="decision-card">
-    <div class="q">领域知识怎么注入？</div>
-    <div class="a">Skill 静态注入 + MCP 动态检索</div>
-    <div class="reason">方法论规则（"何时用非参数检验"）通过 Skill 文件注入 prompt。具体文献和参考值通过 MCP 从 6200+ 论文知识库实时检索。</div>
+    <div class="q">领域知识怎么注入？引用如何追溯？</div>
+    <div class="a">三层证据链 · 每条引用有锚点</div>
+    <div class="reason">方法论规则通过 Skill 静态注入 prompt（<code>skill://</code> 锚点）；范式参考值来自库内固化阈值表；具体文献通过 MCP 实时检索（<code>noldus-kb://</code>）。每条陈述必须有 source 标注，无法归因的显式标为"探索性推论"。详见《知识检索与证据链设计》。</div>
   </div>
   <div class="decision-card">
     <div class="q">为什么不是传统软件？</div>
@@ -373,22 +661,22 @@
   <div class="pipeline-step">
     <div class="pipeline-number step-blue">现在</div>
     <div class="pipeline-content">
-      <div class="step-title">云端大模型驱动 (GLM-5.1 API)</div>
-      <div class="step-desc">快速迭代 Agent 流程，完善 13 个范式支持，积累真实用户数据和专家反馈</div>
+      <div class="step-title">云端大模型驱动（Claude Sonnet）— 跑通与论证可行性</div>
+      <div class="step-desc">用 Sonnet 快速迭代 Agent 流程，完善 13 个范式支持，积累真实用户对话、分析决策和专家修改反馈作为蒸馏语料</div>
     </div>
   </div>
   <div class="pipeline-step">
-    <div class="pipeline-number step-orange">Q3</div>
+    <div class="pipeline-number step-orange">2026 Q3</div>
     <div class="pipeline-content">
-      <div class="step-title">微调专用小模型 (Qwen3-8B)</div>
-      <div class="step-desc">用积累的数据微调行为学专用模型，SFT + DPO 两阶段训练，在 Fireworks.ai 平台完成</div>
+      <div class="step-title">蒸馏行为学专用小模型（Qwen3-8B）</div>
+      <div class="step-desc">用积累的真实对话数据蒸馏 + SFT，在 Fireworks.ai 完成训练；DPO 推迟到 v0.1 之后。目标：在行为学分析任务上达到 Sonnet 90%+ 能力</div>
     </div>
   </div>
   <div class="pipeline-step">
-    <div class="pipeline-number step-green">Q4</div>
+    <div class="pipeline-number step-green">2026 Q4</div>
     <div class="pipeline-content">
-      <div class="step-title">本地部署，去除 API 依赖</div>
-      <div class="step-desc">微调模型部署到本地 GPU (RTX 4090)，数据全程不出服务器，满足企业级数据合规要求</div>
+      <div class="step-title">本地部署（RTX 4090），去除云端 API 依赖</div>
+      <div class="step-desc">自研模型本地推理，轨迹数据全程不出内网，满足药企/科研机构数据合规要求</div>
     </div>
   </div>
 </div>
