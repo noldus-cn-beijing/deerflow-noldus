@@ -224,6 +224,9 @@ export interface Translations {
     in_progress: string;
     completed: string;
     failed: string;
+    taskDescription: string;
+    taskResult: string;
+    expertWorking: string;
   };
 
   // Clarification

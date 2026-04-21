@@ -123,9 +123,9 @@ export function MessageGroup({
                     />
                   }
                 ></ChainOfThoughtStep>
-              ) : (
+              ) : step.type === "toolCall" ? (
                 <ToolCall key={step.id} {...step} isLoading={isLoading} />
-              ),
+              ) : null,
             )}
           {lastToolCallStep && (
             <FlipDisplay uniqueKey={lastToolCallStep.id ?? ""}>
@@ -183,7 +183,7 @@ export function MessageGroup({
   );
 }
 
-function ToolCall({
+export function ToolCall({
   id,
   messageId,
   name,
@@ -429,17 +429,21 @@ interface GenericCoTStep<T extends string = string> {
   type: T;
 }
 
-interface CoTReasoningStep extends GenericCoTStep<"reasoning"> {
+export interface CoTReasoningStep extends GenericCoTStep<"reasoning"> {
   reasoning: string | null;
 }
 
-interface CoTToolCallStep extends GenericCoTStep<"toolCall"> {
+export interface CoTToolCallStep extends GenericCoTStep<"toolCall"> {
   name: string;
   args: Record<string, unknown>;
   result?: string;
 }
 
-type CoTStep = CoTReasoningStep | CoTToolCallStep;
+export interface CoTTextStep extends GenericCoTStep<"text"> {
+  content: string;
+}
+
+export type CoTStep = CoTReasoningStep | CoTToolCallStep | CoTTextStep;
 
 /**
  * Tool calls that are internal plumbing — the lead agent uses them heavily
@@ -449,7 +453,7 @@ type CoTStep = CoTReasoningStep | CoTToolCallStep;
  * Semantic tools users DO care about (`task`, `ask_clarification`,
  * `present_files`, `write_todos`) are NOT listed here and continue to render.
  */
-const HIDDEN_TOOL_CALL_NAMES = new Set<string>([
+export const HIDDEN_TOOL_CALL_NAMES = new Set<string>([
   // Low-level I/O — pure plumbing, never interesting to the user.
   "read_file",
   "write_file",
@@ -468,19 +472,35 @@ const HIDDEN_TOOL_CALL_NAMES = new Set<string>([
   "assess_and_handoff",
 ]);
 
-function convertToSteps(messages: Message[]): CoTStep[] {
+export function convertToSteps(
+  messages: Message[],
+  hiddenToolNames: Set<string> = HIDDEN_TOOL_CALL_NAMES,
+  includeText = false,
+): CoTStep[] {
   const steps: CoTStep[] = [];
   for (const message of messages) {
     if (message.type === "ai") {
       const reasoning = extractReasoningContentFromMessage(message);
       if (reasoning) {
         const step: CoTReasoningStep = {
-          id: message.id,
+          id: message.id ? `${message.id}-reasoning` : undefined,
           messageId: message.id,
           type: "reasoning",
           reasoning: extractReasoningContentFromMessage(message),
         };
         steps.push(step);
+      }
+      if (
+        includeText &&
+        typeof message.content === "string" &&
+        message.content.trim()
+      ) {
+        steps.push({
+          id: message.id ? `${message.id}-text` : undefined,
+          messageId: message.id,
+          type: "text",
+          content: message.content,
+        });
       }
       for (const tool_call of message.tool_calls ?? []) {
         // `task` is a subagent dispatch — rendered as a dedicated subtask
@@ -488,7 +508,7 @@ function convertToSteps(messages: Message[]): CoTStep[] {
         if (tool_call.name === "task") {
           continue;
         }
-        if (HIDDEN_TOOL_CALL_NAMES.has(tool_call.name)) {
+        if (hiddenToolNames.has(tool_call.name)) {
           continue;
         }
         const step: CoTToolCallStep = {

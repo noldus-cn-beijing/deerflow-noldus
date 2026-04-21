@@ -293,6 +293,9 @@ export const enUS: Translations = {
     in_progress: "Running subtask",
     completed: "Subtask completed",
     failed: "Subtask failed",
+    taskDescription: "Task description",
+    taskResult: "Task result",
+    expertWorking: "Expert at work",
   },
 
   clarification: {

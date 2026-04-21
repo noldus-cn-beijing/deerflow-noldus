@@ -279,6 +279,9 @@ export const zhCN: Translations = {
     in_progress: "子任务运行中",
     completed: "子任务已完成",
     failed: "子任务失败",
+    taskDescription: "任务描述",
+    taskResult: "任务结果",
+    expertWorking: "专家工作过程",
   },
 
   clarification: {
