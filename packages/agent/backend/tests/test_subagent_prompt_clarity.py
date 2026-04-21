@@ -80,6 +80,15 @@ class TestDataAnalystPromptClarity:
     def test_forbids_fake_analysis(self):
         assert "不要硬编造" in self.prompt or "不要基于猜测" in self.prompt
 
+    def test_warns_about_json_string_escaping(self):
+        # Prevent regression of unescaped inner double-quotes inside
+        # handoff_data_analyst.json string values (observed in early E2E where
+        # emphasized phrases like "xxx" broke JSON parsing). The prompt must
+        # tell the subagent to use Chinese quotes or escape as needed.
+        assert "<json_writing>" in self.prompt
+        assert "合法" in self.prompt  # "必须是合法的 JSON"
+        assert "中文" in self.prompt  # guidance toward full-width quotes
+
 
 class TestReportWriterPromptClarity:
     @property
@@ -102,3 +111,10 @@ class TestReportWriterPromptClarity:
 
     def test_has_failure_section(self):
         assert "<failure>" in self.prompt
+
+    def test_warns_about_json_string_escaping(self):
+        # Same JSON-safety guidance as data-analyst applies to
+        # handoff_report_writer.json string values.
+        assert "<json_writing>" in self.prompt
+        assert "合法" in self.prompt
+        assert "中文" in self.prompt

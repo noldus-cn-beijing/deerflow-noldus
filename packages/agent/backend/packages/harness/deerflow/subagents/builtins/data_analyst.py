@@ -57,6 +57,20 @@ handoff_data_analyst.json schema:
 }
 </contract>
 
+<json_writing>
+handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse 它。
+写字符串值时遵守以下规则，避免未转义的引号破坏 JSON 语法：
+
+- 在字符串里想做**强调或引用短语**（比如"统计功效不足""实验组群聚性降低"）时：
+  用**中文全角引号** `"..."` 或**书名号** `《》`，例如 `"典型的"统计功效不足"场景"`
+- 需要**引用变量名、p 值表达式、参数**时：用**单引号**，例如 `'p < 0.05'`、`'mean_nnd'`
+- 真的必须写入半角双引号字符时：手动转义为 `\"`
+- 不确定时就用中文引号——比半角安全
+
+**写 JSON 之前最好自查一遍**：扫一下每个字符串值里是否只有 `"..."` 分隔符本身是
+半角双引号，内部内容里没有另一对未转义的 `"`。
+</json_writing>
+
 <workflow>
 1. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
    （一次读完，包含 per_subject / statistics / metrics_summary，不要零碎读多次）

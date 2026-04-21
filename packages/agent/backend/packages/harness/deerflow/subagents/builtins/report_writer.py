@@ -51,6 +51,20 @@ handoff_report_writer.json schema:
   - 图表已由 code-executor 生成，直接引用 chart_paths 中的路径
 </contract>
 
+<json_writing>
+handoff_report_writer.json 必须是**合法的 JSON**——下游工具会 parse 它。
+写字符串值时遵守以下规则，避免未转义的引号破坏 JSON 语法：
+
+- 在字符串里想做**强调或引用短语**时：
+  用**中文全角引号** `"..."` 或**书名号** `《》`
+- 需要**引用变量名、p 值表达式、参数**时：用**单引号**，例如 `'p < 0.05'`
+- 真的必须写入半角双引号字符时：手动转义为 `\"`
+- 不确定时就用中文引号——比半角安全
+
+report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK（APA 格式
+传统上用半角引号引文献）。此规则只约束 handoff_report_writer.json 字符串值。
+</json_writing>
+
 <workflow>
 1. read_file 两个 handoff 文件：
    - /mnt/user-data/workspace/handoff_code_executor.json（数据）
