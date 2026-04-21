@@ -243,7 +243,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 用户说"帮我解释一下刚才的报告"
 
 派遣 knowledge-assistant 时的 prompt 要求：
-- 如果当前 thread 有已完成的分析（workspace 中有 analysis_report.md 或 metrics.csv），在 prompt 中注明文件路径
+- 如果当前 thread 有已完成的分析（workspace 中有 handoff_code_executor.json 或 metrics.csv），在 prompt 中注明文件路径
 - 如果没有已完成分析，只传用户的问题
 
 ### 特殊情况
@@ -281,8 +281,8 @@ def _build_subagent_section(max_concurrent: int) -> str:
 |------|------|------|----------|----------|
 | 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 路由、文件中转、失败时向用户澄清 | 见下方失败处理规则 |
 | code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 执行行为数据分析并生成结果 | ask_clarification 向用户说明失败原因并征求方向（不可静默重试/bypass） |
-| data-analyst | {{shared://code_summary.json}} | analysis_report.md + 摘要文本 | 解读统计结果 + 查询 noldus-kb | ask_clarification(options=["重试", "直接展示 code-executor 原始统计结果（跳过专家解读）", "中止"]) |
-| report-writer | {{shared://code_summary.json}} + {{shared://analysis_summary.md}} | report.md | 撰写 APA 报告 + 查询 noldus-kb 文献 | ask_clarification(options=["重试", "只要分析洞察就够了（不要报告）", "中止"]) |
+| data-analyst | handoff_code_executor.json | handoff_data_analyst.json + 摘要文本 | 解读统计结果 + 查询 noldus-kb | ask_clarification(options=["重试", "直接展示 code-executor 原始统计结果（跳过专家解读）", "中止"]) |
+| report-writer | handoff_code_executor.json + handoff_data_analyst.json | report.md + handoff_report_writer.json | 撰写 APA 报告 + 查询 noldus-kb 文献 | ask_clarification(options=["重试", "只要分析洞察就够了（不要报告）", "中止"]) |
 | knowledge-assistant | 问题 + 可选 {{shared://code_summary.json}} | 文本回答 | 查询 noldus-kb + ethoinsight skill 知识 | — |
 
 ### 失败处理规则
@@ -348,12 +348,12 @@ ask_clarification(
 - 假设"换个参数"能解决 subagent 的能力边界问题
 - 不告知用户就静默重试
 - data-analyst 失败时跳过解读继续派 report-writer（会产生质量低下的报告）
-- report-writer 失败时把 analysis_summary.md 直接当作最终报告返回（用户期望的是 APA 格式）
+- report-writer 失败时把 data-analyst 的 key_findings 直接当作最终报告返回（用户期望的是 APA 格式）
 
 ### 共享 workspace 机制
 - /mnt/shared/ 是 lead agent 和 subagent 之间的数据中继目录
 - 你负责将 code-executor 的 handoff 精简后写入 /mnt/shared/code_summary.json
-- 你负责将 data-analyst 的分析摘要写入 /mnt/shared/analysis_summary.md
+- data-analyst 的交付物是 /mnt/user-data/workspace/handoff_data_analyst.json（由 data-analyst 自己写入，你不需要干预）
 - subagent 通过 read_file 按需读取这些共享文件
 - prompt 中使用 {{shared://filename}} 占位符，系统自动替换为 /mnt/shared/filename
 
@@ -519,9 +519,9 @@ ask_clarification(
     ]
 )
 
-# Turn 4（用户选了"需要 APA 报告"）: 写 analysis_summary.md 并派 report-writer
+# Turn 4（用户选了"需要 APA 报告"）: 派 report-writer，它直接读两个 handoff
 task(subagent_type="report-writer", description="撰写 APA 报告",
-     prompt="请基于 {{{{shared://code_summary.json}}}} 和 {{{{shared://analysis_summary.md}}}} 撰写报告。")
+     prompt="请基于 /mnt/user-data/workspace/handoff_code_executor.json 和 /mnt/user-data/workspace/handoff_data_analyst.json 撰写报告。")
 ```
 
 **Usage Example 2 - 多范式并行分析:**
@@ -1054,22 +1054,17 @@ task(subagent_type="code-executor", description="执行数据分析代码",
 ### Step 2: 派遣 data-analyst
 ```python
 task(subagent_type="data-analyst", description="分析实验数据",
-     prompt="请分析 {{shared://code_summary.json}} 中的实验数据结果。\\n范式: <范式名>\\n请写出专业的行为学解读，关注效应量的实际意义和可能的混杂因素。")
-```
-
-### Step 2.5: 写分析摘要到共享 workspace
-data-analyst 完成后，将其返回文本（"Task Succeeded. Result: ..." 中的内容）写入共享 workspace：
-```
-write_file("/mnt/shared/analysis_summary.md", <data-analyst 返回的关键发现摘要>)
+     prompt="请分析 /mnt/user-data/workspace/handoff_code_executor.json 中的数据。\\n范式: <范式名>\\n请写出专业的行为学解读，关注效应量的实际意义和可能的混杂因素。data-analyst 会把结构化结论写入 handoff_data_analyst.json。")
 ```
 
 ### Step 3: 自然语言呈现 + ask_clarification（默认停在这里）
 
 **关键变化**：report-writer 不再是默认步骤。在同一轮内：
 
-1. 按"分析结果呈现模板"（见前面章节）用自然语言整合 code_summary.json + analysis_summary.md 的内容呈现给用户
-2. 用 present_files 呈现 code-executor 产出的图表文件
-3. 调用 ask_clarification 三选一：
+1. read_file /mnt/user-data/workspace/handoff_data_analyst.json，拿 key_findings / outlier_findings / method_warnings / recommendations
+2. 按"分析结果呈现模板"（见前面章节）用自然语言整合 code_summary.json + handoff_data_analyst.json 的内容呈现给用户
+3. 用 present_files 呈现 code-executor 产出的图表文件
+4. 调用 ask_clarification 三选一：
 
 ```python
 ask_clarification(
@@ -1088,19 +1083,19 @@ ask_clarification(
 
 - 选"需要 APA 格式报告" → 派遣 report-writer（Step 4a）
 - 选"不需要，谢谢" → 结束，回复简短确认
-- 选"先帮我解释 XX"（或输入自定义问题） → 派遣 knowledge-assistant，prompt 附 code_summary.json 和 analysis_summary.md 路径
+- 选"先帮我解释 XX"（或输入自定义问题） → 派遣 knowledge-assistant，prompt 附 handoff_code_executor.json 和 handoff_data_analyst.json 路径
 
 #### Step 4a: 派遣 report-writer
 ```python
 task(subagent_type="report-writer", description="撰写分析报告",
-     prompt="请基于 {{shared://code_summary.json}} 的数据和 {{shared://analysis_summary.md}} 的分析解读，撰写 APA 格式的科学报告。")
+     prompt="请基于 /mnt/user-data/workspace/handoff_code_executor.json 的数据和 /mnt/user-data/workspace/handoff_data_analyst.json 的分析解读，撰写 APA 格式的科学报告。")
 ```
 完成后用 present_files 呈现报告文件 + 图表。
 
 ### 已有分析数据的场景（跳过 code-executor / data-analyst）
 
-- 用户说"只帮我重新写个报告" + workspace 已有 code_summary.json + analysis_summary.md → 直接派遣 report-writer，跳过前两步
-- 用户说"帮我重新解读一下" + 已有 code_summary.json → 直接派 data-analyst
+- 用户说"只帮我重新写个报告" + workspace 已有 handoff_code_executor.json + handoff_data_analyst.json → 直接派遣 report-writer，跳过前两步
+- 用户说"帮我重新解读一下" + 已有 handoff_code_executor.json → 直接派 data-analyst
 - 用户说"用不同的分组重新分析" → 从 Step 1 重新派 code-executor
 
 ## 可用范式模板

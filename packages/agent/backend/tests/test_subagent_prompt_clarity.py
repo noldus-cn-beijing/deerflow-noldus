@@ -58,8 +58,19 @@ class TestDataAnalystPromptClarity:
         return DATA_ANALYST_CONFIG.system_prompt or ""
 
     def test_declares_input_contract(self):
-        assert "code_summary.json" in self.prompt
-        assert "metrics_summary" in self.prompt
+        # Primary input is now the code-executor handoff; code_summary.json
+        # remains as a secondary/fallback reference.
+        assert "handoff_code_executor.json" in self.prompt
+        assert "per_subject" in self.prompt
+
+    def test_declares_handoff_output(self):
+        # Data-analyst must write a structured handoff JSON — it's the single
+        # interface to report-writer and the lead agent, replacing the old
+        # free-form analysis_summary.md.
+        assert "handoff_data_analyst.json" in self.prompt
+        # Ensure the old markdown output path is NOT re-introduced.
+        assert "analysis_summary.md" not in self.prompt
+        assert "analysis_report.md" not in self.prompt
 
     def test_has_failure_section(self):
         assert "<failure>" in self.prompt
@@ -67,7 +78,7 @@ class TestDataAnalystPromptClarity:
         assert "lead" in self.prompt.lower()
 
     def test_forbids_fake_analysis(self):
-        assert "不要硬写" in self.prompt or "不要基于猜测" in self.prompt
+        assert "不要硬编造" in self.prompt or "不要基于猜测" in self.prompt
 
 
 class TestReportWriterPromptClarity:
@@ -76,8 +87,13 @@ class TestReportWriterPromptClarity:
         return REPORT_WRITER_CONFIG.system_prompt or ""
 
     def test_declares_input_contract(self):
-        assert "code_summary.json" in self.prompt
-        assert "analysis_summary.md" in self.prompt
+        # Report-writer now reads two handoff JSONs, not analysis_summary.md.
+        assert "handoff_code_executor.json" in self.prompt
+        assert "handoff_data_analyst.json" in self.prompt
+        assert "analysis_summary.md" not in self.prompt
+
+    def test_declares_handoff_output(self):
+        assert "handoff_report_writer.json" in self.prompt
 
     def test_mentions_write_file_chunking(self):
         """Report is typically 5-15K chars and write_file caps at 8000."""

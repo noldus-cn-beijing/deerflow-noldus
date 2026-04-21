@@ -43,8 +43,8 @@
 
 | 状态 | 行动 |
 |------|------|
-| 返回正常解读 | 继续流水线，写 analysis_summary.md |
-| 超时 | 跳过 report-writer，直接把 code_summary.json 的统计摘要展示给用户 |
+| 返回正常解读 | 继续流水线，读 handoff_data_analyst.json 向用户呈现洞察 |
+| 超时 | 跳过 report-writer，直接把 handoff_code_executor.json 的统计摘要展示给用户 |
 | 返回空或仅重复统计 | 视为超时处理 |
 
 ## Gate 5: report-writer 超时/空返回
@@ -54,7 +54,7 @@
 | 状态 | 行动 |
 |------|------|
 | 返回正常报告 | 用 present_files 展示给用户 |
-| 超时 | 用 data-analyst 的 analysis_summary.md 作为最终输出 |
+| 超时 | 用 data-analyst 的 handoff_data_analyst.json 里的 key_findings 作为最终输出 |
 
 ## 通用原则
 

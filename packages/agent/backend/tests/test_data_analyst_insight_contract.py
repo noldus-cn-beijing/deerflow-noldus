@@ -20,7 +20,6 @@ def test_outlier_finding_schema():
 def test_data_analyst_handoff_accepts_outlier_findings():
     h = DataAnalystHandoff(
         status="completed",
-        analysis_summary_path="/mnt/x.md",
         outlier_findings=[
             OutlierFinding(
                 subject="Subject 3",

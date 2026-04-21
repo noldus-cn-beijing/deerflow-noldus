@@ -118,17 +118,15 @@ class OutlierFinding(BaseModel):
 class DataAnalystHandoff(BaseModel):
     """Handoff JSON produced by the data-analyst subagent.
 
-    Structured return type so the lead agent can render insights without
-    re-parsing markdown. Written alongside the existing analysis_report.md
-    once the data-analyst prompt is updated (commit 5).
+    Structured return type so downstream consumers (report-writer, lead agent
+    rendering) can act on the analyst's findings without re-parsing natural
+    language. This is the single source of truth for data-analyst output —
+    the subagent writes nothing else to disk.
     """
 
     model_config = ConfigDict(extra="allow")
 
     status: Literal["completed", "failed"]
-    analysis_summary_path: str = Field(
-        description="Path to the markdown analysis report (existing output).",
-    )
     key_findings: list[str] = Field(
         default_factory=list,
         description="1-5 bullet findings surfaced to the user.",
