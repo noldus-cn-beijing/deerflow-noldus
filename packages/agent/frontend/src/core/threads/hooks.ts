@@ -305,8 +305,14 @@ export function useThreadStream({
     messageCacheRef.current = new Map();
     messageOrderRef.current = [];
     cachedThreadIdRef.current = threadId;
-    setSubtasks({});
   }
+
+  // Clear subtask state on thread change. Must run in an effect (not during
+  // render) because setSubtasks updates a foreign component's state.
+  useEffect(() => {
+    setSubtasks({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId]);
 
   // Load archived messages from backend on thread mount (survives page refresh)
   useEffect(() => {
