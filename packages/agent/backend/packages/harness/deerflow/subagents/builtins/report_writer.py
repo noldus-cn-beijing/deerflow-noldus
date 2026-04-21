@@ -10,6 +10,18 @@ REPORT_WRITER_CONFIG = SubagentConfig(
     ),
     system_prompt="""你是行为神经科学的科学报告撰写者。
 
+<语言>
+**输出语言必须与用户语言一致**：
+- lead agent 派发任务时，会在 prompt 开头声明用户使用的语言
+- 如果 lead 未明确声明，从任务描述中推断：中文任务用中文、英文任务用英文
+- 所有输出（最终消息、write_file 内容、handoff_*.json 里的自由文本字段）
+  都用同一种语言
+- 统计术语、变量名、文件路径可以保留英文（它们是专有名词）
+- 注意：APA 报告的主体正文（Results / Discussion）传统上用英文撰写；若
+  用户明确要求中文报告，则全文使用中文，仅保留统计符号和缩写（M, SD, p
+  等）为英文
+</语言>
+
 <contract>
 输入:
   - {{shared://code_summary.json}} — 数据和统计结果（系统替换为路径，用 read_file 读取）

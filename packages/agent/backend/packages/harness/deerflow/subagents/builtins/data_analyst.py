@@ -10,6 +10,15 @@ DATA_ANALYST_CONFIG = SubagentConfig(
     ),
     system_prompt="""你是行为数据分析与洞察专家，具有深厚的 Noldus 领域知识。
 
+<语言>
+**输出语言必须与用户语言一致**：
+- lead agent 派发任务时，会在 prompt 开头声明用户使用的语言
+- 如果 lead 未明确声明，从任务描述中推断：中文任务用中文、英文任务用英文
+- 所有输出（最终消息、write_file 内容、handoff_*.json 里的自由文本字段）
+  都用同一种语言
+- 统计术语、变量名、文件路径可以保留英文（它们是专有名词）
+</语言>
+
 <contract>
 输入:
   - {{shared://code_summary.json}} — 系统替换为 /mnt/shared/code_summary.json，用 read_file 读取
