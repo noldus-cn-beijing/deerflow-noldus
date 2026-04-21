@@ -446,14 +446,15 @@ export interface CoTTextStep extends GenericCoTStep<"text"> {
 export type CoTStep = CoTReasoningStep | CoTToolCallStep | CoTTextStep;
 
 /**
- * Tool calls that are internal plumbing — the lead agent uses them heavily
- * to shuffle files and run commands, but users don't care. Filtering them
- * out of the Chain-of-Thought timeline dramatically declutters the UI.
+ * Lead-agent timeline: hide low-level I/O plumbing AND ethoinsight
+ * fine-grained tools. Lead shouldn't be calling the latter directly; if it
+ * does, it's internal shuffling of handoff files and the high-level outcome
+ * is already visible via subagent progress + present_files.
  *
  * Semantic tools users DO care about (`task`, `ask_clarification`,
  * `present_files`, `write_todos`) are NOT listed here and continue to render.
  */
-export const HIDDEN_TOOL_CALL_NAMES = new Set<string>([
+export const LEAD_HIDDEN_TOOL_CALL_NAMES = new Set<string>([
   // Low-level I/O — pure plumbing, never interesting to the user.
   "read_file",
   "write_file",
@@ -472,9 +473,24 @@ export const HIDDEN_TOOL_CALL_NAMES = new Set<string>([
   "assess_and_handoff",
 ]);
 
+/**
+ * Subtask timeline (SubtaskCard expanded state): only hide pure filesystem
+ * noise. KEEP ethoinsight domain tools visible — those ARE the "expert at
+ * work" steps users want to see. `bash` stays visible too because subagents
+ * use it for diagnostic commands worth showing.
+ */
+export const SUBTASK_HIDDEN_TOOL_CALL_NAMES = new Set<string>([
+  "read_file",
+  "write_file",
+  "str_replace",
+  "ls",
+  "glob",
+  "grep",
+]);
+
 export function convertToSteps(
   messages: Message[],
-  hiddenToolNames: Set<string> = HIDDEN_TOOL_CALL_NAMES,
+  hiddenToolNames: Set<string> = LEAD_HIDDEN_TOOL_CALL_NAMES,
   includeText = false,
 ): CoTStep[] {
   const steps: CoTStep[] = [];

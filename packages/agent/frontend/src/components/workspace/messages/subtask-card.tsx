@@ -32,13 +32,10 @@ import { FlipDisplay } from "../flip-display";
 import { MarkdownContent } from "./markdown-content";
 import {
   convertToSteps,
-  HIDDEN_TOOL_CALL_NAMES,
+  SUBTASK_HIDDEN_TOOL_CALL_NAMES,
   ToolCall,
   type CoTStep,
 } from "./message-group";
-
-// Placeholder until C3 introduces SUBTASK_HIDDEN_TOOL_CALL_NAMES.
-const SUBTASK_HIDDEN_TOOL_CALL_NAMES = HIDDEN_TOOL_CALL_NAMES;
 
 export function SubtaskCard({
   className,
