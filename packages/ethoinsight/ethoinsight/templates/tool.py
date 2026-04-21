@@ -1028,6 +1028,7 @@ def assess_and_handoff_tool(
             "charts": chart_paths,
         },
         "metrics_summary": compact,
+        "per_subject": m_result.get("per_subject", {}),
         "group_level_metrics": m_result.get("group_level_metrics", {}),
         "statistics": stat_results,
         "assessment": assessment,

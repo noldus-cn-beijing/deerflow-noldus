@@ -66,6 +66,14 @@ class CodeExecutorHandoff(BaseModel):
         default_factory=dict,
         description="Nested map: group -> metric -> stats.",
     )
+    per_subject: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description=(
+            "Raw per-subject metric values: {subject_name: {metric: value}}. "
+            "Downstream data-analyst uses this to identify outlier subjects by "
+            "name and compute leave-one-out counterfactual group statistics."
+        ),
+    )
     statistics: dict[str, Any] = Field(default_factory=dict)
     assessment: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -76,6 +84,34 @@ class CodeExecutorHandoff(BaseModel):
         ge=0.0,
         le=1.0,
         description="Optional overall confidence score in [0,1].",
+    )
+
+
+class OutlierFinding(BaseModel):
+    """One flagged outlier subject with counterfactual support.
+
+    Used by data-analyst to surface per-subject diagnostics: which subject
+    deviates on which metric, by how much, and what the group statistics
+    look like with that subject excluded.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    subject: str = Field(description="Subject identifier, e.g. 'Subject 3'.")
+    metric: str = Field(description="Metric on which this subject is an outlier.")
+    value: float = Field(description="Raw per-subject value on that metric.")
+    deviation: str = Field(
+        description=(
+            "Qualitative description of deviation, e.g. '2x group median', "
+            "'CV=35%', '> 1.5 SD above mean'."
+        ),
+    )
+    counterfactual: str | None = Field(
+        default=None,
+        description=(
+            "Leave-one-out group stats if this subject is excluded, e.g. "
+            "'treatment mean_nnd drops 48.2 → 37.2 mm if Subject 3 excluded'."
+        ),
     )
 
 
@@ -96,6 +132,13 @@ class DataAnalystHandoff(BaseModel):
     key_findings: list[str] = Field(
         default_factory=list,
         description="1-5 bullet findings surfaced to the user.",
+    )
+    outlier_findings: list[OutlierFinding] = Field(
+        default_factory=list,
+        description=(
+            "Per-subject outlier diagnostics with leave-one-out counterfactual "
+            "context. Empty list when no outlier is flagged."
+        ),
     )
     excluded_metrics: list[str] = Field(
         default_factory=list,
@@ -135,5 +178,6 @@ __all__ = [
     "DataAnalystHandoff",
     "DataQualityWarning",
     "MetricStat",
+    "OutlierFinding",
     "ReportWriterHandoff",
 ]

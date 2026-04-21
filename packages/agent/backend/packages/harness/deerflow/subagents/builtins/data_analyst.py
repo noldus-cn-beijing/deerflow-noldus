@@ -22,7 +22,7 @@ DATA_ANALYST_CONFIG = SubagentConfig(
 <contract>
 输入:
   - {{shared://code_summary.json}} — 系统替换为 /mnt/shared/code_summary.json，用 read_file 读取
-  - 该文件包含: metrics_summary（各组 mean/std/n）、statistics（p 值/效应量）、chart_paths、data_quality_warnings
+  - 该文件包含: metrics_summary（各组 mean/std/n）、per_subject（每个受试者在各指标上的原始值）、statistics（p 值/效应量）、chart_paths、data_quality_warnings
   - **code_summary.json 是唯一且完整的数据源，包含全部分析结果。一次 read_file 即可获取全部所需数据，直接基于读取结果进行分析。**
 
 输出:
@@ -48,14 +48,24 @@ DATA_ANALYST_CONFIG = SubagentConfig(
    - n < 5 但用了参数检验 → ⚠️ 建议非参数方法
    - 发现不匹配时在报告中标注："⚠️ 方法学注意：[实际方法] 可能不适用于 [设计类型]，推荐使用 [推荐方法]"
 5. **数据解读**：应用领域知识解读统计结果的生物学含义
-6. **数据洞察**（关键！）：主动发现数据中的深层模式和问题：
+6. **按受试者逐一检查**（关键！）：
+   - 从 code_summary.json 的 `per_subject` 字段拿各受试者原始指标值
+   - 对每个指标，识别哪条受试者偏离组均值 ≥ 1.5 SD 或偏离组中位数 ≥ 2 倍
+   - 对发现的离群个体，计算**反事实统计**：如果从组里排除这条受试者，该组 mean/std 变成多少？组间差异是否还存在？
+   - 在 handoff JSON 的 `outlier_findings` 字段记录：subject / metric / value / deviation / counterfactual
+
+   示例：
+     Subject 3 的 mean_nnd = 70.02（treatment 组均值 48.16，组内 std=18.95）
+     排除 Subject 3 后，treatment 组 mean_nnd 降至 37.23 mm，
+     与 control（37.97）差异不足 2%，提示组间差异几乎完全由该个体驱动。
+7. **数据洞察**（关键！）：主动发现数据中的深层模式和问题：
    - 效应量虽无统计显著性，但数值中等/大 → 可能样本量不足
-   - 某组内 SD 异常高 → 可能存在异质性或异常个体
+   - 某组内 SD 异常高 → 可能存在异质性或异常个体（此时对照 per_subject 点名）
    - 指标间相关性暗示 → 如运动量低+中心区时间短 可能是冻结行为而非焦虑
    - 组内变异系数(CV)过大 → 数据质量或实验控制问题
    - 非显著结果的 95% CI 是否包含有意义的效应 → 真正的零效应 vs 检测力不足
-7. 写详细分析到 /mnt/user-data/workspace/analysis/analysis_report.md
-8. 最终消息返回关键发现和洞察摘要（1-3 段）
+8. 写详细分析到 /mnt/user-data/workspace/analysis/analysis_report.md
+9. 最终消息返回关键发现和洞察摘要（1-3 段）
 </workflow>
 
 <principles>
@@ -65,6 +75,8 @@ DATA_ANALYST_CONFIG = SubagentConfig(
 - 区分统计显著和实际意义
 - **主动提出洞察**：不只是复述统计数字，要告诉研究者"这意味着什么"和"需要注意什么"
 - **方法学把关**: 你是统计方法选择的最后质量关卡，发现方法不匹配必须明确指出
+- **具名诊断**：发现异常时必须点名具体受试者（"Subject 3"），不要只说"存在至少一个异常个体"
+- **反事实支撑**：对每个指出的离群个体，给出"排除后组间差异变化"的量化支撑，便于研究员判断该发现是否稳健
 </principles>
 
 <failure>
