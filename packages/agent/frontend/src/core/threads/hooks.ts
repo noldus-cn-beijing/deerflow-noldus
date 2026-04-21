@@ -12,7 +12,7 @@ import { getBackendBaseURL } from "../config";
 import { useI18n } from "../i18n/hooks";
 import type { FileInMessage } from "../messages/utils";
 import type { LocalSettings } from "../settings";
-import { useUpdateSubtask } from "../tasks/context";
+import { useSubtaskContext, useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
@@ -188,6 +188,7 @@ export function useThreadStream({
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+  const { setTasks: setSubtasks } = useSubtaskContext();
   const runMetadataStorageRef = useRef<
     ReturnType<typeof getRunMetadataStorage> | undefined
   >(undefined);
@@ -304,6 +305,7 @@ export function useThreadStream({
     messageCacheRef.current = new Map();
     messageOrderRef.current = [];
     cachedThreadIdRef.current = threadId;
+    setSubtasks({});
   }
 
   // Load archived messages from backend on thread mount (survives page refresh)

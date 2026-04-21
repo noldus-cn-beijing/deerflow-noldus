@@ -158,6 +158,7 @@ export function MessageList({
                       description: toolCall.args.description,
                       prompt: toolCall.args.prompt,
                       status: "in_progress",
+                      messages: [],
                     };
                     updateSubtask(task);
                     tasks.add(task);
