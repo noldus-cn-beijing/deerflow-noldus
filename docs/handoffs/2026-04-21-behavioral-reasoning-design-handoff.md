@@ -26,13 +26,27 @@
 | 1 | 更新 roadmap 当前状态表 + Phase 0 进展 | `docs/roadmap.md`（M） | ✅ |
 | 2 | 移除 CLAUDE.md 第 6 条 429 TODO（用户确认已解决） | `CLAUDE.md`（M） | ✅ |
 | 3 | 写 fix5 完成记录 | `docs/handoffs/2026-04-21-subtask-visibility-done.md`（新建） | ✅ |
-| 4 | 新建：行为学判断能力 v0.1 蓝图（11 章 + 2 附录，1036 行） | `docs/plans/2026-04-21-behavioral-reasoning-design.md`（新建） | ✅ |
-| 5 | 新建：微调策略更新 + 分步执行（7 章，318 行） | `docs/plans/2026-04-21-finetuning-strategy-update.md`（新建） | ✅ |
+| 4 | 新建：行为学判断能力 v0.1 蓝图（11 章 + 2 附录） | `docs/plans/2026-04-21-behavioral-reasoning-design.md`（新建） | ✅ |
+| 5 | 新建：微调策略更新 + 分步执行 | `docs/plans/2026-04-21-finetuning-strategy-update.md`（新建） | ✅ |
+| 6 | **扩展到 16 范式覆盖**（2026-04-22）| 上述 3/4/5 + roadmap 全部联动更新 | ✅ |
+
+**2026-04-22 增量**：用户指出 `demo-data/DemoData/` 下实际有 16 个范式而非原计划的 5 个，且 shoaling 已验证通用 agent 框架、新范式边际成本 3-5 天。据此：
+- design §7.6 范式优先级扩展为 16 范式分 3 批
+- design §7.6a 新增工程节奏段（一次性投入 vs 增量投入）
+- design §9.4 Golden-case 渐进构建按 16 范式 × 5 Step 重排
+- design §11.1 补 note 解释扩展理由
+- finetuning §3.1 给行为学同事的信息模板改为 16 范式分批标注，建议多人分担
+- finetuning §3.2-3.5 全部 Step 按"批量范式 + 框架级并行"重构
+- finetuning §4 同事投入 22-34h → 80-110h（建议多人分担）
+- finetuning §5 新增"16 范式节奏跟不上"风险行
+- finetuning §6 硬指标从"5×5"改为"16 范式 × 16 份深度 golden-case"
+- roadmap M0.2-0.4 合并为"16 范式完整覆盖"一行
+- roadmap v0.1 能力表和总结表都改为 16 范式
+- roadmap Phase 2/3/4 加 note 标注"范式累计表述已失效，需重新规划"
 
 **git 状态**：
 - HEAD: `cd2d6aba v0.1`（与 origin/dev 同步）
-- 未追踪：3 个新建文件（2 plan + 1 handoff）
-- 已修改未暂存：`CLAUDE.md`、`docs/roadmap.md`
+- 本次会话全部产出共涉及 5 个逻辑文件（2 修改 + 3 新建），若追加 commit 则 4 个文件（2 修改 + 3 新建中现在全为 M），具体见 `git status`
 - **用户尚未决定是否 commit**——等用户明确指令再做
 
 ---
@@ -63,6 +77,7 @@
 8. **蒸馏作为主数据源** — claude-sonnet-4-6 的生产 E2E 会话是 on-policy 蒸馏的金数据
 9. **所有训练数据带 `<think>` CoT traces** — Qwen3 原生支持
 10. **Golden-case 回归是微调硬前置** — 没有 3 个 golden-case 不动微调
+11. **v0.1 覆盖 16 范式**（2026-04-22 更新）— 从原计划的"5 范式深度"扩展到"全部 16 范式深度"，基于 shoaling 已验证通用框架、每新范式边际成本仅 3-5 天的认知。用户选择 B 方案（严格相同深度标准）
 
 ### 3.3 本轮留下的开放问题（用户没明确表态，design 文档里记为"待落地时决定"）
 
@@ -146,13 +161,14 @@ cd packages/agent/frontend && pnpm check && SKIP_ENV_VALIDATION=1 pnpm build
 
 ### 4.3 v0.1 的硬闸门
 
-从 design §9 + finetuning §6 综合：
+从 design §9 + finetuning §6 综合（**2026-04-22 更新为 16 范式**）：
 
-1. 5 个范式 × 5 份 golden-case 全绿
+1. **16 范式 × 16 份深度 golden-case 全绿**（每范式至少 1 份深度标注）
 2. Qwen3-8B SFT 模型 ≥ claude-sonnet baseline（相同 golden-case）
 3. 行为学同事 rubric 每维度 ≥ 4/5
-4. 训练数据 ≥ 800 条（带 `<think>`、合格率 > 80%）
+4. 训练数据 ≥ 800 条（带 `<think>`、覆盖 16 范式、合格率 > 80%）
 5. quality-reviewer 降级版稳定运行
+6. 用户上传 `demo-data/DemoData/` 下任一范式数据均能完整分析
 
 **没有 golden-case 不动微调** — 硬前置。
 
@@ -194,15 +210,15 @@ cd packages/agent/frontend && pnpm check && SKIP_ENV_VALIDATION=1 pnpm build
 
 ### 5.3 【中】当行为学同事启动后的后续动作
 
-按 finetuning §3 的 Step 1 → Step 6 执行：
+按 finetuning §3 的 Step 1 → Step 6 执行（**2026-04-22 节奏更新为 16 范式批量模式**）：
 
-- Step 2（5 月）：EPM 范式补全（roadmap M0.2）+ 抽 `templates/_base.py`
-- Step 3（6 月）：Golden-case runner + OFT + quality-reviewer 降级版原型
-- Step 4（7 月）：SFT 数据采集 + Fireworks 训练
-- Step 5（8 月）：模型渐进切换 + v0.1 收尾
+- Step 2（5 月）：基建抽象 `templates/_base.py` + 第一批范式批量补全（EPM/OFT/FST），MWM 启动。行为学 2 份 golden-case
+- Step 3（6 月）：Golden-case runner + MWM 收尾 + 第二批范式批量补全（Y迷宫/O迷宫/巴恩斯/新物体识别）+ quality-reviewer 原型。行为学累计 8 份
+- Step 4（7 月）：第三批范式批量补全（三箱社交/社会互动/明暗箱/新奇抑制/足迹/精细行为/PhenoTyper）+ SFT 数据采集覆盖全 16 范式 + Fireworks 训练。行为学累计 13-14 份
+- Step 5（8 月）：模型渐进切换 + Rubric 抽检 + golden-case 补齐至 **16 范式 × 16 份深度标注** + v0.1 收尾
 - Step 6（9 月+）：DPO 迭代
 
-每步的"工程线"和"行为学线"分项都在 finetuning §3 详细写了。
+每步的"工程线"和"行为学线"分项都在 finetuning §3 详细写了。**关键认知**：shoaling 已经验证了通用 agent 框架，新增范式的边际成本是 **3-5 天/范式**（填模板 + 少量指标函数 + 阈值 YAML），不是"每范式 1-2 周"的旧估算。
 
 ### 5.4 【中】需要行为学同事 review 后才定稿的部分
 
@@ -241,7 +257,8 @@ ls docs/handoffs/2026-04-21-*.md  # 确认三个 handoff 文件都在
 
 - **用户说 "commit"**：按 §5.2 的 5 个文件做 commit（不 push 除非明示）
 - **用户说"开始 Step 1 / 拷贝 case-001 数据"**：按 finetuning §7 第 1 动作做，创建 `golden-cases/case-001-shoaling-baseline/` + 从 thread 目录拷数据
-- **用户已经和行为学同事沟通过、开始 Step 2**：进入 EPM 实装路径（roadmap M0.2 + design §7 + finetuning §3.2），**这时进入 brainstorming 模式重新对齐具体实装方案**，不要直接动代码
+- **用户已经和行为学同事沟通过、开始 Step 2**：进入第一批范式批量补全路径（基建抽象 `templates/_base.py` + EPM/OFT/FST 并行 + MWM 启动，详见 finetuning §3.2），**这时进入 brainstorming 模式重新对齐基建抽象设计**，不要直接动代码
+- **用户问"是不是应该先只做 1 个范式试水"**：直接指向 design §7.6 的"前提认知"段——shoaling 已经是框架验证，不是单范式产品；基建抽象 + 批量补全是正确路径
 - **用户问设计里某个决定的理由**：直接引用 design 对应章节回答，不重新设计
 - **用户说"重新讨论 X 决策"**：用 brainstorming 模式，参考 design §11 的总原则（"不做的诱惑三问"）做决策
 
@@ -301,10 +318,12 @@ ls docs/handoffs/2026-04-21-*.md  # 确认三个 handoff 文件都在
 2. `metadata.yaml` 和 `expected-analysis.yaml` 的 schema 直接照 design §9.3 的例子
 3. 数据和 schema 准备好后，建议用户把 case-001 发给行为学同事作样板
 
-**如果用户说"开始 Step 2 / EPM 实装"**：
-1. 这是**代码工作不是设计工作**，进入 plan 模式或 brainstorming 重新对齐具体实装方案
-2. 参考：design §7.2 八件套、§7.3 模板骨架抽象、existing [shoaling.py](packages/ethoinsight/ethoinsight/templates/shoaling.py)
-3. 确认优先抽 `templates/_base.py`，还是先直接照抄 shoaling.py 写 epm.py 再重构
+**如果用户说"开始 Step 2 / 第一批范式批量补全"**：
+1. 这是**代码工作不是设计工作**，进入 brainstorming 重新对齐具体实装方案
+2. **核心决策点**：先抽 `templates/_base.py` 基类，还是先直接照抄 shoaling.py 写 epm.py 再重构？design §7.6a 推荐前者（一次性 1.5 周基建投入，之后每范式 3-5 天）
+3. 参考文件：design §7.2 八件套、§7.3 模板骨架抽象、[shoaling.py](packages/ethoinsight/ethoinsight/templates/shoaling.py)（基线 217 行）
+4. 第一批范式：EPM / OFT / FST 并行，MWM 跨 Step 启动
+5. 确认基建抽象方案后才动代码，不要直接写 epm.py
 
 **如果用户问"XX 章节为什么这样设计"**：
 1. 直接引用 design 对应章节回答

@@ -52,7 +52,7 @@ Apr      May      Jun   Jul      Aug      Sep      Oct  Nov  Dec     Jan  Feb  M
                                         ★ v0.1 可用版本
                                         9月初交付
                                         ─────────────
-                                        • 5 个范式可分析
+                                        • 16 个范式可分析
                                         • 微调模型替代 GLM
                                         • 知识问答能推理
                                         • 数据异常可诊断
@@ -70,9 +70,7 @@ Apr      May      Jun   Jul      Aug      Sep      Oct  Nov  Dec     Jan  Feb  M
 |--------|---------|---------|------|
 | **M0.1** 鲁棒性验证 | ethoinsight-planning skill 落地；subagent handoff JSON 契约；SubtaskCard 全量 CoT 可见；lead/subtask 语言一致性；data-analyst 洞察深度；test_client.py 断言修复；429 重试稳定 | agent 遇到不支持范式时优雅降级，不循环；shoaling E2E 通过 | ✅ shoaling E2E 已通过验证（2026-04-21） |
 | **M0.1 余项** | 不支持范式的降级路径 E2E；`read_file` UTF-16 fallback | 降级路径不循环；用户看到明确降级提示 | ⬜ 待办 |
-| **M0.2** EPM 范式补全 | 创建 `epm.py` 模板；补全 `metrics.py` 6 个函数（closed_arm_time_ratio、center_time、entries 等）；补全 `assess.py` 阈值 | EPM 数据端到端分析跑通 | ⬜ 待办（下一步重点） |
-| **M0.3** Open Field 范式 | open_field 模板/指标/阈值 | 累计 3 个范式完整可用（shoaling + epm + open_field） | ⬜ 待办 |
-| **M0.4** 基础设施 | `read_file` UTF-16 fallback；恢复 noldus-kb（等 `180.184.84.124:7001` 恢复） | noldus-kb 可查询 | ⬜ 待办（noldus-kb 外部阻塞） |
+| **M0.2-0.4** 16 范式完整覆盖 | 抽象 `templates/_base.py` 基类；按三批优先级批量补齐全部 16 个范式（demo-data/DemoData/ 下全部）的八件套；每范式边际 3-5 天 | `demo-data/DemoData/` 下任一范式均可端到端分析；16 份深度 golden-case 全绿 | ⬜ 待办（详见 [行为学判断能力设计 §7.6](../docs/plans/2026-04-21-behavioral-reasoning-design.md) + [微调策略更新 §3](../docs/plans/2026-04-21-finetuning-strategy-update.md)） |
 
 **关键文件**:
 - `packages/ethoinsight/ethoinsight/templates/epm.py` — 新建，参照 `shoaling.py`
@@ -123,7 +121,9 @@ Apr      May      Jun   Jul      Aug      Sep      Oct  Nov  Dec     Jan  Feb  M
 | **M2.1** 知识体系扩充 | 扩展 skill reference 文件（范式方法学深度、实验设计指南、常见陷阱）；noldus-kb 检索质量优化 | 覆盖 5+ 范式的深度知识问答 |
 | **M2.2** knowledge-assistant 增强 | 微调模型赋能推理能力（结合实验上下文回答，不是查表）；多轮追问上下文保持 | 用户满意度评估 > 7/10 |
 | **M2.3** 数据异常诊断 | 扩展 data-analyst 的异常模式库；新增 skill reference（离群值判断、设备故障特征、行为表型混淆模式） | 能识别并解释 5+ 种常见数据异常 |
-| **M2.4** 范式扩展 | forced_swim + morris_water_maze 模板/指标/阈值 | 累计 5 个范式完整可用 |
+| **M2.4** 范式扩展 | ~~forced_swim + morris_water_maze 模板/指标/阈值~~ 改为：范式深度判断能力扩展（异常模式、文献引用、reviewer 审核） | 累计 16 范式的**判断深度**提升（范式本身已在 v0.1 覆盖） |
+
+> **注**（2026-04-22 更新）：v0.1 已调整为覆盖全部 16 范式（详见 [行为学判断能力设计 §7.6](../docs/plans/2026-04-21-behavioral-reasoning-design.md)），所以 Phase 2 M2.4 不再是"补范式"而是"深化范式判断能力"。Phase 3/4 的"范式累计"表述也需相应重新规划。
 
 **关键文件**:
 - `packages/agent/skills/custom/ethoinsight/references/` — 扩展知识文件
@@ -141,7 +141,7 @@ Apr      May      Jun   Jul      Aug      Sep      Oct  Nov  Dec     Jan  Feb  M
 
 | 能力 | 具体表现 |
 |------|---------|
-| 数据分析 | 5 个范式端到端可用（shoaling, epm, open_field, forced_swim, morris_water_maze） |
+| 数据分析 | 16 个范式端到端可用（demo-data/DemoData/ 下全部：shoaling, epm, open_field, fst, mwm, Y迷宫, O迷宫, 巴恩斯迷宫, 新物体识别, 三箱社交, 社会互动, 明暗箱, 新奇抑制摄食, 足迹分析, 精细行为识别, PhenoTyper） |
 | 自有模型 | 微调 Qwen3-8B 替代 GLM-5.1，无外部 API 依赖 |
 | 知识问答 | 追问分析结果 + 纯领域知识问答，能推理不只查表 |
 | 异常诊断 | 识别 5+ 种常见数据异常（离群值、运动量异常、分组不均等） |
@@ -281,10 +281,12 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ ★ v0.1 ──→ Phase 3
 
 | Phase | 核心交付物 | 一句话验收 |
 |-------|-----------|-----------|
-| 0 | 3 个可用范式 + 鲁棒 agent | "上传 EPM 数据，能分析或优雅降级" |
+| 0 | **16 范式深度分析** + 鲁棒 agent | "上传任一 Noldus 范式数据，能深度分析" |
 | 1 | 微调模型替代 GLM-5.1 | "用自己的模型跑完分析，质量不降" |
-| 2 | 能推理的知识助手 + 5 范式 | "问深度方法学问题，给出专家级回答" |
-| ★ **v0.1** | **9 月可用版本** | **"上传数据自动分析；追问能答；不依赖外部 API"** |
-| 3 | 实验指导 + DPO + 7 范式 | "说'我想研究焦虑'，输出完整实验方案" |
-| 4 | 跨范式证据链 + 11 范式 | "综合 3 个范式结果，判断表型一致性" |
+| 2 | 能推理的知识助手 + 判断深度 | "问深度方法学问题，给出专家级回答；数据异常诊断 + 文献引用" |
+| ★ **v0.1** | **9 月可用版本** | **"上传 16 范式任一数据自动分析；追问能答；不依赖外部 API"** |
+| 3 | 实验指导 + DPO | "说'我想研究焦虑'，输出完整实验方案" |
+| 4 | 跨范式证据链 | "综合多个范式结果，判断表型一致性" |
 | 5 | 可交付产品 | "客户拿到后一键部署，10 人同时用" |
+
+> **注**：Phase 3/4 原"7 范式"、"11 范式"表述已失效——v0.1 已经一次性覆盖 16 范式。后续阶段的差异在**能力深度**（实验指导、跨范式推理）而非范式数量。
