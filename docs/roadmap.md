@@ -25,11 +25,14 @@
 
 ## 当前状态
 
+> 最近更新: 2026-04-21，shoaling E2E 全链路验证通过（v0.1 tag: `cd2d6aba`）
+
 | 能力 | 成熟度 | 说明 |
 |------|--------|------|
-| 端到端数据分析 | ⬛⬛⬛⬜⬜ | 流水线可用，但仅 shoaling 范式完整；EPM/OFT 等 10+ 范式未补全 |
-| Agent 鲁棒性 | ⬛⬛⬛⬜⬜ | 循环问题已修复（`6bf51adc`），尚未 E2E 验证 |
+| 端到端数据分析 | ⬛⬛⬛⬛⬜ | shoaling 范式全链路 E2E 验证通过；前端可见性/语言一致性/洞察深度三项均已闭环；EPM/OFT 等 10+ 范式未补全 |
+| Agent 鲁棒性 | ⬛⬛⬛⬛⬜ | 循环问题已修复且 E2E 通过；subagent 间改用 `handoff_*.json` JSON 契约（`6fa6962a`）；lead/subtask 工具白名单分离；SubtaskCard 全量 CoT 可见 |
 | 知识问答 | ⬛⬛⬜⬜⬜ | 追问分析结果可用；纯知识问答偏弱（noldus-kb 禁用，skill 知识面窄） |
+| 行为学判断深度 | ⬛⬛⬛⬜⬜ | data-analyst 能按受试者点名 + 反事实排除异常（C6 落地，shoaling 验证 Subject 3 NND=70.02 → 排除后降至 37.23）；其他范式的异常模式库未建 |
 | 实验指导 | ⬜⬜⬜⬜⬜ | 不存在 |
 | 跨范式分析 | ⬜⬜⬜⬜⬜ | 不存在 |
 | 微调模型 | ⬛⬜⬜⬜⬜ | 方案已确定（Qwen3-8B + Fireworks.ai），数据采集未启动 |
@@ -61,13 +64,15 @@ Apr      May      Jun   Jul      Aug      Sep      Oct  Nov  Dec     Jan  Feb  M
 
 > **时间**: 2026 年 4 月中 — 5 月中（4 周）
 > **目标**: 让现有的数据分析流水线真正可靠可用
+> **状态** (2026-04-21): M0.1 基本完成，M0.2-M0.4 未开始。剩余约 3 周窗口。
 
-| 里程碑 | 具体任务 | 验收标准 |
-|--------|---------|---------|
-| **M0.1** 鲁棒性验证 | E2E 测试 EPM 降级路径；修复 2 个 pre-existing 测试（`test_client.py` 中 `subagent_enabled` 断言）；429 重试策略优化（1s/2s → 5s/15s/30s）；**ethoinsight-planning skill（端到端分析规划框架，3 层实装，2026-04-17）** | agent 遇到不支持范式时优雅降级，不循环 |
-| **M0.2** EPM 范式补全 | 创建 `epm.py` 模板；补全 `metrics.py` 6 个函数（closed_arm_time_ratio、center_time、entries 等）；补全 `assess.py` 阈值 | EPM 数据端到端分析跑通 |
-| **M0.3** Open Field 范式 | open_field 模板/指标/阈值 | 累计 3 个范式完整可用（shoaling + epm + open_field） |
-| **M0.4** 基础设施 | `read_file` UTF-16 fallback；恢复 noldus-kb（等 `180.184.84.124:7001` 恢复）；提交积压代码 | noldus-kb 可查询；无未提交改动 |
+| 里程碑 | 具体任务 | 验收标准 | 进展 |
+|--------|---------|---------|------|
+| **M0.1** 鲁棒性验证 | ethoinsight-planning skill 落地；subagent handoff JSON 契约；SubtaskCard 全量 CoT 可见；lead/subtask 语言一致性；data-analyst 洞察深度；test_client.py 断言修复；429 重试稳定 | agent 遇到不支持范式时优雅降级，不循环；shoaling E2E 通过 | ✅ shoaling E2E 已通过验证（2026-04-21） |
+| **M0.1 余项** | 不支持范式的降级路径 E2E；`read_file` UTF-16 fallback | 降级路径不循环；用户看到明确降级提示 | ⬜ 待办 |
+| **M0.2** EPM 范式补全 | 创建 `epm.py` 模板；补全 `metrics.py` 6 个函数（closed_arm_time_ratio、center_time、entries 等）；补全 `assess.py` 阈值 | EPM 数据端到端分析跑通 | ⬜ 待办（下一步重点） |
+| **M0.3** Open Field 范式 | open_field 模板/指标/阈值 | 累计 3 个范式完整可用（shoaling + epm + open_field） | ⬜ 待办 |
+| **M0.4** 基础设施 | `read_file` UTF-16 fallback；恢复 noldus-kb（等 `180.184.84.124:7001` 恢复） | noldus-kb 可查询 | ⬜ 待办（noldus-kb 外部阻塞） |
 
 **关键文件**:
 - `packages/ethoinsight/ethoinsight/templates/epm.py` — 新建，参照 `shoaling.py`
