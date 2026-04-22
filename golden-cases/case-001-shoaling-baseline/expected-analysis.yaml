@@ -1,0 +1,103 @@
+paradigm: "shoaling"
+species: "zebrafish"
+n_subjects: 5
+groups:
+  control: ["Subject 1", "Subject 2"]
+  treatment: ["Subject 3", "Subject 4", "Subject 5"]
+
+# --- Layer A: 数值指标期望 ---
+# 基于 handoff_code_executor.json 的真实计算结果
+# 允许 ±5% 区间（纯算术指标）
+
+expected_metrics:
+  # Subject 3 — 离群个体
+  - subject: "Subject 3"
+    metric: "mean_nnd"
+    expected_range: [66.5, 73.5]      # 实际 70.02
+    unit: "mm"
+
+  - subject: "Subject 3"
+    metric: "distance_moved"
+    expected_range: [11900, 13200]     # 实际 12518
+    unit: "mm"
+
+  - subject: "Subject 3"
+    metric: "velocity_mean"
+    expected_range: [39.7, 43.8]       # 实际 41.76
+    unit: "mm/s"
+
+  # Subject 1-2 (control) 和 Subject 4-5 (treatment) — 正常范围
+  - subject: "Subject 1"
+    metric: "mean_nnd"
+    expected_range: [34.3, 37.9]       # 实际 36.09
+    unit: "mm"
+
+  - subject: "Subject 2"
+    metric: "mean_nnd"
+    expected_range: [37.9, 41.9]       # 实际 39.86
+    unit: "mm"
+
+  - subject: "Subject 4"
+    metric: "mean_nnd"
+    expected_range: [34.5, 38.2]       # 实际 36.36
+    unit: "mm"
+
+  - subject: "Subject 5"
+    metric: "mean_nnd"
+    expected_range: [36.2, 40.0]       # 实际 38.10
+    unit: "mm"
+
+  # 组均值
+  # control mean_nnd: 37.97
+  # treatment mean_nnd: 48.16 (含 Subject 3); 排除 Subject 3 后约 37.23
+
+# --- Layer B: 洞察期望 ---
+
+expected_findings:
+
+  # 1. 离群检测 — Subject 3 的 NND 和运动量显著偏离
+  - type: outlier_detection
+    subject: "Subject 3"
+    metrics: ["mean_nnd", "distance_moved"]
+    reasoning: "TODO(行为学同事): Subject 3 的 mean_nnd=70.02 mm 远高于群体其余个体均值(约 37.5 mm)，且 distance_moved=12518 mm 远低于其余个体(约 24000 mm)。低运动量 + 高 NND 的组合是否指向某种表型？"
+    severity: moderate
+    required_keywords: ["Subject 3", "70"]
+
+  # 2. 反事实分析 — 排除 Subject 3 后的差异变化
+  - type: counterfactual_analysis
+    subject: "Subject 3"
+    claim: "排除 Subject 3 后，treatment 组 mean_nnd 从 48.16 降至约 37.23 mm，与 control 组(37.97 mm)接近，组间差异基本消失"
+    reasoning: "TODO(行为学同事): 这是否意味着观察到的组间差异几乎完全由 Subject 3 驱动？还是需要更多样本才能下这个结论？"
+    required_keywords: ["排除", "37"]
+
+  # 3. 混杂因素 — 样本量严重不足
+  - type: confound_note
+    claim: "control n=2, treatment n=3，样本量严重不均且偏小"
+    reasoning: "n=2 的 control 组无法做正态性检验，统计推断不可靠。任何结论都应标注此限制。"
+    required_keywords: ["样本量"]
+    forbidden_claims: []
+
+  # 4. 统计结论 — 组间差异不显著，且主要由个体变异驱动
+  - type: statistical_conclusion
+    claim: "组间 mean_nnd 和 distance_moved 差异均不显著(Mann-Whitney U, p=0.8 和 p=1.0)，且 treatment 组的高均值主要由 Subject 3 的离群值驱动"
+    reasoning: "TODO(行为学同事): 考虑到样本量不足和 Subject 3 的影响，最终结论应该如何措辞？是否应建议增加样本量？"
+    required_keywords: ["不显著", "Subject 3"]
+    forbidden_claims:
+      - "药物效应显著"
+      - "处理导致群体松散"
+      - "treatment 显著高于 control"
+
+  # 5. 数据质量警告
+  - type: data_quality_warning
+    claim: "control 组仅 2 个受试者，无法进行可靠的正态性检验和参数统计推断"
+    reasoning: "Shapiro-Wilk 在 n<3 时无法执行，统计检验退化为非参数的 Mann-Whitney U，检验效能极低"
+    required_keywords: ["样本量", "control"]
+
+# --- 反例断言 ---
+should_not_contain:
+  - "Subject 6"           # 数据里只有 5 个受试者
+  - "Subject 7"
+  - "p < 0.01"            # 样本量只有 5，不应有极小 p 值
+  - "显著差异"             # 统计上不显著
+  - "药物显著"             # 无实际药物处理
+  - "处理效应显著"
