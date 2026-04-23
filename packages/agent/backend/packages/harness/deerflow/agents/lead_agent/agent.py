@@ -14,6 +14,7 @@ from deerflow.agents.middlewares.think_tag_middleware import ThinkTagMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
 from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
 from deerflow.agents.middlewares.token_usage_middleware import TokenUsageMiddleware
+from deerflow.agents.middlewares.training_data_middleware import TrainingDataMiddleware
 from deerflow.agents.middlewares.tool_error_handling_middleware import build_lead_runtime_middlewares
 from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from deerflow.agents.thread_state import ThreadState
@@ -245,6 +246,11 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
 
     # Add MemoryMiddleware (after TitleMiddleware)
     middlewares.append(MemoryMiddleware(agent_name=agent_name))
+
+    # Add TrainingDataMiddleware (records every turn for SFT/DPO dataset).
+    # Sits alongside MemoryMiddleware as an after_agent observer. Failures are
+    # swallowed internally so recording errors never crash the agent turn.
+    middlewares.append(TrainingDataMiddleware())
 
     # Add ViewImageMiddleware only if the current model supports vision.
     # Use the resolved runtime model_name from make_lead_agent to avoid stale config values.
