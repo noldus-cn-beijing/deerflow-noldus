@@ -72,3 +72,44 @@ class TestTrainingDataMiddlewareRecording:
         )
         out = tmp_path / "training-data" / "auto-collected" / "thread-empty.jsonl"
         assert not out.exists() or out.read_text().strip() == ""
+
+
+from langchain_core.messages import ToolMessage
+
+
+class TestSubagentSampleExtraction:
+    def test_after_agent_writes_subagent_sample(self, tmp_path):
+        middleware = TrainingDataMiddleware(base_dir=str(tmp_path))
+        sb = middleware.before_agent(
+            state={},
+            runtime=Runtime(context={"thread_id": "thread-sub"}),
+        )
+        ai_with_task = AIMessage(
+            content="我需要 code-executor",
+            tool_calls=[{
+                "id": "call_1",
+                "name": "task",
+                "args": {
+                    "description": "analyze shoaling",
+                    "prompt": "Run ethoinsight-analysis on uploads",
+                    "subagent_type": "code-executor",
+                },
+            }],
+        )
+        tool_result = ToolMessage(
+            content="Analysis complete: 4 metrics computed",
+            tool_call_id="call_1",
+        )
+        state = {
+            "training_data_path": sb["training_data_path"],
+            "messages": [HumanMessage(content="分析"), ai_with_task, tool_result],
+        }
+        middleware.after_agent(state=state, runtime=Runtime(context={"thread_id": "thread-sub"}))
+
+        out = tmp_path / "training-data" / "auto-collected" / "thread-sub.jsonl"
+        lines = [json.loads(l) for l in out.read_text().splitlines() if l.strip()]
+        subagent = [l for l in lines if l["role"] == "subagent"]
+        assert len(subagent) == 1
+        assert subagent[0]["subagent_type"] == "code-executor"
+        assert "analyze shoaling" in subagent[0]["input"]
+        assert "Analysis complete" in subagent[0]["output"]

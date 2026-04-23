@@ -12,7 +12,7 @@ from typing import NotRequired, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.config import get_config
 from langgraph.runtime import Runtime
 
@@ -88,6 +88,39 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
                     pending_human = None
         return samples
 
+    def _extract_subagent_samples(self, messages: list, thread_id: str) -> list[dict]:
+        """For each AIMessage.tool_call of task tool, pair with its ToolMessage."""
+        tool_results: dict[str, ToolMessage] = {}
+        for msg in messages:
+            if isinstance(msg, ToolMessage) and msg.tool_call_id:
+                tool_results[msg.tool_call_id] = msg
+
+        samples: list[dict] = []
+        for msg in messages:
+            if not isinstance(msg, AIMessage):
+                continue
+            for call in (msg.tool_calls or []):
+                if call.get("name") != "task":
+                    continue
+                call_id = call.get("id")
+                if not call_id or call_id not in tool_results:
+                    continue
+                args = call.get("args") or {}
+                result = tool_results[call_id]
+                result_text = result.content if isinstance(result.content, str) else str(result.content)
+                samples.append({
+                    "role": "subagent",
+                    "thread_id": thread_id,
+                    "subagent_type": args.get("subagent_type", ""),
+                    "input": json.dumps({
+                        "description": args.get("description", ""),
+                        "prompt": args.get("prompt", ""),
+                    }, ensure_ascii=False),
+                    "output": result_text,
+                    "recorded_at": datetime.now(timezone.utc).isoformat(),
+                })
+        return samples
+
     @override
     def after_agent(self, state, runtime: Runtime) -> dict | None:
         thread_id = self._resolve_thread_id(runtime)
@@ -98,6 +131,7 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
         if not messages:
             return None
         samples = self._extract_lead_samples(messages, thread_id)
+        samples.extend(self._extract_subagent_samples(messages, thread_id))
         if not samples:
             return None
         path = Path(path_str)
