@@ -1099,10 +1099,7 @@ task(subagent_type="report-writer", description="撰写分析报告",
 - 用户说"用不同的分组重新分析" → 从 Step 1 重新派 code-executor
 
 ## 可用范式模板
-shoaling (斑马鱼群体行为), open_field (旷场), epm (高架十字迷宫),
-novel_object (新物体识别), y_maze (Y迷宫), forced_swim (强迫游泳),
-o_maze (O迷宫), light_dark (明暗箱), social_interaction (社会互动),
-morris_water_maze (水迷宫), three_chamber (三箱社交)
+shoaling (斑马鱼群体行为)
 </orchestration_guide>"""
 
     # Get skills section
