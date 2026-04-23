@@ -82,3 +82,23 @@ def test_feedback_router_mounted_on_gateway_app():
 
     paths = {route.path for route in gateway_app.routes if hasattr(route, "path")}
     assert "/api/threads/{thread_id}/feedback" in paths
+
+
+def test_get_feedback_list(client):
+    c, tmp_path = client
+    c.post("/api/threads/t-list/feedback", json={"message_id": "m-1", "verdict": "correct"})
+    c.post("/api/threads/t-list/feedback", json={"message_id": "m-2", "verdict": "wrong", "revised_text": "R"})
+
+    resp = c.get("/api/threads/t-list/feedback")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 2
+    verdicts = {i["message_id"]: i["verdict"] for i in items}
+    assert verdicts == {"m-1": "correct", "m-2": "wrong"}
+
+
+def test_get_feedback_empty_thread_returns_empty_list(client):
+    c, _ = client
+    resp = c.get("/api/threads/never-touched/feedback")
+    assert resp.status_code == 200
+    assert resp.json() == {"items": []}

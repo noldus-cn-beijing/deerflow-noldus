@@ -33,6 +33,18 @@ class FeedbackResponse(BaseModel):
     success: bool
 
 
+class FeedbackItem(BaseModel):
+    message_id: str
+    verdict: str
+    revised_text: str | None
+    note: str | None
+    submitted_at: str
+
+
+class FeedbackListResponse(BaseModel):
+    items: list[FeedbackItem]
+
+
 def _base_dir() -> Path:
     """Return path to backend/.deer-flow. Overridden in tests."""
     from deerflow.config.paths import get_paths
@@ -60,3 +72,23 @@ def post_feedback(thread_id: str, req: FeedbackRequest) -> FeedbackResponse:
     except OSError as exc:
         logger.error("Feedback write failed for thread %s: %s", thread_id, exc)
         raise HTTPException(status_code=500, detail="Failed to persist feedback")
+
+
+@router.get("/{thread_id}/feedback", response_model=FeedbackListResponse)
+def list_feedback(thread_id: str) -> FeedbackListResponse:
+    path = _base_dir() / "training-data" / "feedback" / f"{thread_id}.jsonl"
+    if not path.exists():
+        return FeedbackListResponse(items=[])
+    items: list[FeedbackItem] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        items.append(FeedbackItem(
+            message_id=rec["message_id"],
+            verdict=rec["verdict"],
+            revised_text=rec.get("revised_text"),
+            note=rec.get("note"),
+            submitted_at=rec["submitted_at"],
+        ))
+    return FeedbackListResponse(items=items)
