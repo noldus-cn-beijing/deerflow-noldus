@@ -17,3 +17,6 @@ lint:
 
 format:
 	uvx ruff check . --fix && uvx ruff format .
+
+training-stats:
+	PYTHONPATH=. uv run python scripts/training_dashboard.py
