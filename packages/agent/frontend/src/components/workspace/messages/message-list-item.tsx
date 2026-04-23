@@ -18,6 +18,7 @@ import {
 } from "@/components/ai-elements/reasoning";
 import { Task, TaskTrigger } from "@/components/ai-elements/task";
 import { Badge } from "@/components/ui/badge";
+import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
 import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -45,6 +46,7 @@ export function MessageListItem({
   isLoading?: boolean;
 }) {
   const isHuman = message.type === "human";
+  const { thread_id } = useParams<{ thread_id: string }>();
   return (
     <AIElementMessage
       className={cn("group/conversation-message relative w-full", className)}
@@ -55,6 +57,13 @@ export function MessageListItem({
         message={message}
         isLoading={isLoading}
       />
+      {!isLoading && !isHuman && thread_id && message.id && (
+        <FeedbackButtons
+          threadId={thread_id}
+          messageId={message.id}
+          className="px-1"
+        />
+      )}
       {!isLoading && (
         <MessageToolbar
           className={cn(
