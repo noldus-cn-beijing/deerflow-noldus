@@ -75,3 +75,10 @@ def test_post_feedback_disk_failure_returns_500_not_crash(client, monkeypatch):
     )
     # Should respond with an HTTP error, not leak the exception.
     assert resp.status_code >= 500
+
+
+def test_feedback_router_mounted_on_gateway_app():
+    from app.gateway.app import app as gateway_app
+
+    paths = {route.path for route in gateway_app.routes if hasattr(route, "path")}
+    assert "/api/threads/{thread_id}/feedback" in paths
