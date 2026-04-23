@@ -4,12 +4,15 @@ Written as part of the training-data flywheel (docs/plans/2026-04-23-training-da
 Records Fireworks-compatible JSONL per thread to
 `.deer-flow/training-data/auto-collected/<thread_id>.jsonl`.
 """
+import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NotRequired, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_config
 from langgraph.runtime import Runtime
 
@@ -58,3 +61,47 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
         out_dir = self._resolve_base_dir() / "training-data" / "auto-collected"
         out_dir.mkdir(parents=True, exist_ok=True)
         return {"training_data_path": str(out_dir / f"{thread_id}.jsonl")}
+
+    def _append_jsonl(self, path: Path, sample: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(sample, ensure_ascii=False, default=str) + "\n")
+
+    def _extract_lead_samples(self, messages: list, thread_id: str) -> list[dict]:
+        """Pair each HumanMessage with the next AIMessage text reply."""
+        samples: list[dict] = []
+        pending_human: HumanMessage | None = None
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                pending_human = msg
+            elif isinstance(msg, AIMessage) and pending_human is not None:
+                text = msg.content if isinstance(msg.content, str) else ""
+                if text.strip():
+                    samples.append({
+                        "role": "lead",
+                        "thread_id": thread_id,
+                        "input": pending_human.content if isinstance(pending_human.content, str) else str(pending_human.content),
+                        "output": text,
+                        "thinking": (msg.additional_kwargs or {}).get("reasoning_content") or "",
+                        "recorded_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    pending_human = None
+        return samples
+
+    @override
+    def after_agent(self, state, runtime: Runtime) -> dict | None:
+        thread_id = self._resolve_thread_id(runtime)
+        path_str = state.get("training_data_path") if isinstance(state, dict) else None
+        if not thread_id or not path_str:
+            return None
+        messages = state.get("messages", []) if isinstance(state, dict) else []
+        if not messages:
+            return None
+        samples = self._extract_lead_samples(messages, thread_id)
+        if not samples:
+            return None
+        path = Path(path_str)
+        for s in samples:
+            self._append_jsonl(path, s)
+        logger.info("TrainingDataMiddleware: wrote %d lead samples to %s", len(samples), path)
+        return None
