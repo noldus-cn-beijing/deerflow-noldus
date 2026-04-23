@@ -1,0 +1,57 @@
+# 训练数据飞轮 — 行为学同事使用 SOP
+
+> 2026-04-23 启动。目标：两个月内攒够 800 条 SFT + 300 对 DPO。
+
+## 一句话说明
+
+**你正常使用 EthoInsight 就在贡献训练数据**。每次对话系统自动录制。你在 assistant 回复下打 ✅/⚠️/❌，就在帮我们教未来的自研模型。
+
+## 使用步骤
+
+1. 打开 http://localhost:2026
+2. 新建对话，上传你的 EthoVision 数据，像平时一样做分析
+3. Agent 每输出一段 assistant 回复或 subtask 卡片，下面都会有三个按钮：
+   - **✅ 正确** — 回复没问题，一键提交
+   - **⚠️ 需修正** — 基本对但某些点需要改，点开后写出修正版
+   - **❌ 错误** — 整体错了，写出正确版本
+4. 一次会话结束，所有反馈自动存档
+
+## 你不用做的事
+
+- 不用手动导出任何数据
+- 不用记录任何元信息
+- 不用担心"反馈不够专业"—即使简单的 ✅ 也是有价值的信号
+
+## 隐私承诺
+
+- 所有数据存在 `packages/agent/backend/.deer-flow/training-data/` 本地目录
+- 不上传任何外部服务
+- 你可以随时删除某次会话的录制（删除 `auto-collected/<thread_id>.jsonl`）
+
+## 飞轮状态查看（给工程）
+
+```bash
+cd packages/agent/backend
+make training-stats
+```
+
+显示累计样本数、DPO 对数、反馈率、距离目标进度。
+
+## 反馈聚合时机
+
+每周一上午工程跑一次 `scripts/extract_e2e_sessions.py`，合成当周的 SFT/DPO 数据集。届时会发周报给所有同事。
+
+## 推荐节奏
+
+每位同事每周做 2-3 次完整分析，每次打 5-10 条反馈。3-4 位同事 × 2 个月 = 达标。
+
+## 技术说明（给工程）
+
+| 组件 | 位置 |
+|------|------|
+| 录制中间件 | `packages/agent/backend/packages/harness/deerflow/agents/middlewares/training_data_middleware.py` |
+| 反馈 API | `GET/POST /api/threads/{id}/feedback` |
+| 原始录制 | `.deer-flow/training-data/auto-collected/<thread_id>.jsonl` |
+| 反馈文件 | `.deer-flow/training-data/feedback/<thread_id>.jsonl` |
+| 后处理脚本 | `scripts/extract_e2e_sessions.py` |
+| 进度命令 | `make training-stats` |
