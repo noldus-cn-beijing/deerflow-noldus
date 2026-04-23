@@ -14,8 +14,8 @@ from deerflow.agents.middlewares.think_tag_middleware import ThinkTagMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
 from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
 from deerflow.agents.middlewares.token_usage_middleware import TokenUsageMiddleware
-from deerflow.agents.middlewares.training_data_middleware import TrainingDataMiddleware
 from deerflow.agents.middlewares.tool_error_handling_middleware import build_lead_runtime_middlewares
+from deerflow.agents.middlewares.training_data_middleware import TrainingDataMiddleware
 from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config

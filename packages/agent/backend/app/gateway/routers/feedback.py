@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -63,7 +63,7 @@ def post_feedback(thread_id: str, req: FeedbackRequest) -> FeedbackResponse:
             "verdict": req.verdict,
             "revised_text": req.revised_text,
             "note": req.note,
-            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "submitted_at": datetime.now(UTC).isoformat(),
         }
         path = out_dir / f"{thread_id}.jsonl"
         with path.open("a", encoding="utf-8") as f:

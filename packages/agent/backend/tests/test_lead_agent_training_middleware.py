@@ -1,4 +1,3 @@
-from deerflow.agents.middlewares.training_data_middleware import TrainingDataMiddleware
 
 
 def test_lead_agent_includes_training_data_middleware():

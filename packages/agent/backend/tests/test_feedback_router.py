@@ -60,7 +60,6 @@ def test_post_feedback_rejects_invalid_verdict(client):
 def test_post_feedback_disk_failure_returns_500_not_crash(client, monkeypatch):
     """Robustness: a write failure should return an HTTP error, never crash Gateway."""
     c, tmp_path = client
-    from app.gateway.routers import feedback as feedback_mod
 
     def boom(*args, **kwargs):
         raise OSError("simulated disk full")
