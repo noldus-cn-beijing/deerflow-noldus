@@ -55,3 +55,12 @@ make training-stats
 | 反馈文件 | `.deer-flow/training-data/feedback/<thread_id>.jsonl` |
 | 后处理脚本 | `scripts/extract_e2e_sessions.py` |
 | 进度命令 | `make training-stats` |
+
+### 反馈 ↔ 样本 Join 规则
+
+- 录制样本写入 `message_id`：lead 消息用 AIMessage 的 LangGraph run ID，subagent 用 `subtask-{tool_call_id}`
+- 前端发反馈时 `message_id` 与上面两种格式严格对齐
+- `extract_e2e_sessions.py` 按 `message_id` 精确匹配；同一 `message_id` 若被打过多次反馈，最新 `submitted_at` 的胜出
+- 没有匹配反馈的样本仍然进 SFT（作为无反馈样本），不会被丢弃
+- 2026-04-23 之前录制的旧样本没有 `message_id` 字段 → 在新逻辑下等同于无反馈样本，不会误应用其他反馈
+

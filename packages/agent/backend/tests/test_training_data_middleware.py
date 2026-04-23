@@ -112,6 +112,58 @@ class TestSubagentSampleExtraction:
         assert "Analysis complete" in subagent[0]["output"]
 
 
+class TestMessageIdCapture:
+    """Samples must carry a message_id that matches what the frontend sends
+    for feedback, so extract_e2e_sessions.py can join precisely."""
+
+    def test_lead_sample_records_ai_message_id(self, tmp_path):
+        middleware = TrainingDataMiddleware(base_dir=str(tmp_path))
+        sb = middleware.before_agent(
+            state={},
+            runtime=Runtime(context={"thread_id": "thread-mid"}),
+        )
+        ai = AIMessage(content="ok", id="run-abc-123")
+        state = {
+            "training_data_path": sb["training_data_path"],
+            "messages": [HumanMessage(content="hi"), ai],
+        }
+        middleware.after_agent(state=state, runtime=Runtime(context={"thread_id": "thread-mid"}))
+
+        out = tmp_path / "training-data" / "auto-collected" / "thread-mid.jsonl"
+        lines = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+        lead = [line for line in lines if line["role"] == "lead"]
+        assert len(lead) == 1
+        assert lead[0]["message_id"] == "run-abc-123"
+
+    def test_subagent_sample_records_subtask_prefixed_id(self, tmp_path):
+        """Frontend keys subagent feedback as 'subtask-{tool_call_id}'; match it."""
+        middleware = TrainingDataMiddleware(base_dir=str(tmp_path))
+        sb = middleware.before_agent(
+            state={},
+            runtime=Runtime(context={"thread_id": "thread-sub-mid"}),
+        )
+        ai_with_task = AIMessage(
+            content="dispatching",
+            tool_calls=[{
+                "id": "call_xyz",
+                "name": "task",
+                "args": {"subagent_type": "code-executor", "description": "d", "prompt": "p"},
+            }],
+        )
+        tool_result = ToolMessage(content="done", tool_call_id="call_xyz")
+        state = {
+            "training_data_path": sb["training_data_path"],
+            "messages": [HumanMessage(content="hi"), ai_with_task, tool_result],
+        }
+        middleware.after_agent(state=state, runtime=Runtime(context={"thread_id": "thread-sub-mid"}))
+
+        out = tmp_path / "training-data" / "auto-collected" / "thread-sub-mid.jsonl"
+        lines = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+        sub = [line for line in lines if line["role"] == "subagent"]
+        assert len(sub) == 1
+        assert sub[0]["message_id"] == "subtask-call_xyz"
+
+
 class TestQualityFilter:
     def test_filters_out_error_tool_messages(self, tmp_path):
         middleware = TrainingDataMiddleware(base_dir=str(tmp_path))

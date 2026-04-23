@@ -41,6 +41,12 @@ def _sft_record(sample: dict, output_text: str) -> dict:
 def extract_sessions(base_dir: Path) -> dict:
     """Join recorded samples with feedback and write processed JSONL files.
 
+    Join rule: a feedback record matches a sample when
+    ``feedback.message_id == sample.message_id``. If multiple feedbacks exist
+    for the same message_id, the most recent one (by ``submitted_at``) wins —
+    experts do occasionally re-click. Samples without a matching feedback are
+    kept as SFT with no quality signal.
+
     Returns a stats dict with sft_count, dpo_count, threads_processed,
     threads_with_feedback.
     """
@@ -49,11 +55,19 @@ def extract_sessions(base_dir: Path) -> dict:
     out_dir = base_dir / "training-data" / "processed"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build per-thread feedback index: {thread_id: [items]}
-    feedback_by_thread: dict[str, list[dict]] = {}
+    # Build per-thread feedback index: {thread_id: {message_id: latest_feedback}}
+    feedback_by_thread: dict[str, dict[str, dict]] = {}
     if feedback_dir.exists():
         for f in sorted(feedback_dir.glob("*.jsonl")):
-            feedback_by_thread[f.stem] = _read_jsonl(f)
+            per_message: dict[str, dict] = {}
+            for fb in _read_jsonl(f):
+                mid = fb.get("message_id")
+                if not mid:
+                    continue
+                existing = per_message.get(mid)
+                if existing is None or fb.get("submitted_at", "") >= existing.get("submitted_at", ""):
+                    per_message[mid] = fb
+            feedback_by_thread[f.stem] = per_message
 
     sft: list[dict] = []
     dpo: list[dict] = []
@@ -66,16 +80,14 @@ def extract_sessions(base_dir: Path) -> dict:
             if not samples:
                 continue
             threads_processed += 1
-            feedbacks = feedback_by_thread.get(thread_id, [])
-
-            # v0.1 join: first feedback applies to all samples in the thread.
-            # (frontend sends real message_id but we don't yet match per-message;
-            # improve once we have enough data to warrant the join logic.)
-            fb = next(iter(feedbacks), None)
+            feedbacks = feedback_by_thread.get(thread_id, {})
 
             for sample in samples:
+                mid = sample.get("message_id") or ""
+                fb = feedbacks.get(mid) if mid else None
+
                 if fb is None:
-                    # No feedback yet — include as SFT with no quality signal
+                    # No feedback for this message — include as SFT with no quality signal
                     sft.append(_sft_record(sample, sample["output"]))
                     continue
 

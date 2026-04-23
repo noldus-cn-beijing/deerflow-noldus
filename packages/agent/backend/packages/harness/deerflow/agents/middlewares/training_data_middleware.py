@@ -105,6 +105,7 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
                 samples.append({
                     "role": "lead",
                     "thread_id": thread_id,
+                    "message_id": getattr(msg, "id", None) or "",
                     "input": pending_human.content if isinstance(pending_human.content, str) else str(pending_human.content),
                     "output": text,
                     "thinking": (msg.additional_kwargs or {}).get("reasoning_content") or "",
@@ -138,6 +139,7 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
                 samples.append({
                     "role": "subagent",
                     "thread_id": thread_id,
+                    "message_id": f"subtask-{call_id}",
                     "subagent_type": args.get("subagent_type", ""),
                     "input": json.dumps({
                         "description": args.get("description", ""),
