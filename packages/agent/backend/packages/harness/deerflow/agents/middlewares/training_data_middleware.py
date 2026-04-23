@@ -9,7 +9,7 @@ The flywheel is observational — a crash here would kill a real expert's analys
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NotRequired, override
 
@@ -44,10 +44,18 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
         self._base_dir = Path(base_dir) if base_dir else None
 
     def _resolve_thread_id(self, runtime: Runtime) -> str | None:
-        ctx = runtime.context or {}
-        thread_id = ctx.get("thread_id") if isinstance(ctx, dict) else None
-        if thread_id:
-            return thread_id
+        # First try runtime.context (preferred — injected by LangGraph Server)
+        ctx = runtime.context
+        if isinstance(ctx, dict):
+            thread_id = ctx.get("thread_id")
+            if thread_id:
+                return thread_id
+        # Fallback to get_config() only when context was not explicitly provided
+        # (i.e. running inside LangGraph without a context dict). Skip when
+        # context is None or empty dict to avoid picking up stale config vars
+        # from other tests or unrelated LangGraph invocations.
+        if ctx is not None:
+            return None
         try:
             cfg = get_config()
             return cfg.get("configurable", {}).get("thread_id")
@@ -100,7 +108,7 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
                     "input": pending_human.content if isinstance(pending_human.content, str) else str(pending_human.content),
                     "output": text,
                     "thinking": (msg.additional_kwargs or {}).get("reasoning_content") or "",
-                    "recorded_at": datetime.now(timezone.utc).isoformat(),
+                    "recorded_at": datetime.now(UTC).isoformat(),
                 })
                 pending_human = None
         return samples
@@ -136,7 +144,7 @@ class TrainingDataMiddleware(AgentMiddleware[TrainingDataMiddlewareState]):
                         "prompt": args.get("prompt", ""),
                     }, ensure_ascii=False),
                     "output": result_text,
-                    "recorded_at": datetime.now(timezone.utc).isoformat(),
+                    "recorded_at": datetime.now(UTC).isoformat(),
                 })
         return samples
 

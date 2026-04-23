@@ -42,8 +42,8 @@ def test_extract_joins_lead_samples_and_correct_feedback(tmp_path):
     stats = extract_sessions(tmp_path)
 
     sft = [
-        json.loads(l)
-        for l in (tmp_path / "training-data" / "processed" / "sft.jsonl")
+        json.loads(line)
+        for line in (tmp_path / "training-data" / "processed" / "sft.jsonl")
         .read_text()
         .splitlines()
     ]
@@ -83,8 +83,8 @@ def test_extract_generates_dpo_pair_from_needs_fix(tmp_path):
     stats = extract_sessions(tmp_path)
 
     dpo = [
-        json.loads(l)
-        for l in (tmp_path / "training-data" / "processed" / "dpo.jsonl")
+        json.loads(line)
+        for line in (tmp_path / "training-data" / "processed" / "dpo.jsonl")
         .read_text()
         .splitlines()
     ]

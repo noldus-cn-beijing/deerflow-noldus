@@ -1,8 +1,7 @@
 import json
 from pathlib import Path
 
-import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 
 from deerflow.agents.middlewares.training_data_middleware import TrainingDataMiddleware
@@ -22,11 +21,10 @@ class TestTrainingDataMiddlewareInit:
         assert expected_dir.exists()
 
     def test_before_agent_skips_when_no_thread_id(self, tmp_path, monkeypatch):
+        import deerflow.agents.middlewares.training_data_middleware as tdm_module
+
         middleware = TrainingDataMiddleware(base_dir=str(tmp_path))
-        monkeypatch.setattr(
-            "deerflow.agents.middlewares.training_data_middleware.get_config",
-            lambda: {"configurable": {}},
-        )
+        monkeypatch.setattr(tdm_module, "get_config", lambda: {"configurable": {}})
 
         result = middleware.before_agent(state={}, runtime=Runtime(context=None))
 
@@ -54,8 +52,8 @@ class TestTrainingDataMiddlewareRecording:
         middleware.after_agent(state=state, runtime=Runtime(context={"thread_id": "thread-xyz"}))
 
         out = tmp_path / "training-data" / "auto-collected" / "thread-xyz.jsonl"
-        lines = [json.loads(l) for l in out.read_text().splitlines() if l.strip()]
-        lead_samples = [l for l in lines if l["role"] == "lead"]
+        lines = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+        lead_samples = [line for line in lines if line["role"] == "lead"]
         assert len(lead_samples) == 1
         assert lead_samples[0]["input"] == "分析这份斑马鱼数据"
         assert lead_samples[0]["output"] == "好的，我先解析轨迹文件。"
@@ -74,8 +72,6 @@ class TestTrainingDataMiddlewareRecording:
         out = tmp_path / "training-data" / "auto-collected" / "thread-empty.jsonl"
         assert not out.exists() or out.read_text().strip() == ""
 
-
-from langchain_core.messages import ToolMessage
 
 
 class TestSubagentSampleExtraction:
@@ -108,8 +104,8 @@ class TestSubagentSampleExtraction:
         middleware.after_agent(state=state, runtime=Runtime(context={"thread_id": "thread-sub"}))
 
         out = tmp_path / "training-data" / "auto-collected" / "thread-sub.jsonl"
-        lines = [json.loads(l) for l in out.read_text().splitlines() if l.strip()]
-        subagent = [l for l in lines if l["role"] == "subagent"]
+        lines = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+        subagent = [line for line in lines if line["role"] == "subagent"]
         assert len(subagent) == 1
         assert subagent[0]["subagent_type"] == "code-executor"
         assert "analyze shoaling" in subagent[0]["input"]

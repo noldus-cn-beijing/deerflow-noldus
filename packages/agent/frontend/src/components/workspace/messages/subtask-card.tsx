@@ -7,7 +7,6 @@ import {
   LightbulbIcon,
   XCircleIcon,
 } from "lucide-react";
-import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Streamdown } from "streamdown";
 
@@ -43,16 +42,17 @@ export function SubtaskCard({
   className,
   taskId,
   isLoading,
+  threadId,
 }: {
   className?: string;
   taskId: string;
   isLoading: boolean;
+  threadId?: string;
 }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
   const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const task = useSubtask(taskId)!;
-  const { thread_id } = useParams<{ thread_id: string }>();
   const icon = useMemo(() => {
     if (task.status === "completed") {
       return <CheckCircleIcon className="size-3" />;
@@ -184,9 +184,9 @@ export function SubtaskCard({
             ></ChainOfThoughtStep>
           )}
         </ChainOfThoughtContent>
-        {task.status === "completed" && thread_id && (
+        {task.status === "completed" && threadId && (
           <FeedbackButtons
-            threadId={thread_id}
+            threadId={threadId}
             messageId={`subtask-${taskId}`}
             className="px-4 pb-3"
           />

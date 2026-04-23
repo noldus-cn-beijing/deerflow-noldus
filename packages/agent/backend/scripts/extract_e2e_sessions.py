@@ -11,14 +11,14 @@ Usage:
 """
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
 def _read_jsonl(path: Path) -> list[dict]:
     if not path.exists():
         return []
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _sft_record(sample: dict, output_text: str) -> dict:
@@ -104,7 +104,7 @@ def extract_sessions(base_dir: Path) -> dict:
     _write(out_dir / "dpo.jsonl", dpo)
 
     stats = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "sft_count": len(sft),
         "dpo_count": len(dpo),
         "threads_processed": threads_processed,

@@ -73,6 +73,7 @@ export function MessageList({
                   key={`${group.id}/${msg.id}`}
                   message={msg}
                   isLoading={thread.isLoading}
+                  threadId={threadId}
                 />
               );
             });
@@ -227,6 +228,7 @@ export function MessageList({
                     key={"task-group-" + taskId}
                     taskId={taskId!}
                     isLoading={thread.isLoading}
+                    threadId={threadId}
                   />,
                 );
               }

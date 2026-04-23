@@ -40,13 +40,14 @@ export function MessageListItem({
   className,
   message,
   isLoading,
+  threadId,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
+  threadId?: string;
 }) {
   const isHuman = message.type === "human";
-  const { thread_id } = useParams<{ thread_id: string }>();
   return (
     <AIElementMessage
       className={cn("group/conversation-message relative w-full", className)}
@@ -57,9 +58,9 @@ export function MessageListItem({
         message={message}
         isLoading={isLoading}
       />
-      {!isLoading && !isHuman && thread_id && message.id && (
+      {!isLoading && !isHuman && threadId && message.id && (
         <FeedbackButtons
-          threadId={thread_id}
+          threadId={threadId}
           messageId={message.id}
           className="px-1"
         />
