@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from deerflow.agents.memory.prompt import format_conversation_for_update
 from deerflow.agents.memory.updater import (
@@ -524,6 +524,7 @@ class TestUpdateMemoryStructuredResponse:
         response = MagicMock()
         response.content = content
         model.invoke.return_value = response
+        model.ainvoke = AsyncMock(return_value=response)
         return model
 
     def test_string_response_parses(self):
@@ -592,7 +593,7 @@ class TestUpdateMemoryStructuredResponse:
             result = updater.update_memory([msg, ai_msg], correction_detected=True)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Explicit correction signals were detected" in prompt
 
     def test_correction_hint_empty_when_not_detected(self):
@@ -617,7 +618,7 @@ class TestUpdateMemoryStructuredResponse:
             result = updater.update_memory([msg, ai_msg], correction_detected=False)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Explicit correction signals were detected" not in prompt
 
 
@@ -695,6 +696,7 @@ class TestReinforcementHint:
         response = MagicMock()
         response.content = f"```json\n{json_response}\n```"
         model.invoke.return_value = response
+        model.ainvoke = AsyncMock(return_value=response)
         return model
 
     def test_reinforcement_hint_injected_when_detected(self):
@@ -719,7 +721,7 @@ class TestReinforcementHint:
             result = updater.update_memory([msg, ai_msg], reinforcement_detected=True)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Positive reinforcement signals were detected" in prompt
 
     def test_reinforcement_hint_absent_when_not_detected(self):
@@ -744,7 +746,7 @@ class TestReinforcementHint:
             result = updater.update_memory([msg, ai_msg], reinforcement_detected=False)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Positive reinforcement signals were detected" not in prompt
 
     def test_both_hints_present_when_both_detected(self):
@@ -769,6 +771,6 @@ class TestReinforcementHint:
             result = updater.update_memory([msg, ai_msg], correction_detected=True, reinforcement_detected=True)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Explicit correction signals were detected" in prompt
         assert "Positive reinforcement signals were detected" in prompt
