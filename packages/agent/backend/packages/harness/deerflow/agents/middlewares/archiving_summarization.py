@@ -71,6 +71,12 @@ class ArchivingSummarizationMiddleware(SummarizationMiddleware):
     def __init__(self, *args: Any, loop_detection: Any | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._loop_detection = loop_detection
+        # Tag the summarization model call with "nostream" so its token
+        # deltas are not broadcast to the conversation stream
+        # (langgraph.constants.TAG_NOSTREAM). Fine-grained delta providers
+        # like DeepSeek otherwise leak the summary into the UI as a phantom
+        # AI message.
+        self.model = self.model.with_config(tags=["nostream"])
 
     @override
     async def abefore_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:

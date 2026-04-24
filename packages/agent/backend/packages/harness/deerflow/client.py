@@ -117,7 +117,7 @@ class DeerFlowClient:
         *,
         model_name: str | None = None,
         thinking_enabled: bool = True,
-        subagent_enabled: bool = True,
+        subagent_enabled: bool = False,
         plan_mode: bool = False,
         agent_name: str | None = None,
         available_skills: set[str] | None = None,
@@ -223,7 +223,7 @@ class DeerFlowClient:
 
         thinking_enabled = cfg.get("thinking_enabled", True)
         model_name = cfg.get("model_name")
-        subagent_enabled = cfg.get("subagent_enabled", True)
+        subagent_enabled = cfg.get("subagent_enabled", False)
         max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
 
         kwargs: dict[str, Any] = {
@@ -722,6 +722,10 @@ class DeerFlowClient:
             Dict with "models" key containing list of model info dicts,
             matching the Gateway API ``ModelsListResponse`` schema.
         """
+        token_usage_enabled = getattr(getattr(self._app_config, "token_usage", None), "enabled", False)
+        if not isinstance(token_usage_enabled, bool):
+            token_usage_enabled = False
+
         return {
             "models": [
                 {
@@ -733,7 +737,8 @@ class DeerFlowClient:
                     "supports_reasoning_effort": getattr(model, "supports_reasoning_effort", False),
                 }
                 for model in self._app_config.models
-            ]
+            ],
+            "token_usage": {"enabled": token_usage_enabled},
         }
 
     def list_skills(self, enabled_only: bool = False) -> dict:

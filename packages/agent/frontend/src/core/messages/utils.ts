@@ -136,7 +136,7 @@ export function extractTextFromMessage(message: Message) {
   if (Array.isArray(message.content)) {
     return message.content
       .map((content) => (content.type === "text" ? content.text : ""))
-      .join("\n")
+      .join("")
       .trim();
   }
   return "";
@@ -177,6 +177,9 @@ export function extractContentFromMessage(message: Message) {
     );
   }
   if (Array.isArray(message.content)) {
+    // Join with "" — adjacent text blocks are continuous text; "\n" turns
+    // fine-grained delta streams (e.g. DeepSeek) into one-token-per-line
+    // which breaks the markdown parser.
     return message.content
       .map((content) => {
         switch (content.type) {
@@ -184,12 +187,12 @@ export function extractContentFromMessage(message: Message) {
             return content.text;
           case "image_url":
             const imageURL = extractURLFromImageURLContent(content.image_url);
-            return `![image](${imageURL})`;
+            return `\n![image](${imageURL})\n`;
           default:
             return "";
         }
       })
-      .join("\n")
+      .join("")
       .trim();
   }
   return "";
