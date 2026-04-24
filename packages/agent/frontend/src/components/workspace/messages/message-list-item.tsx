@@ -17,8 +17,8 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Task, TaskTrigger } from "@/components/ai-elements/task";
-import { Badge } from "@/components/ui/badge";
 import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
+import { Badge } from "@/components/ui/badge";
 import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import {
