@@ -75,6 +75,8 @@ export interface Translations {
     proModeDescription: string;
     ultraMode: string;
     ultraModeDescription: string;
+    flywheelMode: string;
+    flywheelModeDescription: string;
     reasoningEffort: string;
     reasoningEffortMinimal: string;
     reasoningEffortMinimalDescription: string;

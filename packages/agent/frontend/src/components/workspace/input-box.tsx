@@ -83,7 +83,7 @@ import { useThread } from "./messages/context";
 import { ModeHoverGuide } from "./mode-hover-guide";
 import { Tooltip } from "./tooltip";
 
-type InputMode = "flash" | "thinking" | "pro" | "ultra";
+type InputMode = "flash" | "thinking" | "pro" | "ultra" | "flywheel";
 
 function getResolvedMode(
   mode: InputMode | undefined,
@@ -121,7 +121,7 @@ export function InputBox({
     AgentThreadContext,
     "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
   > & {
-    mode: "flash" | "thinking" | "pro" | "ultra" | undefined;
+    mode: "flash" | "thinking" | "pro" | "ultra" | "flywheel" | undefined;
     reasoning_effort?: "minimal" | "low" | "medium" | "high";
   };
   extraHeader?: React.ReactNode;
@@ -133,7 +133,7 @@ export function InputBox({
       AgentThreadContext,
       "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
     > & {
-      mode: "flash" | "thinking" | "pro" | "ultra" | undefined;
+      mode: "flash" | "thinking" | "pro" | "ultra" | "flywheel" | undefined;
       reasoning_effort?: "minimal" | "low" | "medium" | "high";
     },
   ) => void;
@@ -526,6 +526,9 @@ export function InputBox({
                     {context.mode === "ultra" && (
                       <RocketIcon className="size-3 text-[#dabb5e]" />
                     )}
+                    {context.mode === "flywheel" && (
+                      <SparklesIcon className="size-3" />
+                    )}
                   </div>
                   <div
                     className={cn(
@@ -537,7 +540,8 @@ export function InputBox({
                       (context.mode === "thinking" &&
                         t.inputBox.reasoningMode) ||
                       (context.mode === "pro" && t.inputBox.proMode) ||
-                      (context.mode === "ultra" && t.inputBox.ultraMode)}
+                      (context.mode === "ultra" && t.inputBox.ultraMode) ||
+                      (context.mode === "flywheel" && t.inputBox.flywheelMode)}
                   </div>
                 </PromptInputActionMenuTrigger>
               </ModeHoverGuide>
@@ -665,6 +669,35 @@ export function InputBox({
                         </div>
                       </div>
                       {context.mode === "ultra" ? (
+                        <CheckIcon className="ml-auto size-4" />
+                      ) : (
+                        <div className="ml-auto size-4" />
+                      )}
+                    </PromptInputActionMenuItem>
+                    <PromptInputActionMenuItem
+                      className={cn(
+                        context.mode === "flywheel"
+                          ? "text-accent-foreground"
+                          : "text-muted-foreground/65",
+                      )}
+                      onSelect={() => handleModeSelect("flywheel")}
+                    >
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-1 font-bold">
+                          <SparklesIcon
+                            className={cn(
+                              "mr-2 size-4",
+                              context.mode === "flywheel" &&
+                                "text-accent-foreground",
+                            )}
+                          />
+                          {t.inputBox.flywheelMode}
+                        </div>
+                        <div className="pl-7 text-xs">
+                          {t.inputBox.flywheelModeDescription}
+                        </div>
+                      </div>
+                      {context.mode === "flywheel" ? (
                         <CheckIcon className="ml-auto size-4" />
                       ) : (
                         <div className="ml-auto size-4" />

@@ -94,6 +94,9 @@ export const enUS: Translations = {
     ultraMode: "Ultra",
     ultraModeDescription:
       "Pro mode with subagents to divide work; best for complex multi-step tasks",
+    flywheelMode: "Flywheel",
+    flywheelModeDescription:
+      "Interactive analysis with human-in-the-loop at key decision points, for training data collection",
     reasoningEffort: "Reasoning Effort",
     reasoningEffortMinimal: "Minimal",
     reasoningEffortMinimalDescription: "Retrieval + Direct Output",

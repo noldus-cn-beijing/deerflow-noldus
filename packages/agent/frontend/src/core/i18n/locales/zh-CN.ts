@@ -92,6 +92,9 @@ export const zhCN: Translations = {
     ultraMode: "Ultra",
     ultraModeDescription:
       "继承自 Pro 模式，可调用子代理分工协作，适合复杂多步骤任务，能力最强",
+    flywheelMode: "数据飞轮",
+    flywheelModeDescription:
+      "交互式分析，每个关键决策点等待您确认，适合训练数据收集",
     reasoningEffort: "推理深度",
     reasoningEffortMinimal: "最低",
     reasoningEffortMinimalDescription: "检索 + 直接输出",
