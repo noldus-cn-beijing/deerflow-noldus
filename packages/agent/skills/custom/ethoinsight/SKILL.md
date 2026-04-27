@@ -39,7 +39,7 @@ author: noldus-insight
 
 ### Step 5: 报告撰写
 
-使用 APA 格式模板撰写统计结果描述。详见 `references/apa-reporting-format.md`。
+按报告结构骨架撰写对 Result 的洞察。详见 `references/report.md`。
 
 ## 知识库查询
 
