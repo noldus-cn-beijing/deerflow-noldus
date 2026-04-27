@@ -49,7 +49,7 @@ author: noldus-insight
 | 是 | "重新分析"/"换图表" | 重做分析 | 进入 Step 2，但可能简化 |
 | 是 | "只重写报告" | 仅报告 | 仅派遣 report-writer |
 
-### Step 2: 需求完整性检查（仅 2 个必问项）
+### Step 2: 需求完整性检查（3 个必问项）
 
 检查以下信息：
 
@@ -57,10 +57,13 @@ author: noldus-insight
 |------|---------|----------|
 | **范式** | 文件名关键词（如 EPM, OFT, Shoaling） / 用户明示 | **推断失败 → `ask_clarification`** |
 | **分组** | 文件名前缀（如 control_*, treatment_*） / 用户明示 | **无法推断 → `ask_clarification`** |
+| **处理描述** | 用户消息中是否提及药物名/剂量/造模类型/基因型/年龄/性别等实质处理信息 | **分组为通用 label（control/treatment/对照/实验/ctrl/trt/组 1/组 2）且未提供处理描述 → `ask_clarification`** |
 | 实验设计 | 关键词表（重复测量/配对/独立组） | 推断失败 → 走"自动判断" |
 | 特殊需求 | 用户额外说明 | 缺失 → 走默认 |
 
-**关键规则**：范式或分组缺失 → 立即 `ask_clarification`，不要进入后续步骤。
+**关键规则**：
+- 范式 / 分组 / 处理描述缺失 → 立即 `ask_clarification`，不要进入后续步骤
+- 处理描述已在本 session 早期追问过并写入 handoff_planning.json 的 `group_semantics` 字段 → 跳过追问
 
 `ask_clarification` 示例：
 
@@ -79,7 +82,17 @@ ask_clarification(
     clarification_type="missing_info",
     context="文件名无命名规律，需要分组定义"
 )
+
+# 分组 label 通用但未提供处理描述
+ask_clarification(
+    question="请问实验组（Treatment）对应的具体处理是什么？例如药物剂量、造模类型、基因型差异、年龄等。",
+    clarification_type="missing_info",
+    context="分组 label 为通用名，需要具体处理描述以指导 Discussion 段解读",
+    options=None  # 开放式，无预设选项
+)
 ```
+
+**session 内去重**：用户回答后，把处理描述写入 handoff_planning.json 的 `group_semantics` 字段（格式：`{"control": "saline", "treatment": "30 mg/kg fluoxetine"}`）。下次 planning 先读该字段，已有则跳过追问。
 
 ### Step 3: 选择规划模板
 
