@@ -1,0 +1,90 @@
+<h2>Lead Agent 新工作流：手动模式（飞轮期）</h2>
+<p class="subtitle">红色标注 = Human-in-the-loop 确认点 | 蓝色 = Subagent | 绿色 = 最终选项</p>
+
+<div class="section">
+  <div class="label">Phase 1 — 实验识别</div>
+  <div style="display:flex;align-items:center;gap:12px;margin:12px 0;">
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:12px 16px;flex:1;">
+      <strong>1a</strong> Lead Agent 询问："您需要做什么？"<br/>
+      <span style="font-size:13px;color:var(--text-secondary)">选项：端到端数据分析 / 知识问答 / 其他</span>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:12px 16px;flex:1;">
+      <strong>1b</strong> Lead Agent 展示 16 种实验模板<br/>
+      <span style="font-size:13px;color:var(--text-secondary)">用户选择 → 数据一致性 safety check</span>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:#fff3cd;border:2px solid #dc3545;border-radius:8px;padding:12px 16px;flex:1;text-align:center;">
+      <strong style="color:#dc3545;">🔴 Gate 1</strong><br/>
+      <span style="font-size:13px;">用户确认实验类型</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Phase 2 — 实验设计确认</div>
+  <div style="display:flex;align-items:center;gap:12px;margin:12px 0;">
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:12px 16px;flex:1;">
+      <strong>2a</strong> Lead Agent 追问组别信息<br/>
+      <span style="font-size:13px;">对照组 vs 实验组？每组几个动物？</span>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:#fff3cd;border:2px solid #dc3545;border-radius:8px;padding:12px 16px;flex:1;text-align:center;">
+      <strong style="color:#dc3545;">🔴 Gate 2</strong><br/>
+      <span style="font-size:13px;">用户确认组别设计 + 分析目标</span>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:#d1ecf1;border:2px solid #0c5460;border-radius:8px;padding:12px 16px;flex:1;">
+      <strong style="color:#0c5460;">🔵 code-executor</strong><br/>
+      <span style="font-size:13px;">5 步分析流水线（按范式模板）</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Phase 3 — 初步结论审查</div>
+  <div style="display:flex;align-items:center;gap:12px;margin:12px 0;">
+    <div style="background:#d1ecf1;border:2px solid #0c5460;border-radius:8px;padding:12px 16px;flex:1;">
+      <strong style="color:#0c5460;">🔵 data-analyst</strong><br/>
+      <span style="font-size:13px;">统计审核 + 异常检测 + 洞察发现</span>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:#fff3cd;border:2px solid #dc3545;border-radius:8px;padding:12px 16px;flex:1;text-align:center;">
+      <strong style="color:#dc3545;">🔴 Gate 3</strong><br/>
+      <span style="font-size:13px;">展示初步结论 → 用户标记深入方向</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Phase 4 — 最终产出</div>
+  <div style="display:flex;align-items:center;gap:12px;margin:12px 0;">
+    <div style="background:#d1ecf1;border:2px solid #0c5460;border-radius:8px;padding:12px 16px;flex:1;">
+      <strong style="color:#0c5460;">🔵 report-writer</strong><br/>
+      <span style="font-size:13px;">APA 科学报告（如用户选择）</span>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:#d4edda;border:2px solid #28a745;border-radius:8px;padding:12px 16px;flex:1;text-align:center;">
+      <strong style="color:#28a745;">✅ 完成</strong><br/>
+      <span style="font-size:13px;">可选择报告 / 追问 / 新分析</span>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;border-top:1px solid var(--border-color);padding-top:16px;">
+  <h3>自动模式（post-training 后）</h3>
+  <div style="display:flex;align-items:center;gap:12px;margin:12px 0;">
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:12px 16px;flex:1;text-align:center;">
+      <strong>选实验 + 传数据</strong>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:#d1ecf1;border:2px solid #0c5460;border-radius:8px;padding:12px 16px;flex:1;text-align:center;">
+      <strong style="color:#0c5460;">全自动 pipeline</strong><br/>
+      <span style="font-size:13px;">无中断，端到端</span>
+    </div>
+    <span style="font-size:20px;">→</span>
+    <div style="background:#d4edda;border:2px solid #28a745;border-radius:8px;padding:12px 16px;flex:1;text-align:center;">
+      <strong style="color:#28a745;">最终结果 + 可深入方向</strong>
+    </div>
+  </div>
+</div>
