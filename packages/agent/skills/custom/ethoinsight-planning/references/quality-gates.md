@@ -2,6 +2,33 @@
 
 在规划和执行的关键节点触发检查，必要时 `ask_clarification`。
 
+## Gate 0: 实验范式确认（仅 manual 模式）
+
+**触发时机**: 用户选择"端到端数据分析"后，派遣任何 subagent 之前
+
+**检查**: 用户是否已通过两级 ask_clarification 明确选择了实验范式
+
+| 状态 | 行动 |
+|------|------|
+| 用户已选择范式 | 调用 `set_experiment_paradigm` tool 写入 experiment-context.json，进入 Gate 1 |
+| 用户未选择 | **两级 `ask_clarification`**：先选 7 大类（旷场及物体识别 / 焦虑迷宫 / 空间学习记忆迷宫 / 社会交互与偏好 / 抑郁绝望 / 恐惧条件化 / 斑马鱼行为），再选该大类下的细分范式（1-6 个） |
+
+**选项来源**: ethoinsight.templates.list_categories() + list_paradigms(category=...)
+
+## Gate 1.5: 数据-范式一致性检查（Gate 0 完成后）
+
+**触发时机**: 用户选择范式后，Gate 1 之前
+
+**检查**: verify_paradigm_columns(paradigm_name, file_path)
+
+| 状态 | 行动 |
+|------|------|
+| match=True | 流水线继续 |
+| match=False | **`ask_clarification(type="risk_confirmation")`**：告知用户数据列与范式预期不完全匹配，**不阻止分析** |
+| 文件不存在 | 静默跳过（老 thread 兼容） |
+
+**注意**: 这是"软门控"——只提醒，不阻断。即使列不匹配，用户也可选择继续。
+
 ## Gate 1: 规划阶段 — 样本量检查
 
 **触发时机**: Step 2 需求完整性检查之后，Step 5 输出计划之前

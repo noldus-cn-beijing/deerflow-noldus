@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 
@@ -222,3 +223,90 @@ class TestRobustness:
         )
         # Should not raise; safest is to return None so downstream skips recording
         assert result is None
+
+
+class TestTrainingDataMiddlewareAskClarification:
+    """Regression: ask_clarification turns must be correctly recorded."""
+
+    @pytest.fixture
+    def middleware(self):
+        return TrainingDataMiddleware()
+
+    def test_ask_clarification_turn_records_lead_sample(self, middleware, tmp_path):
+        """ask_clarification AIMessage -> HumanMessage should produce a recorded sample."""
+        sb = middleware.before_agent(
+            state={},
+            runtime=Runtime(context={"thread_id": "t-clarify"}),
+        )
+
+        messages = [
+            HumanMessage(content="分析数据", id="h1"),
+            AIMessage(
+                content="哪类实验？",
+                id="a1",
+                tool_calls=[{
+                    "name": "ask_clarification",
+                    "args": {
+                        "question": "哪类实验？",
+                        "clarification_type": "approach_choice",
+                        "options": ["Shoaling", "OFT", "EPM"],
+                    },
+                    "id": "tc1",
+                }],
+            ),
+            ToolMessage(content="Shoaling", tool_call_id="tc1", name="ask_clarification", id="t1"),
+            HumanMessage(content="Shoaling", id="h2"),
+            AIMessage(content="启动 Shoaling 分析...", id="a2"),
+        ]
+
+        state = {"training_data_path": sb["training_data_path"], "messages": messages}
+        result = middleware.after_agent(state=state, runtime=Runtime(context={"thread_id": "t-clarify"}))
+        assert result is None
+
+        jsonl = Path(sb["training_data_path"])
+        assert jsonl.exists()
+        lines = jsonl.read_text().strip().split("\n")
+        assert len(lines) >= 1
+
+        sample = json.loads(lines[0])
+        assert sample["role"] == "lead"
+
+    def test_ask_clarification_options_array_preserved(self, middleware, tmp_path):
+        """The options array in ask_clarification args should survive in recorded data."""
+        sb = middleware.before_agent(
+            state={},
+            runtime=Runtime(context={"thread_id": "t-options"}),
+        )
+
+        options = ["Shoaling", "OFT", "EPM", "Light-Dark Box"]
+
+        messages = [
+            HumanMessage(content="分析", id="h1"),
+            AIMessage(
+                content="",
+                id="a1",
+                tool_calls=[{
+                    "name": "ask_clarification",
+                    "args": {
+                        "question": "什么实验？",
+                        "clarification_type": "approach_choice",
+                        "options": options,
+                    },
+                    "id": "tc1",
+                }],
+            ),
+            ToolMessage(content="Shoaling", tool_call_id="tc1", id="t1"),
+            HumanMessage(content="Shoaling", id="h2"),
+            AIMessage(content="启动 Shoaling 分析", id="a2"),
+        ]
+
+        state = {"training_data_path": sb["training_data_path"], "messages": messages}
+        middleware.after_agent(state=state, runtime=Runtime(context={"thread_id": "t-options"}))
+
+        jsonl = Path(sb["training_data_path"])
+        lines = jsonl.read_text().strip().split("\n")
+        assert len(lines) >= 1
+
+        for line in lines:
+            sample = json.loads(line)
+            assert "output" in sample
