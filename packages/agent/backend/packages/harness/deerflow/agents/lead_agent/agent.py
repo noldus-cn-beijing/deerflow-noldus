@@ -283,6 +283,13 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
 
+    # GateEnforcementMiddleware — block task() before Gate 1 in manual mode
+    workflow_mode = config.get("configurable", {}).get("workflow_mode", "auto")
+    if workflow_mode == "manual":
+        from deerflow.agents.middlewares.gate_enforcement_middleware import GateEnforcementMiddleware
+
+        middlewares.append(GateEnforcementMiddleware(enabled=True))
+
     # ClarificationMiddleware should always be last
     middlewares.append(ClarificationMiddleware())
     return middlewares
@@ -299,6 +306,7 @@ def make_lead_agent(config: RunnableConfig):
     reasoning_effort = cfg.get("reasoning_effort", None)
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
     is_plan_mode = cfg.get("is_plan_mode", False)
+    workflow_mode = cfg.get("workflow_mode", "auto")  # "manual" | "auto"
     subagent_enabled = cfg.get("subagent_enabled", True)
     max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
     is_bootstrap = cfg.get("is_bootstrap", False)
