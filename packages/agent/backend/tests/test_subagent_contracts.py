@@ -149,7 +149,6 @@ class TestReportWriterHandoffSchema:
             report_path="/mnt/user-data/outputs/report.md",
         )
         assert h.sections_written == []
-        assert h.references_used == 0
 
     def test_rejects_missing_path(self):
         with pytest.raises(Exception):

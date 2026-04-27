@@ -164,10 +164,6 @@ class ReportWriterHandoff(BaseModel):
         default_factory=list,
         description="E.g. ['Results', 'Discussion'].",
     )
-    references_used: int = Field(
-        default=0,
-        description="Number of literature references cited in the report.",
-    )
     errors: list[str] = Field(default_factory=list)
 
 

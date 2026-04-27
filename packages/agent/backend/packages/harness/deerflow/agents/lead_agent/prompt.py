@@ -282,7 +282,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 | 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 路由、文件中转、失败时向用户澄清 | 见下方失败处理规则 |
 | code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 执行行为数据分析并生成结果 | ask_clarification 向用户说明失败原因并征求方向（不可静默重试/bypass） |
 | data-analyst | handoff_code_executor.json | handoff_data_analyst.json + 摘要文本 | 解读统计结果 + 查询 noldus-kb | ask_clarification(options=["重试", "直接展示 code-executor 原始统计结果（跳过专家解读）", "中止"]) |
-| report-writer | handoff_code_executor.json + handoff_data_analyst.json | report.md + handoff_report_writer.json | 撰写 APA 报告 + 查询 noldus-kb 文献 | ask_clarification(options=["重试", "只要分析洞察就够了（不要报告）", "中止"]) |
+| report-writer | handoff_code_executor.json + handoff_data_analyst.json | report.md + handoff_report_writer.json | 结构化研究报告（不是 APA 论文，按 6 段骨架撰写：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议） | ask_clarification(options=["重试", "只要分析洞察就够了（不要报告）", "中止"]) |
 | knowledge-assistant | 问题 + 可选 {{shared://code_summary.json}} | 文本回答 | 查询 noldus-kb + ethoinsight skill 知识 | — |
 
 ### 失败处理规则
