@@ -256,9 +256,91 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - code-executor 部分成功（status=completed 但 errors 不为空）→ 将部分结果和警告一起告知用户，询问是否继续后续流程
 - 连续两个 subagent 失败 → 必须 ask_clarification，不可继续流水线
 
+### 识别实验范式与实验设计类型
+
+**范式分类体系（7 大类 18 范式）：**
+
+| 大类 | 细分范式 |
+|------|---------|
+| 旷场及物体识别 | 旷场实验 (Open Field)、新物体识别 (Novel Object)、孔板实验 (Hole Board) |
+| 焦虑迷宫 | 高架十字迷宫 (EPM)、零迷宫 (Zero Maze)、明暗箱 (Light-Dark Box) |
+| 空间学习记忆迷宫 | Morris 水迷宫、Barnes 迷宫、八臂迷宫、Y 迷宫、T 迷宫、十字迷宫-鱼 |
+| 社会交互与偏好 | 社会交互、条件位置偏好 (CPP) |
+| 抑郁/绝望 | 强迫游泳、悬尾实验 |
+| 恐惧条件化 | 恐惧条件化/主动回避 |
+| 斑马鱼行为 | 斑马鱼鱼群行为 (Shoaling) |
+
+每个范式有对应的 `subject` 类型（rodent / fish / insect / other），分析解读时根据 subject 调整语言。
+
+**流程分支 — 根据 `workflow_mode` 区分（系统已注入，无需你判断）：**
+
+#### manual 模式（飞轮期，交互式三 Gate）
+
+**Gate 1 — 两级实验类型确认（进入端到端流水线时必须先执行）**
+
+当用户有新上传数据且请求分析时，分两步确认实验类型：
+
+**第一步：先问大类**
+
+ask_clarification(
+    question="请问您做的是哪类实验？",
+    clarification_type="approach_choice",
+    context="需要确认实验大类以缩小范式范围",
+    options=[
+        "旷场及物体识别",
+        "焦虑迷宫（EPM、零迷宫、明暗箱）",
+        "空间学习记忆迷宫（水迷宫、Barnes、Y/T迷宫等）",
+        "社会交互与偏好",
+        "抑郁/绝望（强迫游泳、悬尾）",
+        "恐惧条件化/主动回避",
+        "斑马鱼行为（鱼群分析）",
+    ]
+)
+
+**第二步：再问细分范式**（根据用户选择的大类，展示对应的 2-6 个范式）
+
+用户选"焦虑迷宫"→ ask_clarification(options=["高架十字迷宫 (EPM)", "零迷宫 (Zero Maze)", "明暗箱 (Light-Dark Box)"])
+用户选"旷场及物体识别"→ ask_clarification(options=["旷场实验 (Open Field)", "新物体识别 (Novel Object Recognition)", "孔板实验 (Hole Board)"])
+用户选"空间学习记忆迷宫"→ ask_clarification(options=["Morris 水迷宫", "Barnes 迷宫", "八臂迷宫", "Y 迷宫", "T 迷宫", "十字迷宫-鱼 (Cross Maze)"])
+用户选"社会交互与偏好"→ ask_clarification(options=["社会交互 (Social Interaction)", "条件位置偏好 (CPP)"])
+用户选"抑郁/绝望"→ ask_clarification(options=["强迫游泳 (Forced Swim)", "悬尾实验 (Tail Suspension)"])
+用户选"恐惧条件化"→ ask_clarification(options=["恐惧条件化/主动回避 (Fear Conditioning)"])
+用户选"斑马鱼行为"→ 直接确定 shoaling（该大类下唯一范式），无需第二步
+
+用户选择细分范式后，**必须调用 set_experiment_paradigm tool**（不要用 write_file 手写 JSON）：
+set_experiment_paradigm(paradigm="英文范式名", paradigm_cn="中文显示名", category="大类名", subject="rodent|fish")
+
+**Gate 2 — 组别设计确认（Gate 1 完成后）**
+
+用户选择实验类型后，调用 ask_clarification 确认组别设计：
+
+ask_clarification(
+    question="请确认实验组别设计",
+    clarification_type="missing_info",
+    options=["对照组 vs 实验组 (两组)", "多剂量组 (3组+)", "重复测量设计", "不确定，请帮我推断"]
+)
+
+用户选择后，用 write_file 更新 experiment-context.json 的 group_design 和 gate_completed 字段。
+
+**Gate 3 — 初步结论审查（code-executor → data-analyst 完成后）**
+
+在 data-analyst 完成解读后、呈现结果的同时，调用 ask_clarification 三选一：
+
+ask_clarification(
+    question="初步分析结论如上，您希望如何继续？",
+    clarification_type="approach_choice",
+    options=["生成完整 APA 报告", "深入分析某个指标", "提出新的分析问题", "结束分析"]
+)
+
+**Gate 间状态传递**：写入 /mnt/user-data/workspace/experiment-context.json 传递实验类型和组别。不要依赖对话历史。
+
+#### auto 模式
+
+auto 模式下只保留 Gate 1 的两级确认（大类 → 细分），Gate 2 和 Gate 3 不触发，流水线按默认路径自动完成。
+
 ### 识别实验设计类型（传递给 code-executor）
 
-在派遣 code-executor 时，从用户描述和范式推断设计类型，添加到 prompt 中：
+在派遣 code-executor 时，从用户描述和 Paradigm 推断设计类型，添加到 prompt 中：
 
 | 关键词 | 设计类型 | 传递标注 |
 |--------|---------|---------|
@@ -274,6 +356,8 @@ def _build_subagent_section(max_concurrent: int) -> str:
 分组: control=[...], treatment=[...]
 实验设计: <设计类型>
 特殊需求: <用户额外要求>
+experiment_context: /mnt/user-data/workspace/experiment-context.json
+subject_type: <rodent|fish>  ← 从 experiment-context.json 获取，影响分析语言
 
 ### 角色分工与契约
 
