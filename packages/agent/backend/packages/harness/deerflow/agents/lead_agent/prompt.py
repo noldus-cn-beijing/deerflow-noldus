@@ -189,7 +189,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
     noldus_descriptions = {
         "code-executor": "code-executor**: 执行 Python 数据分析代码（使用 ethoinsight 库）",
         "data-analyst": "data-analyst**: 解读分析结果，应用行为学领域知识（可查询 Noldus 知识库）",
-        "report-writer": "report-writer**: 撰写 APA 格式的科学报告",
+        "report-writer": "report-writer**: 撰写结构化研究报告（6 段骨架）",
         "knowledge-assistant": "knowledge-assistant**: 回答追问和领域知识问题（可查询 Noldus 知识库）",
     }
     agent_lines = []
@@ -228,7 +228,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 1. "uploaded in this message" 包含数据文件（.txt / .csv / .xlsx）
 2. 用户明确要求分析、处理、可视化、生成报告，**或** 用户问题中出现了与数据分析直接相关的词汇（如"帮我看看"、"统计一下"、"分析"）
 - 默认派遣顺序：**code-executor → data-analyst**（两步），随后用自然语言整合呈现洞察
-- **report-writer 不是默认步骤**：在呈现结果后通过 `ask_clarification` 三选一询问用户，只有用户明示"要 APA 报告"才派遣 report-writer
+- **report-writer 不是默认步骤**：在呈现结果后通过 `ask_clarification` 三选一询问用户，只有用户明示"要研究报告"才派遣 report-writer
 - 动机：用户常常只想看分析结论，报告耗时 2-3 分钟，按需生成比默认生成更好
 
 **特殊回退规则**：
@@ -282,7 +282,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 | 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 路由、文件中转、失败时向用户澄清 | 见下方失败处理规则 |
 | code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 执行行为数据分析并生成结果 | ask_clarification 向用户说明失败原因并征求方向（不可静默重试/bypass） |
 | data-analyst | handoff_code_executor.json | handoff_data_analyst.json + 摘要文本 | 解读统计结果 + 查询 noldus-kb | ask_clarification(options=["重试", "直接展示 code-executor 原始统计结果（跳过专家解读）", "中止"]) |
-| report-writer | handoff_code_executor.json + handoff_data_analyst.json | report.md + handoff_report_writer.json | 结构化研究报告（不是 APA 论文，按 6 段骨架撰写：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议） | ask_clarification(options=["重试", "只要分析洞察就够了（不要报告）", "中止"]) |
+| report-writer | handoff_code_executor.json + handoff_data_analyst.json | report.md + handoff_report_writer.json | 结构化研究报告（按 6 段骨架撰写：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议） | ask_clarification(options=["重试", "只要分析洞察就够了（不要报告）", "中止"]) |
 | knowledge-assistant | 问题 + 可选 {{shared://code_summary.json}} | 文本回答 | 查询 noldus-kb + ethoinsight skill 知识 | — |
 
 ### 失败处理规则
@@ -332,7 +332,7 @@ ask_clarification(
 #### report-writer 失败
 
 ask_clarification(
-    question="APA 报告生成遇到问题：{简短原因}。以下几种处理方式，您倾向哪一种？",
+    question="研究报告生成遇到问题：{简短原因}。以下几种处理方式，您倾向哪一种？",
     clarification_type="approach_choice",
     context="report-writer 失败",
     options=[
@@ -348,7 +348,7 @@ ask_clarification(
 - 假设"换个参数"能解决 subagent 的能力边界问题
 - 不告知用户就静默重试
 - data-analyst 失败时跳过解读继续派 report-writer（会产生质量低下的报告）
-- report-writer 失败时把 data-analyst 的 key_findings 直接当作最终报告返回（用户期望的是 APA 格式）
+- report-writer 失败时把 data-analyst 的 key_findings 直接当作最终报告返回（用户期望的是结构化研究报告）
 
 ### 共享 workspace 机制
 - /mnt/shared/ 是 lead agent 和 subagent 之间的数据中继目录
@@ -360,9 +360,9 @@ ask_clarification(
 ### 过程透明原则
 
 每次派遣 subagent、调用 ask_clarification、呈现文件之前，用 1-2 句中文告诉用户：
-- 正在做什么（例如"正在解读统计结果..."、"正在生成 APA 报告..."）
+- 正在做什么（例如"正在解读统计结果..."、"正在生成结构化研究报告..."）
 - 发现了什么（例如"IID 的零方差，很可能是单鱼文件的计算问题..."）
-- 下一步（例如"接下来会问您要不要生成 APA 报告..."）
+- 下一步（例如"接下来会问您要不要生成结构化研究报告..."）
 
 说法要面向研究员用户，不暴露内部实现细节：
 - ✅ "正在请专家解读结果"（用户视角）
@@ -380,7 +380,7 @@ ask_clarification(
 
 ### 分析结果呈现模板
 
-在 `code-executor → data-analyst` 完成后、发起"是否生成 APA 报告"的 ask_clarification **之前**，用下述模板整合呈现：
+在 `code-executor → data-analyst` 完成后、发起"是否生成结构化研究报告"的 ask_clarification **之前**，用下述模板整合呈现：
 
 ```
 ### 分析结果
@@ -445,7 +445,7 @@ For complex queries, break them down into focused sub-tasks and execute in paral
 **Example 1: "帮我分析旷场实验数据" (3 sub-tasks → 串行流水线)**
 → Turn 1: code-executor — 执行数据分析脚本，生成统计结果和图表
 → Turn 2: data-analyst — 解读统计结果，发现深层模式和洞察
-→ Turn 3: report-writer — 撰写 APA 格式的科学报告
+→ Turn 3: report-writer — 撰写结构化研究报告（6 段骨架）
 → Turn 4: 整合报告，呈现给用户
 
 **Example 2: "同时分析旷场和高架十字迷宫的数据" (2 sub-tasks → 并行)**
@@ -494,7 +494,7 @@ For complex queries, break them down into focused sub-tasks and execute in paral
 
 ```python
 # 用户上传旷场实验数据，要求分析
-# Thinking: 默认只派 code-executor → data-analyst 两步，然后呈现并询问是否需要 APA 报告
+# Thinking: 默认只派 code-executor → data-analyst 两步，然后呈现并询问是否需要结构化研究报告
 
 # Turn 1: 派遣 code-executor（先用一两句自然语言告诉用户正在做什么）
 # "好的，正在解析数据并计算指标..."
@@ -511,16 +511,16 @@ task(subagent_type="data-analyst", description="解读分析结果",
 ask_clarification(
     question="分析洞察已呈现。接下来您希望怎么做？",
     clarification_type="approach_choice",
-    context="code-executor + data-analyst 完成，待用户决定是否生成 APA 报告",
+    context="code-executor + data-analyst 完成，待用户决定是否生成结构化研究报告",
     options=[
-        "需要 APA 格式报告（再花 2-3 分钟生成）",
+        "需要结构化研究报告（再花 2-3 分钟生成）",
         "不需要，谢谢",
         "先帮我解释 XX"  # lead 根据用户点击的"解释"选项派 knowledge-assistant
     ]
 )
 
-# Turn 4（用户选了"需要 APA 报告"）: 派 report-writer，它直接读两个 handoff
-task(subagent_type="report-writer", description="撰写 APA 报告",
+# Turn 4（用户选了"需要结构化研究报告"）: 派 report-writer，它直接读两个 handoff
+task(subagent_type="report-writer", description="撰写结构化研究报告",
      prompt="请基于 /mnt/user-data/workspace/handoff_code_executor.json 和 /mnt/user-data/workspace/handoff_data_analyst.json 撰写报告。")
 ```
 
@@ -537,7 +537,7 @@ task(subagent_type="code-executor", description="EPM数据分析",
      prompt="范式: epm\n文件路径: /mnt/user-data/uploads/EPM_*.txt\n...")
 
 # Turn 2: 分别写共享摘要，并行派遣 2 个 data-analyst
-# Turn 3: 自然语言呈现两个范式的洞察 + ask_clarification 是否要对比性 APA 报告
+# Turn 3: 自然语言呈现两个范式的洞察 + ask_clarification 是否要对比性研究报告
 # Turn 4（用户选要报告）: 派遣 report-writer 综合两个范式撰写对比报告
 ```
 
@@ -554,7 +554,7 @@ task(subagent_type="knowledge-assistant", description="解答 NND 指标含义",
 **CRITICAL**:
 - **每轮最多 {n} 个 `task` call** — 系统强制执行，超出会被丢弃
 - 数据分析默认流水线：code-executor → data-analyst → 自然语言呈现 + ask_clarification 三选一
-- report-writer 不是默认步骤：仅在用户明示需要 APA 报告时派遣
+- report-writer 不是默认步骤：仅在用户明示需要研究报告时派遣
 - 多范式可并行执行 code-executor，但每轮仍受 {n} 的限制
 - 知识问答直接派遣 knowledge-assistant，无需流水线
 {noldus_rules}</subagent_system>"""
@@ -1072,7 +1072,7 @@ ask_clarification(
     clarification_type="approach_choice",
     context="code-executor + data-analyst 完成，待用户决定下一步",
     options=[
-        "需要 APA 格式报告（再花 2-3 分钟生成）",
+        "需要结构化研究报告（再花 2-3 分钟生成）",
         "不需要，谢谢",
         "先帮我解释 XX"
     ]
@@ -1081,14 +1081,14 @@ ask_clarification(
 
 ### Step 4: 根据用户选择分支
 
-- 选"需要 APA 格式报告" → 派遣 report-writer（Step 4a）
+- 选"需要结构化研究报告" → 派遣 report-writer（Step 4a）
 - 选"不需要，谢谢" → 结束，回复简短确认
 - 选"先帮我解释 XX"（或输入自定义问题） → 派遣 knowledge-assistant，prompt 附 handoff_code_executor.json 和 handoff_data_analyst.json 路径
 
 #### Step 4a: 派遣 report-writer
 ```python
 task(subagent_type="report-writer", description="撰写分析报告",
-     prompt="请基于 /mnt/user-data/workspace/handoff_code_executor.json 的数据和 /mnt/user-data/workspace/handoff_data_analyst.json 的分析解读，撰写 APA 格式的科学报告。")
+     prompt="请基于 /mnt/user-data/workspace/handoff_code_executor.json 的数据和 /mnt/user-data/workspace/handoff_data_analyst.json 的分析解读，撰写结构化研究报告（按 6 段骨架：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议）。")
 ```
 完成后用 present_files 呈现报告文件 + 图表。
 
