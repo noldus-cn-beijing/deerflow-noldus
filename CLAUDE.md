@@ -56,13 +56,13 @@ noldus-insight/
 ### Agent 分析流水线
 
 ```
-Lead Agent（GLM-5.1，路由判断：有数据→分析，无数据→知识）
+Lead Agent（deepseek-v4-pro，路由判断：有数据→分析，无数据→知识）
     ↓
 code-executor（按 ethoinsight-analysis skill 依次调用 5 个细粒度 tool：parse_trajectories → compute_metrics → run_statistics → generate_charts → assess_and_handoff，中间状态经 /mnt/user-data/workspace/ 文件传递）
     ↓
 data-analyst（审核统计方法、排查混杂因素、发现洞察）
     ↓
-report-writer（APA 报告 + 文献引用）
+report-writer（结构化简单报告 + 文献引用）
 ```
 
 专家思维分三层：
@@ -136,7 +136,7 @@ pytest tests/      # 运行分析库测试
 
 ### Git
 
-- 主分支：`feature/etho-skills`（当前工作分支）
+- 主分支：`dev`（当前工作分支）
 - 提交前跑 `make test` 和 `make lint`
 - commit message 用中文，简洁描述改动意图
 
@@ -152,7 +152,7 @@ pytest tests/      # 运行分析库测试
 3. **受保护文件修改后同步要小心** — `scripts/sync-deerflow.sh` 会把它们标为"需人工判断"
 4. **v0.1 是 9 月硬指标** — Phase 0（当前阶段）要完成 EPM + OFT 范式 + 鲁棒性验证 + 基础设施修复
 5. **微调方案已锁定** — Qwen3-8B Dense + Fireworks.ai（SFT 先行，DPO 推迟到 v0.1 后）
-6. **GLM-5.1 的正面提示** — 不要用"禁止 X""不要 X"，会反向激活；必须用正面指令描述想要的行为
+6. **deepseek 的正面提示** — 不要用"禁止 X""不要 X"，会反向激活；必须用正面指令描述想要的行为
 7. **训练数据飞轮已启动** — 每次 agent 会话自动录制到 `packages/agent/backend/.deer-flow/training-data/auto-collected/`；专家反馈走 `/api/threads/{id}/feedback` API + 前端三按钮。查看累计进度：`cd packages/agent/backend && make training-stats`。详见 [docs/sop/training-data-flywheel-sop.md](docs/sop/training-data-flywheel-sop.md)。
 8. **Golden-case 是专家知识注入的正式途径** — 行为学同事对一份数据标注"期望的分析结论"，同时承担**领域知识源 + 回归测试 + SFT 种子数据**三重角色。结构由 [golden-cases/SCHEMA.md](golden-cases/SCHEMA.md) 定义，模板在 `golden-cases/TEMPLATE/`，校验用 `python3 scripts/validate_golden_case.py`。**不要为范式知识另建文档系统（如 `docs/domain/`），所有专家领域知识统一走 golden-cases/**。详见 [docs/sop/golden-case-sop.md](docs/sop/golden-case-sop.md)。
 9. **判读哲学：组间比较，不用绝对阈值** — 行为学同事确认：EPM/OFT 等焦虑范式的解读**只看 control vs treatment 是否有显著差异**，不按"正常范围 15-25%，小于 10% 就是高焦虑"这种绝对阈值判断。`ethoinsight/assess.py` 里的 `_DEFAULT_THRESHOLDS` 保留作为"批次质检参考"，**不作为判读依据**。agent 给出的结论必须基于统计检验 + 效应量。

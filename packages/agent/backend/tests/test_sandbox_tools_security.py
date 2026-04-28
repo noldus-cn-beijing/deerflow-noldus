@@ -1018,3 +1018,73 @@ def test_str_replace_and_append_on_same_path_should_preserve_both_updates(monkey
 
     assert failures == []
     assert sandbox.content == "ALPHA\ntail\n"
+
+
+# ---------- /mnt/shared/ path validation ----------
+
+
+_SHARED_THREAD_DATA = {
+    **_THREAD_DATA,
+    "shared_path": "/tmp/deer-flow/threads/t1/shared",
+}
+
+
+def test_validate_local_tool_path_allows_shared_write() -> None:
+    """Writing to /mnt/shared/ must be permitted (lead→subagent data relay)."""
+    validate_local_tool_path("/mnt/shared/code_summary.json", _SHARED_THREAD_DATA)
+
+
+def test_validate_local_tool_path_allows_shared_read() -> None:
+    """Reading from /mnt/shared/ must be permitted (subagent reads lead agent output)."""
+    validate_local_tool_path("/mnt/shared/code_summary.json", _SHARED_THREAD_DATA, read_only=True)
+
+
+def test_validate_local_tool_path_allows_bare_shared_prefix() -> None:
+    """Bare `/mnt/shared` without trailing slash must be permitted."""
+    validate_local_tool_path("/mnt/shared", _SHARED_THREAD_DATA)
+
+
+def test_validate_local_tool_path_rejects_traversal_in_shared() -> None:
+    """Path traversal inside /mnt/shared/ must still be rejected."""
+    with pytest.raises(PermissionError):
+        validate_local_tool_path("/mnt/shared/../../../etc/passwd", _SHARED_THREAD_DATA)
+
+
+def test_replace_virtual_path_maps_shared() -> None:
+    """Virtual /mnt/shared/ paths must be resolved to the actual shared directory."""
+    result = replace_virtual_path("/mnt/shared/code_summary.json", _SHARED_THREAD_DATA)
+    assert result == "/tmp/deer-flow/threads/t1/shared/code_summary.json"
+
+
+def test_replace_virtual_path_maps_bare_shared() -> None:
+    """Virtual /mnt/shared (no trailing content) must be resolved to the actual shared directory."""
+    result = replace_virtual_path("/mnt/shared", _SHARED_THREAD_DATA)
+    assert result == "/tmp/deer-flow/threads/t1/shared"
+
+
+def test_resolve_and_validate_shared_path_resolves_correctly(tmp_path: Path) -> None:
+    """Shared path should resolve into the shared directory and pass validation."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    thread_data = {
+        "workspace_path": str(tmp_path / "workspace"),
+        "uploads_path": str(tmp_path / "uploads"),
+        "outputs_path": str(tmp_path / "outputs"),
+        "shared_path": str(shared),
+    }
+    resolved = _resolve_and_validate_user_data_path("/mnt/shared/code_summary.json", thread_data)
+    assert resolved == str(shared / "code_summary.json")
+
+
+def test_resolve_and_validate_shared_path_blocks_traversal(tmp_path: Path) -> None:
+    """Traversal out of the shared directory must be blocked."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    thread_data = {
+        "workspace_path": str(tmp_path / "workspace"),
+        "uploads_path": str(tmp_path / "uploads"),
+        "outputs_path": str(tmp_path / "outputs"),
+        "shared_path": str(shared),
+    }
+    with pytest.raises(PermissionError):
+        _resolve_and_validate_user_data_path("/mnt/shared/../../../etc/passwd", thread_data)
