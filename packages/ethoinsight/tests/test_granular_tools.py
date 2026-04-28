@@ -253,3 +253,12 @@ class TestEndToEndShoaling:
         assert "metadata" in handoff
         assert handoff["metadata"]["paradigm"] == "shoaling"
         assert handoff["metadata"]["n_files"] >= 2
+        # per_subject must be included so data-analyst can identify outlier
+        # individuals by name and do leave-one-out counterfactual analysis.
+        assert "per_subject" in handoff
+        assert isinstance(handoff["per_subject"], dict)
+        assert len(handoff["per_subject"]) >= 2
+        # Each subject should have at least one numeric metric value
+        sample_subject = next(iter(handoff["per_subject"].values()))
+        assert isinstance(sample_subject, dict)
+        assert any(isinstance(v, int | float) for v in sample_subject.values())

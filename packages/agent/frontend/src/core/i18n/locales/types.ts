@@ -67,14 +67,10 @@ export interface Translations {
     createSkillPrompt: string;
     addAttachments: string;
     mode: string;
-    flashMode: string;
-    flashModeDescription: string;
-    reasoningMode: string;
-    reasoningModeDescription: string;
-    proMode: string;
-    proModeDescription: string;
-    ultraMode: string;
-    ultraModeDescription: string;
+    autoMode: string;
+    autoModeDescription: string;
+    flywheelMode: string;
+    flywheelModeDescription: string;
     reasoningEffort: string;
     reasoningEffortMinimal: string;
     reasoningEffortMinimalDescription: string;
@@ -224,6 +220,9 @@ export interface Translations {
     in_progress: string;
     completed: string;
     failed: string;
+    taskDescription: string;
+    taskResult: string;
+    expertWorking: string;
   };
 
   // Clarification

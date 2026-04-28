@@ -166,6 +166,7 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
             "InternalServerError",
             "ReadTimeout",
             "ConnectTimeout",
+            "ReadError",
             "RemoteProtocolError",
         }:
             return True, "transient"

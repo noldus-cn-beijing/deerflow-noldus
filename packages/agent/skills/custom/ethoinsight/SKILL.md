@@ -27,7 +27,7 @@ author: noldus-insight
 
 ### Step 2: 范式解读
 
-根据实验范式（EPM、OFT、Shoaling 等）查阅正常范围和异常判断标准。详见 `references/paradigm-interpretation.md`。
+根据实验范式（EPM、OFT、Shoaling 等）查阅指标含义和组间对比判读原则。详见 `references/paradigm-interpretation.md`。
 
 ### Step 3: 统计方法选择
 
@@ -39,7 +39,7 @@ author: noldus-insight
 
 ### Step 5: 报告撰写
 
-使用 APA 格式模板撰写统计结果描述。详见 `references/apa-reporting-format.md`。
+按报告结构骨架撰写对 Result 的洞察。详见 `references/report.md`。
 
 ## 知识库查询
 

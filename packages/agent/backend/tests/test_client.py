@@ -57,7 +57,7 @@ class TestClientInit:
     def test_default_params(self, client):
         assert client._model_name is None
         assert client._thinking_enabled is True
-        assert client._subagent_enabled is True
+        assert client._subagent_enabled is False
         assert client._plan_mode is False
         assert client._agent_name is None
         assert client._available_skills is None
@@ -530,7 +530,7 @@ class TestEnsureAgent:
         """_ensure_agent does not recreate if config key unchanged."""
         mock_agent = MagicMock()
         client._agent = mock_agent
-        client._agent_config_key = (None, True, False, True, None, None)
+        client._agent_config_key = (None, True, False, False, None, None)
 
         config = client._get_runnable_config("t1")
         client._ensure_agent(config)

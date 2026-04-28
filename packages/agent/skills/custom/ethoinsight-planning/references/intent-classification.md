@@ -4,7 +4,7 @@
 
 1. `<uploaded_files>` 中 "uploaded in this message" 部分（本轮新上传）
 2. 用户消息文本
-3. 已有会话历史（workspace 中是否有 analysis_report.md / metrics.csv）
+3. 已有会话历史（workspace 中是否有 handoff_code_executor.json / metrics.csv）
 
 ## 决策树
 
@@ -19,7 +19,7 @@
 └── 否
     ├── 用户消息指代已有结果（代词"这个"/"刚才"/"上面"/提及具体指标如"p 值"/"NND"/"Cohen's d"）？
     │   ├── 是 → 主意图: 追问已有结果
-    │   │       → 动作: 派遣 knowledge-assistant，附 workspace/analysis_report.md 路径
+    │   │       → 动作: 派遣 knowledge-assistant，附 workspace/handoff_code_executor.json 和 workspace/handoff_data_analyst.json 路径
     │   └── 否
     │       └── 消息是概念性问题（"什么是 X"/"怎么做 X"/"X 和 Y 的区别"）？
     │           ├── 是 → 主意图: 知识问答
@@ -37,7 +37,7 @@
 
 ### "只重写报告"
 - 触发词：重写, 换个格式, 翻译, 精简, APA, 中文/英文
-- 前置条件: workspace 中有 analysis_report.md 或 code_summary.json
+- 前置条件: workspace 中有 handoff_code_executor.json
 - 动作: 仅派遣 report-writer，传入原分析结果路径
 - 无前置数据 → `ask_clarification` 询问是否先做分析
 

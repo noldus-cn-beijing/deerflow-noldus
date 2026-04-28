@@ -1,0 +1,133 @@
+<h2>榨干 DeerFlow：已有机制 100% 复用</h2>
+<p class="subtitle">左侧 = DeerFlow 已有 | 右侧 = 设计直接使用</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">DeerFlow 已有机制</div>
+    <div class="mockup-body">
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">1. ask_clarification + ClarificationMiddleware</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          ✅ 5 种类型 (missing_info / approach_choice / ...)<br/>
+          ✅ 可带 options 列表 → 前端渲染为可点击按钮<br/>
+          ✅ Command(goto=END) 中断执行，等用户回复<br/>
+          ✅ 前端已支持: 按钮点击 = 发送消息
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">2. ethoinsight-planning Skill</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          ✅ Step 1: 意图分类 (分析 vs 知识问答)<br/>
+          ✅ Step 2: 完整性检查 (范式 + 分组 + 描述)<br/>
+          ✅ Step 3: 模板选择<br/>
+          ✅ references/ 含 intent-classification, design-type-keywords
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">3. 运行时模式切换</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          ✅ is_plan_mode → TodoList middleware 开/关<br/>
+          ✅ subagent_enabled → task tool 开/关<br/>
+          ✅ config.configurable 注入, 前端 ThreadContext 支持
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">4. 已有质量关卡</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          ✅ quality-gates.md: 5 个 gate 已定义<br/>
+          ✅ failure-recovery.md: 5 种失败 → ask_clarification<br/>
+          ✅ code-executor 失败时已有 3 选项
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">5. 训练数据飞轮</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          ✅ TrainingDataMiddleware 已录制所有 turn<br/>
+          ✅ 前端 3 按钮反馈 (👍/👎/🤷)<br/>
+          ✅ ask_clarification 的选项点击 = 天然标注数据
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">我们的设计如何使用</div>
+    <div class="mockup-body">
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">→ 所有 Human-in-the-loop Gate</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          Gate 1 (实验选择) = ask_clarification(type=approach_choice, options=[16种模板])<br/>
+          Gate 2 (组别确认) = ask_clarification(type=missing_info, options=[预设组别方案])<br/>
+          Gate 3 (结论审查) = ask_clarification(type=approach_choice, options=[深入方向])
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">→ Lead Agent 路由增强</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          Skill Step 1-2 已经定义了意图分类 + 完整性检查<br/>
+          只需增强 references/ 加入 16 种模板列表<br/>
+          Lead agent prompt 引用即可
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">→ workflow_mode 参数</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          新增 config.configurable.workflow_mode: "manual" | "auto"<br/>
+          manual → 启用所有 ask_clarification gates<br/>
+          auto → 选实验后直接端到端, 不中断<br/>
+          完全复用 is_plan_mode 的实现模式
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">→ 扩展 quality-gates.md</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          新增 Gate 0 (实验类型确认) + Gate 1.5 (数据一致性检查)<br/>
+          已有 gate 框架完全复用
+        </p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">→ 天然标注数据</h4>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+          用户在 ask_clarification 中的每个选项点击<br/>
+          = 高质量 SFT 数据点 (实验类型标签 + 组别标签)<br/>
+          TrainingDataMiddleware 自动录制, 无需额外代码
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;border-top:1px solid var(--border-color);padding-top:16px;">
+  <h3>需要新增的内容（极少）</h3>
+  <table style="width:100%;border-collapse:collapse;">
+    <tr style="border-bottom:1px solid var(--border-color);">
+      <th style="text-align:left;padding:8px;">新增项</th>
+      <th style="text-align:left;padding:8px;">量</th>
+      <th style="text-align:left;padding:8px;">说明</th>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border-color);">
+      <td style="padding:8px;"><code>workflow_mode</code> 运行时参数</td>
+      <td style="padding:8px;">~10 行</td>
+      <td style="padding:8px;">在 agent.py 和 prompt.py 中照抄 is_plan_mode 模式</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border-color);">
+      <td style="padding:8px;">16 种实验模板列表</td>
+      <td style="padding:8px;">~80 行</td>
+      <td style="padding:8px;">新增 references/paradigm-list.md, 含模板名+数据特征</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border-color);">
+      <td style="padding:8px;">数据一致性 safety check</td>
+      <td style="padding:8px;">~30 行</td>
+      <td style="padding:8px;">在 ethoinsight/utils.py 加一个 verify_paradigm_columns() 函数</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border-color);">
+      <td style="padding:8px;">Lead agent prompt 增强</td>
+      <td style="padding:8px;">~40 行</td>
+      <td style="padding:8px;">在现有 dispatch rules 中加 workflow_mode 分支 + 模板选择引导</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border-color);">
+      <td style="padding:8px;">扩展 quality-gates.md</td>
+      <td style="padding:8px;">~30 行</td>
+      <td style="padding:8px;">Gate 0 (模板确认) + Gate 1.5 (数据一致性)</td>
+    </tr>
+  </table>
+</div>

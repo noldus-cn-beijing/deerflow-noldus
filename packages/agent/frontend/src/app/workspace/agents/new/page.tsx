@@ -84,7 +84,7 @@ export default function NewAgentPage() {
   const [thread, sendMessage] = useThreadStream({
     threadId: step === "chat" ? threadId : undefined,
     context: {
-      mode: "flash",
+      mode: "auto",
       is_bootstrap: true,
     },
     onFinish() {

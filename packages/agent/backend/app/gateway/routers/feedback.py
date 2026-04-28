@@ -1,0 +1,94 @@
+"""Feedback router for training-data flywheel.
+
+Accepts expert ✅/⚠️/❌ verdicts on assistant messages and appends each
+feedback to ``.deer-flow/training-data/feedback/<thread_id>.jsonl``.
+
+Robustness contract: disk errors are logged and surfaced as 500, never
+allowed to crash the Gateway process.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/threads", tags=["feedback"])
+
+
+class FeedbackRequest(BaseModel):
+    message_id: str = Field(..., min_length=1)
+    verdict: Literal["correct", "needs_fix", "wrong"]
+    revised_text: str | None = None
+    note: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    success: bool
+
+
+class FeedbackItem(BaseModel):
+    message_id: str
+    verdict: str
+    revised_text: str | None
+    note: str | None
+    submitted_at: str
+
+
+class FeedbackListResponse(BaseModel):
+    items: list[FeedbackItem]
+
+
+def _base_dir() -> Path:
+    """Return path to backend/.deer-flow. Overridden in tests."""
+    from deerflow.config.paths import get_paths
+
+    return Path(get_paths().base_dir)
+
+
+@router.post("/{thread_id}/feedback", response_model=FeedbackResponse)
+def post_feedback(thread_id: str, req: FeedbackRequest) -> FeedbackResponse:
+    try:
+        out_dir = _base_dir() / "training-data" / "feedback"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        record = {
+            "thread_id": thread_id,
+            "message_id": req.message_id,
+            "verdict": req.verdict,
+            "revised_text": req.revised_text,
+            "note": req.note,
+            "submitted_at": datetime.now(UTC).isoformat(),
+        }
+        path = out_dir / f"{thread_id}.jsonl"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        return FeedbackResponse(success=True)
+    except OSError as exc:
+        logger.error("Feedback write failed for thread %s: %s", thread_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to persist feedback")
+
+
+@router.get("/{thread_id}/feedback", response_model=FeedbackListResponse)
+def list_feedback(thread_id: str) -> FeedbackListResponse:
+    path = _base_dir() / "training-data" / "feedback" / f"{thread_id}.jsonl"
+    if not path.exists():
+        return FeedbackListResponse(items=[])
+    items: list[FeedbackItem] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        items.append(FeedbackItem(
+            message_id=rec["message_id"],
+            verdict=rec["verdict"],
+            revised_text=rec.get("revised_text"),
+            note=rec.get("note"),
+            submitted_at=rec["submitted_at"],
+        ))
+    return FeedbackListResponse(items=items)

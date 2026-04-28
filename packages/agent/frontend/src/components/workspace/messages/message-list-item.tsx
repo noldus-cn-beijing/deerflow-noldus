@@ -17,6 +17,7 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Task, TaskTrigger } from "@/components/ai-elements/task";
+import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
@@ -39,10 +40,12 @@ export function MessageListItem({
   className,
   message,
   isLoading,
+  threadId,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
+  threadId?: string;
 }) {
   const isHuman = message.type === "human";
   return (
@@ -55,6 +58,13 @@ export function MessageListItem({
         message={message}
         isLoading={isLoading}
       />
+      {!isLoading && !isHuman && threadId && message.id && (
+        <FeedbackButtons
+          threadId={threadId}
+          messageId={message.id}
+          className="px-1"
+        />
+      )}
       {!isLoading && (
         <MessageToolbar
           className={cn(

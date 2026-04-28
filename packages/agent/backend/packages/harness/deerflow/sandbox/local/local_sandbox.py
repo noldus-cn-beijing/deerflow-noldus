@@ -334,12 +334,20 @@ class LocalSandbox(Sandbox):
     def read_file(self, path: str) -> str:
         resolved_path = self._resolve_path(path)
         try:
-            with open(resolved_path, encoding="utf-8") as f:
+            encoding = "utf-8"
+            with open(resolved_path, "rb") as f:
+                bom = f.read(4)
+            if bom[:2] == b"\xff\xfe":
+                encoding = "utf-16-le"
+            elif bom[:2] == b"\xfe\xff":
+                encoding = "utf-16-be"
+            elif bom[:3] == b"\xef\xbb\xbf":
+                encoding = "utf-8-sig"
+
+            with open(resolved_path, encoding=encoding) as f:
                 content = f.read()
-            # Only reverse-resolve paths in files that were previously written
-            # by write_file (agent-authored content). User-uploaded files,
-            # external tool output, and other non-agent content should not be
-            # silently rewritten — see discussion on PR #1935.
+            if encoding in ("utf-16-le", "utf-16-be"):
+                content = content.lstrip("﻿")
             if resolved_path in self._agent_written_paths:
                 content = self._reverse_resolve_paths_in_output(content)
             return content

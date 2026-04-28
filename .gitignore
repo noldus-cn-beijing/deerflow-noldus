@@ -33,3 +33,8 @@ packages/agent/.ethoinsight/
 
 # Config with secrets
 packages/agent/config.yaml
+
+# E2E test exports (one-off run artifacts, not source)
+docs/e2e/*
+!docs/e2e/README.md
+!docs/e2e/.gitkeep

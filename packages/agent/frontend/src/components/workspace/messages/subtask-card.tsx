@@ -1,8 +1,10 @@
+import type { AIMessage } from "@langchain/langgraph-sdk";
 import {
   CheckCircleIcon,
   ChevronUp,
   ClipboardListIcon,
   Loader2Icon,
+  LightbulbIcon,
   XCircleIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -14,6 +16,7 @@ import {
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
 import { Button } from "@/components/ui/button";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { useI18n } from "@/core/i18n/hooks";
@@ -28,15 +31,23 @@ import { CitationLink } from "../citations/citation-link";
 import { FlipDisplay } from "../flip-display";
 
 import { MarkdownContent } from "./markdown-content";
+import {
+  convertToSteps,
+  SUBTASK_HIDDEN_TOOL_CALL_NAMES,
+  ToolCall,
+  type CoTStep,
+} from "./message-group";
 
 export function SubtaskCard({
   className,
   taskId,
   isLoading,
+  threadId,
 }: {
   className?: string;
   taskId: string;
   isLoading: boolean;
+  threadId?: string;
 }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
@@ -126,43 +137,45 @@ export function SubtaskCard({
           {task.prompt && (
             <ChainOfThoughtStep
               label={
+                <span className="text-muted-foreground">
+                  {t.subtasks.taskDescription}
+                </span>
+              }
+            >
+              <div className="pt-1">
                 <Streamdown
                   {...streamdownPluginsWithWordAnimation}
                   components={{ a: CitationLink }}
                 >
                   {task.prompt}
                 </Streamdown>
-              }
-            ></ChainOfThoughtStep>
+              </div>
+            </ChainOfThoughtStep>
           )}
-          {task.status === "in_progress" &&
-            task.latestMessage &&
-            hasToolCalls(task.latestMessage) && (
-              <ChainOfThoughtStep
-                label={t.subtasks.in_progress}
-                icon={<Loader2Icon className="size-4 animate-spin" />}
-              >
-                {explainLastToolCall(task.latestMessage, t)}
-              </ChainOfThoughtStep>
-            )}
-          {task.status === "completed" && (
-            <>
-              <ChainOfThoughtStep
-                label={t.subtasks.completed}
-                icon={<CheckCircleIcon className="size-4" />}
-              ></ChainOfThoughtStep>
-              <ChainOfThoughtStep
-                label={
-                  task.result ? (
-                    <MarkdownContent
-                      content={task.result}
-                      isLoading={false}
-                      rehypePlugins={rehypePlugins}
-                    />
-                  ) : null
-                }
-              ></ChainOfThoughtStep>
-            </>
+          {task.messages.length > 0 && (
+            <SubtaskCoTTimeline
+              messages={task.messages}
+              isLoading={task.status === "in_progress"}
+              rehypePlugins={rehypePlugins}
+            />
+          )}
+          {task.status === "completed" && task.result && (
+            <ChainOfThoughtStep
+              label={
+                <span className="text-muted-foreground">
+                  {t.subtasks.taskResult}
+                </span>
+              }
+              icon={<CheckCircleIcon className="size-3" />}
+            >
+              <div className="pt-1">
+                <MarkdownContent
+                  content={task.result}
+                  isLoading={false}
+                  rehypePlugins={rehypePlugins}
+                />
+              </div>
+            </ChainOfThoughtStep>
           )}
           {task.status === "failed" && (
             <ChainOfThoughtStep
@@ -171,7 +184,88 @@ export function SubtaskCard({
             ></ChainOfThoughtStep>
           )}
         </ChainOfThoughtContent>
+        {task.status === "completed" && threadId && (
+          <FeedbackButtons
+            threadId={threadId}
+            messageId={`subtask-${taskId}`}
+            className="px-4 pb-3"
+          />
+        )}
       </div>
     </ChainOfThought>
   );
+}
+
+function SubtaskCoTTimeline({
+  messages,
+  isLoading,
+  rehypePlugins,
+}: {
+  messages: AIMessage[];
+  isLoading: boolean;
+  rehypePlugins: ReturnType<typeof useRehypeSplitWordsIntoSpans>;
+}) {
+  const steps = useMemo(
+    () => convertToSteps(messages, SUBTASK_HIDDEN_TOOL_CALL_NAMES, true),
+    [messages],
+  );
+  if (steps.length === 0) return null;
+  return (
+    <>
+      {steps.map((step) => (
+        <CoTStepRenderer
+          key={step.id}
+          step={step}
+          messages={messages}
+          isLoading={isLoading}
+          rehypePlugins={rehypePlugins}
+        />
+      ))}
+    </>
+  );
+}
+
+function CoTStepRenderer({
+  step,
+  messages,
+  isLoading,
+  rehypePlugins,
+}: {
+  step: CoTStep;
+  messages: AIMessage[];
+  isLoading: boolean;
+  rehypePlugins: ReturnType<typeof useRehypeSplitWordsIntoSpans>;
+}) {
+  if (step.type === "reasoning") {
+    return (
+      <ChainOfThoughtStep
+        key={step.id}
+        icon={LightbulbIcon}
+        label={
+          <MarkdownContent
+            content={step.reasoning ?? ""}
+            isLoading={isLoading}
+            rehypePlugins={rehypePlugins}
+          />
+        }
+      />
+    );
+  }
+  if (step.type === "text") {
+    return (
+      <ChainOfThoughtStep
+        key={step.id}
+        label={
+          <MarkdownContent
+            content={step.content}
+            isLoading={isLoading}
+            rehypePlugins={rehypePlugins}
+          />
+        }
+      />
+    );
+  }
+  // toolCall
+  void messages;
+  return <ToolCall key={step.id} {...step} isLoading={isLoading} />;
 }
