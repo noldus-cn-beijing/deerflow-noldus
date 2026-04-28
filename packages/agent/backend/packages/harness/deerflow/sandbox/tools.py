@@ -608,6 +608,10 @@ def validate_local_tool_path(path: str, thread_data: ThreadDataState | None, *, 
     if path.startswith(f"{VIRTUAL_PATH_PREFIX}/"):
         return
 
+    # Shared workspace paths — lead↔subagent data relay
+    if path.startswith(f"{SHARED_PATH_PREFIX}/") or path == SHARED_PATH_PREFIX:
+        return
+
     # Custom mount paths — respect read_only config
     if _is_custom_mount_path(path):
         mount = _get_custom_mount_for_path(path)
@@ -629,6 +633,7 @@ def _validate_resolved_user_data_path(resolved: Path, thread_data: ThreadDataSta
             thread_data.get("workspace_path"),
             thread_data.get("uploads_path"),
             thread_data.get("outputs_path"),
+            thread_data.get("shared_path"),
         )
         if p is not None
     ]
