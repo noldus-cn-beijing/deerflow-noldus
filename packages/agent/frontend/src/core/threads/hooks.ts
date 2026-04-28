@@ -546,19 +546,11 @@ export function useThreadStream({
             context: {
               ...extraContext,
               ...context,
-              thinking_enabled: context.mode !== "flash",
-              is_plan_mode: ["pro", "ultra", "flywheel"].includes(context.mode ?? ""),
-              subagent_enabled: ["ultra", "flywheel"].includes(context.mode ?? ""),
+              thinking_enabled: true,
+              is_plan_mode: true,
+              subagent_enabled: true,
               workflow_mode: context.mode === "flywheel" ? "manual" : "auto",
-              reasoning_effort:
-                context.reasoning_effort ??
-                (context.mode === "ultra"
-                  ? "high"
-                  : context.mode === "pro"
-                    ? "medium"
-                    : context.mode === "thinking"
-                      ? "low"
-                      : undefined),
+              reasoning_effort: context.reasoning_effort ?? "high",
               thread_id: threadId,
             },
           },

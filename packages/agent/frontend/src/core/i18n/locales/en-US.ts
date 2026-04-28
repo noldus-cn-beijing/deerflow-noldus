@@ -83,17 +83,9 @@ export const enUS: Translations = {
       "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
     addAttachments: "Add attachments",
     mode: "Mode",
-    flashMode: "Flash",
-    flashModeDescription: "Fast and efficient, but may not be accurate",
-    reasoningMode: "Reasoning",
-    reasoningModeDescription:
-      "Reasoning before action, balance between time and accuracy",
-    proMode: "Pro",
-    proModeDescription:
-      "Reasoning, planning and executing, get more accurate results, may take more time",
-    ultraMode: "Ultra",
-    ultraModeDescription:
-      "Pro mode with subagents to divide work; best for complex multi-step tasks",
+    autoMode: "Auto",
+    autoModeDescription:
+      "Fully automated analysis pipeline with subagents for complex multi-step tasks",
     flywheelMode: "Flywheel",
     flywheelModeDescription:
       "Interactive analysis with human-in-the-loop at key decision points, for training data collection",

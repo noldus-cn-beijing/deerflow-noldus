@@ -67,14 +67,8 @@ export interface Translations {
     createSkillPrompt: string;
     addAttachments: string;
     mode: string;
-    flashMode: string;
-    flashModeDescription: string;
-    reasoningMode: string;
-    reasoningModeDescription: string;
-    proMode: string;
-    proModeDescription: string;
-    ultraMode: string;
-    ultraModeDescription: string;
+    autoMode: string;
+    autoModeDescription: string;
     flywheelMode: string;
     flywheelModeDescription: string;
     reasoningEffort: string;

@@ -8,13 +8,14 @@ middleware layer. Only blocks task() — all other tools pass through.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
+from langgraph.types import Command
 
 from deerflow.agents.middlewares.experiment_context import (
     context_exists,
@@ -46,34 +47,35 @@ class GateEnforcementMiddleware(AgentMiddleware[GateEnforcementMiddlewareState])
         """Check whether task() should be blocked (context.json missing)."""
         workspace_dir = resolve_workspace_from_state(state)
         if workspace_dir is None:
-            # Can't resolve workspace — allow (old thread or missing ThreadDataMiddleware)
             return False
         return not context_exists(workspace_dir)
+
+    def _build_block_message(self, request: ToolCallRequest) -> ToolMessage:
+        return ToolMessage(
+            content=(
+                "请先通过 ask_clarification 确认实验类型后再开始分析。\n"
+                "调用 ask_clarification(question=\"请问您做的是哪类实验？\", "
+                "clarification_type=\"approach_choice\", "
+                "options=[...]) 让用户选择实验范式，然后调用 set_experiment_paradigm tool 记录选择。"
+            ),
+            tool_call_id=request.tool_call.get("id", ""),
+            name="gate_enforcement",
+        )
 
     @override
     def wrap_tool_call(
         self,
         request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolMessage],
-    ) -> ToolMessage:
+        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    ) -> ToolMessage | Command:
         if not self.enabled:
             return handler(request)
 
         tool_name = request.tool_call.get("name", "")
 
-        # Only block task() — all other tools pass through
         if tool_name == "task" and self._should_block(request.state):
             logger.info("GateEnforcementMiddleware: blocking task() — experiment-context.json not found")
-            return ToolMessage(
-                content=(
-                    "请先通过 ask_clarification 确认实验类型后再开始分析。\n"
-                    "调用 ask_clarification(question=\"请问您做的是哪类实验？\", "
-                    "clarification_type=\"approach_choice\", "
-                    "options=[...]) 让用户选择实验范式，然后调用 set_experiment_paradigm tool 记录选择。"
-                ),
-                tool_call_id=request.tool_call.get("id", ""),
-                name="gate_enforcement",
-            )
+            return self._build_block_message(request)
 
         return handler(request)
 
@@ -81,6 +83,15 @@ class GateEnforcementMiddleware(AgentMiddleware[GateEnforcementMiddlewareState])
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolMessage],
-    ) -> ToolMessage:
-        return self.wrap_tool_call(request, handler)
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+    ) -> ToolMessage | Command:
+        if not self.enabled:
+            return await handler(request)
+
+        tool_name = request.tool_call.get("name", "")
+
+        if tool_name == "task" and self._should_block(request.state):
+            logger.info("GateEnforcementMiddleware: blocking task() — experiment-context.json not found")
+            return self._build_block_message(request)
+
+        return await handler(request)

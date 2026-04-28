@@ -5,23 +5,17 @@ import type { Translations } from "@/core/i18n/locales/types";
 
 import { Tooltip } from "./tooltip";
 
-export type AgentMode = "flash" | "thinking" | "pro" | "ultra" | "flywheel";
+export type AgentMode = "auto" | "flywheel";
 
 function getModeLabelKey(
   mode: AgentMode,
 ): keyof Pick<
   Translations["inputBox"],
-  "flashMode" | "reasoningMode" | "proMode" | "ultraMode" | "flywheelMode"
+  "autoMode" | "flywheelMode"
 > {
   switch (mode) {
-    case "flash":
-      return "flashMode";
-    case "thinking":
-      return "reasoningMode";
-    case "pro":
-      return "proMode";
-    case "ultra":
-      return "ultraMode";
+    case "auto":
+      return "autoMode";
     case "flywheel":
       return "flywheelMode";
   }
@@ -31,21 +25,11 @@ function getModeDescriptionKey(
   mode: AgentMode,
 ): keyof Pick<
   Translations["inputBox"],
-  | "flashModeDescription"
-  | "reasoningModeDescription"
-  | "proModeDescription"
-  | "ultraModeDescription"
-  | "flywheelModeDescription"
+  "autoModeDescription" | "flywheelModeDescription"
 > {
   switch (mode) {
-    case "flash":
-      return "flashModeDescription";
-    case "thinking":
-      return "reasoningModeDescription";
-    case "pro":
-      return "proModeDescription";
-    case "ultra":
-      return "ultraModeDescription";
+    case "auto":
+      return "autoModeDescription";
     case "flywheel":
       return "flywheelModeDescription";
   }
