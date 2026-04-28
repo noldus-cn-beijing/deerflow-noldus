@@ -3,7 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from deerflow.agents.memory.prompt import format_conversation_for_update
 from deerflow.agents.memory.updater import (
     MemoryUpdater,
+    _evict_provider_async_client_caches,
     _extract_text,
+    _run_async_update_sync,
     clear_memory_data,
     create_memory_fact,
     delete_memory_fact,
@@ -774,3 +776,58 @@ class TestReinforcementHint:
         prompt = model.ainvoke.call_args[0][0]
         assert "Explicit correction signals were detected" in prompt
         assert "Positive reinforcement signals were detected" in prompt
+
+
+def test_evict_provider_async_client_caches_clears_lru_caches() -> None:
+    """Eviction must call cache_clear on langchain_anthropic client caches.
+
+    This is the safety net for the memory-updater event-loop race: each
+    asyncio.run cycle leaves cached httpx clients bound to a closed loop, and
+    eviction prevents the next caller from inheriting them.
+    """
+    from langchain_anthropic._client_utils import (
+        _get_default_async_httpx_client,
+        _get_default_httpx_client,
+    )
+
+    with patch.object(_get_default_async_httpx_client, "cache_clear") as async_clear:
+        with patch.object(_get_default_httpx_client, "cache_clear") as sync_clear:
+            _evict_provider_async_client_caches()
+
+    async_clear.assert_called_once()
+    sync_clear.assert_called_once()
+
+
+def test_evict_provider_async_client_caches_swallows_import_errors() -> None:
+    """Eviction must never raise — memory updates already swallow exceptions."""
+    with patch(
+        "langchain_anthropic._client_utils._get_default_async_httpx_client",
+        side_effect=ImportError("simulated"),
+    ):
+        _evict_provider_async_client_caches()
+
+
+def test_run_async_update_sync_evicts_caches_on_success() -> None:
+    """After a successful memory update, cached async clients must be evicted."""
+
+    async def coro() -> bool:
+        return True
+
+    with patch("deerflow.agents.memory.updater._evict_provider_async_client_caches") as evict:
+        result = _run_async_update_sync(coro())
+
+    assert result is True
+    evict.assert_called_once()
+
+
+def test_run_async_update_sync_evicts_caches_on_failure() -> None:
+    """Eviction must run even if the inner coroutine raises."""
+
+    async def coro() -> bool:
+        raise RuntimeError("boom")
+
+    with patch("deerflow.agents.memory.updater._evict_provider_async_client_caches") as evict:
+        result = _run_async_update_sync(coro())
+
+    assert result is False
+    evict.assert_called_once()

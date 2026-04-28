@@ -70,14 +70,20 @@ done
 
 stop_all() {
     echo "Stopping all services..."
-    pkill -f "langgraph dev" 2>/dev/null || true
-    pkill -f "uvicorn app.gateway.app:app" 2>/dev/null || true
-    pkill -f "next dev" 2>/dev/null || true
-    pkill -f "next start" 2>/dev/null || true
-    pkill -f "next-server" 2>/dev/null || true
-    nginx -c "$REPO_ROOT/docker/nginx/nginx.local.conf" -p "$REPO_ROOT" -s quit 2>/dev/null || true
+    # Only kill processes owned by current user (避免误杀同机器其他同事的服务)
+    pkill -u "$USER" -f "langgraph dev" 2>/dev/null || true
+    pkill -u "$USER" -f "uvicorn app.gateway.app:app" 2>/dev/null || true
+    pkill -u "$USER" -f "next dev" 2>/dev/null || true
+    pkill -u "$USER" -f "next start" 2>/dev/null || true
+    pkill -u "$USER" -f "next-server" 2>/dev/null || true
+    # Try graceful nginx quit via the rendered conf if it exists, fall back to default
+    if [ -f "$REPO_ROOT/temp/nginx.local.rendered.conf" ]; then
+        nginx -c "$REPO_ROOT/temp/nginx.local.rendered.conf" -p "$REPO_ROOT" -s quit 2>/dev/null || true
+    else
+        nginx -c "$REPO_ROOT/docker/nginx/nginx.local.conf" -p "$REPO_ROOT" -s quit 2>/dev/null || true
+    fi
     sleep 1
-    pkill -9 nginx 2>/dev/null || true
+    pkill -u "$USER" -9 nginx 2>/dev/null || true
     ./scripts/cleanup-containers.sh deer-flow-sandbox 2>/dev/null || true
     echo "✓ All services stopped"
 }
@@ -117,9 +123,18 @@ if $DAEMON_MODE; then
     MODE_LABEL="$MODE_LABEL [daemon]"
 fi
 
-# Frontend command
+# ── Port configuration (overridable for multi-user shared host) ──────────────
+# 多人共享同一台机器开发时，给每人一份偏移避免端口冲突。例如 `PORT_OFFSET=10000 make dev`
+# 让所有端口 +10000。也可以单独覆盖某个端口。
+PORT_OFFSET="${PORT_OFFSET:-0}"
+NGINX_PORT="${NGINX_PORT:-$((2026 + PORT_OFFSET))}"
+LANGGRAPH_PORT="${LANGGRAPH_PORT:-$((2024 + PORT_OFFSET))}"
+GATEWAY_PORT="${GATEWAY_PORT:-$((8001 + PORT_OFFSET))}"
+FRONTEND_PORT="${FRONTEND_PORT:-$((3000 + PORT_OFFSET))}"
+
+# Frontend command — Next.js reads PORT env var
 if $DEV_MODE; then
-    FRONTEND_CMD="pnpm run dev"
+    FRONTEND_CMD="PORT=$FRONTEND_PORT pnpm run dev"
 else
     if command -v python3 >/dev/null 2>&1; then
         PYTHON_BIN="python3"
@@ -129,7 +144,7 @@ else
         echo "Python is required to generate BETTER_AUTH_SECRET."
         exit 1
     fi
-    FRONTEND_CMD="env BETTER_AUTH_SECRET=$($PYTHON_BIN -c 'import secrets; print(secrets.token_hex(16))') pnpm run preview"
+    FRONTEND_CMD="env BETTER_AUTH_SECRET=$($PYTHON_BIN -c 'import secrets; print(secrets.token_hex(16))') PORT=$FRONTEND_PORT pnpm run preview"
 fi
 
 # Extra flags for uvicorn/langgraph
@@ -209,11 +224,11 @@ echo "  Mode: $MODE_LABEL"
 echo ""
 echo "  Services:"
 if ! $GATEWAY_MODE; then
-    echo "    LangGraph   → localhost:2024  (agent runtime)"
+    echo "    LangGraph   → localhost:$LANGGRAPH_PORT  (agent runtime)"
 fi
-echo "    Gateway     → localhost:8001  (REST API$(if $GATEWAY_MODE; then echo " + agent runtime"; fi))"
-echo "    Frontend    → localhost:3000  (Next.js)"
-echo "    Nginx       → localhost:2026  (reverse proxy)"
+echo "    Gateway     → localhost:$GATEWAY_PORT  (REST API$(if $GATEWAY_MODE; then echo " + agent runtime"; fi))"
+echo "    Frontend    → localhost:$FRONTEND_PORT  (Next.js)"
+echo "    Nginx       → localhost:$NGINX_PORT  (reverse proxy)"
 echo ""
 
 # ── Cleanup handler ──────────────────────────────────────────────────────────
@@ -266,26 +281,34 @@ if ! $GATEWAY_MODE; then
         LANGGRAPH_ALLOW_BLOCKING_FLAG="--allow-blocking"
     fi
     run_service "LangGraph" \
-        "cd backend && NO_COLOR=1 uv run langgraph dev --no-browser $LANGGRAPH_ALLOW_BLOCKING_FLAG --n-jobs-per-worker $LANGGRAPH_JOBS_PER_WORKER --server-log-level $LANGGRAPH_LOG_LEVEL $LANGGRAPH_EXTRA_FLAGS > ../logs/langgraph.log 2>&1" \
-        2024 60
+        "cd backend && NO_COLOR=1 BG_JOB_ISOLATED_LOOPS=true uv run langgraph dev --no-browser --host 127.0.0.1 --port $LANGGRAPH_PORT $LANGGRAPH_ALLOW_BLOCKING_FLAG --n-jobs-per-worker $LANGGRAPH_JOBS_PER_WORKER --server-log-level $LANGGRAPH_LOG_LEVEL $LANGGRAPH_EXTRA_FLAGS > ../logs/langgraph.log 2>&1" \
+        $LANGGRAPH_PORT 60
 else
     echo "⏩ Skipping LangGraph (Gateway mode — runtime embedded in Gateway)"
 fi
 
 # 2. Gateway API
 run_service "Gateway" \
-    "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
-    8001 30
+    "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port $GATEWAY_PORT $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
+    $GATEWAY_PORT 30
 
 # 3. Frontend
 run_service "Frontend" \
     "cd frontend && $FRONTEND_CMD > ../logs/frontend.log 2>&1" \
-    3000 120
+    $FRONTEND_PORT 120
 
-# 4. Nginx
+# 4. Nginx — render local conf with current ports (env overrides default 2026/2024/8001/3000)
+NGINX_CONF_RENDERED="$REPO_ROOT/temp/nginx.local.rendered.conf"
+sed -e "s/listen 2026;/listen $NGINX_PORT;/g" \
+    -e "s/listen \[::\]:2026;/listen [::]:$NGINX_PORT;/g" \
+    -e "s/127.0.0.1:2024/127.0.0.1:$LANGGRAPH_PORT/g" \
+    -e "s/127.0.0.1:8001/127.0.0.1:$GATEWAY_PORT/g" \
+    -e "s/127.0.0.1:3000/127.0.0.1:$FRONTEND_PORT/g" \
+    "$REPO_ROOT/docker/nginx/nginx.local.conf" > "$NGINX_CONF_RENDERED"
+
 run_service "Nginx" \
-    "nginx -g 'daemon off;' -c '$REPO_ROOT/docker/nginx/nginx.local.conf' -p '$REPO_ROOT' > logs/nginx.log 2>&1" \
-    2026 10
+    "nginx -g 'daemon off;' -c '$NGINX_CONF_RENDERED' -p '$REPO_ROOT' > logs/nginx.log 2>&1" \
+    $NGINX_PORT 10
 
 # ── Ready ────────────────────────────────────────────────────────────────────
 
@@ -294,16 +317,16 @@ echo "=========================================="
 echo "  ✓ DeerFlow is running!  [$MODE_LABEL]"
 echo "=========================================="
 echo ""
-echo "  🌐 http://localhost:2026"
+echo "  🌐 http://localhost:$NGINX_PORT"
 echo ""
 if $GATEWAY_MODE; then
     echo "  Routing: Frontend → Nginx → Gateway (embedded runtime)"
     echo "  API:     /api/langgraph-compat/*  →  Gateway agent runtime"
 else
     echo "  Routing: Frontend → Nginx → LangGraph + Gateway"
-    echo "  API:     /api/langgraph/*  →  LangGraph server (2024)"
+    echo "  API:     /api/langgraph/*  →  LangGraph server ($LANGGRAPH_PORT)"
 fi
-echo "           /api/*              →  Gateway REST API (8001)"
+echo "           /api/*              →  Gateway REST API ($GATEWAY_PORT)"
 echo ""
 echo "  📋 Logs: logs/{langgraph,gateway,frontend,nginx}.log"
 echo ""

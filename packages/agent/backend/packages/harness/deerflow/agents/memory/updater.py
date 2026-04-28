@@ -217,6 +217,30 @@ def _extract_text(content: Any) -> str:
     return str(content)
 
 
+def _evict_provider_async_client_caches() -> None:
+    """Evict langchain provider async-client lru_caches.
+
+    Memory updates run in a daemon thread via ``asyncio.run``, which creates and
+    then closes a fresh event loop each call. langchain providers cache their
+    httpx ``AsyncClient`` globally (e.g. langchain_anthropic uses ``@lru_cache``
+    on ``_get_default_async_httpx_client``). Without eviction, the cached client
+    holds transports bound to the closed loop, and the next LLM call from any
+    other component triggers ``RuntimeError: Event loop is closed`` during
+    httpx connection cleanup. Evicting after each memory update forces the next
+    caller to rebuild the client on a live loop.
+    """
+    try:
+        from langchain_anthropic._client_utils import (
+            _get_default_async_httpx_client,
+            _get_default_httpx_client,
+        )
+
+        _get_default_async_httpx_client.cache_clear()
+        _get_default_httpx_client.cache_clear()
+    except Exception:
+        logger.debug("Failed to evict langchain_anthropic client cache", exc_info=True)
+
+
 def _run_async_update_sync(coro: Awaitable[bool]) -> bool:
     """Run an async memory update from sync code, including nested-loop contexts."""
     handed_off = False
@@ -248,6 +272,8 @@ def _run_async_update_sync(coro: Awaitable[bool]) -> bool:
 
         logger.exception("Failed to run async memory update from sync context")
         return False
+    finally:
+        _evict_provider_async_client_caches()
 
 
 # Matches sentences that describe a file-upload *event* rather than general
