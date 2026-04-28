@@ -5,6 +5,7 @@ import {
   extractReasoningContentFromMessage,
   hasContent,
   hasToolCalls,
+  isHiddenFromUIMessage,
   stripUploadedFilesTag,
 } from "../messages/utils";
 
@@ -41,7 +42,13 @@ export function formatThreadAsMarkdown(
     "",
   ];
 
-  for (const message of messages) {
+  // Skip messages marked hidden by the backend (e.g. compaction pointer
+  // injected by ArchivingSummarizationMiddleware). They exist only to drive
+  // the model — exposing them in the export file confuses the reader and
+  // misrepresents what the user actually saw.
+  const visibleMessages = messages.filter((m) => !isHiddenFromUIMessage(m));
+
+  for (const message of visibleMessages) {
     if (message.type === "human") {
       const content = formatMessageContent(message);
       if (content) {
@@ -87,12 +94,13 @@ export function formatThreadAsJSON(
   thread: AgentThread,
   messages: Message[],
 ): string {
+  const visibleMessages = messages.filter((m) => !isHiddenFromUIMessage(m));
   const exportData = {
     title: titleOfThread(thread),
     thread_id: thread.thread_id,
     created_at: thread.created_at,
     exported_at: new Date().toISOString(),
-    messages: messages.map((msg) => ({
+    messages: visibleMessages.map((msg) => ({
       type: msg.type,
       id: msg.id,
       content: typeof msg.content === "string" ? msg.content : msg.content,

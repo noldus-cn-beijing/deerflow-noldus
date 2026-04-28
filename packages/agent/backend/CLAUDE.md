@@ -167,9 +167,10 @@ Middlewares execute in strict order in `packages/harness/deerflow/agents/lead_ag
 7. **TodoListMiddleware** - Task tracking with `write_todos` tool (optional, if plan_mode)
 8. **TitleMiddleware** - Auto-generates thread title after first complete exchange and normalizes structured message content before prompting the title model
 9. **MemoryMiddleware** - Queues conversations for async memory update (filters to user + final AI responses)
-10. **ViewImageMiddleware** - Injects base64 image data before LLM call (conditional on vision support)
-11. **SubagentLimitMiddleware** - Truncates excess `task` tool calls from model response to enforce `MAX_CONCURRENT_SUBAGENTS` limit (optional, if subagent_enabled)
-12. **ClarificationMiddleware** - Intercepts `ask_clarification` tool calls, interrupts via `Command(goto=END)` (must be last)
+10. **TrainingDataMiddleware** - Records every turn (lead + subagent) as Fireworks JSONL to `.deer-flow/training-data/auto-collected/<thread_id>.jsonl` for Phase 1 SFT/DPO. Filters low-quality samples (errors, timeouts, empty). Failures are swallowed internally — never crashes the agent turn.
+11. **ViewImageMiddleware** - Injects base64 image data before LLM call (conditional on vision support)
+12. **SubagentLimitMiddleware** - Truncates excess `task` tool calls from model response to enforce `MAX_CONCURRENT_SUBAGENTS` limit (optional, if subagent_enabled)
+13. **ClarificationMiddleware** - Intercepts `ask_clarification` tool calls, interrupts via `Command(goto=END)` (must be last)
 
 ### Configuration System
 

@@ -83,15 +83,12 @@ export const zhCN: Translations = {
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
     mode: "模式",
-    flashMode: "闪速",
-    flashModeDescription: "快速且高效的完成任务，但可能不够精准",
-    reasoningMode: "思考",
-    reasoningModeDescription: "思考后再行动，在时间与准确性之间取得平衡",
-    proMode: "Pro",
-    proModeDescription: "思考、计划再执行，获得更精准的结果，可能需要更多时间",
-    ultraMode: "Ultra",
-    ultraModeDescription:
-      "继承自 Pro 模式，可调用子代理分工协作，适合复杂多步骤任务，能力最强",
+    autoMode: "全自动",
+    autoModeDescription:
+      "全自动分析流水线，可调用子代理分工协作，适合复杂多步骤任务",
+    flywheelMode: "数据飞轮",
+    flywheelModeDescription:
+      "交互式分析，每个关键决策点等待您确认，适合训练数据收集",
     reasoningEffort: "推理深度",
     reasoningEffortMinimal: "最低",
     reasoningEffortMinimalDescription: "检索 + 直接输出",
@@ -279,6 +276,9 @@ export const zhCN: Translations = {
     in_progress: "子任务运行中",
     completed: "子任务已完成",
     failed: "子任务失败",
+    taskDescription: "任务描述",
+    taskResult: "任务结果",
+    expertWorking: "专家工作过程",
   },
 
   clarification: {

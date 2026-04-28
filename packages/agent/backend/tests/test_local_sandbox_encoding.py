@@ -34,6 +34,38 @@ def test_write_file_uses_utf8_on_windows_locale(tmp_path, monkeypatch):
     assert path.read_text(encoding="utf-8") == text
 
 
+def test_read_file_utf16_le_bom(tmp_path):
+    path = tmp_path / "utf16le.txt"
+    text = "EthoVision XT 导出数据\nSubject 1\t42.5"
+    path.write_bytes(b"\xff\xfe" + text.encode("utf-16-le"))
+
+    assert LocalSandbox("t").read_file(str(path)) == text
+
+
+def test_read_file_utf16_be_bom(tmp_path):
+    path = tmp_path / "utf16be.txt"
+    text = "Header row\nData row"
+    path.write_bytes(b"\xfe\xff" + text.encode("utf-16-be"))
+
+    assert LocalSandbox("t").read_file(str(path)) == text
+
+
+def test_read_file_utf8_bom(tmp_path):
+    path = tmp_path / "utf8bom.txt"
+    text = "some content with BOM"
+    path.write_bytes(b"\xef\xbb\xbf" + text.encode("utf-8"))
+
+    assert LocalSandbox("t").read_file(str(path)) == text
+
+
+def test_read_file_utf8_no_bom_unchanged(tmp_path):
+    path = tmp_path / "plain.txt"
+    text = "plain ascii content"
+    path.write_text(text, encoding="utf-8")
+
+    assert LocalSandbox("t").read_file(str(path)) == text
+
+
 def test_get_shell_prefers_posix_shell_from_path_before_windows_fallback(monkeypatch):
     monkeypatch.setattr(local_sandbox.os, "name", "nt")
     monkeypatch.setattr(LocalSandbox, "_find_first_available_shell", lambda candidates: r"C:\Program Files\Git\bin\sh.exe" if candidates == ("/bin/zsh", "/bin/bash", "/bin/sh", "sh") else None)

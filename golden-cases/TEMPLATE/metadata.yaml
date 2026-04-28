@@ -1,0 +1,30 @@
+# Golden-Case 空白模板
+# 复制此目录到 golden-cases/case-XXX-<paradigm>-<tag>/
+# 然后逐一填写以下文件
+
+# ============================================================
+# metadata.yaml — case 身份信息
+# ============================================================
+# 所有字段说明见 golden-cases/SCHEMA.md §1
+
+case_id: "case-XXX-<paradigm>-<tag>"   # 必填，格式 case-序号-范式-标签
+paradigm: ""                           # 必填，见 SCHEMA.md 范式枚举表
+species: ""                            # 必填，如 "C57BL/6 mouse"
+strain: ""                             # 选填，品系
+n_subjects: 0                          # 必填，受试者数量
+n_groups: 0                            # 必填，分组数量
+groups:                                # 必填，组名 → 受试者列表
+  # group_a:
+  #   - "Subject 1"
+  #   - "Subject 2"
+  # group_b:
+  #   - "Subject 3"
+  #   - "Subject 4"
+experimental_condition: ""             # 必填，实验条件简述
+source: ""                             # 必填，数据来源
+raw_data_files: 0                      # 必填，raw-data/ 下文件数
+created: ""                            # 必填，YYYY-MM-DD
+annotator: ""                          # 必填，标注人
+reviewer: ""                           # 选填，review 人
+difficulty: ""                         # 选填，easy / moderate / hard
+tags: []                               # 选填，自由标签

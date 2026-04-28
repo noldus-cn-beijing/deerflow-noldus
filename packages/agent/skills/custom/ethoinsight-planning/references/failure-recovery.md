@@ -45,7 +45,7 @@ ask_clarification(
 )
 ```
 
-- ❌ 不要把 analysis_summary.md 原文当作最终报告返回给用户（用户期望的是 APA 格式）
+- ❌ 不要把 data-analyst 的 key_findings 直接当作最终报告返回给用户（用户期望的是 APA 格式）
 - ❌ 不要输出残缺的报告（比如只有 Results 没有 Discussion）
 
 ## 降级选项

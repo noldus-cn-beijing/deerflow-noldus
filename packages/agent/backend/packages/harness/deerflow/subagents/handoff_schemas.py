@@ -66,6 +66,14 @@ class CodeExecutorHandoff(BaseModel):
         default_factory=dict,
         description="Nested map: group -> metric -> stats.",
     )
+    per_subject: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description=(
+            "Raw per-subject metric values: {subject_name: {metric: value}}. "
+            "Downstream data-analyst uses this to identify outlier subjects by "
+            "name and compute leave-one-out counterfactual group statistics."
+        ),
+    )
     statistics: dict[str, Any] = Field(default_factory=dict)
     assessment: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -79,23 +87,56 @@ class CodeExecutorHandoff(BaseModel):
     )
 
 
+class OutlierFinding(BaseModel):
+    """One flagged outlier subject with counterfactual support.
+
+    Used by data-analyst to surface per-subject diagnostics: which subject
+    deviates on which metric, by how much, and what the group statistics
+    look like with that subject excluded.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    subject: str = Field(description="Subject identifier, e.g. 'Subject 3'.")
+    metric: str = Field(description="Metric on which this subject is an outlier.")
+    value: float = Field(description="Raw per-subject value on that metric.")
+    deviation: str = Field(
+        description=(
+            "Qualitative description of deviation, e.g. '2x group median', "
+            "'CV=35%', '> 1.5 SD above mean'."
+        ),
+    )
+    counterfactual: str | None = Field(
+        default=None,
+        description=(
+            "Leave-one-out group stats if this subject is excluded, e.g. "
+            "'treatment mean_nnd drops 48.2 → 37.2 mm if Subject 3 excluded'."
+        ),
+    )
+
+
 class DataAnalystHandoff(BaseModel):
     """Handoff JSON produced by the data-analyst subagent.
 
-    Structured return type so the lead agent can render insights without
-    re-parsing markdown. Written alongside the existing analysis_report.md
-    once the data-analyst prompt is updated (commit 5).
+    Structured return type so downstream consumers (report-writer, lead agent
+    rendering) can act on the analyst's findings without re-parsing natural
+    language. This is the single source of truth for data-analyst output —
+    the subagent writes nothing else to disk.
     """
 
     model_config = ConfigDict(extra="allow")
 
     status: Literal["completed", "failed"]
-    analysis_summary_path: str = Field(
-        description="Path to the markdown analysis report (existing output).",
-    )
     key_findings: list[str] = Field(
         default_factory=list,
         description="1-5 bullet findings surfaced to the user.",
+    )
+    outlier_findings: list[OutlierFinding] = Field(
+        default_factory=list,
+        description=(
+            "Per-subject outlier diagnostics with leave-one-out counterfactual "
+            "context. Empty list when no outlier is flagged."
+        ),
     )
     excluded_metrics: list[str] = Field(
         default_factory=list,
@@ -123,10 +164,6 @@ class ReportWriterHandoff(BaseModel):
         default_factory=list,
         description="E.g. ['Results', 'Discussion'].",
     )
-    references_used: int = Field(
-        default=0,
-        description="Number of literature references cited in the report.",
-    )
     errors: list[str] = Field(default_factory=list)
 
 
@@ -135,5 +172,6 @@ __all__ = [
     "DataAnalystHandoff",
     "DataQualityWarning",
     "MetricStat",
+    "OutlierFinding",
     "ReportWriterHandoff",
 ]

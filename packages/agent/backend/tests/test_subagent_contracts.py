@@ -123,22 +123,20 @@ class TestCodeExecutorHandoffSchema:
 
 class TestDataAnalystHandoffSchema:
     def test_minimal_completed_accepts(self):
-        h = DataAnalystHandoff(
-            status="completed",
-            analysis_summary_path="/mnt/user-data/workspace/analysis/analysis_report.md",
-        )
+        h = DataAnalystHandoff(status="completed")
         assert h.status == "completed"
         assert h.key_findings == []
+        assert h.outlier_findings == []
+        assert h.method_warnings == []
 
-    def test_rejects_missing_path(self):
+    def test_status_is_required(self):
         with pytest.raises(Exception):
-            DataAnalystHandoff(status="completed")  # type: ignore[call-arg]
+            DataAnalystHandoff()  # type: ignore[call-arg]
 
     def test_failed_with_errors(self):
         h = DataAnalystHandoff(
             status="failed",
-            analysis_summary_path="",
-            errors=["timeout reading code_summary.json"],
+            errors=["timeout reading handoff_code_executor.json"],
         )
         assert h.status == "failed"
         assert len(h.errors) == 1
@@ -151,7 +149,6 @@ class TestReportWriterHandoffSchema:
             report_path="/mnt/user-data/outputs/report.md",
         )
         assert h.sections_written == []
-        assert h.references_used == 0
 
     def test_rejects_missing_path(self):
         with pytest.raises(Exception):

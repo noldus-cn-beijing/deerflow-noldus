@@ -12,7 +12,7 @@ import { getBackendBaseURL } from "../config";
 import { useI18n } from "../i18n/hooks";
 import type { FileInMessage } from "../messages/utils";
 import type { LocalSettings } from "../settings";
-import { useUpdateSubtask } from "../tasks/context";
+import { useSubtaskContext, useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
@@ -188,6 +188,7 @@ export function useThreadStream({
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+  const { setTasks: setSubtasks } = useSubtaskContext();
   const runMetadataStorageRef = useRef<
     ReturnType<typeof getRunMetadataStorage> | undefined
   >(undefined);
@@ -305,6 +306,13 @@ export function useThreadStream({
     messageOrderRef.current = [];
     cachedThreadIdRef.current = threadId;
   }
+
+  // Clear subtask state on thread change. Must run in an effect (not during
+  // render) because setSubtasks updates a foreign component's state.
+  useEffect(() => {
+    setSubtasks({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId]);
 
   // Load archived messages from backend on thread mount (survives page refresh)
   useEffect(() => {
@@ -538,18 +546,11 @@ export function useThreadStream({
             context: {
               ...extraContext,
               ...context,
-              thinking_enabled: context.mode !== "flash",
-              is_plan_mode: context.mode === "pro" || context.mode === "ultra",
-              subagent_enabled: context.mode === "ultra",
-              reasoning_effort:
-                context.reasoning_effort ??
-                (context.mode === "ultra"
-                  ? "high"
-                  : context.mode === "pro"
-                    ? "medium"
-                    : context.mode === "thinking"
-                      ? "low"
-                      : undefined),
+              thinking_enabled: true,
+              is_plan_mode: true,
+              subagent_enabled: true,
+              workflow_mode: context.mode === "flywheel" ? "manual" : "auto",
+              reasoning_effort: context.reasoning_effort ?? "high",
               thread_id: threadId,
             },
           },

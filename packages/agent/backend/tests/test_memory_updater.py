@@ -1,9 +1,11 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from deerflow.agents.memory.prompt import format_conversation_for_update
 from deerflow.agents.memory.updater import (
     MemoryUpdater,
+    _evict_provider_async_client_caches,
     _extract_text,
+    _run_async_update_sync,
     clear_memory_data,
     create_memory_fact,
     delete_memory_fact,
@@ -524,6 +526,7 @@ class TestUpdateMemoryStructuredResponse:
         response = MagicMock()
         response.content = content
         model.invoke.return_value = response
+        model.ainvoke = AsyncMock(return_value=response)
         return model
 
     def test_string_response_parses(self):
@@ -592,7 +595,7 @@ class TestUpdateMemoryStructuredResponse:
             result = updater.update_memory([msg, ai_msg], correction_detected=True)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Explicit correction signals were detected" in prompt
 
     def test_correction_hint_empty_when_not_detected(self):
@@ -617,7 +620,7 @@ class TestUpdateMemoryStructuredResponse:
             result = updater.update_memory([msg, ai_msg], correction_detected=False)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Explicit correction signals were detected" not in prompt
 
 
@@ -695,6 +698,7 @@ class TestReinforcementHint:
         response = MagicMock()
         response.content = f"```json\n{json_response}\n```"
         model.invoke.return_value = response
+        model.ainvoke = AsyncMock(return_value=response)
         return model
 
     def test_reinforcement_hint_injected_when_detected(self):
@@ -719,7 +723,7 @@ class TestReinforcementHint:
             result = updater.update_memory([msg, ai_msg], reinforcement_detected=True)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Positive reinforcement signals were detected" in prompt
 
     def test_reinforcement_hint_absent_when_not_detected(self):
@@ -744,7 +748,7 @@ class TestReinforcementHint:
             result = updater.update_memory([msg, ai_msg], reinforcement_detected=False)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Positive reinforcement signals were detected" not in prompt
 
     def test_both_hints_present_when_both_detected(self):
@@ -769,6 +773,61 @@ class TestReinforcementHint:
             result = updater.update_memory([msg, ai_msg], correction_detected=True, reinforcement_detected=True)
 
         assert result is True
-        prompt = model.invoke.call_args[0][0]
+        prompt = model.ainvoke.call_args[0][0]
         assert "Explicit correction signals were detected" in prompt
         assert "Positive reinforcement signals were detected" in prompt
+
+
+def test_evict_provider_async_client_caches_clears_lru_caches() -> None:
+    """Eviction must call cache_clear on langchain_anthropic client caches.
+
+    This is the safety net for the memory-updater event-loop race: each
+    asyncio.run cycle leaves cached httpx clients bound to a closed loop, and
+    eviction prevents the next caller from inheriting them.
+    """
+    from langchain_anthropic._client_utils import (
+        _get_default_async_httpx_client,
+        _get_default_httpx_client,
+    )
+
+    with patch.object(_get_default_async_httpx_client, "cache_clear") as async_clear:
+        with patch.object(_get_default_httpx_client, "cache_clear") as sync_clear:
+            _evict_provider_async_client_caches()
+
+    async_clear.assert_called_once()
+    sync_clear.assert_called_once()
+
+
+def test_evict_provider_async_client_caches_swallows_import_errors() -> None:
+    """Eviction must never raise — memory updates already swallow exceptions."""
+    with patch(
+        "langchain_anthropic._client_utils._get_default_async_httpx_client",
+        side_effect=ImportError("simulated"),
+    ):
+        _evict_provider_async_client_caches()
+
+
+def test_run_async_update_sync_evicts_caches_on_success() -> None:
+    """After a successful memory update, cached async clients must be evicted."""
+
+    async def coro() -> bool:
+        return True
+
+    with patch("deerflow.agents.memory.updater._evict_provider_async_client_caches") as evict:
+        result = _run_async_update_sync(coro())
+
+    assert result is True
+    evict.assert_called_once()
+
+
+def test_run_async_update_sync_evicts_caches_on_failure() -> None:
+    """Eviction must run even if the inner coroutine raises."""
+
+    async def coro() -> bool:
+        raise RuntimeError("boom")
+
+    with patch("deerflow.agents.memory.updater._evict_provider_async_client_caches") as evict:
+        result = _run_async_update_sync(coro())
+
+    assert result is False
+    evict.assert_called_once()
