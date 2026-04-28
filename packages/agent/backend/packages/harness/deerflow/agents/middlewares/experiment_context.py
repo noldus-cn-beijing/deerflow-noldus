@@ -1,4 +1,4 @@
-"""Read/write experiment-context.json for Gate state persistence.
+"""Read/write experiment-context.json and handoff_code_executor.json for Gate state persistence.
 
 TWO PATH DOMAINS:
 1. Container-side (lead agent): /mnt/user-data/workspace/experiment-context.json
@@ -57,6 +57,41 @@ def resolve_workspace_from_state(state: dict) -> str | None:
     return thread_data.get("workspace_path")
 
 
+def read_handoff(workspace_dir: str) -> dict | None:
+    """Read handoff_code_executor.json from host-side workspace_dir. Returns None if absent."""
+    path = Path(workspace_dir) / "handoff_code_executor.json"
+    try:
+        if not path.exists():
+            return None
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, PermissionError, OSError) as e:
+        logger.warning("Failed to read handoff_code_executor.json: %s", e)
+        return None
+
+
+def get_critical_warnings(workspace_dir: str) -> list[dict]:
+    """Extract severity='critical' warnings from handoff. Returns empty list if none or absent."""
+    handoff = read_handoff(workspace_dir)
+    if not handoff:
+        return []
+    warnings = handoff.get("data_quality_warnings", [])
+    if not isinstance(warnings, list):
+        return []
+    return [w for w in warnings if isinstance(w, dict) and w.get("severity") == "critical"]
+
+
+def is_quality_acknowledged(workspace_dir: str) -> bool:
+    """Check if data quality gate has been acknowledged in experiment-context.json."""
+    ctx = read_context(workspace_dir)
+    if not ctx:
+        return False
+    gate_completed = ctx.get("gate_completed", [])
+    if not isinstance(gate_completed, list):
+        return False
+    return "gate2_quality_acknowledged" in gate_completed
+
+
 @tool("set_experiment_paradigm", parse_docstring=True)
 def set_experiment_paradigm_tool(
     paradigm: str,
@@ -98,7 +133,7 @@ def set_experiment_paradigm_tool(
         "category": category,
         "subject": subject,
         "paradigm_confirmed_at": datetime.now(UTC).isoformat(),
-        "gate_completed": ["gate1"],
+        "gate_completed": ["gate1_paradigm"],
     }
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)

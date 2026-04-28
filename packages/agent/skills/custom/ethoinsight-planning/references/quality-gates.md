@@ -10,10 +10,13 @@
 
 | 状态 | 行动 |
 |------|------|
-| 用户已选择范式 | 调用 `set_experiment_paradigm` tool 写入 experiment-context.json，进入 Gate 1 |
-| 用户未选择 | **两级 `ask_clarification`**：先选 7 大类（旷场及物体识别 / 焦虑迷宫 / 空间学习记忆迷宫 / 社会交互与偏好 / 抑郁绝望 / 恐惧条件化 / 斑马鱼行为），再选该大类下的细分范式（1-6 个） |
+| 用户已明确大类+细分范式（如"斑马鱼鱼群行为"） | 直接调用 `set_experiment_paradigm` tool 写入 experiment-context.json，跳过两级确认 |
+| 用户只明确大类（如"焦虑迷宫"） | 只问细分范式那一级（1-6 个选项），确认后调用 `set_experiment_paradigm` |
+| 用户未提供任何实验类型信息 | **两级 `ask_clarification`**：先选 7 大类（旷场及物体识别 / 焦虑迷宫 / 空间学习记忆迷宫 / 社会交互与偏好 / 抑郁绝望 / 恐惧条件化 / 斑马鱼行为），再选该大类下的细分范式（1-6 个） |
 
 **选项来源**: ethoinsight.templates.list_categories() + list_paradigms(category=...)
+
+**强制执行**: GateEnforcementMiddleware 在 task() 调度时检查 experiment-context.json 是否存在，不存在则拦截。
 
 ## Gate 1.5: 数据-范式一致性检查（Gate 0 完成后）
 
@@ -51,6 +54,8 @@
 |------|------|
 | 空数组 | 继续流水线 |
 | 非空 | **`ask_clarification`**：列出警告项，询问：(a) 排除异常个体并重算 (b) 保留并继续 (c) 查看详情 |
+
+**强制执行**: 由 GateEnforcementMiddleware 在 task(data-analyst) 调度时检查 handoff_code_executor.json，存在 critical 且未在 experiment-context.json 中 acknowledge 则拦截。
 
 **常见 warnings**:
 - 轨迹中断（missing data > 10%）

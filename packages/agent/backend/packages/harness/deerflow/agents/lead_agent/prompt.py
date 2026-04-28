@@ -278,7 +278,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
 **Gate 1 — 两级实验类型确认（进入端到端流水线时必须先执行）**
 
-当用户有新上传数据且请求分析时，分两步确认实验类型：
+你必须先确认实验范式（系统会在 task 调度时强制执行此检查）。当用户有新上传数据且请求分析时，分两步确认实验类型：
 
 **第一步：先问大类**
 
@@ -306,6 +306,9 @@ ask_clarification(
 用户选"抑郁/绝望"→ ask_clarification(options=["强迫游泳 (Forced Swim)", "悬尾实验 (Tail Suspension)"])
 用户选"恐惧条件化"→ ask_clarification(options=["恐惧条件化/主动回避 (Fear Conditioning)"])
 用户选"斑马鱼行为"→ 直接确定 shoaling（该大类下唯一范式），无需第二步
+
+**条件分支提示**：如果用户一开始就明确提到了大类名和具体范式名（如"斑马鱼鱼群行为"），可以跳过两级确认，直接调用 set_experiment_paradigm。
+如果用户只提到了大类（如"焦虑迷宫"），只需问细分范式那一级。
 
 用户选择细分范式后，**必须调用 set_experiment_paradigm tool**（不要用 write_file 手写 JSON）：
 set_experiment_paradigm(paradigm="英文范式名", paradigm_cn="中文显示名", category="大类名", subject="rodent|fish")
@@ -1124,9 +1127,7 @@ task(subagent_type="code-executor", description="执行数据分析代码",
 
 ### Step 1.5: 数据质量校验 + 写共享摘要
 1. read_file /mnt/user-data/workspace/handoff_code_executor.json
-2. 检查 "data_quality_warnings" 字段：
-   - 如果有 warnings：用 ask_clarification 告知用户，询问是否继续
-   - 如果没有 warnings 或用户确认：继续
+2. 检查 "data_quality_warnings" 字段：如有 critical 条目，系统会在你调度 task(data-analyst) 时拦截，届时你需按拦截提示调用 ask_clarification 告知用户并询问是否继续。
 3. **写共享摘要**（使用 write_file 工具）：
    ```
    write_file("/mnt/shared/code_summary.json", <JSON 字符串，包含以下字段>)
