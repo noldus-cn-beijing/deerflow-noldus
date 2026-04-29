@@ -25,6 +25,7 @@ Thumbs.db
 
 # Data
 demo-data/
+demodata/
 *.parquet
 
 # DeerFlow runtime

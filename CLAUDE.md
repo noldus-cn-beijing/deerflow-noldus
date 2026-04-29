@@ -6,7 +6,7 @@
 
 **EthoInsight** — 面向行为学研究员的 AI 分析助手。研究员上传 EthoVision XT 导出的轨迹数据，Agent 自动完成统计分析、专业解读、APA 格式报告生成。
 
-- **当前状态**：端到端流水线可用，`shoaling` 范式完整；EPM/OFT 等 10+ 范式待补全
+- **当前状态**：端到端流水线可用，`shoaling` 范式完整；EPM/OFT 等范式待补全；**范式体系正在从「学术范式」迁移到「EV19 模板 + 学术范式」双层（详见第 10 条）**
 - **愿景**：从"数据分析工具"演进为"全生命周期行为学研究助手"（实验指导 → 数据分析 → 追问 → 知识问答 → 跨范式证据链）
 - **关键里程碑**：2026 年 9 月 v0.1 可用版本
 - **路线图**：见 [docs/roadmap.md](docs/roadmap.md)
@@ -156,6 +156,13 @@ pytest tests/      # 运行分析库测试
 7. **训练数据飞轮已启动** — 每次 agent 会话自动录制到 `packages/agent/backend/.deer-flow/training-data/auto-collected/`；专家反馈走 `/api/threads/{id}/feedback` API + 前端三按钮。查看累计进度：`cd packages/agent/backend && make training-stats`。详见 [docs/sop/training-data-flywheel-sop.md](docs/sop/training-data-flywheel-sop.md)。
 8. **Golden-case 是专家知识注入的正式途径** — 行为学同事对一份数据标注"期望的分析结论"，同时承担**领域知识源 + 回归测试 + SFT 种子数据**三重角色。结构由 [golden-cases/SCHEMA.md](golden-cases/SCHEMA.md) 定义，模板在 `golden-cases/TEMPLATE/`，校验用 `python3 scripts/validate_golden_case.py`。**不要为范式知识另建文档系统（如 `docs/domain/`），所有专家领域知识统一走 golden-cases/**。详见 [docs/sop/golden-case-sop.md](docs/sop/golden-case-sop.md)。
 9. **判读哲学：组间比较，不用绝对阈值** — 行为学同事确认：EPM/OFT 等焦虑范式的解读**只看 control vs treatment 是否有显著差异**，不按"正常范围 15-25%，小于 10% 就是高焦虑"这种绝对阈值判断。`ethoinsight/assess.py` 里的 `_DEFAULT_THRESHOLDS` 保留作为"批次质检参考"，**不作为判读依据**。agent 给出的结论必须基于统计检验 + 效应量。
+10. **范式体系正在重构（2026-04-29 起）** — 旧体系是「7 大类 18 范式」学术分类（写在 `lead_agent/prompt.py` 里），与 EthoVision XT 19 真实模板（20 大类 62 变体）不对应，导致 Gate 1 反问机制不准。新体系采用**双层**：用户语言走 EV19 模板，内部走学术范式。**领域知识独立 skill**（`ethovision-paradigm-knowledge` 待建），by-template/by-experiment 双向索引由行为学同事 markdown 维护。
+    - **设计文档**：[docs/plans/2026-04-29-ev19-template-paradigm-design.md](docs/plans/2026-04-29-ev19-template-paradigm-design.md)
+    - **行为学同事 review 包**（已生成，等待补充）：[docs/review-packages/2026-04-29-ev19-templates/](docs/review-packages/2026-04-29-ev19-templates/)
+    - **当前状态**：等行为学同事完成 P0 的 7 个文件（shoaling/epm/open_field 三个实验 + 4 个对应模板大类）后进入实施
+    - **影响范围**：`agents/lead_agent/prompt.py` Gate 1 段、`experiment_context.py`、`set_experiment_paradigm` 工具、`GateEnforcementMiddleware`、`packages/agent/skills/custom/ethoinsight-planning/references/quality-gates.md`
+    - **不影响**：`ethoinsight/templates/*.py`（按学术范式组织的分析模板保留）、code-executor 流水线、Gate 2 数据质量检查
+11. **Memory event-loop 修复（已完成 2026-04-29）** — `RuntimeError: Event loop is closed` 已通过 sync 上游 `82731aeb` 彻底修复（memory 更新改 sync `model.invoke()`，不再创建短命 event loop）。详见 [docs/handoffs/2026-04-29-event-loop-fix-v2-completed-handoff.md](docs/handoffs/2026-04-29-event-loop-fix-v2-completed-handoff.md)。本地 fork 现在比上游更接近最新版。
 
 ## 快速上手
 
@@ -171,6 +178,8 @@ pytest tests/      # 运行分析库测试
 - [docs/roadmap.md](docs/roadmap.md) — 产品路线图
 - [docs/prd.md](docs/prd.md) — 产品需求文档
 - [docs/architecture-diagram.md](docs/architecture-diagram.md) — 架构图
+- [docs/plans/2026-04-29-ev19-template-paradigm-design.md](docs/plans/2026-04-29-ev19-template-paradigm-design.md) — **EV19 模板范式重定位设计（当前进行中）**
+- [docs/review-packages/2026-04-29-ev19-templates/README.md](docs/review-packages/2026-04-29-ev19-templates/README.md) — 行为学同事 review 包入口
 - [docs/specs/paradigm-analysis-tools-spec.md](docs/specs/paradigm-analysis-tools-spec.md) — 范式分析工具规格
 - [golden-cases/SCHEMA.md](golden-cases/SCHEMA.md) — Golden-case 标注结构字典
 - [docs/sop/golden-case-sop.md](docs/sop/golden-case-sop.md) — Golden-case 协作流程 SOP

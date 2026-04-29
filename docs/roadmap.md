@@ -25,7 +25,7 @@
 
 ## 当前状态
 
-> 最近更新: 2026-04-21，shoaling E2E 全链路验证通过（v0.1 tag: `cd2d6aba`）
+> 最近更新: 2026-04-29，引入 EV19 模板范式体系重定位（设计完成、等同事 review）+ memory event-loop 修复完成；shoaling E2E 全链路验证通过（v0.1 tag: `cd2d6aba`）
 
 | 能力 | 成熟度 | 说明 |
 |------|--------|------|
@@ -64,22 +64,27 @@ Apr      May      Jun   Jul      Aug      Sep      Oct  Nov  Dec     Jan  Feb  M
 
 > **时间**: 2026 年 4 月中 — 5 月中（4 周）
 > **目标**: 让现有的数据分析流水线真正可靠可用
-> **状态** (2026-04-21): M0.1 基本完成，M0.2-M0.4 未开始。剩余约 3 周窗口。
+> **状态** (2026-04-29): M0.1 基本完成；M0.2 EV19 范式重定位**正在进行**（设计已完成，等行为学同事 review）；M0.3-M0.4 未开始。剩余约 2-3 周窗口。
 
 | 里程碑 | 具体任务 | 验收标准 | 进展 |
 |--------|---------|---------|------|
 | **M0.1** 鲁棒性验证 | ethoinsight-planning skill 落地；subagent handoff JSON 契约；SubtaskCard 全量 CoT 可见；lead/subtask 语言一致性；data-analyst 洞察深度；test_client.py 断言修复；429 重试稳定 | agent 遇到不支持范式时优雅降级，不循环；shoaling E2E 通过 | ✅ shoaling E2E 已通过验证（2026-04-21） |
 | **M0.1 余项** | 不支持范式的降级路径 E2E；`read_file` UTF-16 fallback | 降级路径不循环；用户看到明确降级提示 | ⬜ 待办 |
-| **M0.2-0.4** 16 范式完整覆盖 | 抽象 `templates/_base.py` 基类；按三批优先级批量补齐全部 16 个范式（demo-data/DemoData/ 下全部）的八件套；每范式边际 3-5 天 | `demo-data/DemoData/` 下任一范式均可端到端分析；16 份深度 golden-case 全绿 | ⬜ 待办（详见 [行为学判断能力设计 §7.6](../docs/plans/2026-04-21-behavioral-reasoning-design.md) + [微调策略更新 §3](../docs/plans/2026-04-21-finetuning-strategy-update.md)） |
+| **M0.2** EV19 范式体系重定位 | Gate 1 反问机制对齐 EthoVision XT 19 真实模板（20 大类 62 变体）；新建 `ethovision-paradigm-knowledge` skill 渐进披露领域知识；`experiment-context.json` 加 `ev19_template` 字段；中间件检查 ev19_template + paradigm 双字段 | ① E2E 跑用户上传文件后能弹两级 UI 选模板；② 行为学同事填完 P0 7 个 by-experiment/by-template；③ 中间件能拦截 agent 跳过 ask_clarification 的捷径；④ 老 thread fail open | 🟡 设计完成（[ev19-template-paradigm-design](plans/2026-04-29-ev19-template-paradigm-design.md)），review 包已生成等同事补充 |
+| **M0.3-0.4** 16 范式完整覆盖 | 抽象 `templates/_base.py` 基类；按三批优先级批量补齐全部 16 个范式（demo-data/DemoData/ 下全部）的八件套；每范式边际 3-5 天 | `demo-data/DemoData/` 下任一范式均可端到端分析；16 份深度 golden-case 全绿 | ⬜ 待办（详见 [行为学判断能力设计 §7.6](../docs/plans/2026-04-21-behavioral-reasoning-design.md) + [微调策略更新 §3](../docs/plans/2026-04-21-finetuning-strategy-update.md)） |
 
 **关键文件**:
 - `packages/ethoinsight/ethoinsight/templates/epm.py` — 新建，参照 `shoaling.py`
 - `packages/ethoinsight/ethoinsight/templates/open_field.py` — 新建
+- `packages/ethoinsight/ethoinsight/ev19_templates.py` — **新建**（M0.2，从 demodata 自动生成的事实表）
+- `packages/agent/skills/custom/ethovision-paradigm-knowledge/` — **新建**（M0.2，渐进披露 skill）
 - `packages/ethoinsight/ethoinsight/metrics.py` — 扩展 EPM/OFT 指标
 - `packages/ethoinsight/ethoinsight/assess.py` — 扩展阈值
 - `packages/agent/backend/packages/harness/deerflow/agents/middlewares/llm_error_handling_middleware.py` — 429 重试
 
-**依赖**: 无外部依赖，可立即开始。**同步启动产品资料收集**（为 Phase 1 做准备）。
+**依赖**:
+- M0.2 实施依赖行为学同事完成 review 包 P0（7 个文件）；技术侧可并行做 Step 1（事实表 Python 化）和 Step 3（context schema 升级）
+- M0.3-M0.4 依赖 M0.2 完成（新范式必须先注册到 EV19 体系才能跑通）
 
 ---
 
