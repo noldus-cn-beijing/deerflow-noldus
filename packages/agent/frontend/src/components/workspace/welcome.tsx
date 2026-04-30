@@ -1,31 +1,22 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
-
-import { AuroraText } from "../ui/aurora-text";
 
 let waved = false;
 
 export function Welcome({
   className,
-  mode,
+  mode: _mode,
 }: {
   className?: string;
   mode?: "auto" | "flywheel";
 }) {
   const { t } = useI18n();
   const searchParams = useSearchParams();
-  const isAuto = useMemo(() => mode !== "flywheel", [mode]);
-  const colors = useMemo(() => {
-    if (isAuto) {
-      return ["var(--color-foreground)"];
-    }
-    return ["var(--color-foreground)"];
-  }, [isAuto]);
   useEffect(() => {
     waved = true;
   }, []);
@@ -36,7 +27,7 @@ export function Welcome({
         className,
       )}
     >
-      <div className="text-2xl font-bold">
+      <div className="text-[2.04rem] font-semibold leading-tight text-foreground">
         {searchParams.get("mode") === "skill" ? (
           `✨ ${t.welcome.createYourOwnSkill} ✨`
         ) : (
@@ -44,7 +35,7 @@ export function Welcome({
             <div className={cn("inline-block", !waved ? "animate-wave" : "")}>
               {"👋"}
             </div>
-            <AuroraText colors={colors}>{t.welcome.greeting}</AuroraText>
+            <span>{t.welcome.greeting}</span>
           </div>
         )}
       </div>

@@ -432,7 +432,7 @@ export function InputBox({
       )}
       <PromptInput
         className={cn(
-          "bg-background/85 rounded-2xl backdrop-blur-sm transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-2xl",
+          "bg-background/85 glass-card rounded-3xl transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-3xl",
           className,
         )}
         disabled={disabled}
@@ -600,9 +600,9 @@ export function InputBox({
               </ModelSelectorContent>
             </ModelSelector>
             <PromptInputSubmit
-              className="rounded-full"
+              className="rounded-full bg-brand hover:bg-brand-hover text-brand-foreground border-brand"
               disabled={disabled}
-              variant="outline"
+              variant="default"
               status={status}
             />
           </PromptInputTools>
