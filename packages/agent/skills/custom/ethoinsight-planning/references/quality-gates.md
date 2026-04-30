@@ -1,8 +1,20 @@
 # 质量门控点
 
+> ⚠️ **2026-04-29 注意**：Gate 0（实验范式确认）正在被重新设计。当前的"7 大类 18 范式"分类与 EthoVision XT 19 真实模板（20 大类 62 变体）不对应，导致 deepseek 在文件名包含范式关键词时跳过两级 UI。
+>
+> **新设计**：[docs/plans/2026-04-29-ev19-template-paradigm-design.md](../../../../../../docs/plans/2026-04-29-ev19-template-paradigm-design.md)
+>
+> Gate 0 将改为三步流程：先选 EV19 大类（20 个），再选具体变体（1-15 个），ambiguous 时再问学术范式（仅当一个 EV 模板对应多个学术实验时）。领域知识从 prompt 移到独立 skill `ethovision-paradigm-knowledge`。
+>
+> **Gate 1.5 / Gate 2 / Gate 3 / Gate 4 / Gate 5 不受影响**，正常使用。
+
+---
+
 在规划和执行的关键节点触发检查，必要时 `ask_clarification`。
 
-## Gate 0: 实验范式确认（仅 manual 模式）
+## ~~Gate 0: 实验范式确认（仅 manual 模式）~~ — 待重写
+
+> 待 EV19 范式重定位实施完成后重写本节。当前内容仍是中间件实际行为（`experiment-context.json` 是否存在），但**触发条件和选项体系正在改变**。
 
 **触发时机**: 用户选择"端到端数据分析"后，派遣任何 subagent 之前
 

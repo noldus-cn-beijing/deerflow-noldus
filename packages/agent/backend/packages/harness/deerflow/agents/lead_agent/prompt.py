@@ -4,6 +4,12 @@ import threading
 from datetime import datetime
 from functools import lru_cache
 
+# ⚠️ 维护提示（2026-04-29）：本文件的 Gate 1 段（"7 大类 18 范式"分类表，约 L260-L350）
+# 正在被重新设计。新设计采用 EthoVision XT 19 真实模板（20 大类 62 变体）+ 独立的
+# ethovision-paradigm-knowledge skill。详见
+# docs/plans/2026-04-29-ev19-template-paradigm-design.md。
+# 修改本文件 Gate 1 段前，请先读上面的设计文档。
+
 from deerflow.config.agents_config import load_agent_soul
 from deerflow.skills import load_skills
 from deerflow.skills.types import Skill

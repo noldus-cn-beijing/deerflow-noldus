@@ -1,5 +1,10 @@
 # EthoInsight — 行为学洞察的 AI Agent 架构
 
+> ⚠️ **2026-04-29 注意**：本文档下方"数据流水线详解"中范式表示为单字段 `paradigm=shoaling`。
+> 实际正在迁移到 EV19 模板 + 学术范式双字段（`ev19_template` + `paradigm`）。
+> 详见 [docs/plans/2026-04-29-ev19-template-paradigm-design.md](plans/2026-04-29-ev19-template-paradigm-design.md)。
+> 流水线本身不变，只是 Gate 1（任务规划之前）的范式确认机制改造。
+
 ## 上层：价值视角（给非技术人员看）
 
 > **一句话**：研究员上传 EthoVision XT 导出的轨迹数据，AI 自动完成统计分析、专业解读、科学报告撰写。从数据到论文级报告，全程无需写代码。
