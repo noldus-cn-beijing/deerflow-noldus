@@ -120,6 +120,59 @@ pytest tests/      # 运行分析库测试
 ./scripts/sync-deerflow.sh                 # 交互式合入
 ```
 
+#### ⚠️ 同步时的核心规则:取长补短,不直接覆盖
+
+**任何包含 Noldus 独特改动的文件,绝对不能直接接受上游版本覆盖。** 必须逐处对比,**只挑出上游纯粹的安全/bug fix 改动**手动合入,保留所有 Noldus 定制。
+
+Noldus 独特改动包括(但不限于):
+
+- **Prompt 与提示词**:`agents/lead_agent/prompt.py`(中文调度规则、subagent 描述、Gate 反问机制)、subagent 系统 prompt、tool description 中文化
+- **Subagent 名字与注册**:`subagents/builtins/__init__.py`(注册的 4 个 ethoinsight 子代理:`code-executor`、`data-analyst`、`report-writer`、`knowledge-assistant` 等)
+- **自定义中间件**:`ArchivingSummarizationMiddleware`、`ThinkTagMiddleware`、`TrainingDataMiddleware`、`GateEnforcementMiddleware` 等(它们出现在 `lead_agent/agent.py` 的中间件链里,上游没有)
+- **Sandbox 接口扩展**:`sandbox/sandbox.py` 的 `extra_env` 参数、`local_sandbox.py` 的 venv PATH + `DEERFLOW_PATH_*` 环境变量、`sandbox/tools.py` 的 `{{shared://}}` 占位符
+- **Shared workspace 路径**:`config/paths.py` 的 `/mnt/shared`、`shared_dir()`、`thread_state.py` / `thread_data_middleware.py` 的 `shared_path` 字段
+- **错误处理增强**:`llm_error_handling_middleware.py` 的总超时上限 + 多种 timeout 关键字识别
+- **Skill 系统**:`skills/custom/` 下 4 个 ethoinsight 定制 skill 的注册和加载逻辑
+- **MCP / 工具截断**:`mcp/tools.py` 的 4096 字符截断
+- **Subagent executor 修复**:`subagents/executor.py` 的 `recursion_limit` 修复 + `max_turns` 硬限制
+
+**正确做法**(取长补短):
+
+1. 先 `diff <(git show deerflow/main:<上游路径>) <本地路径>` 看具体差异
+2. 识别上游的「真正修复」(常是几行 try/except、几行 import、几行边界检查)
+3. **手工编辑本地文件**,只把上游的修复点合入,**保留所有 Noldus 定制代码原样不动**
+4. 改完跑 `make test` 验证;如果上游修复带了配套 test,把那个 test 拿过来一起加
+5. **如果上游改动深度依赖了 Tier 4 体系**(`runtime.user_context` / `persistence.*` / per-user filesystem 多用户隔离 / unified auth + better-auth / unified skill storage),**整个 PR 跳过**,在交接文档里记录原因(EthoInsight v0.1 单用户研究助手,不需要这些)
+
+**错误做法**(永远禁止):
+
+- ❌ `git show deerflow/main:<file> > <local_file>` 直接覆盖含 Noldus 定制的文件
+- ❌ 使用 `./scripts/sync-deerflow.sh --auto-apply` 而不审视「安全文件」分类(脚本只看本地是否改过,不识别**间接依赖** Tier 4 模块的文件)
+- ❌ 接受上游 `lead_agent/agent.py` 整文件 — 它包含中间件链顺序,直接覆盖会丢失 Noldus 的定制中间件
+- ❌ 接受上游 `prompt.py` 整文件 — 你会立刻丢掉所有中文调度规则和 ethoinsight subagent 描述
+
+**血泪教训**(2026-05-06 同步实测):
+
+- 上游脚本把 `runtime/user_context.py`、`runtime/runs/manager.py`、`agents/memory/storage.py`、`tools/builtins/setup_agent_tool.py` 等都标为「安全文件」,但它们实际已被 Tier 4 体系污染,直接拉取会引入 ImportError(依赖 `persistence/*` 这些 Noldus 故意不要的模块)
+- 上游 `view_image_tool.py` 引用 sandbox/tools.py 中 Noldus 还没合入的新函数,直接拉取会运行时炸
+- 上游 `local_sandbox.py` 不接受 Noldus 定制的 `extra_env` 参数,直接覆盖会让 bash 工具立刻报 TypeError(test_client_live 立刻发现)
+
+**判断「Tier 4 体系」的简易方法**:
+
+如果上游文件 import 了下列任一模块,**整文件不能直接拉**(必须做 surgical merge 或跳过):
+
+```python
+from deerflow.runtime.user_context import ...     # per-user filesystem isolation
+from deerflow.persistence import ...              # SQLAlchemy 持久化层
+from deerflow.runtime.events import ...           # event store
+from deerflow.runtime.checkpointer import ...     # 新 checkpointer 抽象
+from deerflow.runtime.journal import ...          # auth-related journal
+from deerflow.utils.time import ...               # 与 persistence 的 ISO8601 配套
+from deerflow.config.database_config import ...   # 数据库配置
+from deerflow.config.run_events_config import ... # event store 配置
+from deerflow.skills.storage import ...           # Tier 4 重构的 skill storage
+```
+
 ## 开发规范
 
 ### Python

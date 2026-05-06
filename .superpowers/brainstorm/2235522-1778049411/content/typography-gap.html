@@ -1,0 +1,69 @@
+<h2>当前排版 vs 引入 Heti 技术后可达到的效果</h2>
+<p class="subtitle">以 agent 生成的 APA 报告片段为例 — 左侧为当前状态，右侧为引入后预期</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">当前状态 — 裸 Streamdown 渲染</div>
+    <div class="mockup-body" style="font-family: 'OPPO Sans', sans-serif; color: #1A4840; background: #faf8f5; padding: 24px; border-radius: 12px; line-height: 1.5;">
+      <h1 style="font-size:22px; font-weight:600; margin-bottom: 8px;">Shoaling 行为分析报告</h1>
+      <h2 style="font-size:18px; font-weight:600; margin-bottom: 12px;">1. 数据概览</h2>
+      <p style="margin-bottom: 12px;">对Control组和Treatment组的Shoaling行为进行Shapiro-Wilk正态性检验，结果显示Control组数据不满足正态分布假设（p &lt; 0.05），因此后续分析采用Mann-Whitney U检验。</p>
+      <p style="margin-bottom: 12px;">两组间Inter-individual distance的差异达到统计学显著水平（p=0.003），效应量Cohen's d=0.78，根据Cohen标准属于中等偏大的效应量。</p>
+      <h2 style="font-size:18px; font-weight:600; margin-bottom: 8px;">2. ANOVA结果</h2>
+      <p style="margin-bottom: 12px;">单因素ANOVA显示组间差异显著（F(2,45)=5.67,p=0.006,η²=0.20）。Tukey HSD事后检验表明Treatment A与Control组间差异显著（p=0.004），Treatment B与Control组间差异不显著（p=0.231）。</p>
+      <blockquote style="border-left: 3px solid #10DD8B; padding-left: 12px; margin: 12px 0; color: #555;">注意：本报告由AI自动生成，统计方法的选择已通过Shapiro-Wilk检验自动判断，建议研究者复核。</blockquote>
+      <p style="margin-bottom: 8px;"><strong>参考文献</strong></p>
+      <p style="font-size:13px;">Pitcher, T. J. (1983). Heuristic definitions of fish shoaling behaviour. Animal Behaviour, 31(2), 611-613.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">引入后 — 中文排版优化</div>
+    <div class="mockup-body" style="font-family: 'OPPO Sans', sans-serif; color: #1A4840; background: #faf8f5; padding: 24px; border-radius: 12px; line-height: 1.7; letter-spacing: 0.02em; text-align: justify;">
+      <h1 style="font-size:28px; line-height:42px; font-weight:600; margin-top:0; margin-bottom: 21px;">Shoaling 行为分析报告</h1>
+      <h2 style="font-size:22px; line-height:33px; font-weight:600; margin-top: 24px; margin-bottom: 10px;">1. 数据概览</h2>
+      <p style="margin-top: 12px; margin-bottom: 24px;">对 Control 组和 Treatment 组的 Shoaling 行为进行 Shapiro-Wilk 正态性检验，结果显示 Control 组数据不满足正态分布假设（p &lt; 0.05），因此后续分析采用 Mann-Whitney U 检验。</p>
+      <p style="margin-bottom: 24px;">两组间 Inter-individual distance 的差异达到统计学显著水平（p=0.003），效应量 Cohen's d=0.78，根据 Cohen 标准属于中等偏大的效应量。</p>
+      <h2 style="font-size:22px; line-height:33px; font-weight:600; margin-top:24px; margin-bottom:10px;">2. ANOVA 结果</h2>
+      <p style="margin-top:12px; margin-bottom: 24px;">单因素 ANOVA 显示组间差异显著（F(2, 45)=5.67, p=0.006, η²=0.20）。Tukey HSD 事后检验表明 Treatment A 与 Control 组间差异显著（p=0.004），Treatment B 与 Control 组间差异不显著（p=0.231）。</p>
+      <blockquote style="border-left: 3px solid #10DD8B; padding-left: 12px; margin: 12px 0 24px; color: #555; background: rgba(0,0,0,0.03); padding: 12px 16px; border-radius: 4px;">注意：本报告由 AI 自动生成，统计方法的选择已通过 Shapiro-Wilk 检验自动判断，建议研究者复核。</blockquote>
+      <p style="margin-bottom: 8px;"><strong>参考文献</strong></p>
+      <p style="font-size:13px;">Pitcher, T. J. (1983). Heuristic definitions of fish shoaling behaviour. <em>Animal Behaviour</em>, <em>31</em>(2), 611–613.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>核心差异一览</h3>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="spacing" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>中西文间距</h3>
+      <p>当前：中文与英文/数字间无间距，视觉粘连"Control组Shapiro-Wilk检验"<br>引入后：自动在 CJK 和 Latin 字符间插入 1/4em 空格 "Control 组 Shapiro-Wilk 检验"</p>
+    </div>
+  </div>
+  <div class="option" data-choice="justify" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>段落对齐 & 字间距</h3>
+      <p>当前：text-align: start（左对齐），无额外 letter-spacing<br>引入后：text-align: justify（两端对齐）+ 0.02em letter-spacing，符合中文排版规范</p>
+    </div>
+  </div>
+  <div class="option" data-choice="header" onclick="toggleSelect(this)">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3>标题网格对齐</h3>
+      <p>当前：标题 margin 由浏览器默认或 Tailwind 控制，与正文行高不对齐<br>引入后：标题 margin 严格按标准行高（24px）的整数倍计算，形成 vertical rhythm</p>
+    </div>
+  </div>
+  <div class="option" data-choice="punct" onclick="toggleSelect(this)">
+    <div class="letter">4</div>
+    <div class="content">
+      <h3>标点挤压</h3>
+      <p>当前：全角中文标点（，。！？）在两端的空间未被压缩<br>引入后：自动挤压连续标点间的冗余间隙</p>
+    </div>
+  </div>
+</div>
