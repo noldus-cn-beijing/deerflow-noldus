@@ -49,15 +49,7 @@ export function Welcome({
             <p>{t.welcome.createYourOwnSkillDescription}</p>
           )}
         </div>
-      ) : (
-        <div className="text-muted-foreground text-sm">
-          {t.welcome.description.includes("\n") ? (
-            <pre className="whitespace-pre">{t.welcome.description}</pre>
-          ) : (
-            <p>{t.welcome.description}</p>
-          )}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -75,6 +75,25 @@ export function useUpdateSubtask() {
         return;
       }
 
+      // Terminal-status SSE path: task_completed / task_failed arrive without
+      // a new AIMessage but must trigger a re-render so the card flips from
+      // in_progress to its final state. Guarded by status-changed check so
+      // the render-time path below stays safe — MessageList calls this with
+      // status: "completed" on every render after the tool message arrives,
+      // and setTasks during a parent's render would warn/loop.
+      if (
+        (update.status === "completed" || update.status === "failed") &&
+        existing?.status !== update.status
+      ) {
+        tasks[update.id] = {
+          ...(existing ?? ({ messages: [] } as unknown as Subtask)),
+          ...update,
+          messages: existing?.messages ?? [],
+        } as Subtask;
+        setTasks({ ...tasks });
+        return;
+      }
+
       // Render-time path: MessageList walks thread.messages during render and
       // calls updateSubtask to reflect task_init / task_completed metadata
       // derived from lead-side tool_calls. Mutating in place (without

@@ -269,6 +269,44 @@ export function useThreadStream({
         typeof event === "object" &&
         event !== null &&
         "type" in event &&
+        event.type === "task_completed"
+      ) {
+        const e = event as {
+          type: "task_completed";
+          task_id: string;
+          result?: string;
+        };
+        updateSubtask({
+          id: e.task_id,
+          status: "completed",
+          result: e.result,
+        });
+        return;
+      }
+
+      if (
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        (event.type === "task_failed" || event.type === "task_timed_out")
+      ) {
+        const e = event as {
+          type: "task_failed" | "task_timed_out";
+          task_id: string;
+          error?: string;
+        };
+        updateSubtask({
+          id: e.task_id,
+          status: "failed",
+          error: e.error,
+        });
+        return;
+      }
+
+      if (
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
         event.type === "llm_retry" &&
         "message" in event &&
         typeof event.message === "string" &&

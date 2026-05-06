@@ -262,6 +262,11 @@
 
   /* Modal 专用阴影(唯一允许 shadow 的层) */
   --shadow-modal: 0 16px 48px -12px rgba(26, 72, 64, 0.18);
+
+  /* 悬浮输入框阴影:更柔、更扩散,不抢戏 */
+  --shadow-float: 0 1px 2px rgba(26, 72, 64, 0.04),
+                  0 8px 24px -8px rgba(26, 72, 64, 0.10),
+                  0 24px 48px -16px rgba(26, 72, 64, 0.08);
 }
 
 /* ============================================================
@@ -399,58 +404,32 @@
     box-shadow: var(--shadow-modal);
   }
 
-  /* 保留:ambilight (subtask-card.tsx 使用) */
-  .ambilight {
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 1s ease-in-out;
+  /* 悬浮输入框专用阴影 */
+  .shadow-float {
+    box-shadow: var(--shadow-float);
   }
 
-  .ambilight:before,
-  .ambilight:after {
-    content: "";
-    pointer-events: none;
-    position: absolute;
-    left: 0;
-    top: 0;
-    background: linear-gradient(
-      45deg,
-      #fb0094,
-      #0000ff,
-      #00ff00,
-      #ffff00,
-      #ff0000,
-      #fb0094,
-      #0000ff,
-      #00ff00,
-      #ffff00,
-      #ff0000
-    );
-    background-size: 400%;
-    width: 100%;
-    height: 100%;
-    border-radius: 10px;
-    z-index: -1;
-    animation: ambilight 40s ease-in-out infinite;
+  /* 子任务运行态:柔和 brand 色脉动(替代 ambilight) */
+  .animate-pulse-soft {
+    animation: pulse-soft 2.4s ease-in-out infinite;
   }
 
-  .ambilight.enabled {
-    opacity: 1;
+  @keyframes pulse-soft {
+    0%, 100% {
+      box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.18),
+                  0 4px 16px -4px rgba(16, 221, 139, 0.12);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.32),
+                  0 6px 24px -4px rgba(16, 221, 139, 0.22);
+    }
   }
 
-  .dark .ambilight:before,
-  .dark .ambilight:after {
-    opacity: 0.85;
-  }
-
-  @keyframes ambilight {
-    0% { background-position: 0 0; }
-    50% { background-position: 400% 0; }
-    100% { background-position: 0 0; }
-  }
-
-  .ambilight:after {
-    filter: blur(60px);
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse-soft {
+      animation: none;
+      box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.24);
+    }
   }
 }
 

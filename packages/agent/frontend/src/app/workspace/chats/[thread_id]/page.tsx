@@ -118,7 +118,7 @@ export default function ChatPage() {
                 }}
               />
             </div>
-            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">
+            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4 pb-4">
               <div
                 className={cn(
                   "relative w-full",
@@ -141,7 +141,7 @@ export default function ChatPage() {
                 </div>
                 {mounted ? (
                   <InputBox
-                    className={cn("bg-background/5 w-full -translate-y-4")}
+                    className={cn("w-full")}
                     isNewThread={isNewThread}
                     threadId={threadId}
                     autoFocus={isNewThread}
@@ -171,7 +171,7 @@ export default function ChatPage() {
                   <div
                     aria-hidden="true"
                     className={cn(
-                      "bg-background/5 h-32 w-full -translate-y-4 rounded-2xl border",
+                      "bg-card/90 glass-card shadow-float h-32 w-full rounded-3xl",
                     )}
                   />
                 )}
