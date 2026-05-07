@@ -70,31 +70,39 @@
 ```
 backend/
 ├── app/
-│   ├── auth/                          ✨ 新增 (上游来)
-│   │   ├── __init__.py
-│   │   ├── auth_config.py            # AuthConfig: jwt_secret, token_expire, ...
-│   │   ├── errors.py                 # AuthErrorCode + AuthErrorResponse
-│   │   ├── ensure_admin.py           # lifespan hook: 检查 + 创建初始管理员
-│   │   ├── jwt.py                    # create_access_token / decode_token
-│   │   ├── password.py               # bcrypt + SHA-256 预哈希
-│   │   ├── providers/
-│   │   │   ├── base.py              # AuthProvider ABC
-│   │   │   └── local.py             # LocalAuthProvider (SQLite/PG via UserRepo)
-│   │   └── cli/reset_admin.py       # CLI 工具
 │   ├── gateway/
-│   │   ├── auth_middleware.py        ✨ 新增 (JWT 验证 + 401)
-│   │   ├── csrf_middleware.py        ✨ 新增 (Double-submit cookie)
-│   │   ├── internal_auth.py          ✨ 新增 (process-local internal token,channels 用)
+│   │   ├── auth/                          ✨ 新增 (上游来)
+│   │   │   ├── __init__.py               # exports
+│   │   │   ├── config.py                 # AuthConfig: jwt_secret, token_expire, ...
+│   │   │   ├── credential_file.py        # /etc 下凭证文件读写
+│   │   │   ├── errors.py                 # AuthErrorCode + AuthErrorResponse
+│   │   │   ├── jwt.py                    # create_access_token / decode_token
+│   │   │   ├── local_provider.py         # LocalAuthProvider 主入口
+│   │   │   ├── models.py                 # User pydantic + DB row 类
+│   │   │   ├── password.py               # bcrypt + SHA-256 预哈希(72 字节防截断)
+│   │   │   ├── providers.py              # AuthProvider ABC + factory
+│   │   │   ├── repositories/
+│   │   │   │   ├── base.py              # UserRepository ABC
+│   │   │   │   └── sqlite.py            # SqliteUserRepository
+│   │   │   └── reset_admin.py           # CLI 工具
+│   │   ├── auth_middleware.py        ✨ 新增 (JWT 验证 + 401 + ed9ebfac/4e4e4f92)
+│   │   ├── csrf_middleware.py        ✨ 新增 (Double-submit cookie, da174dfd)
+│   │   ├── internal_auth.py          ✨ 新增 (process-local internal token, da174dfd)
 │   │   ├── langgraph_auth.py         ✨ 新增 (langgraph.json hook)
 │   │   ├── deps.py                   ✏ 改: get_current_user_from_request 等
 │   │   ├── app.py                    ✏ 改: register middlewares + lifespan ensure_admin
 │   │   ├── authz.py                  ✨ 新增 (require_auth 装饰器 + owner_filter)
 │   │   └── routers/
-│   │       ├── auth.py              ✨ 新增 (register/login/me/setup-status)
-│   │       └── threads.py           ✏ 改: thread.owner_id 过滤
-│   └── channels/manager.py          ✏ 改: 用 internal_auth 调 LangGraph
+│   │       ├── auth.py              ✨ 新增 (register/login/me/setup-status, 848ace98)
+│   │       ├── threads.py           ✏ 改: thread.owner_id 过滤
+│   │       ├── thread_runs.py       ✏ 改: owner check
+│   │       ├── uploads.py           ✏ 改: owner check
+│   │       ├── artifacts.py         ✏ 改: owner check
+│   │       ├── feedback.py          ✏ 改: owner check
+│   │       └── suggestions.py       ✏ 改: owner check
+│   └── channels/manager.py          ✏ 改: 用 internal_auth 调 LangGraph (da174dfd)
 └── packages/harness/deerflow/
-    └── persistence/user/             ✨ 接通 (D 阶段已铺骨架,轮 3 实装 UserRepository)
+    └── persistence/user/             ✨ 已存在 (D 阶段铺骨架, 轮 3 接通 UserRepository)
 ```
 
 ### 2.2 前端架构(轮 3 后)
@@ -208,7 +216,7 @@ frontend/
 
 | 文件 | 来源 |
 |---|---|
-| `app/auth/*` 全部 | 上游 94eee95f / 4e4e4f92 |
+| `app/gateway/auth/*` 全部(11 个文件) | 上游 94eee95f / 4e4e4f92 |
 | `app/gateway/auth_middleware.py` | 上游 94eee95f / 4e4e4f92 |
 | `app/gateway/csrf_middleware.py` | 上游 da174dfd |
 | `app/gateway/internal_auth.py` | 上游 da174dfd |
@@ -273,7 +281,7 @@ PYTHONPATH=. uv run pytest tests/ --no-header -q --ignore=tests/test_client_live
 
 ```bash
 cd packages/agent/backend
-PYTHONPATH=. uv run ruff check app/auth/ app/gateway/ packages/harness/deerflow/persistence/user/ 2>&1 | tail -3
+PYTHONPATH=. uv run ruff check app/gateway/auth/ app/gateway/ packages/harness/deerflow/persistence/user/ 2>&1 | tail -3
 ```
 
 每 commit 后 0 error。
