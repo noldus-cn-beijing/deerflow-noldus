@@ -7,10 +7,12 @@ import stat
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from deerflow.config.app_config import get_app_config
 from deerflow.config.paths import get_paths
 from deerflow.sandbox.sandbox_provider import get_sandbox_provider
 from deerflow.uploads.manager import (
     PathTraversalError,
+    UnsafeUploadPathError,
     delete_file_safe,
     enrich_file_listing,
     ensure_uploads_dir,
@@ -19,6 +21,7 @@ from deerflow.uploads.manager import (
     normalize_filename,
     upload_artifact_url,
     upload_virtual_path,
+    write_upload_file_no_symlink,
 )
 from deerflow.utils.file_conversion import CONVERTIBLE_EXTENSIONS, convert_file_to_markdown
 
@@ -53,6 +56,30 @@ def _make_file_sandbox_writable(file_path: os.PathLike[str] | str) -> None:
     os.chmod(file_path, writable_mode, **chmod_kwargs)
 
 
+def _get_uploads_config_value(key: str, default: object) -> object:
+    """Read a value from the uploads config, supporting dict and attribute access."""
+    cfg = get_app_config()
+    uploads_cfg = getattr(cfg, "uploads", None)
+    if isinstance(uploads_cfg, dict):
+        return uploads_cfg.get(key, default)
+    return getattr(uploads_cfg, key, default)
+
+
+def _auto_convert_documents_enabled() -> bool:
+    """Return whether automatic host-side document conversion is enabled.
+
+    The secure default is disabled unless an operator explicitly opts in via
+    uploads.auto_convert_documents in config.yaml.
+    """
+    try:
+        raw = _get_uploads_config_value("auto_convert_documents", False)
+        if isinstance(raw, str):
+            return raw.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(raw)
+    except Exception:
+        return False
+
+
 @router.post("", response_model=UploadResponse)
 async def upload_files(
     thread_id: str,
@@ -72,6 +99,7 @@ async def upload_files(
     sandbox_provider = get_sandbox_provider()
     sandbox_id = sandbox_provider.acquire(thread_id)
     sandbox = sandbox_provider.get(sandbox_id)
+    auto_convert_documents = _auto_convert_documents_enabled()
 
     for file in files:
         if not file.filename:
@@ -85,8 +113,11 @@ async def upload_files(
 
         try:
             content = await file.read()
-            file_path = uploads_dir / safe_filename
-            file_path.write_bytes(content)
+            try:
+                file_path = write_upload_file_no_symlink(uploads_dir, safe_filename, content)
+            except UnsafeUploadPathError as e:
+                logger.warning("Skipping file with unsafe destination: %s (%s)", safe_filename, e)
+                continue
 
             virtual_path = upload_virtual_path(safe_filename)
 
@@ -105,7 +136,7 @@ async def upload_files(
             logger.info(f"Saved file: {safe_filename} ({len(content)} bytes) to {file_info['path']}")
 
             file_ext = file_path.suffix.lower()
-            if file_ext in CONVERTIBLE_EXTENSIONS:
+            if auto_convert_documents and file_ext in CONVERTIBLE_EXTENSIONS:
                 md_path = await convert_file_to_markdown(file_path)
                 if md_path:
                     md_virtual_path = upload_virtual_path(md_path.name)
