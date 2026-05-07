@@ -15,8 +15,10 @@
 | `1cce14df` | Phase C.5: summarization skill rescue (f9ff3a69) | 4 files, +734/-5 |
 | `62f73dd2` | Phase D: BC 持久化层 11 commit | 43 files, +3906/-318 |
 
-测试: **23 failed, 1854 passed, 14 skipped**
-基线: 2 failed, 1811 passed → +43 passed (新增 E/C.5/D 测试)
+测试: **2 failed, 1877 passed, 14 skipped** (仅剩 2 个 pre-existing failures)
+基线: 2 failed, 1811 passed → +66 passed (新增 E/C.5/D 测试)
+
+> 收尾修复 (2026-05-07 二次会话): 将 client.py / uploads/manager.py / app/gateway/routers/models.py 整文件覆盖到上游 (这些文件无 noldus 定制,但需要新的 user_id wiring + token usage attribution),并把 test_checkpointer.py / test_checkpointer_none_fix.py 也覆盖到上游 (mock path 从 `deerflow.agents.checkpointer.*` 改为 `deerflow.runtime.checkpointer.*`)。详见 commit `<sha>` 提交说明。
 
 ---
 
@@ -76,15 +78,21 @@
 
 ---
 
-## 已知失败 (23)
+## 已知失败 (2)
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
 | Pre-existing (不修) | 2 | test_ethoinsight_planning_skill / test_lead_prompt_interactive_pipeline |
-| test_client.py (上游版) | 19 | Tier 4 API 差异 (runtime/checkpointer, artifact, model) |
-| test_client_e2e.py (上游版) | 2 | upload/artifact API 差异 |
 
-所有 skill 测试通过 (75/75)，summarization 测试通过 (25/25)。
+所有 skill 测试通过 (75/75)，summarization 测试通过 (25/25)，checkpointer 测试通过 (23/23)，
+client 测试通过 (175/175)。
+
+二次会话收尾修复经过:
+- client.py 整覆盖到上游(原 noldus 版本缺 `get_effective_user_id` wiring + additional_kwargs token usage attribution + runtime/checkpointer 引用 → 修复 13 个 test_client.py + 3 个 test_client_e2e.py failure)
+- uploads/manager.py 整覆盖(get_uploads_dir 加 user_id → 修复 test_upload_files)
+- app/gateway/routers/models.py 整覆盖(加 token_usage 字段到 ModelsListResponse → 修复 test_list_models)
+- test_checkpointer.py / test_checkpointer_none_fix.py 整覆盖(mock path 从 agents.checkpointer 改为 runtime.checkpointer → 修复 4 个 checkpointer failure)
+- 共 5 个文件改动,222 行新增/53 行删除,无 noldus 定制丢失
 
 ---
 
