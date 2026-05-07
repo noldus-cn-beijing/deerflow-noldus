@@ -119,9 +119,9 @@ def _load_skill_contents(skill_names: list[str]) -> str:
     Returns:
         Concatenated skill content string, or empty string if no skills loaded.
     """
-    from deerflow.skills.loader import load_skills
+    from deerflow.skills.storage import get_or_new_skill_storage
 
-    all_skills = load_skills(enabled_only=True)
+    all_skills = get_or_new_skill_storage().load_skills(enabled_only=True)
     skill_map = {s.name: s for s in all_skills}
 
     sections = []

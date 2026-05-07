@@ -11,7 +11,8 @@ from functools import lru_cache
 # 修改本文件 Gate 1 段前，请先读上面的设计文档。
 
 from deerflow.config.agents_config import load_agent_soul
-from deerflow.skills import load_skills
+from deerflow.config.app_config import AppConfig
+from deerflow.skills.storage import get_or_new_skill_storage
 from deerflow.skills.types import Skill
 from deerflow.subagents import get_available_subagent_names
 
@@ -26,7 +27,7 @@ _enabled_skills_refresh_event = threading.Event()
 
 
 def _load_enabled_skills_sync() -> list[Skill]:
-    return list(load_skills(enabled_only=True))
+    return list(get_or_new_skill_storage().load_skills(enabled_only=True))
 
 
 def _start_enabled_skills_refresh_thread() -> None:
@@ -929,14 +930,14 @@ You have access to skills that provide optimized workflows for specific tasks. E
 </skill_system>"""
 
 
-def get_skills_prompt_section(available_skills: set[str] | None = None) -> str:
+def get_skills_prompt_section(available_skills: set[str] | None = None, *, app_config: AppConfig | None = None) -> str:
     """Generate the skills prompt section with available skills list."""
     skills = _get_enabled_skills()
 
     try:
         from deerflow.config import get_app_config
 
-        config = get_app_config()
+        config = app_config or get_app_config()
         container_base_path = config.skills.container_path
         skill_evolution_enabled = config.skill_evolution.enabled
     except Exception:

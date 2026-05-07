@@ -13,6 +13,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 
+from deerflow.config.app_config import AppConfig
 from deerflow.runtime import RunManager, StreamBridge
 
 
@@ -39,6 +40,14 @@ async def langgraph_runtime(app: FastAPI) -> AsyncGenerator[None, None]:
 # ---------------------------------------------------------------------------
 # Getters – called by routers per-request
 # ---------------------------------------------------------------------------
+
+
+def get_config(request: Request) -> AppConfig:
+    """Return the app-scoped ``AppConfig`` stored on ``app.state``."""
+    config = getattr(request.app.state, "config", None)
+    if config is None:
+        raise HTTPException(status_code=503, detail="Configuration not available")
+    return config
 
 
 def get_stream_bridge(request: Request) -> StreamBridge:

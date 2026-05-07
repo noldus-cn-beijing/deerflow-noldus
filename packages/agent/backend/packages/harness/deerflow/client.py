@@ -40,7 +40,7 @@ from deerflow.config.app_config import get_app_config, reload_app_config
 from deerflow.config.extensions_config import ExtensionsConfig, SkillStateConfig, get_extensions_config, reload_extensions_config
 from deerflow.config.paths import get_paths
 from deerflow.models import create_chat_model
-from deerflow.skills.installer import install_skill_from_archive
+from deerflow.skills.storage import get_or_new_skill_storage
 from deerflow.uploads.manager import (
     claim_unique_filename,
     delete_file_safe,
@@ -751,7 +751,7 @@ class DeerFlowClient:
             Dict with "skills" key containing list of skill info dicts,
             matching the Gateway API ``SkillsListResponse`` schema.
         """
-        from deerflow.skills.loader import load_skills
+        from deerflow.skills.storage import get_or_new_skill_storage
 
         return {
             "skills": [
@@ -762,7 +762,7 @@ class DeerFlowClient:
                     "category": s.category,
                     "enabled": s.enabled,
                 }
-                for s in load_skills(enabled_only=enabled_only)
+                for s in get_or_new_skill_storage().load_skills(enabled_only=enabled_only)
             ]
         }
 
@@ -871,9 +871,9 @@ class DeerFlowClient:
         Returns:
             Skill info dict, or None if not found.
         """
-        from deerflow.skills.loader import load_skills
+        from deerflow.skills.storage import get_or_new_skill_storage
 
-        skill = next((s for s in load_skills(enabled_only=False) if s.name == name), None)
+        skill = next((s for s in get_or_new_skill_storage().load_skills(enabled_only=False) if s.name == name), None)
         if skill is None:
             return None
         return {
@@ -898,9 +898,9 @@ class DeerFlowClient:
             ValueError: If the skill is not found.
             OSError: If the config file cannot be written.
         """
-        from deerflow.skills.loader import load_skills
+        from deerflow.skills.storage import get_or_new_skill_storage
 
-        skills = load_skills(enabled_only=False)
+        skills = get_or_new_skill_storage().load_skills(enabled_only=False)
         skill = next((s for s in skills if s.name == name), None)
         if skill is None:
             raise ValueError(f"Skill '{name}' not found")
@@ -923,7 +923,7 @@ class DeerFlowClient:
         self._agent_config_key = None
         reload_extensions_config()
 
-        updated = next((s for s in load_skills(enabled_only=False) if s.name == name), None)
+        updated = next((s for s in get_or_new_skill_storage().load_skills(enabled_only=False) if s.name == name), None)
         if updated is None:
             raise RuntimeError(f"Skill '{name}' disappeared after update")
         return {
@@ -947,7 +947,7 @@ class DeerFlowClient:
             FileNotFoundError: If the file does not exist.
             ValueError: If the file is invalid.
         """
-        return install_skill_from_archive(skill_path)
+        return get_or_new_skill_storage().install_skill_from_archive(skill_path)
 
     # ------------------------------------------------------------------
     # Public API — memory management

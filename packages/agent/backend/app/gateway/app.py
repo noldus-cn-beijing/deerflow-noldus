@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Load config and check necessary environment variables at startup
     try:
         cfg = get_app_config()
+        app.state.config = cfg
         apply_logging_level(cfg.log_level)
         logger.info("Configuration loaded successfully")
     except Exception as e:
