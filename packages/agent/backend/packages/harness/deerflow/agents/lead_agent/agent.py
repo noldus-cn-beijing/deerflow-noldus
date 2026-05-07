@@ -80,6 +80,11 @@ def _create_summarization_middleware() -> ArchivingSummarizationMiddleware | Non
     if config.summary_prompt is not None:
         kwargs["summary_prompt"] = config.summary_prompt
 
+    kwargs["preserve_recent_skill_count"] = config.preserve_recent_skill_count
+    kwargs["preserve_recent_skill_tokens"] = config.preserve_recent_skill_tokens
+    kwargs["preserve_recent_skill_tokens_per_skill"] = config.preserve_recent_skill_tokens_per_skill
+    kwargs["skills_container_path"] = get_app_config().skills.container_path
+
     return ArchivingSummarizationMiddleware(**kwargs)
 
 
