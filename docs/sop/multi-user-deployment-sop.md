@@ -89,11 +89,13 @@ DATABASE_URL=postgresql+asyncpg://ethoinsight:<pass>@rm-xxxxx.pg.rds.aliyuncs.co
 
 ### 3.1 准备 .env
 
-在项目根目录创建 `.env`（chmod 0600）：
+在 `packages/agent/.env`（chmod 0600）：
 
 ```bash
 # ─── Auth ──────────────────────────────────────────────────────────
 # 必须 ≥ 32 字符；用 python -c "import secrets; print(secrets.token_urlsafe(48))" 生成
+# ⚠ 此 secret 必须在 LangGraph + Gateway + Channels 三个 Python 进程间共享,
+#   否则 JWT 跨进程验证会失败 (登录后 LangGraph /threads/* 全部 403). 详见 §5.1b.
 AUTH_JWT_SECRET=<48-char-random-string>
 
 # ─── Database ──────────────────────────────────────────────────────
@@ -107,6 +109,8 @@ DEEPSEEK_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
 # ... 其他模型 keys
 ```
+
+`scripts/serve.sh` 启动时会自动 `set -a; source .env; set +a`, 三个子进程都能拿到同一个 secret. `.env` 已被 `packages/agent/.gitignore` 忽略, 不会提交.
 
 ### 3.2 改 config.yaml 切 postgres
 
@@ -215,6 +219,43 @@ tar -czf /backup/deerflow-data-$(date +%Y%m%d).tar.gz \
 | 登录页所有请求 401 | AuthMiddleware 注册顺序错 | 检查 `app.py` middleware 顺序: CORS → Auth → CSRF |
 | 登录后 API 仍 401 | cookie 没正确写入 | 检查 nginx `proxy_pass_header Set-Cookie` 配置 |
 | 老 thread 列表为空 | 未 migrate | 重启 Gateway，lifespan 会自动 migrate orphan threads |
+
+### 5.1b 登录后 LangGraph /threads/* 全部 403 invalid token（本地 dev 高频）
+
+**现象**: 浏览器登录成功（gateway log 显示 `POST /api/v1/auth/login 200`），但访问 workspace 时 nginx access log 全是 `POST /api/langgraph/threads/search 403`，langgraph.log 中 `POST /threads/search 403 1ms`。
+
+**根因**: `make dev` 启动 LangGraph Server (port 2024) 和 Gateway (port 8001) 是两个独立 Python 进程。如果没设 `AUTH_JWT_SECRET` 环境变量，每个进程在第一次调用 `get_auth_config()` 时**各自**用 `secrets.token_urlsafe(32)` 生成临时 secret。两个 secret 不同 → Gateway 签发的 JWT cookie 在 LangGraph Server 验证时失败 → 403。
+
+**这是上游设计的 known limitation**（详见 `backend/docs/AUTH_UPGRADE.md`）：上游也假设用户会手动建 .env 写 secret，但不会自动生成。三个 Python 进程（LangGraph / Gateway / 必要时 channels）必须读到同一个 secret 才能跨进程验证 JWT。
+
+**解决**:
+```bash
+cd packages/agent
+
+# 生成强随机 secret 并写入 .env (chmod 0600 仅本人可读)
+SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
+cat > .env <<EOF
+# JWT 签名密钥, 必须在 LangGraph + Gateway + Channels 三进程间共享
+AUTH_JWT_SECRET=$SECRET
+EOF
+chmod 0600 .env
+
+# 重启服务, serve.sh 会自动 source .env
+make stop && make dev
+```
+
+**重要**:
+- `.env` 已被 `packages/agent/.gitignore` 忽略, **不会提交到 git**
+- 浏览器要清掉旧的 `access_token` 和 `csrf_token` cookie（旧 secret 签发的会失败）
+- sqlite 中的 user 不受影响（密码是 bcrypt 哈希, 与 JWT secret 无关）
+- 修复后**重启不会再失效 session**（secret 持久化在 .env）
+
+**验证**:
+```bash
+# 启动后 60s 检查 log, 不应该再有这条 warning
+grep "AUTH_JWT_SECRET is not set" packages/agent/logs/{langgraph,gateway}.log
+# 期望: 无输出
+```
 
 ### 5.2 CSRF Token Mismatch
 
