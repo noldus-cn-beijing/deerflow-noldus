@@ -8,6 +8,7 @@ from ethoinsight.ev19_facts import (
     get_template_facts,
     suggest_nearby_templates,
     get_default_template_for_paradigm,
+    is_paradigm_template_compatible,
 )
 
 
@@ -70,3 +71,18 @@ def test_get_default_template_for_paradigm():
 
 def test_get_default_template_for_unknown_paradigm_returns_none():
     assert get_default_template_for_paradigm("nonexistent") is None
+
+
+def test_is_paradigm_template_compatible_known_pair():
+    """PlusMaze-AllZones is compatible with epm."""
+    assert is_paradigm_template_compatible("epm", "PlusMaze-AllZones") is True
+
+
+def test_is_paradigm_template_compatible_mismatch():
+    """PorsoltCylinder template is NOT compatible with epm."""
+    assert is_paradigm_template_compatible("epm", "PorsoltCylinder-AllZones") is False
+
+
+def test_is_paradigm_template_compatible_unknown_paradigm():
+    """Unknown paradigm returns False."""
+    assert is_paradigm_template_compatible("nonexistent", "PlusMaze-AllZones") is False
