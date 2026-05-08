@@ -121,7 +121,7 @@ export default function LoginPage() {
       // Both login and register set a cookie — redirect to workspace
       router.push(redirectPath);
     } catch {
-      setError("Network error. Please try again.");
+      setError("网络错误，请重试。");
     } finally {
       setLoading(false);
     }
@@ -141,16 +141,16 @@ export default function LoginPage() {
       />
       <div className="border-border/20 bg-background/5 w-full max-w-md space-y-6 rounded-3xl border p-8 backdrop-blur-sm">
         <div className="text-center">
-          <h1 className="text-foreground font-serif text-3xl">DeerFlow</h1>
+          <h1 className="text-foreground font-serif text-3xl">EthoInsight</h1>
           <p className="text-muted-foreground mt-2">
-            {isLogin ? "Sign in to your account" : "Create a new account"}
+            {isLogin ? "登录到你的账户" : "创建新账户"}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-2">
           <div className="flex flex-col space-y-1">
             <label htmlFor="email" className="text-sm font-medium">
-              Email
+              邮箱
             </label>
             <Input
               id="email"
@@ -163,7 +163,7 @@ export default function LoginPage() {
           </div>
           <div className="flex flex-col space-y-1">
             <label htmlFor="password" className="text-sm font-medium">
-              Password
+              密码
             </label>
             <Input
               id="password"
@@ -180,10 +180,10 @@ export default function LoginPage() {
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading
-              ? "Please wait..."
+              ? "请稍候..."
               : isLogin
-                ? "Sign In"
-                : "Create Account"}
+                ? "登录"
+                : "创建账户"}
           </Button>
         </form>
 
@@ -197,14 +197,14 @@ export default function LoginPage() {
             className="text-blue-500 hover:underline"
           >
             {isLogin
-              ? "Don't have an account? Sign up"
-              : "Already have an account? Sign in"}
+              ? "还没有账户？立即注册"
+              : "已有账户？立即登录"}
           </button>
         </div>
 
         <div className="text-muted-foreground text-center text-xs">
           <Link href="/" className="hover:underline">
-            ← Back to home
+            ← 返回首页
           </Link>
         </div>
       </div>
