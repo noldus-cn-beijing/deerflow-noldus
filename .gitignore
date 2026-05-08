@@ -43,3 +43,6 @@ docs/e2e/*
 
 # Backup thread data (training data snapshots, not source)
 .deer-flow.bak*
+
+# Generated temp files
+packages/agent/temp/
