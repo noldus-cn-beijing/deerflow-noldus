@@ -255,6 +255,7 @@ export interface Translations {
     title: string;
     description: string;
     sections: {
+      account: string;
       appearance: string;
       memory: string;
       tools: string;
@@ -346,6 +347,23 @@ export interface Translations {
       darkDescription: string;
       languageTitle: string;
       languageDescription: string;
+    };
+    account: {
+      profileTitle: string;
+      email: string;
+      role: string;
+      changePasswordTitle: string;
+      changePasswordDescription: string;
+      currentPassword: string;
+      newPassword: string;
+      confirmNewPassword: string;
+      passwordMismatch: string;
+      passwordTooShort: string;
+      passwordChangedSuccess: string;
+      networkError: string;
+      updating: string;
+      updatePassword: string;
+      signOut: string;
     };
     tools: {
       title: string;
