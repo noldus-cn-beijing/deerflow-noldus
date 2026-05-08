@@ -162,20 +162,29 @@ _cached_local_provider: LocalAuthProvider | None = None
 _cached_repo: SQLiteUserRepository | None = None
 
 
-def get_local_provider() -> LocalAuthProvider:
+async def get_local_provider() -> LocalAuthProvider:
     """Get or create the cached LocalAuthProvider singleton.
 
-    Must be called after ``init_engine_from_config()`` — the shared
-    session factory is required to construct the user repository.
+    Lazy-initializes the database engine from config if not already done.
+    This supports both the Gateway process (where ``langgraph_runtime()``
+    calls ``init_engine_from_config`` during lifespan) and the LangGraph
+    Server process (which loads this module via its custom auth hook and
+    has no Gateway lifespan).
     """
     global _cached_local_provider, _cached_repo
     if _cached_repo is None:
         from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
-        from deerflow.persistence.engine import get_session_factory
+        from deerflow.persistence.engine import get_session_factory, init_engine_from_config
 
         sf = get_session_factory()
         if sf is None:
-            raise RuntimeError("get_local_provider() called before init_engine_from_config(); cannot access users table")
+            from deerflow.config.app_config import AppConfig
+
+            cfg = AppConfig.from_file()
+            await init_engine_from_config(cfg.database)
+            sf = get_session_factory()
+            if sf is None:
+                raise RuntimeError("get_local_provider(): engine init succeeded but session factory is still None")
         _cached_repo = SQLiteUserRepository(sf)
     if _cached_local_provider is None:
         from app.gateway.auth.local_provider import LocalAuthProvider
@@ -206,7 +215,7 @@ async def get_current_user_from_request(request: Request):
             detail=AuthErrorResponse(code=token_error_to_code(payload), message=f"Token error: {payload.value}").model_dump(),
         )
 
-    provider = get_local_provider()
+    provider = await get_local_provider()
     user = await provider.get_user(payload.sub)
     if user is None:
         raise HTTPException(

@@ -8,6 +8,16 @@ Two layers:
   1. @auth.authenticate — validates JWT cookie, extracts user_id,
      and enforces CSRF on state-changing methods (POST/PUT/DELETE/PATCH)
   2. @auth.on — returns metadata filter so each user only sees own threads
+
+Per-user filesystem isolation (UploadsMiddleware, ThreadDataMiddleware,
+MemoryMiddleware, ArchivingSummarizationMiddleware) does NOT depend on
+this file. LangGraph automatically stores the authenticated user's id in
+``config.configurable["langgraph_auth_user_id"]`` (see langgraph_api/
+models/run.py), and ``make_lead_agent`` copies it into the deerflow
+``user_context`` ContextVar on the bg-loop task where middlewares run.
+Setting the ContextVar here would be a no-op for that purpose because
+``authenticate()`` and ``@auth.on`` run on the request thread, whose
+ContextVars do not propagate to the bg-loop asyncio task.
 """
 
 import secrets
@@ -76,7 +86,8 @@ async def authenticate(request):
             detail="Invalid token",
         )
 
-    user = await get_local_provider().get_user(payload.sub)
+    provider = await get_local_provider()
+    user = await provider.get_user(payload.sub)
     if user is None:
         raise Auth.exceptions.HTTPException(
             status_code=401,

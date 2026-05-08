@@ -39,3 +39,7 @@ packages/agent/config.yaml
 docs/e2e/*
 !docs/e2e/README.md
 !docs/e2e/.gitkeep
+.gstack/
+
+# Backup thread data (training data snapshots, not source)
+.deer-flow.bak*

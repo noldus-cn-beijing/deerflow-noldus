@@ -77,7 +77,7 @@ async def _ensure_admin_user(app: FastAPI) -> None:
     from deerflow.persistence.user.model import UserRow
 
     try:
-        provider = get_local_provider()
+        provider = await get_local_provider()
     except RuntimeError:
         # Auth persistence may not be initialized in some test/boot paths.
         # Skip admin migration work rather than failing gateway startup.

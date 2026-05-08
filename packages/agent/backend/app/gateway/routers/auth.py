@@ -282,7 +282,8 @@ async def login_local(
     client_ip = _get_client_ip(request)
     _check_rate_limit(client_ip)
 
-    user = await get_local_provider().authenticate({"email": form_data.username, "password": form_data.password})
+    provider = await get_local_provider()
+    user = await provider.authenticate({"email": form_data.username, "password": form_data.password})
 
     if user is None:
         _record_login_failure(client_ip)
@@ -309,7 +310,8 @@ async def register(request: Request, response: Response, body: RegisterRequest):
     Auto-login by setting the session cookie.
     """
     try:
-        user = await get_local_provider().create_user(email=body.email, password=body.password, system_role="user")
+        provider = await get_local_provider()
+        user = await provider.create_user(email=body.email, password=body.password, system_role="user")
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -349,7 +351,7 @@ async def change_password(request: Request, response: Response, body: ChangePass
     if not await verify_password_async(body.current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=AuthErrorResponse(code=AuthErrorCode.INVALID_CREDENTIALS, message="Current password is incorrect").model_dump())
 
-    provider = get_local_provider()
+    provider = await get_local_provider()
 
     # Update email if provided
     if body.new_email is not None:
@@ -413,7 +415,8 @@ async def setup_status(request: Request):
             for k, _ in by_time[: len(by_time) // 2]:
                 del _SETUP_STATUS_COOLDOWN[k]
     _SETUP_STATUS_COOLDOWN[client_ip] = now
-    admin_count = await get_local_provider().count_admin_users()
+    provider = await get_local_provider()
+    admin_count = await provider.count_admin_users()
     return {"needs_setup": admin_count == 0}
 
 
@@ -436,7 +439,8 @@ async def initialize_admin(request: Request, response: Response, body: Initializ
     On success, the admin account is created with ``needs_setup=False`` and
     the session cookie is set.
     """
-    admin_count = await get_local_provider().count_admin_users()
+    provider = await get_local_provider()
+    admin_count = await provider.count_admin_users()
     if admin_count > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -444,7 +448,8 @@ async def initialize_admin(request: Request, response: Response, body: Initializ
         )
 
     try:
-        user = await get_local_provider().create_user(email=body.email, password=body.password, system_role="admin", needs_setup=False)
+        provider = await get_local_provider()
+        user = await provider.create_user(email=body.email, password=body.password, system_role="admin", needs_setup=False)
     except ValueError:
         # DB unique-constraint race: another concurrent request beat us.
         raise HTTPException(

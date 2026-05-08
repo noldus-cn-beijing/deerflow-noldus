@@ -22,8 +22,22 @@ from deerflow.config.agents_config import load_agent_config, validate_agent_name
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
+from deerflow.runtime.user_context import set_current_user
 
 logger = logging.getLogger(__name__)
+
+
+class _AuthUser:
+    """Minimal duck-typed user satisfying the CurrentUser Protocol.
+
+    Used to bridge LangGraph's `langgraph_auth_user_id` (a plain str) into
+    deerflow's user_context, which expects an object with an `.id` attribute.
+    """
+
+    __slots__ = ("id",)
+
+    def __init__(self, user_id: str) -> None:
+        self.id = user_id
 
 
 def _resolve_model_name(requested_model_name: str | None = None) -> str:
@@ -306,6 +320,17 @@ def make_lead_agent(config: RunnableConfig):
     from deerflow.tools.builtins import setup_agent
 
     cfg = config.get("configurable", {})
+
+    # Copy LangGraph's auth user_id into the deerflow ContextVar.
+    # `make_lead_agent` runs on the bg-loop worker task that subsequently
+    # invokes the middlewares (UploadsMiddleware, ThreadDataMiddleware, …),
+    # so a ContextVar set here is task-local and visible to every middleware
+    # in this run. It cannot be set in `authenticate()` / `@auth.on` because
+    # those run in the request-handling thread, where ContextVars do not
+    # propagate to the bg-loop asyncio task.
+    auth_user_id = cfg.get("langgraph_auth_user_id")
+    if auth_user_id:
+        set_current_user(_AuthUser(str(auth_user_id)))
 
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
