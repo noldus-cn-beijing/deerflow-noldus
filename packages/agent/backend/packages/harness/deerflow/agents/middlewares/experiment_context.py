@@ -98,6 +98,7 @@ def set_experiment_paradigm_tool(
     paradigm_cn: str,
     category: str,
     subject: str,
+    ev19_template: str,
     workspace_dir: str = "/mnt/user-data/workspace/",
     runtime: ToolRuntime[ContextT, ThreadState] = None,
 ) -> str:
@@ -111,11 +112,33 @@ def set_experiment_paradigm_tool(
         paradigm_cn: Chinese display name (e.g. "斑马鱼鱼群行为")
         category: Category name (e.g. "zebrafish", "anxiety", "spatial_memory")
         subject: Subject type — "rodent" | "fish" | "insect" | "other"
+        ev19_template: EthoVision 19 template variant ID (e.g. "PlusMaze-AllZones"). Must be one of the 62 known variants.
         workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/"
 
     Returns:
-        JSON confirmation with paradigm, category, subject, and file path.
+        JSON confirmation with paradigm, category, subject, ev19_template, and file path.
     """
+    from ethoinsight.ev19_facts import is_paradigm_template_compatible, is_valid_ev19_template, suggest_nearby_templates
+
+    # Validate ev19_template against the 62-variant whitelist
+    if not is_valid_ev19_template(ev19_template):
+        candidates = suggest_nearby_templates(ev19_template)
+        logger.warning("Unknown ev19_template=%r; candidates=%s", ev19_template, candidates)
+        return json.dumps(
+            {
+                "status": "error",
+                "message": f"Unknown ev19_template: {ev19_template!r}. Choose from the 62 known EV19 variants.",
+                "candidates": candidates,
+            },
+            ensure_ascii=False,
+        )
+
+    # Check paradigm–template compatibility (soft warning, does not block)
+    warning: str | None = None
+    if not is_paradigm_template_compatible(paradigm, ev19_template):
+        warning = f"ev19_template {ev19_template!r} is not in the recommended list for paradigm {paradigm!r}. Proceeding anyway."
+        logger.warning(warning)
+
     # Resolve the actual host workspace path from thread state.
     # The default workspace_dir is a sandbox virtual path; the tool runs in the
     # lead agent host process so we must write to the host-side workspace.
@@ -132,6 +155,7 @@ def set_experiment_paradigm_tool(
         "paradigm_cn": paradigm_cn,
         "category": category,
         "subject": subject,
+        "ev19_template": ev19_template,
         "paradigm_confirmed_at": datetime.now(UTC).isoformat(),
         "gate_completed": ["gate1_paradigm"],
     }
@@ -139,4 +163,8 @@ def set_experiment_paradigm_tool(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-    return json.dumps({"status": "ok", "path": str(path), "paradigm": paradigm}, ensure_ascii=False)
+
+    response: dict = {"status": "ok", "path": str(path), "paradigm": paradigm, "ev19_template": ev19_template}
+    if warning is not None:
+        response["warning"] = warning
+    return json.dumps(response, ensure_ascii=False)
