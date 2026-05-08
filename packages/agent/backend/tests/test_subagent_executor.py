@@ -900,13 +900,14 @@ class TestCooperativeCancellation:
         """Test that the real timeout handler does not overwrite CANCELLED status.
 
         This exercises the actual execute_async → run_task → FuturesTimeoutError
-        code path in executor.py.  We make execute() block so the timeout fires
+        code path in executor.py.  We make _aexecute() block so the timeout fires
         deterministically, pre-set the task to CANCELLED, and verify the RUNNING
         guard preserves it.  Uses threading.Event for synchronisation instead of
         wall-clock sleeps.
         """
         SubagentExecutor = classes["SubagentExecutor"]
         SubagentStatus = classes["SubagentStatus"]
+        SubagentResult = executor_module.SubagentResult
 
         short_config = classes["SubagentConfig"](
             name="test-agent",
@@ -917,12 +918,13 @@ class TestCooperativeCancellation:
         )
 
         # Synchronisation primitives
-        execute_entered = threading.Event()  # signals that execute() has started
-        execute_release = threading.Event()  # lets execute() return
+        execute_entered = threading.Event()  # signals that _aexecute() has started
+        execute_release = threading.Event()  # lets _aexecute() return
         run_task_done = threading.Event()  # signals that run_task() has finished
 
-        # A blocking execute() replacement so we control the timing exactly
-        def blocking_execute(task, result_holder=None):
+        # A blocking _aexecute() replacement so we control the timing exactly.
+        # Runs on the persistent isolated loop's daemon thread.
+        async def blocking_aexecute(task, result_holder=None):
             # Cooperative cancellation: honour cancel_event like real _aexecute
             if result_holder and result_holder.cancel_event.is_set():
                 result_holder.status = SubagentStatus.CANCELLED
@@ -931,11 +933,10 @@ class TestCooperativeCancellation:
                 execute_entered.set()
                 return result_holder
             execute_entered.set()
-            execute_release.wait(timeout=5)
+            # Block until released (offload to thread so event loop stays responsive)
+            await asyncio.to_thread(execute_release.wait, timeout=5)
             # Return a minimal completed result (will be ignored because timeout fires first)
-            from deerflow.subagents.executor import SubagentResult as _R
-
-            return _R(task_id="x", trace_id="t", status=SubagentStatus.COMPLETED, result="late")
+            return SubagentResult(task_id="x", trace_id="t", status=SubagentStatus.COMPLETED, result="late")
 
         executor = SubagentExecutor(
             config=short_config,
@@ -956,14 +957,14 @@ class TestCooperativeCancellation:
 
             return original_scheduler_submit(wrapper)
 
-        with patch.object(executor, "execute", blocking_execute), patch.object(executor_module._scheduler_pool, "submit", tracked_submit):
+        with patch.object(executor, "_aexecute", blocking_aexecute), patch.object(executor_module._scheduler_pool, "submit", tracked_submit):
             task_id = executor.execute_async("Task")
 
-            # Wait until execute() is entered (i.e. it's running in _execution_pool)
-            assert execute_entered.wait(timeout=3), "execute() was never called"
+            # Wait until _aexecute() is entered (i.e. it's running on the persistent loop)
+            assert execute_entered.wait(timeout=3), "_aexecute() was never called"
 
             # Set CANCELLED on the result before the timeout handler runs.
-            # The 50ms timeout will fire while execute() is blocked.
+            # The 50ms timeout will fire while _aexecute() is blocked.
             with executor_module._background_tasks_lock:
                 executor_module._background_tasks[task_id].status = SubagentStatus.CANCELLED
                 executor_module._background_tasks[task_id].error = "Cancelled by user"
@@ -973,9 +974,9 @@ class TestCooperativeCancellation:
             # now executed and (should have) left CANCELLED intact.
             assert run_task_done.wait(timeout=5), "run_task() did not finish"
 
-            # Only NOW release the blocked execute() so the thread pool worker
-            # can be reclaimed.  This MUST come after run_task_done to avoid a
-            # race where execute() returns before the timeout fires.
+            # Only NOW release the blocked _aexecute() so the persistent loop
+            # thread can continue.  This MUST come after run_task_done to avoid a
+            # race where _aexecute() returns before the timeout fires.
             execute_release.set()
 
         result = executor_module._background_tasks.get(task_id)

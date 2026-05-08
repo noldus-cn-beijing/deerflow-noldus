@@ -629,7 +629,8 @@ async def get_thread_history(thread_id: str, body: ThreadHistoryRequest, request
 
 
 @router.get("/{thread_id}/archived-messages")
-async def get_archived_messages(thread_id: str) -> dict[str, Any]:
+@require_permission("threads", "read", owner_check=True)
+async def get_archived_messages(thread_id: str, request: Request) -> dict[str, Any]:
     """Return messages archived by SummarizationMiddleware.
 
     Reads all JSON files from the thread's ``archived_messages/`` directory,
@@ -639,7 +640,7 @@ async def get_archived_messages(thread_id: str) -> dict[str, Any]:
     frontend can use them directly (``{type, id, content, ...}``).
     """
     paths = get_paths()
-    archive_dir = paths.thread_dir(thread_id) / "archived_messages"
+    archive_dir = paths.thread_dir(thread_id, user_id=get_effective_user_id()) / "archived_messages"
 
     if not archive_dir.is_dir():
         return {"messages": []}
