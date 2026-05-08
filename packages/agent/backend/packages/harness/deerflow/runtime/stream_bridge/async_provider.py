@@ -30,9 +30,15 @@ async def make_stream_bridge(config=None) -> AsyncIterator[StreamBridge]:
 
     Falls back to :class:`MemoryStreamBridge` when no configuration is
     provided and nothing is set globally.
+
+    Accepts either a :class:`StreamBridgeConfig` (legacy) or an
+    :class:`AppConfig` (轮 3+ — extracts ``app_config.stream_bridge``).
     """
     if config is None:
         config = get_stream_bridge_config()
+    elif hasattr(config, "stream_bridge"):
+        # AppConfig was passed (轮 3 deps.py wiring)
+        config = config.stream_bridge
 
     if config is None or config.type == "memory":
         from deerflow.runtime.stream_bridge.memory import MemoryStreamBridge
