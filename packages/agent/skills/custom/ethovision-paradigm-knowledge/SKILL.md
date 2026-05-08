@@ -1,46 +1,67 @@
 ---
 name: ethovision-paradigm-knowledge
 description: >
-  Progressive disclosure of EthoVision XT 19 template knowledge base covering
-  20 behavioral paradigm categories with 62 variants. References are organized
-  by template and experimental paradigm. Use when agents need detailed template
-  information or paradigm specifications for behavioral analysis tasks.
-version: 1.0.0
+  EthoVision XT 19 模板知识库（20 大类 / 62 变体）+ 学术实验范式映射。
+  用于在用户上传数据并请求分析时识别其使用的 EV19 模板变体（如 PlusMaze-AllZones），
+  并把识别结果作为 ev19_template 字段写入 experiment-context.json。
+  使用对话识别（read 用户消息 + 文件名 + 必要时 read raw txt meta），
+  必要时通过 ask_clarification 反问，反问失败时按 default-template-fallback.md 兜底。
+version: 0.1.0
 author: noldus-insight
-license: MIT
 ---
 
-# EthoVision XT 19 范式知识包
+# EthoVision Paradigm Knowledge — EV19 模板识别 + 学术范式映射
 
-EthoVision XT 19 模板知识库，包含 20 个行为学范式分类及 62 个变体。参考资料按模板和实验范式组织。
+## 何时使用此 skill
 
-## 文件组织
+**必须使用**：用户提到任何 EthoVision 实验数据分析需求时（含上传 raw txt 文件 + 请求分析/统计/可视化/报告）。
+
+**可跳过**：纯知识问答（无数据上传 + 概念性问题）；追问已有分析结果；闲聊。
+
+## 核心原则
+
+1. **EV19 模板 = 用户语言**（agent 与用户对话时使用），**学术范式 = 内部分析路径**（agent 调 set_experiment_paradigm 时填这个）。
+2. **不要硬猜**——如果信息不足，**用 ask_clarification 给结构化选项**让用户选；不要瞎填导致下游分析跑错路径。
+3. **反问最多 1 次**——LoopDetectionMiddleware 会在重复反问时强制中断；如果第一次反问后用户答 "不知道"，按 references/default-template-fallback.md 选默认值进入分析。
+4. **反问前必读 raw 文件 meta**——用 read_file 读用户上传的第一个 raw txt 前 50 行，看单位（毫米=鱼 / 厘米=啮齿）、追踪点（单点/三点）、zone 列结构，把候选缩到 ≤3 个再问。
+
+## Workflow
+
+### Step 1: 收集证据
+
+读以下信息（由 agent 综合判断）：
+- 用户消息文本（"高架十字迷宫"、"EPM"、"焦虑测试" 等关键词）
+- 上传文件名（"轨迹-EPM-Trial 1...txt" 等）
+- 文件数量 + Subject 数（5 Subject = shoaling / 三箱社交，2 Arena = 三箱社交）
+- 必要时 read_file 第一个 raw txt 前 50 行查 meta + 列结构
+
+### Step 2: 决策
+
+按 `references/identification-decision-tree.md` 决策：
+- 候选 = 1 高置信度 → 直接 set_experiment_paradigm（不反问）
+- 候选 2-3 → ask_clarification 给结构化选项 + 推荐项放第一位 + 默认值兜底说明
+- 候选 0 或 ≥4 → ask_clarification 先问大实验类型
+
+### Step 3: 调 set_experiment_paradigm
 
 ```
-references/
-├── by-template/       # 按模板分类（20个md文件）
-│   └── [各模板详细说明]
-└── by-experiment/     # 按实验范式分类（20个md文件）
-    └── [各范式详细说明]
+set_experiment_paradigm(
+    paradigm="epm",                    # 学术范式 key（snake_case 英文）
+    paradigm_cn="高架十字迷宫",         # 中文显示名
+    category="anxiety",                # 大类
+    subject="rodent",                  # rodent | fish | insect | other
+    ev19_template="PlusMaze-AllZones", # EV19 变体 ID（白名单内）
+)
 ```
 
-## 何时使用
+工具会校验 `ev19_template` 在 62 变体白名单内；如不在，会返回错误 + 候选模板。
 
-当需要以下信息时使用此知识包：
+## 知识资源（按需 read_file 加载）
 
-- **模板选择** — 查询特定行为测量的适用模板
-- **范式规格** — 了解实验范式的详细参数和配置
-- **协议对应** — 将行为学协议与 EV19 模板对应
-- **学科知识** — 理解特定行为范式的理论基础
+- `references/_facts.md` — 62 变体事实表（机器抽取的 arena/zone/subject 字段，最权威）
+- `references/identification-decision-tree.md` — 决策流程详解 + 反问质量准则
+- `references/default-template-fallback.md` — 范式 → 默认变体降级表（反问失败时用）
+- `references/by-template/<大类>.md` — 单个 EV19 大类的变体差异 + 推荐场景（同事 PR 持续补充）
+- `references/by-experiment/<范式>.md` — 单个学术范式的指标 / 模板候选 / 解读语言（同事 PR 持续补充）
 
-## 访问模式
-
-代理应按需读取 `references/` 目录下的 markdown 文件：
-
-- 模板细节：从 `by-template/` 中选择
-- 范式信息：从 `by-experiment/` 中选择
-- 组织查询：使用文件名进行导航
-
-## 补充说明
-
-这是行为学领域专家创建的知识参考资料，经过同行评审。用于支持 EthoInsight 智能代理在行为学数据分析中的决策和参数选择。
+**Token 节省提示**：不要一次性加载所有 references，按对话需要 read_file 单个文件。
