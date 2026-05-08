@@ -1,11 +1,14 @@
 """Subagent execution engine."""
 
 import asyncio
+import atexit
 import logging
 import threading
 import uuid
+from collections.abc import Callable, Coroutine
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from contextvars import Context, copy_context
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -76,8 +79,107 @@ _scheduler_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent
 # Larger pool to avoid blocking when scheduler submits execution tasks
 _execution_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-exec-")
 
-# Dedicated pool for sync execute() calls made from an already-running event loop.
-_isolated_loop_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-isolated-")
+# Persistent event loop for isolated subagent executions triggered from an
+# already-running parent loop. Reusing one long-lived loop avoids creating a
+# fresh loop per execution and then closing async resources bound to it.
+_isolated_subagent_loop: asyncio.AbstractEventLoop | None = None
+_isolated_subagent_loop_thread: threading.Thread | None = None
+_isolated_subagent_loop_started: threading.Event | None = None
+_isolated_subagent_loop_lock = threading.Lock()
+
+
+def _run_isolated_subagent_loop(
+    loop: asyncio.AbstractEventLoop,
+    started_event: threading.Event,
+) -> None:
+    """Run the persistent isolated subagent loop in a dedicated daemon thread."""
+    asyncio.set_event_loop(loop)
+    loop.call_soon(started_event.set)
+    try:
+        loop.run_forever()
+    finally:
+        started_event.clear()
+
+
+def _shutdown_isolated_subagent_loop() -> None:
+    """Stop and close the persistent isolated subagent loop."""
+    global _isolated_subagent_loop, _isolated_subagent_loop_thread, _isolated_subagent_loop_started
+
+    with _isolated_subagent_loop_lock:
+        loop = _isolated_subagent_loop
+        thread = _isolated_subagent_loop_thread
+        _isolated_subagent_loop = None
+        _isolated_subagent_loop_thread = None
+        _isolated_subagent_loop_started = None
+
+    if loop is None:
+        return
+
+    if loop.is_running():
+        loop.call_soon_threadsafe(loop.stop)
+
+    if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+        thread.join(timeout=1)
+
+    thread_stopped = thread is None or not thread.is_alive()
+    loop_stopped = not loop.is_running()
+
+    if not loop.is_closed():
+        if thread_stopped and loop_stopped:
+            loop.close()
+        else:
+            logger.warning(
+                "Skipping close of isolated subagent loop because shutdown did not complete within timeout (thread_alive=%s, loop_running=%s)",
+                thread is not None and thread.is_alive(),
+                loop.is_running(),
+            )
+
+
+atexit.register(_shutdown_isolated_subagent_loop)
+
+
+def _get_isolated_subagent_loop() -> asyncio.AbstractEventLoop:
+    """Return the persistent event loop used by isolated subagent executions."""
+    global _isolated_subagent_loop, _isolated_subagent_loop_thread, _isolated_subagent_loop_started
+    with _isolated_subagent_loop_lock:
+        thread_is_alive = _isolated_subagent_loop_thread is not None and _isolated_subagent_loop_thread.is_alive()
+        loop_is_usable = _isolated_subagent_loop is not None and not _isolated_subagent_loop.is_closed() and _isolated_subagent_loop.is_running() and thread_is_alive
+
+        if not loop_is_usable:
+            loop = asyncio.new_event_loop()
+            started_event = threading.Event()
+            thread = threading.Thread(
+                target=_run_isolated_subagent_loop,
+                args=(loop, started_event),
+                name="subagent-persistent-loop",
+                daemon=True,
+            )
+            thread.start()
+            if not started_event.wait(timeout=5):
+                loop.call_soon_threadsafe(loop.stop)
+                thread.join(timeout=1)
+                loop.close()
+                raise RuntimeError("Timed out starting isolated subagent event loop")
+            _isolated_subagent_loop = loop
+            _isolated_subagent_loop_thread = thread
+            _isolated_subagent_loop_started = started_event
+
+        if _isolated_subagent_loop is None:
+            raise RuntimeError("Isolated subagent event loop is not initialized")
+        return _isolated_subagent_loop
+
+
+def _submit_to_isolated_loop_in_context(
+    context: Context,
+    coro_factory: Callable[[], Coroutine[Any, Any, "SubagentResult"]],
+) -> Future["SubagentResult"]:
+    """Submit a coroutine to the isolated loop while preserving ContextVar state."""
+    return context.run(
+        lambda: asyncio.run_coroutine_threadsafe(
+            coro_factory(),
+            _get_isolated_subagent_loop(),
+        )
+    )
 
 
 def _filter_tools(
@@ -352,10 +454,7 @@ class SubagentExecutor:
 
                             # Hard limit: terminate early when AI message count reaches max_turns
                             if len(result.ai_messages) >= self.config.max_turns:
-                                logger.warning(
-                                    f"[trace={self.trace_id}] Subagent {self.config.name} reached "
-                                    f"max_turns={self.config.max_turns} AI messages, terminating early"
-                                )
+                                logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} reached max_turns={self.config.max_turns} AI messages, terminating early")
                                 break
 
             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} completed async execution")
@@ -441,44 +540,6 @@ class SubagentExecutor:
 
         return result
 
-    def _execute_in_isolated_loop(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
-        """Execute the subagent in a completely fresh event loop.
-
-        This method is designed to run in a separate thread to ensure complete
-        isolation from any parent event loop, preventing conflicts with asyncio
-        primitives that may be bound to the parent loop (e.g., httpx clients).
-        """
-        try:
-            previous_loop = asyncio.get_event_loop()
-        except RuntimeError:
-            previous_loop = None
-
-        # Create and set a new event loop for this thread
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(self._aexecute(task, result_holder))
-        finally:
-            try:
-                pending = asyncio.all_tasks(loop)
-                if pending:
-                    for task_obj in pending:
-                        task_obj.cancel()
-                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-
-                loop.run_until_complete(loop.shutdown_asyncgens())
-                loop.run_until_complete(loop.shutdown_default_executor())
-            except Exception:
-                logger.debug(
-                    f"[trace={self.trace_id}] Failed while cleaning up isolated event loop for subagent {self.config.name}",
-                    exc_info=True,
-                )
-            finally:
-                try:
-                    loop.close()
-                finally:
-                    asyncio.set_event_loop(previous_loop)
-
     def execute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
         """Execute a task synchronously (wrapper around async execution).
 
@@ -499,11 +560,31 @@ class SubagentExecutor:
                 loop = None
 
             if loop is not None and loop.is_running():
-                logger.debug(f"[trace={self.trace_id}] Subagent {self.config.name} detected running event loop, using isolated thread")
-                future = _isolated_loop_pool.submit(self._execute_in_isolated_loop, task, result_holder)
-                return future.result()
+                logger.debug(f"[trace={self.trace_id}] Subagent {self.config.name} detected running event loop, using persistent isolated loop")
+                # Snapshot parent ContextVar state (e.g., user_id) so that the
+                # subagent coroutine running on the isolated loop sees the same
+                # auth context as the lead agent. Without copy_context() here, the
+                # coroutine would run with an empty context and any
+                # ContextVar.get() (such as runtime/user_context._current_user)
+                # would fall back to its default ("default" user_id).
+                parent_context = copy_context()
+                future: Future[SubagentResult] | None = None
+                try:
+                    future = _submit_to_isolated_loop_in_context(
+                        parent_context,
+                        lambda: self._aexecute(task, result_holder),
+                    )
+                    return future.result(timeout=self.config.timeout_seconds)
+                except FuturesTimeoutError:
+                    if result_holder is not None:
+                        result_holder.cancel_event.set()
+                    if future is not None:
+                        future.cancel()
+                    raise
 
             # Standard path: no running event loop, use asyncio.run
+            # asyncio.run preserves the current context for the coroutine, so
+            # ContextVars set in the calling thread are visible inside _aexecute.
             return asyncio.run(self._aexecute(task, result_holder))
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} execution failed")
@@ -547,7 +628,13 @@ class SubagentExecutor:
         with _background_tasks_lock:
             _background_tasks[task_id] = result
 
-        # Submit to scheduler pool
+        # Snapshot parent ContextVar state BEFORE submitting to thread pool.
+        # _scheduler_pool is a ThreadPoolExecutor, which does NOT propagate
+        # contextvars across thread boundaries. We must capture the parent
+        # context here (still on the calling task's thread) and explicitly
+        # replay it inside _submit_to_isolated_loop_in_context.
+        parent_context = copy_context()
+
         def run_task():
             with _background_tasks_lock:
                 _background_tasks[task_id].status = SubagentStatus.RUNNING
@@ -555,9 +642,14 @@ class SubagentExecutor:
                 result_holder = _background_tasks[task_id]
 
             try:
-                # Submit execution to execution pool with timeout
-                # Pass result_holder so execute() can update it in real-time
-                execution_future: Future = _execution_pool.submit(self.execute, task, result_holder)
+                # Submit execution directly to the persistent isolated loop so the
+                # background path does not create a temporary loop via execute().
+                # Pass the captured parent_context so user_id and other
+                # ContextVars propagate into the subagent coroutine.
+                execution_future = _submit_to_isolated_loop_in_context(
+                    parent_context,
+                    lambda: self._aexecute(task, result_holder),
+                )
                 try:
                     # Wait for execution with timeout
                     exec_result = execution_future.result(timeout=self.config.timeout_seconds)
