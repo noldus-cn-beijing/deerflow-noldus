@@ -93,3 +93,35 @@ def test_async_evaluate_matches_sync(workspace_with_ev19):
 
     sync_dec, async_dec = asyncio.run(run())
     assert sync_dec.allow == async_dec.allow
+
+
+def test_blocks_set_experiment_paradigm_when_already_set(workspace_with_ev19):
+    """Block set_experiment_paradigm if ev19_template is already in context."""
+    p = _provider_with_workspace(workspace_with_ev19)
+    decision = p.evaluate(_make_request("set_experiment_paradigm", {
+        "paradigm": "open_field",
+        "ev19_template": "OpenFieldRectangle-AllZones",
+    }))
+    assert decision.allow is False
+    assert any(r.code == "ethoinsight.template_already_set" for r in decision.reasons)
+
+
+def test_allows_set_experiment_paradigm_with_confirm_flag(workspace_with_ev19):
+    """Allow re-set if confirm_template_change=True is provided."""
+    p = _provider_with_workspace(workspace_with_ev19)
+    decision = p.evaluate(_make_request("set_experiment_paradigm", {
+        "paradigm": "open_field",
+        "ev19_template": "OpenFieldRectangle-AllZones",
+        "confirm_template_change": True,
+    }))
+    assert decision.allow is True
+
+
+def test_allows_first_set_experiment_paradigm(workspace_without_ev19):
+    """First-time set is always allowed."""
+    p = _provider_with_workspace(workspace_without_ev19)
+    decision = p.evaluate(_make_request("set_experiment_paradigm", {
+        "paradigm": "epm",
+        "ev19_template": "PlusMaze-AllZones",
+    }))
+    assert decision.allow is True
