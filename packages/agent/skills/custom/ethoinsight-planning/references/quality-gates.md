@@ -1,34 +1,35 @@
 # 质量门控点
 
-> ⚠️ **2026-04-29 注意**：Gate 0（实验范式确认）正在被重新设计。当前的"7 大类 18 范式"分类与 EthoVision XT 19 真实模板（20 大类 62 变体）不对应，导致 deepseek 在文件名包含范式关键词时跳过两级 UI。
+> ✅ **2026-05-08 更新**：Gate 0 已实施 EV19 模板识别地基。旧「7 大类 18 范式」分类已删除，替换为 ethovision-paradigm-knowledge skill 体系。
 >
-> **新设计**：[docs/plans/2026-04-29-ev19-template-paradigm-design.md](../../../../../../docs/plans/2026-04-29-ev19-template-paradigm-design.md)
+> **新体系**：lead agent 通过 skill 渐进披露识别 EV19 模板 → 调 `set_experiment_paradigm(..., ev19_template)` 写入 experiment-context.json。
+> `ev19_template` 必须在 62 变体白名单内（见 `ethovision-paradigm-knowledge` skill `references/_facts.md`）。
 >
-> Gate 0 将改为三步流程：先选 EV19 大类（20 个），再选具体变体（1-15 个），ambiguous 时再问学术范式（仅当一个 EV 模板对应多个学术实验时）。领域知识从 prompt 移到独立 skill `ethovision-paradigm-knowledge`。
+> **多层鲁棒性**：
+> - L2 工具签名：`set_experiment_paradigm` 加 `ev19_template` 必填 + 白名单校验
+> - L4 GuardrailMiddleware：拒绝 `ev19_template=null` 时的 `task("code-executor")` 派遣
+> - L4 锁定：已设置后拒绝二次修改 `set_experiment_paradigm`（除非 `confirm_template_change=True`）
+> - L6 默认值降级：反问失败时按 `default-template-fallback.md` 选默认变体
 >
-> **Gate 1.5 / Gate 2 / Gate 3 / Gate 4 / Gate 5 不受影响**，正常使用。
+> GateEnforcementMiddleware 继续管 `paradigm` 字段，与 GuardrailMiddleware 职责正交。
 
 ---
 
 在规划和执行的关键节点触发检查，必要时 `ask_clarification`。
 
-## ~~Gate 0: 实验范式确认（仅 manual 模式）~~ — 待重写
+## Gate 0: EV19 模板识别（必须）
 
-> 待 EV19 范式重定位实施完成后重写本节。当前内容仍是中间件实际行为（`experiment-context.json` 是否存在），但**触发条件和选项体系正在改变**。
+**触发时机**: 用户上传数据并请求分析时，派遣任何 subagent 之前
 
-**触发时机**: 用户选择"端到端数据分析"后，派遣任何 subagent 之前
+**检查**: `experiment-context.json` 中 `ev19_template` 字段是否已设置
 
-**检查**: 用户是否已通过两级 ask_clarification 明确选择了实验范式
+**流程**（详见 `ethovision-paradigm-knowledge` skill）:
+1. agent 读 SKILL.md 决策树，综合用户文字 + 文件名推测候选
+2. 候选 = 1 → 直接 `set_experiment_paradigm(paradigm, ..., ev19_template)`
+3. 候选 2-3 → `ask_clarification` 给结构化选项（推荐项放第一位 + 默认值兜底）
+4. 反问失败 → 查 `default-template-fallback.md` 选默认变体
 
-| 状态 | 行动 |
-|------|------|
-| 用户已明确大类+细分范式（如"斑马鱼鱼群行为"） | 直接调用 `set_experiment_paradigm` tool 写入 experiment-context.json，跳过两级确认 |
-| 用户只明确大类（如"焦虑迷宫"） | 只问细分范式那一级（1-6 个选项），确认后调用 `set_experiment_paradigm` |
-| 用户未提供任何实验类型信息 | **两级 `ask_clarification`**：先选 7 大类（旷场及物体识别 / 焦虑迷宫 / 空间学习记忆迷宫 / 社会交互与偏好 / 抑郁绝望 / 恐惧条件化 / 斑马鱼行为），再选该大类下的细分范式（1-6 个） |
-
-**选项来源**: ethoinsight.templates.list_categories() + list_paradigms(category=...)
-
-**强制执行**: GateEnforcementMiddleware 在 task() 调度时检查 experiment-context.json 是否存在，不存在则拦截。
+**强制执行**: GuardrailMiddleware 在 `task("code-executor")` 时拦截 `ev19_template=null`
 
 ## Gate 1.5: 数据-范式一致性检查（Gate 0 完成后）
 
