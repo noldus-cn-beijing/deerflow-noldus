@@ -6,44 +6,42 @@
 
 <!-- 起草备注（同事可删除）：焦虑金标范式之一 -->
 
-## 🟡 一句话定义（待补充）
+## 🟡 一句话定义
 
-<!-- 例：「测试啮齿动物在新环境中的探索-焦虑权衡」 -->
+利用啮齿类动物对开放高处的天然回避倾向，通过量化开放臂探索行为来评估焦虑样行为水平。
 
 ## 🟡 适用模板（按推荐顺序 + 取舍说明）
 
-候选模板（起草时根据目录名猜的，**同事必须 review 删/改/补**）：
+- `PlusMaze-FewZones` — **推荐首选**。包含 Closed arms + Open arms zone，覆盖开臂时间百分比、开臂进入百分比、总进臂次数等核心指标，是 EPM 最通用的配置
+- `PlusMaze-AllZones` — 额外包含 head dip zone，仅当需要分析探头行为时选用
+- `PlusMaze-NoZones` — 无预定义 zone，需实验员自行划定区域；不推荐常规使用
 
-- `PlusMaze-AllZones` —— 取舍：（待补充）
-- `PlusMaze-FewZones` —— 取舍：（待补充）
-- `PlusMaze-NoZones` —— 取舍：（待补充）
+## 🟡 必须计算的指标
 
-<!-- 同事可自由增删。理想格式：
-- `OpenFieldCircle-NoZones-Fish` — 推荐 / 优势 / 局限
-- `AquariumTrack3D` — 何时用，何时别用
--->
+- 开臂时间百分比
+- 开臂进入百分比
+- 开臂进臂次数
+- 开臂进臂时间
+- 总进臂次数：反映总体活动水平，用于运动混杂检查
 
-## 🟡 必须计算的指标（待补充）
+## 🟡 常见脱险点 / 数据质量风险
 
-<!-- 例（shoaling）：mean IID（鱼间距）、mean NND（最近邻距）、polarity（队列度） -->
+- 总进臂次数过低（< 8）时，开臂指标的下降可能为运动抑制而非焦虑增加，需标注警告
+- 每组样本量少于 5 只时统计功效不足，结论需谨慎
+- 实验动物掉下迷宫的情况需排查，异常轨迹应排除
 
-- 
+## 🟡 报告解读语言
 
-## 🟡 常见脱险点 / 数据质量风险（待补充）
+- 使用"开臂滞留时间百分比"和"开臂进入百分比"作为标准表述，避免简称"开臂时间""开臂次数"
+- 解读方向：开臂指标降低提示焦虑样行为增加；需同时报告总进臂次数以排除运动抑制
+- 区分"数据支持的发现"（统计显著）和"趋势性变化"（未达显著但方向一致）
 
-<!-- 例：「样本量小于 n=8 / 组时统计功效不足」「视频抖动会污染 IID 计算」 -->
+## 🟡 关键参考文献
 
-- 
+- Rodgers RJ, et al. (1997). "Behavioural profiles in the murine elevated plus maze." *Psychopharmacology*.
+- Walf AA, Frye CA (2007). "The use of the elevated plus maze as an assay of anxiety-related behavior in rodents." *Nature Protocols*.
 
-## 🟡 报告解读语言（待补充）
+## 🟡 与其他实验的区分
 
-<!-- 用什么名词、什么公式表达、避免什么常见误读 -->
-
-## 🟡 关键参考文献（待补充）
-
-- 
-
-## 🟡 与其他实验的区分（待补充）
-
-<!-- 例（shoaling vs aquatic_open_field）：「都用 OpenFieldCircle-NoZones-Fish
-但 shoaling 是多鱼同时记录测群体度，aquatic_open_field 是单鱼测探索-中心回避」 -->
+- 与 Zero Maze（O迷宫）的区别：EPM 为十字形，有中心区，动物需主动选择进入开放臂；Zero Maze 为环形无中心区，动物持续处于开放或封闭区。两者原理相同但结构不同，Zero Maze 消除了中心区的决策延迟问题
+- EPM 不用于评估抑郁样行为（不动时间），如需评估绝望行为应选 FST 或 TST
