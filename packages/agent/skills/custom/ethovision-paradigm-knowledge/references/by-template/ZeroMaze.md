@@ -7,21 +7,21 @@
 
 该大类下共 **2** 个变体。
 
-## 🟡 这个大类用来做什么？（待补充）
+## 🟡 这个大类用来做什么？
 
-<!-- 例：「测试啮齿动物在新环境中的探索-焦虑行为」「测试鱼群同伴聚集程度」 -->
+- 主要研究对象：啮齿类动物（大鼠、小鼠）
+- 典型实验类型：O迷宫（Zero Maze），评估焦虑样行为
+- 学术范式名：O迷宫 / Zero Maze (Elevated Zero Maze)
 
-- 主要研究对象：
-- 典型实验类型：
-- 学术范式名（中英）：
+## 🟡 何时不该选这个大类？
 
-## 🟡 何时不该选这个大类？（待补充）
+- 如果测试对象是鱼类或昆虫，不应使用
+- 焦虑评估可选 EPM 替代
 
-<!-- 例：「如果测试对象是鱼，不应选 OpenFieldRectangle，应选 OpenFieldCircle 或 AquariumTrack3D」 -->
+## 🟡 关键参考文献
 
-## 🟡 关键参考文献（待补充）
-
-- 
+- Shepherd JK, et al. (1994). "The elevated zero-maze: an ethological analysis of the effects of diazepam in the rat." *Psychopharmacology*.
+- Kulkarni SK, et al. (2007). "Elevated zero maze: a paradigm to evaluate antianxiety effects of drugs." *Methods and Findings in Experimental and Clinical Pharmacology*.
 
 ---
 
@@ -44,23 +44,21 @@
 - **推测阵列规模**：Single
 - **目录名尾缀**：`AllZones`
 
-### 🟡 这个变体相对其他变体的核心差异（待补充）
+### 🟡 这个变体相对其他变体的核心差异
 
-<!-- 例：「比 -NoZones 多了 Center/Border/Corners 三个 zone 列，能直接计算中心区停留时间」 -->
+包含 Closed and Open arms zone，可直接计算开放区相关指标
 
-### 🟡 推荐的实验场景（待补充）
+### 🟡 推荐的实验场景
 
-<!-- 例：「啮齿动物焦虑测试，需要量化中心区回避指数」 -->
+标准 O迷宫实验
 
-### 🟡 不该用这个变体的场景（待补充）
+### 🟡 不该用这个变体的场景
 
-<!-- 例：「鱼类不应使用此变体（subject 类型不匹配），应选 OpenFieldCircle-NoZones-Fish」 -->
+无需 zone 分析时应选 NoZones
 
-### 🟡 对应学术范式（待补充）
+### 🟡 对应学术范式
 
-<!-- 一对一：填一个；一对多（ambiguous）：列多个并说明区分依据 -->
-
-- 
+- O迷宫 / Zero Maze
 
 ---
 
@@ -83,22 +81,20 @@
 - **推测阵列规模**：Single
 - **目录名尾缀**：`NoZones`
 
-### 🟡 这个变体相对其他变体的核心差异（待补充）
+### 🟡 这个变体相对其他变体的核心差异
 
-<!-- 例：「比 -NoZones 多了 Center/Border/Corners 三个 zone 列，能直接计算中心区停留时间」 -->
+无预定义 zone，需实验员自行划定区域
 
-### 🟡 推荐的实验场景（待补充）
+### 🟡 推荐的实验场景
 
-<!-- 例：「啮齿动物焦虑测试，需要量化中心区回避指数」 -->
+需自定义 zone 的 O迷宫实验
 
-### 🟡 不该用这个变体的场景（待补充）
+### 🟡 不该用这个变体的场景
 
-<!-- 例：「鱼类不应使用此变体（subject 类型不匹配），应选 OpenFieldCircle-NoZones-Fish」 -->
+标准实验应优先选 AllZones
 
-### 🟡 对应学术范式（待补充）
+### 🟡 对应学术范式
 
-<!-- 一对一：填一个；一对多（ambiguous）：列多个并说明区分依据 -->
-
-- 
+- O迷宫 / Zero Maze
 
 ---

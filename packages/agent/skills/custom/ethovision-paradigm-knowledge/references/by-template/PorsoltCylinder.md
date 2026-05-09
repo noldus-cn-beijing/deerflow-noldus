@@ -7,21 +7,20 @@
 
 该大类下共 **2** 个变体。
 
-## 🟡 这个大类用来做什么？（待补充）
+## 🟡 这个大类用来做什么？
 
-<!-- 例：「测试啮齿动物在新环境中的探索-焦虑行为」「测试鱼群同伴聚集程度」 -->
+- 主要研究对象：啮齿类动物（大鼠、小鼠）
+- 典型实验类型：强迫游泳实验（FST）和悬尾实验（TST），评估抑郁样行为中的绝望表型
+- 学术范式名：强迫游泳 / Forced Swim Test (FST)；悬尾实验 / Tail Suspension Test (TST)
 
-- 主要研究对象：
-- 典型实验类型：
-- 学术范式名（中英）：
+## 🟡 何时不该选这个大类？
 
-## 🟡 何时不该选这个大类？（待补充）
+- 如果实验目的是焦虑评估，不应使用
 
-<!-- 例：「如果测试对象是鱼，不应选 OpenFieldRectangle，应选 OpenFieldCircle 或 AquariumTrack3D」 -->
+## 🟡 关键参考文献
 
-## 🟡 关键参考文献（待补充）
-
-- 
+- Porsolt RD, et al. (1977). "Behavioural despair in rats: a new model sensitive to antidepressant treatments." *Nature*.
+- Slattery DA, Cryan JF (2012). "Using the rat forced swim test to assess antidepressant-like activity in rodents." *Nature Protocols*.
 
 ---
 
@@ -44,23 +43,21 @@
 - **推测阵列规模**：Single
 - **目录名尾缀**：`AllZones`
 
-### 🟡 这个变体相对其他变体的核心差异（待补充）
+### 🟡 这个变体相对其他变体的核心差异
 
-<!-- 例：「比 -NoZones 多了 Center/Border/Corners 三个 zone 列，能直接计算中心区停留时间」 -->
+包含 Diving zone，用于识别动物是否力竭溺水以自动停止采集
 
-### 🟡 推荐的实验场景（待补充）
+### 🟡 推荐的实验场景
 
-<!-- 例：「啮齿动物焦虑测试，需要量化中心区回避指数」 -->
+需要力竭溺水安全检测的 FST 实验
 
-### 🟡 不该用这个变体的场景（待补充）
+### 🟡 不该用这个变体的场景
 
-<!-- 例：「鱼类不应使用此变体（subject 类型不匹配），应选 OpenFieldCircle-NoZones-Fish」 -->
+标准 FST 仅需不动行为时应选 NoZones
 
-### 🟡 对应学术范式（待补充）
+### 🟡 对应学术范式
 
-<!-- 一对一：填一个；一对多（ambiguous）：列多个并说明区分依据 -->
-
-- 
+- 强迫游泳 / Forced Swim Test (FST)
 
 ---
 
@@ -83,22 +80,21 @@
 - **推测阵列规模**：Single
 - **目录名尾缀**：`NoZones`
 
-### 🟡 这个变体相对其他变体的核心差异（待补充）
+### 🟡 这个变体相对其他变体的核心差异
 
-<!-- 例：「比 -NoZones 多了 Center/Border/Corners 三个 zone 列，能直接计算中心区停留时间」 -->
+无预定义 zone，适合标准 FST 实验
 
-### 🟡 推荐的实验场景（待补充）
+### 🟡 推荐的实验场景
 
-<!-- 例：「啮齿动物焦虑测试，需要量化中心区回避指数」 -->
+标准 FST 实验，仅需记录不动行为
 
-### 🟡 不该用这个变体的场景（待补充）
+### 🟡 不该用这个变体的场景
 
-<!-- 例：「鱼类不应使用此变体（subject 类型不匹配），应选 OpenFieldCircle-NoZones-Fish」 -->
+需分析潜水行为时应选 AllZones
 
-### 🟡 对应学术范式（待补充）
+### 🟡 对应学术范式
 
-<!-- 一对一：填一个；一对多（ambiguous）：列多个并说明区分依据 -->
-
-- 
+- 强迫游泳 / Forced Swim Test (FST)
+- 悬尾实验 / Tail Suspension Test (TST)
 
 ---
