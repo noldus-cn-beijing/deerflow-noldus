@@ -298,9 +298,39 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     # renders it in a collapsible Reasoning block rather than the main bubble.
     middlewares.append(ThinkTagMiddleware())
 
+    # Ev19TemplateGuardrail — block task(code-executor) when ev19_template is unset
+    from deerflow.config.guardrails_config import get_guardrails_config
+
+    guardrails_cfg = get_guardrails_config()
+    if guardrails_cfg.enabled:
+        from deerflow.guardrails.middleware import GuardrailMiddleware
+        from deerflow.guardrails.ev19_template_provider import (
+            Ev19TemplateGuardrailProvider,
+            Ev19WorkspaceBridgeMiddleware,
+        )
+
+        provider = Ev19TemplateGuardrailProvider()
+        middlewares.append(Ev19WorkspaceBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
+
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
+
+    # Ev19TemplateGuardrail — block task(code-executor) when ev19_template is unset.
+    # Ev19WorkspaceBridgeMiddleware must be BEFORE GuardrailMiddleware so the contextvar
+    # is set before the provider evaluates.
+    guardrails_cfg = get_app_config().guardrails
+    if guardrails_cfg.enabled:
+        from deerflow.guardrails.middleware import GuardrailMiddleware
+        from deerflow.guardrails.ev19_template_provider import (
+            Ev19TemplateGuardrailProvider,
+            Ev19WorkspaceBridgeMiddleware,
+        )
+
+        provider = Ev19TemplateGuardrailProvider()
+        middlewares.append(Ev19WorkspaceBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
 
     # GateEnforcementMiddleware — block task() before Gate 1 in manual mode
     workflow_mode = config.get("configurable", {}).get("workflow_mode", "auto")
