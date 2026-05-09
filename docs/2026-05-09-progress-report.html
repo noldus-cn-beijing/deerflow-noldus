@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EthoInsight 进展汇报 — 2026.04.29 ~ 2026.05.09</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #F4F1EA;
+    --card: #FFFFFF;
+    --glass: rgba(255,255,255,0.75);
+    --text: #1A4840;
+    --text-secondary: #4A6A64;
+    --muted: #8CA39D;
+    --brand: #10DD8B;
+    --brand-hover: #0CC47A;
+    --border: rgba(26,72,64,0.08);
+    --shadow: 0 1px 3px rgba(26,72,64,0.06), 0 4px 16px rgba(26,72,64,0.04);
+    --radius: 16px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', 'Noto Sans SC', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Paper texture */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 40px; position: relative; z-index: 1; }
+
+  /* Hero */
+  .hero {
+    padding: 80px 0 60px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 60px;
+  }
+  .hero .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    background: rgba(16,221,139,0.1);
+    color: #0E8C59;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 12px;
+  }
+  .hero .subtitle {
+    font-size: 17px;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  /* Section */
+  .section { margin-bottom: 64px; }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted);
+    margin-bottom: 24px;
+    padding-left: 2px;
+  }
+
+  /* Overview cards */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 64px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    box-shadow: var(--shadow);
+  }
+  .stat-card .stat-number {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    color: var(--text);
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .stat-card .stat-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 32px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 7px; top: 4px; bottom: 4px;
+    width: 2px;
+    background: var(--border);
+  }
+
+  .day-group { margin-bottom: 40px; position: relative; }
+  .day-group::before {
+    content: '';
+    position: absolute;
+    left: -29px; top: 8px;
+    width: 12px; height: 12px;
+    background: var(--brand);
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(16,221,139,0.15);
+  }
+  .day-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+
+  .items { display: flex; flex-direction: column; gap: 12px; }
+
+  .item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: start;
+    transition: box-shadow 0.2s;
+  }
+  .item:hover { box-shadow: 0 2px 8px rgba(26,72,64,0.08), 0 8px 24px rgba(26,72,64,0.06); }
+  .item .item-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .item .item-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+  }
+  .item .item-tags { display: flex; gap: 6px; flex-shrink: 0; }
+  .tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 100px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .tag-design     { background: #EDE9FE; color: #6D28D9; }
+  .tag-feature    { background: #DCFCE7; color: #166534; }
+  .tag-bugfix     { background: #FEF2F2; color: #DC2626; }
+  .tag-infra      { background: #FEF9C3; color: #A16207; }
+  .tag-sync       { background: #DBEAFE; color: #1E40AF; }
+  .tag-milestone  { background: rgba(16,221,139,0.12); color: #0E8C59; }
+
+  /* Architecture highlight */
+  .arch-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+  }
+  .arch-card h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+  .arch-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .arch-col h4 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .arch-col ul {
+    list-style: none;
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+  .arch-col li { padding: 5px 0; padding-left: 16px; position: relative; }
+  .arch-col li::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 12px;
+    width: 5px; height: 5px;
+    background: var(--brand);
+    border-radius: 50%;
+  }
+
+  /* Number highlights */
+  .number-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .number-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .number-card .big { font-size: 32px; font-weight: 700; letter-spacing: -1px; }
+  .number-card .label { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+  /* Summary */
+  .summary {
+    background: linear-gradient(135deg, #1A4840 0%, #20564E 100%);
+    border-radius: var(--radius);
+    padding: 40px;
+    color: #fff;
+    margin-bottom: 64px;
+  }
+  .summary h3 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+  .summary ul { list-style: none; font-size: 15px; opacity: 0.92; }
+  .summary li { padding: 8px 0; padding-left: 20px; position: relative; }
+  .summary li::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 15px;
+    width: 6px; height: 6px;
+    background: var(--brand);
+    border-radius: 50%;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 40px 0 60px;
+    font-size: 13px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 768px) {
+    .container { padding: 0 20px; }
+    .hero h1 { font-size: 28px; }
+    .overview-grid { grid-template-columns: repeat(2, 1fr); }
+    .arch-row { grid-template-columns: 1fr; }
+    .number-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="badge">Phase 0 · 基础设施阶段</div>
+    <h1>EthoInsight 两周进展</h1>
+    <p class="subtitle">2026 年 4 月 29 日 — 5 月 9 日</p>
+  </div>
+
+  <!-- Overview Stats -->
+  <div class="overview-grid">
+    <div class="stat-card">
+      <div class="stat-number">30+</div>
+      <div class="stat-label">Commits 落地</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">176</div>
+      <div class="stat-label">上游 Commit 评估与同步</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">2148</div>
+      <div class="stat-label">测试通过 (基线 1714 → 2148)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">11</div>
+      <div class="stat-label">关键 Bug 修复</div>
+    </div>
+  </div>
+
+  <!-- 工作概览 -->
+  <div class="section">
+    <div class="section-title">四大工作线</div>
+    <div class="arch-row">
+      <div class="arch-col">
+        <h4>1. Paradigm 体系重构</h4>
+        <ul>
+          <li>从「7大类18范式」迁移到「EV19模板 + 学术范式」双层体系</li>
+          <li>62 变体事实注册表 (ev19_facts.py) + 20 大类知识库</li>
+          <li>工程地基 Spec + 14-task 实施计划已就绪，实施已启动</li>
+        </ul>
+      </div>
+      <div class="arch-col">
+        <h4>2. 前端体验升级</h4>
+        <ul>
+          <li>极简 × 构成主义视觉系统（39 文件改动）</li>
+          <li>OPPO Sans 4.0 字体自托管，三层质感体系</li>
+          <li>输入框悬浮化、子任务卡片克制化、冗余 UI 清理</li>
+        </ul>
+      </div>
+      <div class="arch-col">
+        <h4>3. DeerFlow 上游同步</h4>
+        <ul>
+          <li>Tier 1-4 四轮同步：安全修复 → 受保护文件合并 → 持久化层 → 多用户认证</li>
+          <li>better-auth 后端 + 前端 + 品牌中文化全覆盖</li>
+          <li>同步 SOP + 保护规则完整写入 CLAUDE.md</li>
+        </ul>
+      </div>
+      <div class="arch-col">
+        <h4>4. 质量与稳定性</h4>
+        <ul>
+          <li>测试从 1714 → 2148 passed (+434, +25%)</li>
+          <li>端到端 shoaling 流水线全程跑通验证</li>
+          <li>11 个 bug 修复：跨线程 ContextVar、前端崩溃、多用户路径等</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 详细时间线 -->
+  <div class="section">
+    <div class="section-title">时间线</div>
+    <div class="timeline">
+
+      <!-- 4/29 -->
+      <div class="day-group">
+        <div class="day-label">4 月 29 日 · 周二</div>
+        <div class="items">
+          <div class="item">
+            <div>
+              <div class="item-title">EV19 模板范式体系重定位 — 设计完成</div>
+              <div class="item-desc">定位根因：旧「7大类18范式」分类与 EthoVision XT 19 真实模板（20大类62变体）不对应，导致 Gate 1 反问机制不准。产出三层架构设计（事实/知识/流程分离）+ Review 包（by-template + by-experiment 双向索引），等行为学同事补充 P0 内容。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-design">设计</span><span class="tag tag-milestone">里程碑</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">Memory Event-loop 修复完成</div>
+              <div class="item-desc">RuntimeError: Event loop is closed 通过 sync 上游 82731aeb 彻底修复，本地 fork 已对齐上游最新版。同步更新 CLAUDE.md 第 11 条记录。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-bugfix">Bug 修复</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4/30 -->
+      <div class="day-group">
+        <div class="day-label">4 月 30 日 · 周三</div>
+        <div class="items">
+          <div class="item">
+            <div>
+              <div class="item-title">前端全量视觉升级 — 9/9 Checkpoints 完成</div>
+              <div class="item-desc">设计调性：日式极简 × 构成主义，浅绿米底色 (oklch 0.972 0.012 145)，OPPO Sans 4.0 自托管，三层质感系统（纸纹 SVG + 玻璃白 + 实白）。39 个文件改动，7 个 commit，覆盖 landing + workspace + ai-elements + settings 全范围。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-feature">功能</span><span class="tag tag-design">设计</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5/6 -->
+      <div class="day-group">
+        <div class="day-label">5 月 6 日 · 周二</div>
+        <div class="items">
+          <div class="item">
+            <div>
+              <div class="item-title">DeerFlow 上游同步 — Tier 1 完成 + 规则体系建立</div>
+              <div class="item-desc">评估 176 个上游 commit，按 Tier 1-5 分级。Tier 1 完成 7 文件 surgical merge（LoopDetection 增强、title 剥 &lt;think&gt;、prompt cache 修复等），测试 1714 passed。在 CLAUDE.md 写入 70 行同步规则：「取长补短，不直接覆盖」、9 个 Tier 4 import 黑名单、3 条血泪教训。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-sync">上游同步</span><span class="tag tag-infra">基础设施</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">前端打磨 + Subtask 状态 Bug 修复</div>
+              <div class="item-desc">输入框从贴底卡条改为悬浮玻璃卡；尺寸优化（56px→14 高度，占位文字垂直居中）；删除冗余 UI（欢迎描述段、SuggestionList）；子任务卡片去除浮夸彩虹特效，替换为克制 Lime 脉动动画。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-feature">功能</span><span class="tag tag-bugfix">Bug 修复</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5/7 -->
+      <div class="day-group">
+        <div class="day-label">5 月 7 日 · 周三</div>
+        <div class="items">
+          <div class="item">
+            <div>
+              <div class="item-title">DeerFlow Tier 2/3/4 上游同步 — Round 1&2 完成</div>
+              <div class="item-desc">Round 1：33 个 commit 分 3 批次落地（A 阶段 19 安全修复、B 阶段 9 受保护文件 surgical merge、C 阶段 5 精选改进）。Round 2：skill storage 重构（+2200/-634 行）、summarization skill rescue（+734 行）、BC 持久化层（+3906/-318 行）。测试基线：1714 → 1877 passed。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-sync">上游同步</span><span class="tag tag-infra">基础设施</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">上传文件 Agent 无法识别 — 修复</div>
+              <div class="item-desc">根因：多用户隔离引入 user_id 路径参数后，上传和读取使用不同目录。修复 4 个文件统一路径计算。同一天还诊断了 ContextVar 跨线程丢失的前置条件。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-bugfix">Bug 修复</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5/8 -->
+      <div class="day-group">
+        <div class="day-label">5 月 8 日 · 周四（最密集一天）</div>
+        <div class="items">
+          <div class="item">
+            <div>
+              <div class="item-title">DeerFlow Tier 4 同步 — Round 3 better-auth 完成</div>
+              <div class="item-desc">4 个 commit 覆盖：better-auth 后端（56 files）+ 前端（28 files）+ 品牌中文化（3 files）+ 部署文档。登录/注册/setup wizard 全部跑通。测试基线：1877 → 2141 passed (+264)。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-sync">上游同步</span><span class="tag tag-milestone">里程碑</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">Subagent ContextVar 跨线程丢失 — 修复</div>
+              <div class="item-desc">根因：subagent 在独立 ThreadPoolExecutor + event loop 执行时 ContextVar 不自动传递。合入上游 copy_context() + 持久 isolated event loop 方案。修复后 data-analyst 可正确看到 code-executor 产物。新增 6 个回归测试。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-bugfix">Bug 修复</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">前端 Tab 崩溃 (ask_clarification + subtask 终态) — 修复</div>
+              <div class="item-desc">render 期 setTasks 触发 React Error，累积导致浏览器 "Aw, Snap" 崩溃。对齐上游 useUpdateSubtask 极简版本，1 文件改动修复。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-bugfix">Bug 修复</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">Nginx 大响应截断 (ChunkLoadError) — 修复</div>
+              <div class="item-desc">nginx worker 无法写 /var/lib/nginx/proxy/（属主 www-data，权限 0700），3.7MB JS chunk 响应被截断。修复：proxy_buffering off + 独立 temp_path。2 文件改动。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-bugfix">Bug 修复</span><span class="tag tag-infra">基础设施</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">多用户路径 user_id 漏传 × 3 + CSRF — 全部修复 & e2e 验证通过</div>
+              <div class="item-desc">修复 4 个独立 bug：archived-messages 路由、artifacts 路由、present_files tool 的 user_id 漏传，以及 suggestions 接口 CSRF token 缺失。修复后 shoaling 流水线端到端全程跑通（上传→planning→code-executor→data-analyst→report-writer→图表+报告完整生成）。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-bugfix">Bug 修复</span><span class="tag tag-milestone">验证</span></div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-title">EV19 模板识别地基 — 工程 Spec + 实施 Plan 完成</div>
+              <div class="item-desc">完成 <a href="docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md">工程级设计文档</a>（新 skill 架构 + GuardrailMiddleware + 软门 + 默认值降级）和 <a href="docs/superpowers/plans/2026-05-08-ev19-template-skill-foundation-plan.md">实施计划</a>（14 task / 90 step / 完整代码，可由 agent 直接执行）。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-design">设计</span><span class="tag tag-milestone">里程碑</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5/9 -->
+      <div class="day-group">
+        <div class="day-label">5 月 9 日 · 周五（今天）</div>
+        <div class="items">
+          <div class="item">
+            <div>
+              <div class="item-title">EV19 模板识别地基 — 基础设施代码实施中</div>
+              <div class="item-desc">已创建 ev19_facts.py（62 变体白名单 + 范式兼容映射 + 单元测试）、ethovision-paradigm-knowledge skill 骨架（SKILL.md + review 包 markdown）、Ev19TemplateGuardrailProvider（拒绝 ev19_template=null 时派遣 code-executor）、set_experiment_paradigm 工具加 ev19_template 必填参数。lead agent 中间件链已注册 GuardrailProvider。</div>
+            </div>
+            <div class="item-tags"><span class="tag tag-feature">功能</span><span class="tag tag-design">设计</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 关键指标 -->
+  <div class="section">
+    <div class="section-title">量化成果</div>
+    <div class="number-row">
+      <div class="number-card">
+        <div class="big" style="color:#1A4840;">1714→2148</div>
+        <div class="label">测试通过数 (+434, +25%)</div>
+      </div>
+      <div class="number-card">
+        <div class="big" style="color:#1A4840;">15+</div>
+        <div class="label">Handoff 交接文档</div>
+      </div>
+      <div class="number-card">
+        <div class="big" style="color:#1A4840;">39+5</div>
+        <div class="label">文件改动（前端 39 + 后端核心 5+）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 关键判断 -->
+  <div class="summary">
+    <h3>当前状态与下一步</h3>
+    <ul>
+      <li><strong>端到端流水线已验证可用</strong>：shoaling 范式从上传到报告生成全程跑通，用户可直接使用</li>
+      <li><strong>多用户认证体系已就绪</strong>：better-auth 后端+前端+品牌中文化完成，等待轮 4 实际部署（阿里云 PG + AioSandbox + 性能压测）</li>
+      <li><strong>范式体系重构已奠基</strong>：从「7大类18范式」重定位为「EV19模板 + 学术范式」双层，工程 spec + plan 完成，基础代码已落地，下一步执行 14-task 实施计划</li>
+      <li><strong>上游同步能力已建立</strong>：Tier 1-4 全部完成，「取长补短」规则写入 CLAUDE.md，后续同步有章可循</li>
+      <li><strong>6 范式分析模板 (EPM/OFT 等) 待同事 PR 后补全</strong>：review 包已生成，等待行为学同事补充 P0 文件</li>
+      <li><strong>v0.1 9 月里程碑</strong>：Phase 0 基础设施阶段接近尾声，下一阶段进入范式分析模板补全 + 鲁棒性验证</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    EthoInsight · Phase 0 进展汇报 · 2026.04.29 ~ 2026.05.09
+  </div>
+
+</div>
+</body>
+</html>

@@ -72,9 +72,22 @@
 - E3: shoaling golden-case 校验
 - E4: 抽象 templates/_base.py 基类
 
+## Bug Fix（2026-05-09）
+
+- `9a52d0ba` — 修复 GuardrailMiddleware 重复注册导致 `AssertionError: Please remove duplicate middleware instances.`
+- 根因：`agent.py` 中 Ev19WorkspaceBridgeMiddleware + GuardrailMiddleware 注册代码被意外写入两次
+- 前端表现为所有 `POST /threads/{id}/history` 返回 HTTP 500
+- 修复后中间件链 18 个全部唯一
+
 ## 已知遗留
 
-- 手工 e2e 未执行（需要启动完整服务 + 准备测试数据）
+- 手工 e2e 未完整执行（修复 duplicate middleware 后需要重新测试）
 - LDB 默认变体 (`OpenFieldRectangle-Subdivided2x2`) 是临时兜底，等行为学同事 PR 修正
 - LoopDetectionMiddleware 对 ask_clarification 的 hash 区分度未验证（D8d）
 - ev19_template 锁定逻辑中的 workspace 解析依赖 ContextVar 桥接（`Ev19WorkspaceBridgeMiddleware`），中间件链顺序已确保 Bridge 在 Guardrail 之前
+
+## 下一位 Agent 的第一步建议
+
+1. 启动服务 `cd packages/agent && make dev`，确认不再有 500 错误
+2. 做手工 e2e：上传 EPM/shoaling 数据，验证 lead agent 能通过 skill 识别 EV19 模板 → set_experiment_paradigm → 进入分析
+3. 如果 e2e 通过，本 Phase 的进度已完成；后续等待行为学同事 PR（E1-E4）
