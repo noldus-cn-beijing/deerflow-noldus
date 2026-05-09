@@ -20,8 +20,7 @@ import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
 import { hasToolCalls } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
-import { streamdownPluginsWithWordAnimation } from "@/core/streamdown";
+import { streamdownPlugins } from "@/core/streamdown";
 import { useSubtask } from "@/core/tasks/context";
 import { explainLastToolCall } from "@/core/tools/utils";
 import { cn } from "@/lib/utils";
@@ -40,17 +39,14 @@ import {
 export function SubtaskCard({
   className,
   taskId,
-  isLoading,
   threadId,
 }: {
   className?: string;
   taskId: string;
-  isLoading: boolean;
   threadId?: string;
 }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const task = useSubtask(taskId)!;
   const icon = useMemo(() => {
     if (task.status === "completed") {
@@ -134,7 +130,7 @@ export function SubtaskCard({
             >
               <div className="pt-1">
                 <Streamdown
-                  {...streamdownPluginsWithWordAnimation}
+                  {...streamdownPlugins}
                   components={{ a: CitationLink }}
                 >
                   {task.prompt}
@@ -146,7 +142,6 @@ export function SubtaskCard({
             <SubtaskCoTTimeline
               messages={task.messages}
               isLoading={task.status === "in_progress"}
-              rehypePlugins={rehypePlugins}
             />
           )}
           {task.status === "completed" && task.result && (
@@ -162,7 +157,6 @@ export function SubtaskCard({
                 <MarkdownContent
                   content={task.result}
                   isLoading={false}
-                  rehypePlugins={rehypePlugins}
                 />
               </div>
             </ChainOfThoughtStep>
@@ -189,11 +183,9 @@ export function SubtaskCard({
 function SubtaskCoTTimeline({
   messages,
   isLoading,
-  rehypePlugins,
 }: {
   messages: AIMessage[];
   isLoading: boolean;
-  rehypePlugins: ReturnType<typeof useRehypeSplitWordsIntoSpans>;
 }) {
   const steps = useMemo(
     () => convertToSteps(messages, SUBTASK_HIDDEN_TOOL_CALL_NAMES, true),
@@ -208,7 +200,6 @@ function SubtaskCoTTimeline({
           step={step}
           messages={messages}
           isLoading={isLoading}
-          rehypePlugins={rehypePlugins}
         />
       ))}
     </>
@@ -219,12 +210,10 @@ function CoTStepRenderer({
   step,
   messages,
   isLoading,
-  rehypePlugins,
 }: {
   step: CoTStep;
   messages: AIMessage[];
   isLoading: boolean;
-  rehypePlugins: ReturnType<typeof useRehypeSplitWordsIntoSpans>;
 }) {
   if (step.type === "reasoning") {
     return (
@@ -235,7 +224,6 @@ function CoTStepRenderer({
           <MarkdownContent
             content={step.reasoning ?? ""}
             isLoading={isLoading}
-            rehypePlugins={rehypePlugins}
           />
         }
       />
@@ -249,7 +237,6 @@ function CoTStepRenderer({
           <MarkdownContent
             content={step.content}
             isLoading={isLoading}
-            rehypePlugins={rehypePlugins}
           />
         }
       />
