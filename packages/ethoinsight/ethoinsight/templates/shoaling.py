@@ -62,6 +62,16 @@ def main() -> None:
     HANDOFF_PATH = _resolve_path(HANDOFF_PATH)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # Soft gate — ev19_template must be set before analysis
+    from ethoinsight.templates._gate import require_ev19_template
+
+    workspace = os.path.dirname(OUTPUT_DIR.rstrip("/"))
+    gate_error = require_ev19_template(workspace)
+    if gate_error is not None:
+        _write_handoff("failed", gate_error["reason"], [], errors=[gate_error["reason"]])
+        return
+
     errors: list[str] = []
 
     # 1. Parse — fixed workflow, do not modify
