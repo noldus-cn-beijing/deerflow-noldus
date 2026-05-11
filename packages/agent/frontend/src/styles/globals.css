@@ -193,9 +193,9 @@
 :root {
   --radius: 0.5rem;
 
-  /* 浅绿米色底(冷调,不发黄)— baseline,checkpoint 4 校对 */
-  --background: oklch(0.972 0.012 145);   /* 主底,#EFF2EA 附近 */
-  --foreground: #1A4840;                  /* Forest Green deep,主文字 */
+  /* 主底:暖白纸色(Chat 区白底 + 纸纹质感) */
+  --background: oklch(0.987 0.003 92);   /* #FCFCF9 暖白纸 */
+  --foreground: #1A4840;                  /* Forest Green,保留品牌文字色 */
 
   /* 卡片:玻璃白(配合 backdrop-blur 使用) */
   --card: oklch(1 0 0 / 0.88);
@@ -205,28 +205,28 @@
   --popover: #FFFFFF;
   --popover-foreground: #1A4840;
 
-  /* primary = 主文字色(墨绿),用于 default button 等 */
+  /* primary = 品牌森林绿,用于 default button 等 */
   --primary: #1A4840;
-  --primary-foreground: oklch(0.972 0.012 145);   /* 浅绿米,与 bg 同 */
+  --primary-foreground: oklch(0.987 0.003 92);   /* 暖白,与 bg 同 */
 
-  /* secondary = 第二层纸(更浅的冷绿米),sidebar/输入框底 */
-  --secondary: oklch(0.962 0.014 145);
+  /* secondary = 暖奶油色(纸层第二层) */
+  --secondary: oklch(0.975 0.005 92);
   --secondary-foreground: #1A4840;
 
   /* muted = 弱化背景 */
-  --muted: oklch(0.962 0.014 145);
-  --muted-foreground: #50615C;        /* 次级文字色;若对比度不足在 cp4 加深到 #3F4F4A */
+  --muted: oklch(0.975 0.005 92);
+  --muted-foreground: #78716C;            /* 暖石灰,次级文字 */
 
   /* accent = 选中态浅底(极淡 Forest 透明) */
-  --accent: oklch(0.93 0.014 150);
+  --accent: oklch(0.94 0.014 150);
   --accent-foreground: #1A4840;
 
   --destructive: oklch(0.577 0.245 27.325);
 
-  /* 边框:1px Forest 透明 */
-  --border: oklch(0.20 0.04 168 / 0.12);
-  --input: oklch(0.20 0.04 168 / 0.18);
-  --ring: oklch(0.20 0.04 168 / 0.40);    /* focus ring 用 Forest 半透 */
+  /* 边框:暖灰 */
+  --border: oklch(0.15 0.01 92 / 0.10);
+  --input: oklch(0.15 0.01 92 / 0.15);
+  --ring: oklch(0.20 0.04 168 / 0.40);    /* focus ring 保留 Forest 半透 */
 
   /* 数据图表色板:Lime 第一序列 + Forest 第二 + 中性补充 */
   --chart-1: #10DD8B;       /* Lime Green */
@@ -235,14 +235,14 @@
   --chart-4: oklch(0.769 0.188 70.08);    /* 保留 amber 备用 */
   --chart-5: oklch(0.398 0.07 227.392);   /* 保留 cool blue 备用 */
 
-  /* sidebar 专属变量 */
-  --sidebar: oklch(0.962 0.014 145);                     /* 第二层纸色 */
+  /* sidebar:绿调羊皮纸(从旧 --background 移入) */
+  --sidebar: oklch(0.962 0.014 145);                     /* 绿米纸色 */
   --sidebar-foreground: #1A4840;
   --sidebar-primary: #1A4840;
   --sidebar-primary-foreground: oklch(0.972 0.012 145);
   --sidebar-accent: oklch(0.93 0.014 150);               /* 极淡 Forest 透 */
   --sidebar-accent-foreground: #1A4840;
-  --sidebar-border: oklch(0.20 0.04 168 / 0.12);
+  --sidebar-border: oklch(0.20 0.04 168 / 0.15);
   --sidebar-ring: oklch(0.20 0.04 168 / 0.40);
 
   /* 品牌色直通 token */
@@ -254,13 +254,13 @@
   --elevated: oklch(1 0 0 / 0.88);            /* 玻璃白(默认,需 backdrop-blur) */
   --elevated-static: oklch(1 0 0 / 0.95);     /* reduced-motion 回退,近实白 */
 
-  /* Modal 专用阴影(唯一允许 shadow 的层) */
-  --shadow-modal: 0 16px 48px -12px rgba(26, 72, 64, 0.18);
+  /* Modal 专用阴影(暖灰,适配白底) */
+  --shadow-modal: 0 16px 48px -12px rgba(0, 0, 0, 0.10);
 
   /* 悬浮输入框阴影:更柔、更扩散,不抢戏 */
-  --shadow-float: 0 1px 2px rgba(26, 72, 64, 0.04),
-                  0 8px 24px -8px rgba(26, 72, 64, 0.10),
-                  0 24px 48px -16px rgba(26, 72, 64, 0.08);
+  --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.04),
+                  0 8px 24px -8px rgba(0, 0, 0, 0.08),
+                  0 24px 48px -16px rgba(0, 0, 0, 0.06);
 }
 
 /* ============================================================
@@ -344,7 +344,7 @@
     z-index: 0;
     pointer-events: none;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
-    opacity: 0.025;
+    opacity: 0.038;
   }
 
   /* 让所有 page content 浮在纸纹之上 */
@@ -356,7 +356,7 @@
   /* reduced-motion 降级 */
   @media (prefers-reduced-motion: reduce) {
     body::before {
-      opacity: 0.012;
+      opacity: 0.018;
     }
 
     *,
