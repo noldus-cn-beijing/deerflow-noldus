@@ -320,6 +320,20 @@ class SubagentExecutor:
         # Reuse shared middleware composition with lead agent.
         middlewares = build_subagent_runtime_middlewares(lazy_init=True)
 
+        # Attach HandoffIsolationProvider so subagent's read_file on
+        # handoff_*.json files is gated by lead's {{handoff://}} authorization.
+        from deerflow.guardrails.handoff_isolation_provider import HandoffIsolationProvider
+        from deerflow.guardrails.middleware import GuardrailMiddleware
+
+        handoff_isolation = HandoffIsolationProvider(
+            authorized_paths=self.authorized_handoff_paths,
+            self_outbox_subagent_name=self.config.name,
+        )
+        middlewares.append(GuardrailMiddleware(
+            provider=handoff_isolation,
+            passport=f"subagent:{self.config.name}",
+        ))
+
         # Build system prompt with inline skill injection
         system_prompt = self._build_system_prompt()
 
