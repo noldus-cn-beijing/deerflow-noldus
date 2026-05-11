@@ -273,6 +273,7 @@ class SubagentExecutor:
         thread_data: ThreadDataState | None = None,
         thread_id: str | None = None,
         trace_id: str | None = None,
+        authorized_handoff_paths: set[str] | None = None,
     ):
         """Initialize the executor.
 
@@ -284,6 +285,13 @@ class SubagentExecutor:
             thread_data: Thread data from parent agent.
             thread_id: Thread ID for sandbox operations.
             trace_id: Trace ID from parent for distributed tracing.
+            authorized_handoff_paths: Set of absolute workspace paths the
+                subagent is authorized to read via read_file. Populated by
+                task_tool from {{handoff://<name>}} placeholders in the lead's
+                task prompt. None or empty set = no authorization (subagent
+                cannot read peer handoff files). Consumed by
+                HandoffIsolationProvider attached to the subagent's middleware
+                chain (see Task 11).
         """
         self.config = config
         self.parent_model = parent_model
@@ -292,6 +300,7 @@ class SubagentExecutor:
         self.thread_id = thread_id
         # Generate trace_id if not provided (for top-level calls)
         self.trace_id = trace_id or str(uuid.uuid4())[:8]
+        self.authorized_handoff_paths = authorized_handoff_paths or set()
 
         # Filter tools based on config
         self.tools = _filter_tools(
