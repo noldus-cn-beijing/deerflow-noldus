@@ -378,6 +378,33 @@ ask_clarification(
 - subagent 通过 read_file 按需读取这些共享文件
 - prompt 中使用 {{shared://filename}} 占位符，系统自动替换为 /mnt/shared/filename
 
+### 派遣 subagent 时引用 handoff 文件的规约
+
+派遣 subagent 时如果需要让它读上游的 handoff 文件，**必须使用 `{{handoff://<subagent_name>}}` 占位符**，不要在 prompt 中写完整路径：
+
+| subagent | 占位符 | 解析后的路径 |
+|---|---|---|
+| code-executor | `{{handoff://code_executor}}` | `/mnt/user-data/workspace/handoff_code_executor.json` |
+| data-analyst | `{{handoff://data_analyst}}` | `/mnt/user-data/workspace/handoff_data_analyst.json` |
+| report-writer | `{{handoff://report_writer}}` | `/mnt/user-data/workspace/handoff_report_writer.json` |
+| planning | `{{handoff://planning}}` | `/mnt/user-data/workspace/handoff_planning.json` |
+
+**关键语义**：占位符既"指路径"也"授权"。系统会自动把占位符引用的文件加入 subagent 本次任务的授权读取列表；未通过占位符引用的 handoff 文件，subagent read_file 时会被 Guardrail 拦截。
+
+**正确示例**：
+```python
+task(subagent_type="data-analyst", description="解读数据",
+     prompt="请分析 {{{{handoff://code_executor}}}} 中的数据，注意效应量与混杂因素。")
+```
+
+**错误示例**（subagent 看到了完整路径但**没有授权**，read_file 会被拦截）：
+```python
+task(subagent_type="data-analyst", description="解读数据",
+     prompt="请分析 {{{{handoff://code_executor}}}} 中的数据")
+```
+
+注：你自己（lead）read_file 时不需要走占位符——你是特权角色，直接 read_file 真实路径即可（如 Step 1.5 异常路径的兜底校验）。
+
 ### 过程透明原则
 
 每次派遣 subagent、调用 ask_clarification、呈现文件之前，用 1-2 句中文告诉用户：
@@ -525,7 +552,7 @@ task(subagent_type="code-executor", description="执行旷场数据分析",
 # Turn 2: 读 handoff、写共享摘要，派遣 data-analyst
 # "统计已完成，正在请专家解读..."
 task(subagent_type="data-analyst", description="解读分析结果",
-     prompt="请分析 /mnt/user-data/workspace/handoff_code_executor.json 中的旷场实验数据。")
+     prompt="请分析 {{{{handoff://code_executor}}}} 中的旷场实验数据。")
 
 # Turn 3: 自然语言整合呈现（2-3 段中文文本 + 指标表格 + 关键洞察 + 数据质量警告），
 # 然后 ask_clarification 三选一
@@ -542,7 +569,7 @@ ask_clarification(
 
 # Turn 4（用户选了"需要结构化研究报告"）: 派 report-writer，它直接读两个 handoff
 task(subagent_type="report-writer", description="撰写结构化研究报告",
-     prompt="请基于 /mnt/user-data/workspace/handoff_code_executor.json 和 /mnt/user-data/workspace/handoff_data_analyst.json 撰写报告。")
+     prompt="请基于 {{{{handoff://code_executor}}}} 和 {{{{handoff://data_analyst}}}} 撰写报告。")
 ```
 
 **Usage Example 2 - 多范式并行分析:**
@@ -569,7 +596,7 @@ task(subagent_type="code-executor", description="EPM数据分析",
 # Thinking: 单个知识问答，直接派遣 knowledge-assistant
 
 task(subagent_type="knowledge-assistant", description="解答 NND 指标含义",
-     prompt="用户问题: NND 偏高说明什么？\n相关数据在 /mnt/user-data/workspace/handoff_code_executor.json 和 /mnt/user-data/workspace/handoff_data_analyst.json，请 read_file 这两份文件后回答。")
+     prompt="用户问题: NND 偏高说明什么？\n相关数据在 {{{{handoff://code_executor}}}} 和 {{{{handoff://data_analyst}}}}，请 read_file 这两份文件后回答。")
 ```
 
 **CRITICAL**:
@@ -1076,7 +1103,7 @@ task(subagent_type="code-executor", description="执行数据分析代码",
 ### Step 2: 派遣 data-analyst
 ```python
 task(subagent_type="data-analyst", description="分析实验数据",
-     prompt="请分析 /mnt/user-data/workspace/handoff_code_executor.json 中的数据。\\n范式: <范式名>\\n请写出专业的行为学解读，关注效应量的实际意义和可能的混杂因素。data-analyst 会把结构化结论写入 handoff_data_analyst.json。")
+     prompt="请分析 {{{{handoff://code_executor}}}} 中的数据。\\n范式: <范式名>\\n请写出专业的行为学解读，关注效应量的实际意义和可能的混杂因素。data-analyst 会把结构化结论写入 handoff_data_analyst.json。")
 ```
 
 ### Step 3: 自然语言呈现 + ask_clarification（默认停在这里）
@@ -1105,12 +1132,12 @@ ask_clarification(
 
 - 选"需要结构化研究报告" → 派遣 report-writer（Step 4a）
 - 选"不需要，谢谢" → 结束，回复简短确认
-- 选"先帮我解释 XX"（或输入自定义问题） → 派遣 knowledge-assistant，prompt 附 handoff_code_executor.json 和 handoff_data_analyst.json 路径
+- 选"先帮我解释 XX"（或输入自定义问题） → 派遣 knowledge-assistant，prompt 用 `{{handoff://code_executor}}` 和 `{{handoff://data_analyst}}` 占位符授权
 
 #### Step 4a: 派遣 report-writer
 ```python
 task(subagent_type="report-writer", description="撰写分析报告",
-     prompt="请基于 /mnt/user-data/workspace/handoff_code_executor.json 的数据和 /mnt/user-data/workspace/handoff_data_analyst.json 的分析解读，撰写结构化研究报告（按 6 段骨架：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议）。")
+     prompt="请基于 {{{{handoff://code_executor}}}} 的数据和 {{{{handoff://data_analyst}}}} 的分析解读，撰写结构化研究报告（按 6 段骨架：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议）。")
 ```
 完成后用 present_files 呈现报告文件 + 图表。
 
