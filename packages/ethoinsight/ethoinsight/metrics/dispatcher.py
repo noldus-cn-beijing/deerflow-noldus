@@ -21,6 +21,12 @@ from ethoinsight.metrics.epm import (
     compute_open_arm_time,
     compute_total_entry_count,
 )
+from ethoinsight.metrics.zero_maze import (
+    compute_open_zone_time_ratio,
+    compute_open_zone_time,
+    compute_open_zone_distance,
+    compute_hesitation_count,
+)
 
 
 # ============================================================================
@@ -77,6 +83,11 @@ def compute_paradigm_metrics(
             m["open_arm_entry_count"] = compute_open_arm_entry_count(df)
             m["open_arm_time"] = compute_open_arm_time(df)
             m["total_entry_count"] = compute_total_entry_count(df)
+        elif paradigm == "zero_maze":
+            m["open_zone_time_ratio"] = compute_open_zone_time_ratio(df)
+            m["open_zone_time"] = compute_open_zone_time(df)
+            m["open_zone_distance"] = compute_open_zone_distance(df)
+            m["hesitation_count"] = compute_hesitation_count(df)
         per_subject[name] = m
 
     # Compute shoaling group-level timeseries
@@ -206,6 +217,34 @@ def compute_paradigm_metrics(
                     "message": (
                         f"Subject '{name}' 总进臂次数={int(te)} (<8)。"
                         "开臂指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
+                    ),
+                })
+    if paradigm == "zero_maze":
+        # Per zero_maze.md: n < 5 per group → low statistical power
+        for grp_name, grp_metrics in group_summary.items():
+            if not grp_metrics:
+                continue
+            sample_n = next(iter(grp_metrics.values())).get("n", 0)
+            if 0 < sample_n < 5:
+                data_quality_warnings.append({
+                    "severity": "warning",
+                    "metric": "all",
+                    "message": (
+                        f"Group '{grp_name}' has n={sample_n} (<5). "
+                        "统计功效不足，结论需谨慎。"
+                    ),
+                })
+        # Per zero_maze.md: total distance too low → motor suppression confound
+        _ZM_LOW_DISTANCE_THRESHOLD = 10.0  # cm; very low → movement suppressed
+        for name, m in per_subject.items():
+            td = m.get("distance_moved")
+            if td is not None and isinstance(td, (int, float)) and td < _ZM_LOW_DISTANCE_THRESHOLD:
+                data_quality_warnings.append({
+                    "severity": "warning",
+                    "metric": "distance_moved",
+                    "message": (
+                        f"Subject '{name}' 总移动距离={td:.2f} (<{_ZM_LOW_DISTANCE_THRESHOLD})。"
+                        "开放区指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
                     ),
                 })
 

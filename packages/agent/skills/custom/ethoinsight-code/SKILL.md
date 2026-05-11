@@ -24,7 +24,7 @@ type: workflow
 - **EPM** (高架十字迷宫): `references/by-paradigm/epm.md`
 - **OFT** (Open Field): `references/by-paradigm/oft.md`
 - **Shoaling** (群体游动): `references/by-paradigm/shoaling.md` *(Phase 2 时撰写)*
-- **Zero Maze**: `references/by-paradigm/zero-maze.md` *(Phase 3 时撰写)*
+- **Zero Maze**: `references/by-paradigm/zero-maze.md`
 - **LDB** (Light-Dark Box): `references/by-paradigm/ldb.md` *(Phase 3 时撰写)*
 - **TST** (Tail Suspension): `references/by-paradigm/tst.md` *(Phase 3 时撰写)*
 - **FST** (Forced Swim): `references/by-paradigm/fst.md` *(Phase 3 时撰写)*

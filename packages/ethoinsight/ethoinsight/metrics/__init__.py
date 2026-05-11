@@ -5,6 +5,7 @@
   - shoaling.py: 群体游动指标
   - oft.py: Open Field 指标
   - epm.py: 高架十字迷宫指标
+  - zero_maze.py: Zero Maze 环形迷宫指标
   - dispatcher.py: compute_paradigm_metrics() 派发入口
 
 代码外部仍可 `from ethoinsight.metrics import compute_open_arm_time` 等历史导入路径
@@ -35,6 +36,12 @@ from ethoinsight.metrics.epm import (
     compute_open_arm_time,
     compute_total_entry_count,
 )
+from ethoinsight.metrics.zero_maze import (
+    compute_open_zone_time_ratio,
+    compute_open_zone_time,
+    compute_open_zone_distance,
+    compute_hesitation_count,
+)
 from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 
 __all__ = [
@@ -53,5 +60,9 @@ __all__ = [
     "compute_open_arm_entry_ratio",
     "compute_open_arm_time",
     "compute_total_entry_count",
+    "compute_open_zone_time_ratio",
+    "compute_open_zone_time",
+    "compute_open_zone_distance",
+    "compute_hesitation_count",
     "compute_paradigm_metrics",
 ]
