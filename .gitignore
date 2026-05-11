@@ -46,3 +46,6 @@ docs/e2e/*
 
 # Generated temp files
 packages/agent/temp/
+
+# Git worktrees (temporary, should never be committed)
+.claude/worktrees/
