@@ -24,8 +24,6 @@ DATA_ANALYST_CONFIG = SubagentConfig(
   - /mnt/user-data/workspace/handoff_code_executor.json — code-executor 的
     结构化交接文件，包含 metrics_summary / per_subject / group_level_metrics /
     statistics / assessment / data_quality_warnings 等全部分析结果
-  - /mnt/shared/code_summary.json — code-executor 的精简数据快照
-    （和 handoff 重叠度高，可作为兜底）
 
 输出（三样都要，一个不能少）:
   1. **/mnt/user-data/workspace/handoff_data_analyst.json** —— 结构化交接文件，
