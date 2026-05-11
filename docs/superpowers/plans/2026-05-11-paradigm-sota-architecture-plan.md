@@ -18,11 +18,11 @@
 > **多 agent 接力主进度板。** 每个 task 完成后由执行 agent 把对应 checkbox 勾上 + 在「当前 Phase」字段更新到下一个 task。
 
 ```yaml
-current_phase: "Phase 4 - 旧工具清理"
-current_task: "T1 - 删 7 个废弃 langchain 工具"
-last_completed: "Phase 3 完成（commits a2daae08..e15b89c4）：Zero Maze(4函数/28测试) + LDB(3/20) + FST(3/18) + TST(3/19)，合计 13 新函数 + 85 新测试 + 4 by-paradigm docs + e2e(ZeroMaze pass, LDB 列名待适配)"
-blockers: ["Phase 4 需确认 7 个 langchain 工具在所有 subagent 配置中已无引用"]
-notes: "SOTA 架构已覆盖 6 范式（EPM/OFT/ZeroMaze/LDB/FST/TST）。metrics/ 子包现含 8 个范式文件。SKILL.md 6/7 入口完成（仅 shoaling 仍 placeholder）。"
+current_phase: "Phase 5 - 同事 review checklist（异步并行）"
+current_task: "T1 - 建 review 包结构（待启动）"
+last_completed: "Phase 4 完成（commit a25cf3ba）：10 文件删除（7 langchain 工具 + shoaling/_gate/tool 模板 + 4 旧测试），data_analyst/report_writer/knowledge_assistant 清理 disallowed_tools"
+blockers: []
+notes: "SOTA 架构迁移主体工程完成（Phase 1-4）。Phase 5 是异步 review，不阻塞工程。ethoinsight: 182 passed/9 pre-existing fail；agent backend: 2168 passed/14 pre-existing fail。"
 ```
 
 ---
