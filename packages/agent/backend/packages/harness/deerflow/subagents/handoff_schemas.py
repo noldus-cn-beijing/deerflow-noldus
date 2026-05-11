@@ -49,9 +49,9 @@ class DataQualityWarning(BaseModel):
 
 
 class CodeExecutorHandoff(BaseModel):
-    """Handoff JSON produced by the code-executor subagent's assess_and_handoff tool.
+    """Handoff JSON produced by the code-executor subagent (SOTA glue-script architecture).
 
-    Matches the shape written by ethoinsight.templates.tool.assess_and_handoff_tool.
+    Written by the glue script to handoff_code_executor.json in the workspace.
     """
 
     model_config = ConfigDict(extra="allow")

@@ -1,14 +1,7 @@
-"""Analysis templates for behavioral data paradigms.
+"""Paradigm registry for behavioral data paradigms.
 
 Public API:
-- get_analysis_template_tool: LangChain tool for code-executor subagent (legacy)
-- run_paradigm_analysis_tool: LangChain tool that executes analysis in one call
-- run_paradigm_analysis_core: Pure function for testing (no langchain dependency)
-- get_available_paradigms: list available paradigm template names
-- render_template: render a template with given parameters (used internally)
-
-Paradigm Registry:
-- CATEGORIES: 7 major experiment categories for two-level ask_clarification
+- CATEGORIES: 7 major experiment categories
 - PARADIGMS: 18 behavioral paradigms with zones, columns, subject type, and status
 - list_categories(): return all 7 categories
 - list_paradigms(status=, category=): filtered paradigm listing
@@ -21,18 +14,9 @@ import logging
 
 from pathlib import Path
 
-# Lazy imports for langchain-dependent tools (only used in agent process).
-# Standalone ethoinsight does not depend on langchain.
-_tool_exports: dict = {}
-
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "get_analysis_template_tool",
-    "get_available_paradigms",
-    "render_template",
-    "run_paradigm_analysis_core",
-    "run_paradigm_analysis_tool",
     # Paradigm registry
     "CATEGORIES",
     "PARADIGMS",
@@ -42,28 +26,6 @@ __all__ = [
     "verify_paradigm_columns",
 ]
 
-
-def __getattr__(name: str):
-    """Lazy-import langchain-dependent tools so standalone ethoinsight works."""
-    if name in {
-        "get_analysis_template_tool",
-        "get_available_paradigms",
-        "render_template",
-        "run_paradigm_analysis_core",
-        "run_paradigm_analysis_tool",
-    }:
-        if name not in _tool_exports:
-            from . import tool as _tool_mod
-
-            _tool_exports.update({
-                "get_analysis_template_tool": _tool_mod.get_analysis_template_tool,
-                "get_available_paradigms": _tool_mod.get_available_paradigms,
-                "render_template": _tool_mod.render_template,
-                "run_paradigm_analysis_core": _tool_mod.run_paradigm_analysis_core,
-                "run_paradigm_analysis_tool": _tool_mod.run_paradigm_analysis_tool,
-            })
-        return _tool_exports[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # ===== Paradigm Categories (7 major groups for two-level ask_clarification) =====
 
@@ -267,7 +229,7 @@ PARADIGMS: dict[str, dict] = {
         "ev19_arena_templates": ["Ugo Basile Active Avoidance", "Ugo Basile FCS 1 cubicle", "Ugo Basile FCS 4 cubicles"],
         "status": "planned",
     },
-    # ===== 斑马鱼行为 (1, ready) =====
+    # ===== 斑马鱼行为 (1) =====
     "shoaling": {
         "cn": "斑马鱼鱼群行为",
         "en": "Shoaling",
@@ -276,7 +238,7 @@ PARADIGMS: dict[str, dict] = {
         "zones": ["center", "periphery"],
         "expected_columns": ["X_center", "Y_center", "velocity", "IID", "NND"],
         "ev19_arena_templates": ["DanioVision DVOC 004x, 96 round wells"],
-        "status": "ready",
+        "status": "planned",
     },
 }
 

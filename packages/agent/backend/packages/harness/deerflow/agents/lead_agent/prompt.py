@@ -1050,8 +1050,6 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 文件路径: /mnt/user-data/uploads/<文件前缀>*.<扩展名>
 分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]
 特殊需求: （用户的额外要求，如无则写"无"）
-
-使用 get_analysis_template 工具获取分析脚本模板，输出到 /mnt/user-data/outputs/
 ```
 
 **正确示例**：

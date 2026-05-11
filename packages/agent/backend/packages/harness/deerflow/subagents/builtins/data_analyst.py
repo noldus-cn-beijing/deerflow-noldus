@@ -119,8 +119,7 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "bash", "str_replace",
-                       "web_search", "web_fetch", "image_search",
-                       "get_analysis_template"],
+                       "web_search", "web_fetch", "image_search"],
     model="inherit",
     max_turns=12,
     timeout_seconds=600,

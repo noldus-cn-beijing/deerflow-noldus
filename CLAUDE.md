@@ -39,7 +39,7 @@ noldus-insight/
 │   ├── architecture-diagram.md  # 架构图（上层价值 + 下层技术）
 │   ├── plans/              # 设计文档
 │   ├── specs/              # 技术规格
-│   ├── handoffs/           # 会话交接文档（按日期排序）
+│   ├── handoffs/           # 会话交接文档（按月份分目录：2026-04/ 2026-05/ …）
 │   ├── milestone/          # 里程碑总结
 │   ├── problems/           # 问题记录
 │   ├── sop/                # 操作手册
@@ -222,7 +222,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
       - **agent 交互流程不变**：lead 通过 prompt + skill 决策 → 派遣 subagent → subagent 间 handoff JSON 文件传 hard fact
     - **影响范围**：`agents/lead_agent/prompt.py` Gate 1 段（删除旧 18 范式表）、`experiment_context.py`（set_experiment_paradigm 加 ev19_template 必填）、`packages/ethoinsight/ethoinsight/ev19_facts.py`（新增）、`packages/agent/backend/packages/harness/deerflow/guardrails/ev19_template_provider.py`（新增）、`packages/agent/skills/custom/ethoinsight-planning/references/quality-gates.md`
     - **不影响**：`ethoinsight/templates/*.py`（按学术范式组织的分析模板保留）、code-executor 流水线、Gate 2 数据质量检查、5 个 ethoinsight subagent 的注册和职责
-11. **Memory event-loop 修复（已完成 2026-04-29）** — `RuntimeError: Event loop is closed` 已通过 sync 上游 `82731aeb` 彻底修复（memory 更新改 sync `model.invoke()`，不再创建短命 event loop）。详见 [docs/handoffs/2026-04-29-event-loop-fix-v2-completed-handoff.md](docs/handoffs/2026-04-29-event-loop-fix-v2-completed-handoff.md)。本地 fork 现在比上游更接近最新版。
+11. **Memory event-loop 修复（已完成 2026-04-29）** — `RuntimeError: Event loop is closed` 已通过 sync 上游 `82731aeb` 彻底修复（memory 更新改 sync `model.invoke()`，不再创建短命 event loop）。详见 [docs/handoffs/2026-04/2026-04-29-event-loop-fix-v2-completed-handoff.md](docs/handoffs/2026-04/2026-04-29-event-loop-fix-v2-completed-handoff.md)。本地 fork 现在比上游更接近最新版。
 12. **复用 deerflow 现成功能优先于自造轮子** — 实施新 agent 行为时，先调研 deerflow harness 已有的中间件 / 工具 / provider 协议，能复用就复用，不要重新发明。已知现成可用的关键能力：`ask_clarification` + `ClarificationMiddleware`（反问中断）、`LoopDetectionMiddleware`（防 tool call 死循环，已默认启用）、`GuardrailMiddleware` + `GuardrailProvider` 协议（pre-tool-call 授权决策）、`ToolErrorHandlingMiddleware`（tool 抛错自动转 error ToolMessage）、Skill 渐进披露（agent 主动 read_file SKILL.md + references/）、`update_agent` / `setup_agent` 工具（custom agent 自我修改 SOUL.md，v0.1 后启用）、`Skill Evolution`（agent 自建/改 skill，v0.1 后启用）、`/api/threads/{id}/runs/{rid}/feedback` API（替代手写飞轮反馈通道）。**自写中间件之前先看 `packages/agent/backend/packages/harness/deerflow/agents/middlewares/` 和 `tools/builtins/` 目录有没有现成的**。
 
 ## 快速上手
@@ -231,7 +231,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 1. 本文档 — 了解全貌
 2. [docs/roadmap.md](docs/roadmap.md) — 了解 12 个月规划和 v0.1 里程碑
-3. `docs/handoffs/` 下最新日期的文档 — 了解上次会话到哪了
+3. `docs/handoffs/` 下最新月份目录中最新日期的文档 — 了解上次会话到哪了
 4. 根据当前 Phase 的优先级开始工作
 
 ## 相关文档

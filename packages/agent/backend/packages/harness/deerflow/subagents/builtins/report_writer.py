@@ -215,7 +215,7 @@ write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "web_search", "web_fetch", "bash", "str_replace",
-                       "image_search", "get_analysis_template"],
+                       "image_search"],
     model="inherit",
     max_turns=15,
     timeout_seconds=600,

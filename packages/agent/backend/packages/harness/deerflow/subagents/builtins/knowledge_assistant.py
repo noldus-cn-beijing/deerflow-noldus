@@ -63,7 +63,6 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
         "present_files",         # subagent standard
         "bash",                  # code execution not in scope
         "str_replace",           # file editing not in scope
-        "get_analysis_template", # analysis not in scope
     ],
     model="inherit",
     max_turns=6,

@@ -99,7 +99,7 @@ class TestCodeExecutorHandoffSchema:
             CodeExecutorHandoff(status="completed", summary="ok", confidence=1.5)
 
     def test_current_production_shape_parses(self):
-        """Mirrors the dict currently written by assess_and_handoff_tool."""
+        """Mirrors the dict currently written by the SOTA glue-script."""
         production_sample = {
             "status": "completed",
             "summary": "Analyzed 5 files, 5 subjects, paradigm: shoaling",
