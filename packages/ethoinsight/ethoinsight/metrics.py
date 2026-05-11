@@ -322,6 +322,122 @@ def compute_open_arm_time_ratio(
     return float(combined.mean())
 
 
+def _count_zone_entries(df: pd.DataFrame, zone_cols: list[str]) -> int | None:
+    """Count 0→1 transitions across zone columns (combined with OR).
+
+    Returns None when no matching columns exist, 0 when no entries detected.
+    """
+    if not zone_cols:
+        return None
+    # Combine multiple zone columns: in zone if ANY column == 1
+    combined = df[zone_cols].max(axis=1).dropna()
+    if combined.empty:
+        return 0
+    vals = combined.to_numpy(dtype=int)
+    # Entry: 0→1 transition. First frame being 1 also counts as an entry.
+    entries = 1 if vals[0] == 1 else 0
+    transitions = (vals[1:] == 1) & (vals[:-1] == 0)
+    return entries + int(transitions.sum())
+
+
+def _find_arm_zone_columns(df: pd.DataFrame) -> list[str]:
+    """Find all arm-related zone columns (open_arm, closed_arm, arm_*).
+
+    Excludes center/centre columns.
+    """
+    arm_cols = []
+    for col in df.columns:
+        if not col.startswith("in_zone_"):
+            continue
+        col_lower = col.lower()
+        # Skip center/centre zones
+        if "center" in col_lower or "centre" in col_lower:
+            continue
+        # Match arm patterns
+        if re.search(r"(open.?arm|closed.?arm|arm.?\d)", col_lower):
+            arm_cols.append(col)
+    return arm_cols
+
+
+def _get_frame_duration(df: pd.DataFrame) -> float | None:
+    """Estimate frame duration (seconds) from trial_time column."""
+    if "trial_time" not in df.columns:
+        return None
+    tt = df["trial_time"].dropna()
+    if len(tt) < 2:
+        return None
+    diffs = tt.diff().dropna()
+    if diffs.empty:
+        return None
+    return float(diffs.median())
+
+
+def compute_open_arm_entry_count(
+    df: pd.DataFrame,
+    open_arm_zones: list[str] | None = None,
+) -> int | None:
+    """Number of entries into open arms (0→1 transitions)."""
+    if open_arm_zones:
+        cols = [c for c in open_arm_zones if c in df.columns]
+    else:
+        cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
+    return _count_zone_entries(df, cols)
+
+
+def compute_open_arm_entry_ratio(
+    df: pd.DataFrame,
+    open_arm_zones: list[str] | None = None,
+) -> float | None:
+    """Ratio of open arm entries to total arm entries."""
+    open_count = compute_open_arm_entry_count(df, open_arm_zones)
+    total_count = compute_total_entry_count(df)
+    if open_count is None or total_count is None or total_count == 0:
+        return None
+    return open_count / total_count
+
+
+def compute_open_arm_time(
+    df: pd.DataFrame,
+    open_arm_zones: list[str] | None = None,
+) -> float | None:
+    """Total time (seconds) in open arms.
+
+    Multiplies the number of open-arm frames by the median inter-frame
+    interval from ``trial_time``. Falls back to frame count when
+    ``trial_time`` is unavailable.
+    """
+    if open_arm_zones:
+        cols = [c for c in open_arm_zones if c in df.columns]
+    else:
+        cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
+    if not cols:
+        return None
+    combined = df[cols].max(axis=1).dropna()
+    if combined.empty:
+        return 0.0
+    n_frames = int(combined.sum())
+    dt = _get_frame_duration(df)
+    if dt is not None:
+        return n_frames * dt
+    return float(n_frames)
+
+
+def compute_total_entry_count(df: pd.DataFrame) -> int | None:
+    """Total entries into all arm zones (open + closed, excluding center).
+
+    Counts entries into open-arm and closed-arm zone groups separately
+    (each group combines its columns with OR to avoid overcounting),
+    then sums across groups.
+    """
+    open_cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
+    closed_cols = [c for c in df.columns if re.search(r"in_zone.*closed.?arm", c, re.I)]
+    if not open_cols and not closed_cols:
+        return None
+    open_entries = _count_zone_entries(df, open_cols) or 0
+    closed_entries = _count_zone_entries(df, closed_cols) or 0
+    return open_entries + closed_entries
+
+
 # ============================================================================
 # Paradigm dispatcher
 # ============================================================================
@@ -370,6 +486,10 @@ def compute_paradigm_metrics(
             m["thigmotaxis_index"] = compute_thigmotaxis_index(df)
         elif paradigm == "epm":
             m["open_arm_time_ratio"] = compute_open_arm_time_ratio(df)
+            m["open_arm_entry_ratio"] = compute_open_arm_entry_ratio(df)
+            m["open_arm_entry_count"] = compute_open_arm_entry_count(df)
+            m["open_arm_time"] = compute_open_arm_time(df)
+            m["total_entry_count"] = compute_total_entry_count(df)
         per_subject[name] = m
 
     # Compute shoaling group-level timeseries
@@ -474,6 +594,33 @@ def compute_paradigm_metrics(
                 "only 1 subject detected. Group metrics require ≥2 simultaneously tracked subjects."
             ),
         })
+    if paradigm == "epm":
+        # Per epm.md: n < 5 per group → low statistical power
+        for grp_name, grp_metrics in group_summary.items():
+            if not grp_metrics:
+                continue
+            sample_n = next(iter(grp_metrics.values())).get("n", 0)
+            if 0 < sample_n < 5:
+                data_quality_warnings.append({
+                    "severity": "warning",
+                    "metric": "all",
+                    "message": (
+                        f"Group '{grp_name}' has n={sample_n} (<5). "
+                        "统计功效不足，结论需谨慎。"
+                    ),
+                })
+        # Per epm.md: total entries < 8 → motor suppression confound
+        for name, m in per_subject.items():
+            te = m.get("total_entry_count")
+            if te is not None and isinstance(te, (int, float)) and te < 8:
+                data_quality_warnings.append({
+                    "severity": "warning",
+                    "metric": "total_entry_count",
+                    "message": (
+                        f"Subject '{name}' 总进臂次数={int(te)} (<8)。"
+                        "开臂指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
+                    ),
+                })
 
     return {
         "paradigm": paradigm,
