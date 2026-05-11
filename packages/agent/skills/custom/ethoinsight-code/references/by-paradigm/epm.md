@@ -1,0 +1,112 @@
+# EPM (Elevated Plus Maze) 代码执行参考
+
+> 学术范式 key: `epm`
+> EV19 模板映射: `Elevated Plus Maze` 大类下所有变体
+> 行为学同事维护的领域知识: `docs/review-packages/2026-04-29-ev19-templates/by-experiment/epm.md`
+
+## 可用指标函数（在 `ethoinsight.metrics.epm`）
+
+| 函数 | 输入 | 输出 | 含义 |
+|---|---|---|---|
+| `compute_open_arm_time_ratio(df, open_arm_zones=None)` | DataFrame | `float \| None` | 开臂时间占比（开臂帧数 / 总帧数） |
+| `compute_open_arm_entry_count(df, open_arm_zones=None)` | DataFrame | `int \| None` | 开臂进入次数（0→1 跨越，首帧为 1 也算 1 次） |
+| `compute_open_arm_entry_ratio(df, open_arm_zones=None)` | DataFrame | `float \| None` | 开臂进入次数 / 总进臂次数 |
+| `compute_open_arm_time(df, open_arm_zones=None)` | DataFrame | `float \| None` | 开臂总停留时间（秒；从 trial_time 列估算 dt） |
+| `compute_total_entry_count(df)` | DataFrame | `int \| None` | 总进臂次数（开臂进入 + 闭臂进入，各组内 OR 合并） |
+
+通用指标（任范式可用）:
+- `ethoinsight.metrics._common.compute_distance_moved(df) -> float | None`
+- `ethoinsight.metrics._common.compute_velocity_stats(df) -> dict`
+
+## 派发器（一次性算全套）
+
+```python
+from ethoinsight.metrics import compute_paradigm_metrics
+
+result = compute_paradigm_metrics(parsed_data, paradigm="epm", groups=groups)
+# result = {
+#   "paradigm": "epm",
+#   "per_subject": {subject_name: {open_arm_time_ratio, open_arm_entry_count, ...}},
+#   "group_summary": {group_name: {metric: {mean, std, n, values}}},
+#   "data_quality_warnings": [...],  # n < 5/组 或 total_entry_count < 8 自动警告
+#   ...
+# }
+```
+
+## 胶水脚本范例（end-to-end）
+
+文件名建议: `${workspace_path}/analysis.py`
+
+```python
+"""EPM 分析胶水脚本。
+
+由 code-executor 写，bash 执行。
+"""
+import json
+from pathlib import Path
+
+from ethoinsight import parse, statistics, charts
+from ethoinsight.metrics import compute_paradigm_metrics
+
+WORKSPACE = Path("/mnt/user-data/workspace")
+RAW_FILES = list(WORKSPACE.glob("inputs/*.txt"))  # 用户上传的 EthoVision 导出
+GROUPS = {  # 由 lead 在 task() prompt 里给
+    "control": ["subject_1", "subject_2", "subject_3", "subject_4", "subject_5"],
+    "treatment": ["subject_6", "subject_7", "subject_8", "subject_9", "subject_10"],
+}
+
+# 1. 解析（仍用现成 parse 模块）
+parsed_data = parse.parse_trajectories([str(f) for f in RAW_FILES])
+
+# 2. 算指标
+metrics_result = compute_paradigm_metrics(parsed_data, paradigm="epm", groups=GROUPS)
+
+# 3. 统计（统计模块仍是 Phase 1 范围外，沿用 ethoinsight.statistics）
+stats_result = statistics.run_groupwise(
+    metrics_result["per_subject"],
+    groups=GROUPS,
+    metrics=["open_arm_time_ratio", "open_arm_entry_count", "open_arm_time", "total_entry_count"],
+)
+
+# 4. 出图（read ethoinsight-charts skill 后选 box_plot / raincloud_plot 等）
+chart_files = []
+for metric_name in ["open_arm_time_ratio", "open_arm_entry_count"]:
+    fig_path = WORKSPACE / "outputs" / f"epm_{metric_name}_boxplot.png"
+    charts.box_plot(
+        metrics_result["per_subject"],
+        groups=GROUPS,
+        metric=metric_name,
+        output_path=str(fig_path),
+    )
+    chart_files.append(str(fig_path))
+
+# 5. 写 handoff
+handoff = {
+    "paradigm": "epm",
+    "metrics": metrics_result,
+    "statistics": stats_result,
+    "charts": chart_files,
+    "data_quality_warnings": metrics_result.get("data_quality_warnings", []),
+}
+(WORKSPACE / "handoff_code_executor.json").write_text(
+    json.dumps(handoff, ensure_ascii=False, indent=2)
+)
+print(f"OK: handoff written to {WORKSPACE / 'handoff_code_executor.json'}")
+```
+
+## 数据质量自动警告（dispatcher 内已实现）
+
+- `n < 5/组` → `warning` 级警告，提示统计功效不足
+- `total_entry_count < 8` → `warning` 级警告，提示可能为运动抑制（混杂因素）
+
+这些警告会自动进 `metrics_result["data_quality_warnings"]`，不需要胶水脚本额外加。
+
+## 出图建议（详见 ethoinsight-charts skill）
+
+- `open_arm_time_ratio` / `open_arm_entry_ratio`: box_plot 或 raincloud_plot（连续 + 组比较）
+- `open_arm_entry_count` / `total_entry_count`: bar_chart 或 box_plot
+- 时间序列（如分钟 bin 化的开臂滞留率）: 留给后续扩展
+
+## handoff JSON 必须字段
+
+见 `../templates/output-contract.md`。EPM 特别需要 `data_quality_warnings` 字段（dispatcher 已自动填）。

@@ -1,87 +1,43 @@
 ---
 name: ethoinsight-code
 description: >
-  Behavioral data analysis execution guide for code-executor subagent.
-  Orchestrates 5 granular tools (parse_trajectories → compute_metrics →
-  run_statistics → generate_charts → assess_and_handoff) via intermediate
-  files in /mnt/user-data/workspace/. Includes quality checks, method
-  validation rules, and error recovery procedures.
-version: 2.0.0
-author: noldus-insight
+  EthoInsight 数据分析执行手册（给 code-executor subagent 用）。
+  按 paradigm 渐进披露指标函数清单、胶水脚本范例、handoff JSON schema。
+  Use when code-executor receives a paradigm-specific analysis task.
+type: workflow
 ---
 
-# EthoInsight 数据分析执行指南
+# EthoInsight 代码执行指南
 
-分析流水线由 5 个工具依次完成，中间产物保存在 `/mnt/user-data/workspace/`，
-每步结束后读取对应的 `*_summary.json` 验证质量再进入下一步。
+## 工作模式
 
-## 6 步工作流
+你（code-executor）拿到 lead 派遣的任务后:
 
-### 步骤 1：解析轨迹数据
+1. **read** `references/by-paradigm/<paradigm>.md` — 看本范式可用的指标函数清单 + 调用范例 + handoff schema
+2. **read** ethoinsight-charts skill（已在你的白名单） — 按数据特性选图
+3. **write_file** 写胶水脚本 `analysis.py`（在 `${workspace_path}/` 下）— `import ethoinsight.metrics.<范式>` + 算指标 + 跑统计 + 出图 + 写 `handoff_code_executor.json`
+4. **bash** `python ${workspace_path}/analysis.py`
+5. 出错时按 `references/error-recovery.md` 处理；脚本崩溃 traceback 会自动回到你的 context，改代码重跑（最多 2 次）
 
-调用 `parse_trajectories`：
-- `file_pattern`：从 lead agent 的任务描述中提取，例如 `/mnt/user-data/uploads/*.txt`
+## 范式渐进披露入口
 
-调用后读 `/mnt/user-data/workspace/parsed_summary.json` 检查：
-- `n_files` ≥ 3 表示样本量充足
-- `columns` 含 x_center_mm、y_center_mm、velocity_mm_s 等核心列
-- `quality_warnings` 为空或可接受
+- **EPM** (高架十字迷宫): `references/by-paradigm/epm.md`
+- **OFT** (Open Field): `references/by-paradigm/oft.md` *(Phase 2 时撰写)*
+- **Shoaling** (群体游动): `references/by-paradigm/shoaling.md` *(Phase 2 时撰写)*
+- **Zero Maze**: `references/by-paradigm/zero-maze.md` *(Phase 3 时撰写)*
+- **LDB** (Light-Dark Box): `references/by-paradigm/ldb.md` *(Phase 3 时撰写)*
+- **TST** (Tail Suspension): `references/by-paradigm/tst.md` *(Phase 3 时撰写)*
+- **FST** (Forced Swim): `references/by-paradigm/fst.md` *(Phase 3 时撰写)*
 
-出现 `status: failed` 时参考 `references/error-recovery.md` 的"解析失败"一节。
+## 通用资源
 
-### 步骤 2：计算行为指标
+- `references/error-recovery.md` — 常见错误诊断 + 重试策略
+- `references/quality-checks.md` — 数据质量自检清单（NaN / 单位 / 列名缺失）
+- `templates/output-contract.md` — handoff JSON 字段规范
 
-调用 `compute_metrics`：
-- `paradigm`：从任务描述推断（shoaling, open_field, epm 等）
-- `groups`：JSON 字符串，例如 `'{"control":["Subject 1","Subject 2"],"treatment":["Subject 3","Subject 4","Subject 5"]}'`
-- `metrics`：可选，逗号分隔；留空使用范式默认指标
+## 反模式（永远禁止）
 
-调用后读 `/mnt/user-data/workspace/metrics_summary.json` 检查：
-- `computed_metrics` 含核心指标
-- 每组 `n ≥ 3`（`quality_warnings` 会自动标注 n<3 的问题）
-- 无 `zero variance` 警告
-
-### 步骤 3：组间统计检验
-
-调用 `run_statistics`（无需额外参数，自动从 metrics.pkl 读取）：
-- `alpha=0.05`, `correction="bonferroni"`（默认值即可）
-
-调用后读 `/mnt/user-data/workspace/statistics.json` 检查：
-- `comparisons` 覆盖每个指标
-- `method_warnings` 为空；如有 n<5 + 参数检验的警告需记录，后续写入 handoff
-
-### 步骤 4：生成图表
-
-调用 `generate_charts`：
-- `chart_types="box_plot"`（默认）；若用户指定 violin_plot/raincloud_plot 按需传入
-- `include_trajectory=True` 生成轨迹图
-- `include_timeseries=True` 生成 shoaling 特有的 IID 和 polarity 时序图
-
-调用后读 `/mnt/user-data/workspace/charts.json` 确认 `chart_paths` 非空。
-
-### 步骤 5：领域评估与 handoff
-
-调用 `assess_and_handoff`：
-- `paradigm`：与步骤 2 相同
-- `groups`：与步骤 2 相同
-
-调用后确认 `handoff_path` 存在，检查 `n_errors` 和 `errors` 预览。
-
-### 步骤 6：返回结果
-
-按 `templates/output-contract.md` 的格式返回给 lead agent，消息含：
-- handoff JSON 路径
-- 关键输出文件（metrics.csv、statistics.json、charts PNG）
-- 质量警告摘要
-
-## 范式不支持时的 Fallback
-
-若推断的范式未被 `compute_metrics` 支持（返回 `status: failed` 且提示 "paradigm not supported"），
-切换到 fallback 流程，详见 `references/fallback-workflow.md`：
-先用 `get_analysis_template` 获取脚本，write_file 后 bash 执行。
-
-## 质量检查与错误恢复
-
-- 数据质量判断细节：`references/quality-checks.md`
-- 每步失败时的排查步骤：`references/error-recovery.md`
-- 工具参数快速参考：`references/tool-reference.md`
+1. ❌ 跑 `parse_trajectories` / `compute_metrics` / `run_statistics` 等老 langchain 工具（已废弃）
+2. ❌ 把整段范式分析包装成 1 个 `analyze_<paradigm>()` 函数（颗粒度错）
+3. ❌ 现场实现指标算法（如 run-length encoding）— 工程师已预制在 `ethoinsight.metrics.<范式>`
+4. ❌ 读 EthoVision raw txt 前几行确认列名 — 函数内部已固化列名识别（regex 匹配）
