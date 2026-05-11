@@ -31,7 +31,6 @@ REPORT_WRITER_CONFIG = SubagentConfig(
   - /mnt/user-data/workspace/handoff_data_analyst.json —— 专业解读
     （key_findings / outlier_findings / method_warnings / excluded_metrics /
     recommendations）
-  - /mnt/shared/code_summary.json —— 可选兜底，和 handoff_code_executor 重叠度高
   - /mnt/user-data/workspace/handoff_planning.json —— 若存在，可读 group_semantics
     字段获取处理描述（由 planning skill 追问得到）
 
