@@ -13,7 +13,7 @@ from ethoinsight.metrics.shoaling import (
     compute_nearest_neighbor_distance,
     compute_group_polarity,
 )
-from ethoinsight.metrics.oft import compute_center_time_ratio, compute_thigmotaxis_index
+from ethoinsight.metrics.oft import compute_center_time_ratio, compute_thigmotaxis_index, compute_center_distance_ratio, compute_center_entry_count
 from ethoinsight.metrics.epm import (
     compute_open_arm_time_ratio,
     compute_open_arm_entry_count,
@@ -69,6 +69,8 @@ def compute_paradigm_metrics(
         if paradigm == "open_field":
             m["center_time_ratio"] = compute_center_time_ratio(df)
             m["thigmotaxis_index"] = compute_thigmotaxis_index(df)
+            m["center_distance_ratio"] = compute_center_distance_ratio(df)
+            m["center_entry_count"] = compute_center_entry_count(df)
         elif paradigm == "epm":
             m["open_arm_time_ratio"] = compute_open_arm_time_ratio(df)
             m["open_arm_entry_ratio"] = compute_open_arm_entry_ratio(df)

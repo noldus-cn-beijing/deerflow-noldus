@@ -25,6 +25,8 @@ from ethoinsight.metrics.shoaling import (
 from ethoinsight.metrics.oft import (
     compute_center_time_ratio,
     compute_thigmotaxis_index,
+    compute_center_distance_ratio,
+    compute_center_entry_count,
 )
 from ethoinsight.metrics.epm import (
     compute_open_arm_time_ratio,
@@ -44,6 +46,8 @@ __all__ = [
     "compute_group_polarity",
     "compute_center_time_ratio",
     "compute_thigmotaxis_index",
+    "compute_center_distance_ratio",
+    "compute_center_entry_count",
     "compute_open_arm_time_ratio",
     "compute_open_arm_entry_count",
     "compute_open_arm_entry_ratio",
