@@ -31,6 +31,7 @@ import {
   extractReasoningContentFromMessage,
   findToolCallResult,
 } from "@/core/messages/utils";
+import { reasoningPlugins } from "@/core/streamdown";
 import { extractTitleFromMarkdown } from "@/core/utils/markdown";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -268,6 +269,7 @@ export function MessageGroup({
                       <MarkdownContent
                         content={step.reasoning ?? ""}
                         isLoading={isLoading}
+                        rehypePlugins={reasoningPlugins.rehypePlugins}
                         animated={{
                           animation: "fadeIn",
                           duration: 200,
@@ -347,6 +349,7 @@ export function MessageGroup({
                   <MarkdownContent
                     content={lastReasoningStep.reasoning ?? ""}
                     isLoading={isLoading}
+                    rehypePlugins={reasoningPlugins.rehypePlugins}
                     animated={{
                       animation: "fadeIn",
                       duration: 200,
