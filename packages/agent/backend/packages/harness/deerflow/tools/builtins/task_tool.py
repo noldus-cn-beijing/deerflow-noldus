@@ -169,6 +169,12 @@ async def task_tool(
     # Subagents should not have subagent tools enabled (prevent recursive nesting)
     tools = get_available_tools(model_name=parent_model, subagent_enabled=False)
 
+    # Resolve {{shared://...}} placeholders to /mnt/shared/... paths
+    prompt = _resolve_placeholders(prompt)
+
+    # Resolve {{handoff://...}} placeholders and capture authorized paths
+    prompt, authorized_handoff_paths = _resolve_handoff_placeholders(prompt)
+
     # Create executor
     executor = SubagentExecutor(
         config=config,
@@ -178,14 +184,8 @@ async def task_tool(
         thread_data=thread_data,
         thread_id=thread_id,
         trace_id=trace_id,
+        authorized_handoff_paths=authorized_handoff_paths,
     )
-
-    # Resolve {{shared://...}} placeholders to /mnt/shared/... paths
-    prompt = _resolve_placeholders(prompt)
-
-    # Resolve {{handoff://...}} placeholders and capture authorized paths
-    prompt, authorized_handoff_paths = _resolve_handoff_placeholders(prompt)
-    _ = authorized_handoff_paths  # Threaded into SubagentExecutor in Task 10
 
     # Start background execution (always async to prevent blocking)
     # Use tool_call_id as task_id for better traceability
