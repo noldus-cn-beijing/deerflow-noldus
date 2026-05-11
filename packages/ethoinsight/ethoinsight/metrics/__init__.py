@@ -8,7 +8,7 @@
   - dispatcher.py: compute_paradigm_metrics() 派发入口
 
 代码外部仍可 `from ethoinsight.metrics import compute_open_arm_time` 等历史导入路径
-（通过顶层 ethoinsight/metrics.py shim 转发）。新代码推荐显式导入：
+（通过 metrics/__init__.py 重导出实现）。新代码推荐显式导入：
   from ethoinsight.metrics.epm import compute_open_arm_time
 """
 
