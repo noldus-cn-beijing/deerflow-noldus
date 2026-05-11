@@ -42,6 +42,11 @@ from ethoinsight.metrics.zero_maze import (
     compute_open_zone_distance,
     compute_hesitation_count,
 )
+from ethoinsight.metrics.ldb import (
+    compute_light_time_ratio,
+    compute_transition_count,
+    compute_light_latency,
+)
 from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 
 __all__ = [
@@ -64,5 +69,8 @@ __all__ = [
     "compute_open_zone_time",
     "compute_open_zone_distance",
     "compute_hesitation_count",
+    "compute_light_time_ratio",
+    "compute_transition_count",
+    "compute_light_latency",
     "compute_paradigm_metrics",
 ]

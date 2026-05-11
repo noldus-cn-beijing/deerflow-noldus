@@ -27,6 +27,11 @@ from ethoinsight.metrics.zero_maze import (
     compute_open_zone_distance,
     compute_hesitation_count,
 )
+from ethoinsight.metrics.ldb import (
+    compute_light_time_ratio,
+    compute_transition_count,
+    compute_light_latency,
+)
 
 
 # ============================================================================
@@ -88,6 +93,10 @@ def compute_paradigm_metrics(
             m["open_zone_time"] = compute_open_zone_time(df)
             m["open_zone_distance"] = compute_open_zone_distance(df)
             m["hesitation_count"] = compute_hesitation_count(df)
+        elif paradigm == "light_dark_box":
+            m["light_time_ratio"] = compute_light_time_ratio(df)
+            m["transition_count"] = compute_transition_count(df)
+            m["light_latency"] = compute_light_latency(df)
         per_subject[name] = m
 
     # Compute shoaling group-level timeseries
@@ -245,6 +254,33 @@ def compute_paradigm_metrics(
                     "message": (
                         f"Subject '{name}' 总移动距离={td:.2f} (<{_ZM_LOW_DISTANCE_THRESHOLD})。"
                         "开放区指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
+                    ),
+                })
+    if paradigm == "light_dark_box":
+        # Per ldb.md: n < 5 per group → low statistical power
+        for grp_name, grp_metrics in group_summary.items():
+            if not grp_metrics:
+                continue
+            sample_n = next(iter(grp_metrics.values())).get("n", 0)
+            if 0 < sample_n < 5:
+                data_quality_warnings.append({
+                    "severity": "warning",
+                    "metric": "all",
+                    "message": (
+                        f"Group '{grp_name}' has n={sample_n} (<5). "
+                        "统计功效不足，结论需谨慎。"
+                    ),
+                })
+        # Per ldb.md: transitions < 4 → insufficient exploration motivation
+        for name, m in per_subject.items():
+            tc = m.get("transition_count")
+            if tc is not None and isinstance(tc, (int, float)) and tc < 4:
+                data_quality_warnings.append({
+                    "severity": "warning",
+                    "metric": "transition_count",
+                    "message": (
+                        f"Subject '{name}' 穿梭次数={int(tc)} (<4)。"
+                        "明箱时间百分比的下降可能为探索动机不足而非焦虑增加，需标注警告。"
                     ),
                 })
 
