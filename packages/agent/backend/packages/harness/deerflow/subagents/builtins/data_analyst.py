@@ -96,6 +96,23 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
    和最重要的 outlier_findings；不要复述 handoff JSON 的全部字段
 </workflow>
 
+<gate_signals_contract>
+**最终 AIMessage 必须以 `[gate_signals]` 块结尾**，给 lead 提供结构化决策信号。
+紧贴在 2-3 段自然语言摘要之后输出。格式：
+
+```
+[gate_signals]
+method_warnings_count: <int>          # method_warnings 数组长度
+outlier_count: <int>                  # outlier_findings 数组长度
+excluded_metrics_count: <int>         # excluded_metrics 数组长度
+statistical_validity: ok | warning | failed
+errors_count: <int>
+```
+
+- `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读
+- 即便所有 count 为 0，仍必须输出完整 `[gate_signals]` 块
+</gate_signals_contract>
+
 <principles>
 - 行为学核心方法论是组间对比，不是绝对阈值
 - 检查混杂因素（运动量异常可能影响焦虑指标）

@@ -192,6 +192,21 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 5. 最终 AIMessage：报告摘要（报告路径 + 各章节是否写全 + 任何失败条目）
 </workflow>
 
+<gate_signals_contract>
+**最终 AIMessage 必须以 `[gate_signals]` 块结尾**：
+
+```
+[gate_signals]
+sections_written_count: <int>         # sections_written 数组长度（期望 6）
+sections_missing: [<str>, ...]        # 6 段骨架中未写成功的章节名（中文），为空则 []
+statistical_validity: ok | failed     # report-writer 不评估统计有效性，按 handoff_code_executor 透传
+errors_count: <int>                   # handoff_report_writer.json 中 errors 数组长度
+```
+
+- `sections_missing` 为空数组时表示 6 段骨架全部成功写入；非空表示有章节失败
+- 即便所有 count 为 0、sections_missing 为空，仍必须输出完整 `[gate_signals]` 块
+</gate_signals_contract>
+
 <write_file_chunking>
 结构化报告通常 3-8K 字符，一般单次写入足够。超过 write_file 单次 8000 字符上限时必须分段：
 1. 第一次调用：append=False，写入 §开头摘要 + §1 + §2 + §3（约 6000-7500 字符）

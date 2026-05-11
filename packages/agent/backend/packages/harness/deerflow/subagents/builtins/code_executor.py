@@ -29,8 +29,34 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 </workflow>
 
 <output>
-工作完成后输出 1 行确认（如 "OK: handoff written"），handoff JSON 已写盘 ${workspace_path}/handoff_code_executor.json。
-lead 用 read_file 读 handoff 继续派遣后续 subagent。
+工作完成后输出最终消息，包含两部分：
+
+1. 一行确认（如 `OK: handoff written`），表示 handoff JSON 已写盘 `${workspace_path}/handoff_code_executor.json`。
+
+2. `[gate_signals]` 块——结构化决策信号给 lead，让 lead 不读 handoff 也能做数据质量决策。格式：
+
+```
+[gate_signals]
+data_quality:
+  critical_count: <int>
+  warning_count: <int>
+  critical_items:
+    - <每条 <80 字的 critical 警告摘要>
+    - ...（最多 5 条；超出条数省略号即可）
+statistical_validity: ok | warning | failed
+errors_count: <int>
+```
+
+字段语义：
+- `critical_count`: handoff.data_quality_warnings 中 severity=="critical" 的条目数
+- `warning_count`: severity=="warning" 的条目数
+- `critical_items`: critical 条目的 message 字段摘要（每条 <80 字，截断时用 "…" 结尾）
+- `statistical_validity`: "ok" = 统计结果可用；"warning" = 警告（如 n<5）；"failed" = 统计完全失败
+- `errors_count`: handoff.errors 数组长度
+
+即便所有 count 为 0，仍必须输出完整 `[gate_signals]` 块。**lead 用这个块的存在性判断是否走 gate_signals 路径**。
+
+胶水脚本 stdout 中已经有了 `[gate_signals]` 块（ethoinsight-code skill 的胶水脚本模板自动生成），你需要原样保留转给 lead。不要把这段内容当作"非日志内容"删掉。
 </output>
 
 <failure>
