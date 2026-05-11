@@ -22,7 +22,7 @@ type: workflow
 ## 范式渐进披露入口
 
 - **EPM** (高架十字迷宫): `references/by-paradigm/epm.md`
-- **OFT** (Open Field): `references/by-paradigm/oft.md` *(Phase 2 时撰写)*
+- **OFT** (Open Field): `references/by-paradigm/oft.md`
 - **Shoaling** (群体游动): `references/by-paradigm/shoaling.md` *(Phase 2 时撰写)*
 - **Zero Maze**: `references/by-paradigm/zero-maze.md` *(Phase 3 时撰写)*
 - **LDB** (Light-Dark Box): `references/by-paradigm/ldb.md` *(Phase 3 时撰写)*
