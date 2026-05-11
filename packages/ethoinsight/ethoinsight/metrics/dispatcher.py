@@ -32,6 +32,16 @@ from ethoinsight.metrics.ldb import (
     compute_transition_count,
     compute_light_latency,
 )
+from ethoinsight.metrics.fst import (
+    compute_immobility_time_fst,
+    compute_immobility_latency_fst,
+    compute_immobility_bout_count_fst,
+)
+from ethoinsight.metrics.tst import (
+    compute_immobility_time_tst,
+    compute_immobility_latency_tst,
+    compute_immobility_bout_count_tst,
+)
 
 
 # ============================================================================
@@ -97,6 +107,14 @@ def compute_paradigm_metrics(
             m["light_time_ratio"] = compute_light_time_ratio(df)
             m["transition_count"] = compute_transition_count(df)
             m["light_latency"] = compute_light_latency(df)
+        elif paradigm == "forced_swim":
+            m["immobility_time"] = compute_immobility_time_fst(df)
+            m["immobility_latency"] = compute_immobility_latency_fst(df)
+            m["immobility_bout_count"] = compute_immobility_bout_count_fst(df)
+        elif paradigm == "tail_suspension":
+            m["immobility_time"] = compute_immobility_time_tst(df)
+            m["immobility_latency"] = compute_immobility_latency_tst(df)
+            m["immobility_bout_count"] = compute_immobility_bout_count_tst(df)
         per_subject[name] = m
 
     # Compute shoaling group-level timeseries
@@ -281,6 +299,21 @@ def compute_paradigm_metrics(
                     "message": (
                         f"Subject '{name}' 穿梭次数={int(tc)} (<4)。"
                         "明箱时间百分比的下降可能为探索动机不足而非焦虑增加，需标注警告。"
+                    ),
+                })
+    if paradigm in ("forced_swim", "tail_suspension"):
+        # n < 5 per group → low statistical power for immobility paradigms
+        for grp_name, grp_metrics in group_summary.items():
+            if not grp_metrics:
+                continue
+            sample_n = next(iter(grp_metrics.values())).get("n", 0)
+            if 0 < sample_n < 5:
+                data_quality_warnings.append({
+                    "severity": "warning",
+                    "metric": "all",
+                    "message": (
+                        f"Group '{grp_name}' has n={sample_n} (<5). "
+                        "统计功效不足，结论需谨慎。"
                     ),
                 })
 

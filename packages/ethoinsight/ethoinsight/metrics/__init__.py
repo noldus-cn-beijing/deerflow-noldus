@@ -1,11 +1,14 @@
 """按学术范式组织的指标函数子模块。
 
 物理路径:
-  - _common.py: 范式无关（distance / velocity / zone 列查找 / csv 导出）
+  - _common.py: 范式无关（distance / velocity / zone 列查找 / csv 导出 / immobility 通用函数）
   - shoaling.py: 群体游动指标
   - oft.py: Open Field 指标
   - epm.py: 高架十字迷宫指标
   - zero_maze.py: Zero Maze 环形迷宫指标
+  - ldb.py: Light-Dark Box 指标
+  - fst.py: Forced Swim Test 不动检测指标
+  - tst.py: Tail Suspension Test 不动检测指标
   - dispatcher.py: compute_paradigm_metrics() 派发入口
 
 代码外部仍可 `from ethoinsight.metrics import compute_open_arm_time` 等历史导入路径
@@ -47,6 +50,16 @@ from ethoinsight.metrics.ldb import (
     compute_transition_count,
     compute_light_latency,
 )
+from ethoinsight.metrics.fst import (
+    compute_immobility_time_fst,
+    compute_immobility_latency_fst,
+    compute_immobility_bout_count_fst,
+)
+from ethoinsight.metrics.tst import (
+    compute_immobility_time_tst,
+    compute_immobility_latency_tst,
+    compute_immobility_bout_count_tst,
+)
 from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 
 __all__ = [
@@ -72,5 +85,11 @@ __all__ = [
     "compute_light_time_ratio",
     "compute_transition_count",
     "compute_light_latency",
+    "compute_immobility_time_fst",
+    "compute_immobility_latency_fst",
+    "compute_immobility_bout_count_fst",
+    "compute_immobility_time_tst",
+    "compute_immobility_latency_tst",
+    "compute_immobility_bout_count_tst",
     "compute_paradigm_metrics",
 ]

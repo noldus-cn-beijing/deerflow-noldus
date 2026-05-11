@@ -102,6 +102,129 @@ def _find_zone_column(df: pd.DataFrame, pattern: str) -> str | None:
 
 
 # ============================================================================
+# Immobility analysis (shared by FST / TST)
+# ============================================================================
+
+
+def _find_mobility_column(df: pd.DataFrame) -> str | None:
+    """Find the mobility/activity state column in a DataFrame.
+
+    Checks common EthoVision column names in order:
+    Mobility_State, Activity_State, mobility_state, activity_state.
+    Returns the first match.
+    """
+    candidates = ["Mobility_State", "Activity_State", "mobility_state", "activity_state"]
+    for col in candidates:
+        if col in df.columns:
+            return col
+    # Fallback: regex match
+    for col in df.columns:
+        if "mobility" in col.lower() or "activity" in col.lower():
+            return col
+    return None
+
+
+def _runs(arr, value=0):
+    """Return list of (start_idx, end_idx) for consecutive runs of `value`.
+
+    Used for immobility bout detection.
+    """
+    import numpy as np
+    a = np.asarray(arr, dtype=int)
+    if len(a) == 0:
+        return []
+    is_val = (a == value).astype(int)
+    starts = []
+    ends = []
+    if is_val[0] == 1:
+        starts.append(0)
+    for i in range(1, len(is_val)):
+        if is_val[i] == 1 and is_val[i - 1] == 0:
+            starts.append(i)
+        if is_val[i] == 0 and is_val[i - 1] == 1:
+            ends.append(i - 1)
+    if is_val[-1] == 1:
+        ends.append(len(is_val) - 1)
+    return list(zip(starts, ends))
+
+
+def compute_immobility_time(
+    df: pd.DataFrame,
+    mobility_col: str | None = None,
+) -> float | None:
+    """Total immobility time (seconds).
+
+    Sums the duration of all immobility bouts (runs of 0 in the mobility column).
+    """
+    col = mobility_col or _find_mobility_column(df)
+    if col is None or col not in df.columns:
+        return None
+    series = df[col].dropna()
+    if series.empty:
+        return None
+
+    bouts = _runs(series, value=0)
+    if not bouts:
+        return 0.0
+
+    total_frames = sum(end - start + 1 for start, end in bouts)
+
+    # Convert frames to seconds
+    if "trial_time" in df.columns:
+        tt = df["trial_time"].dropna()
+        if len(tt) >= 2:
+            dt = float(tt.diff().median())
+            return total_frames * dt
+    return float(total_frames)
+
+
+def compute_immobility_latency(
+    df: pd.DataFrame,
+    mobility_col: str | None = None,
+) -> float | None:
+    """Latency to first immobility bout (seconds).
+
+    Returns the trial_time value of the first frame where mobility==0.
+    Returns None if the animal was never immobile.
+    """
+    col = mobility_col or _find_mobility_column(df)
+    if col is None or col not in df.columns:
+        return None
+    series = df[col].dropna()
+    if series.empty:
+        return None
+
+    immobile_mask = series == 0
+    if not immobile_mask.any():
+        return None
+
+    first_idx = immobile_mask.idxmax()  # index of first True
+
+    if "trial_time" in df.columns and first_idx in df.index:
+        return float(df.loc[first_idx, "trial_time"])
+    return float(first_idx)
+
+
+def compute_immobility_bout_count(
+    df: pd.DataFrame,
+    mobility_col: str | None = None,
+) -> int | None:
+    """Number of immobility bouts (run-length encoding).
+
+    Each consecutive run of 0 values counts as one bout.
+    """
+    col = mobility_col or _find_mobility_column(df)
+    if col is None or col not in df.columns:
+        return None
+    series = df[col].dropna()
+    if series.empty:
+        return 0
+
+    bouts = _runs(series, value=0)
+    return len(bouts)
+
+
+# ============================================================================
 # Export
 # ============================================================================
 

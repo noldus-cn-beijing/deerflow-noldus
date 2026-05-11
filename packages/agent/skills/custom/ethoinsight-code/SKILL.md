@@ -26,8 +26,8 @@ type: workflow
 - **Shoaling** (群体游动): `references/by-paradigm/shoaling.md` *(Phase 2 时撰写)*
 - **Zero Maze**: `references/by-paradigm/zero-maze.md`
 - **LDB** (Light-Dark Box): `references/by-paradigm/ldb.md`
-- **TST** (Tail Suspension): `references/by-paradigm/tst.md` *(Phase 3 时撰写)*
-- **FST** (Forced Swim): `references/by-paradigm/fst.md` *(Phase 3 时撰写)*
+- **TST** (Tail Suspension): `references/by-paradigm/tst.md`
+- **FST** (Forced Swim): `references/by-paradigm/fst.md`
 
 ## 通用资源
 
