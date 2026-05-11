@@ -108,7 +108,36 @@ handoff = {
 (WORKSPACE / "handoff_code_executor.json").write_text(
     json.dumps(handoff, ensure_ascii=False, indent=2)
 )
+
+# 给 lead 的结构化决策信号——让 lead 不读 handoff 也能做 Step 1.5 拦截。
+# 由 Python 代码确定性生成，不依赖模型推理。lead 解析这个块的存在 +
+# critical_count > 0 → 反问用户。详见 spec docs/superpowers/specs/2026-05-11-subagent-file-is-facts-design.md
+warnings = handoff.get("data_quality_warnings", [])
+critical = [w for w in warnings if w.get("severity") == "critical"]
+warn_only = [w for w in warnings if w.get("severity") == "warning"]
+
 print(f"OK: handoff written to {WORKSPACE / 'handoff_code_executor.json'}")
+print()
+print("[gate_signals]")
+print("data_quality:")
+print(f"  critical_count: {len(critical)}")
+print(f"  warning_count: {len(warn_only)}")
+print("  critical_items:")
+if critical:
+    for w in critical[:5]:
+        msg = (w.get("message") or "")[:80]
+        print(f"    - {msg}")
+else:
+    print("    (none)")
+status = handoff.get("status", "completed")
+if status == "failed":
+    validity = "failed"
+elif critical:
+    validity = "warning"
+else:
+    validity = "ok"
+print(f"statistical_validity: {validity}")
+print(f"errors_count: {len(handoff.get('errors', []))}")
 ```
 
 ## 数据质量自动警告（dispatcher 内已实现）

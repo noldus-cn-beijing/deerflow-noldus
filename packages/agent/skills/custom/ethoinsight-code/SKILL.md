@@ -35,6 +35,14 @@ type: workflow
 - `references/quality-checks.md` — 数据质量自检清单（NaN / 单位 / 列名缺失）
 - `templates/output-contract.md` — handoff JSON 字段规范
 
+## 最终消息约定（必读）
+
+胶水脚本 stdout 最后必须包含 `[gate_signals]` 块（已在每个范式 reference 的胶水脚本模板末尾给出代码）。这是 lead 做数据质量决策的依据，不输出会导致 lead 退化到回读 handoff 的兜底路径（仍能跑通但浪费 token）。
+
+输出格式见 `templates/output-contract.md` 的 `[gate_signals]` 段。
+
+由 Python 代码生成，不要靠模型自己加这个块——它一定会忘或写错。
+
 ## 反模式（永远禁止）
 
 1. ❌ 跑 `parse_trajectories` / `compute_metrics` / `run_statistics` 等老 langchain 工具（已废弃）
