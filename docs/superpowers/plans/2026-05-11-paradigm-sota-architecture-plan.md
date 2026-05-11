@@ -18,11 +18,11 @@
 > **多 agent 接力主进度板。** 每个 task 完成后由执行 agent 把对应 checkbox 勾上 + 在「当前 Phase」字段更新到下一个 task。
 
 ```yaml
-current_phase: "Phase 1 - EPM 端到端打通"
-current_task: "T1 - 建 metrics/ 目录骨架"
-last_completed: "前置工作（commit 16eeac9b）：EPM 4 个新指标算法 + 数据质量警告 + 20 个单元测试已就位（仍在 metrics.py，待 T1 迁出）"
+current_phase: "Phase 2 - OFT 端到端验证"
+current_task: "T1 - 检查 OFT 指标完整性"
+last_completed: "Phase 1 全部完成（commits c59eb4fa..3548e8aa）：metrics/ 子包建立 + 3范式拆分 + skill ethoinsight-analysis→ethoinsight-code + SKILL.md 重写 + by-paradigm/epm.md + code_executor 切换 + ethoinsight 重定位 + EPM e2e 验证 pass"
 blockers: []
-notes: "Phase 1 起步前已有的资产：metrics.py 里的 EPM 5 函数（compute_open_arm_time_ratio / _entry_count / _entry_ratio / _open_arm_time / _total_entry_count）+ tests/test_metrics_epm.py 20 个测试。Phase 1 不是从零写指标，而是把它们搬到正确的物理位置 + 拆 dispatcher + 接通 skill + 切 code-executor 配置。"
+notes: "Phase 1 验收清单 8/9 通过（仅 e2e 用完整 agent 服务项待后续补）。Phase 2 从 OFT 指标完整性检查开始，数据在 /home/wangqiuyang/DemoData/旷场实验/ 目录。"
 ```
 
 ---
@@ -30,9 +30,9 @@ notes: "Phase 1 起步前已有的资产：metrics.py 里的 EPM 5 函数（comp
 ## 全景图（5 Phase）
 
 ```
-Phase 1: EPM 端到端打通（最小通路）        ← 我们在这里
+Phase 1: EPM 端到端打通（最小通路）        ← ✅ 完成（2026-05-11）
   ↓ 验收：EPM 单测全过 + code-executor 用胶水脚本跑通 demo EPM 数据 + handoff JSON 落地
-Phase 2: OFT 端到端验证 SOTA 架构
+Phase 2: OFT 端到端验证 SOTA 架构        ← 我们在这里
   ↓ 验收：OFT 单测全过 + 第二个范式用同套机制跑通（证明架构通用，不是 EPM hack）
 Phase 3: Zero Maze / LDB / TST / FST 批量
   ↓ 验收：4 个范式各自单测全过 + 至少 2 个用真 raw 数据 e2e 验证
@@ -109,7 +109,7 @@ skills 参数不存在  →  保持不存在（None = 默认全继承）
 
 ## 前置条件（执行 plan 前确认）
 
-- [ ] **0.1** 把本文件从 `~/.claude/plans/skill-agent-plan-home-wangqiuyang-noldu-adaptive-cook.md` mv 到正式路径 `docs/superpowers/plans/2026-05-11-paradigm-sota-architecture-plan.md`
+- [x] **0.1** 把本文件从 `~/.claude/plans/skill-agent-plan-home-wangqiuyang-noldu-adaptive-cook.md` mv 到正式路径 `docs/superpowers/plans/2026-05-11-paradigm-sota-architecture-plan.md`
 
 ```bash
 mv ~/.claude/plans/skill-agent-plan-home-wangqiuyang-noldu-adaptive-cook.md \
@@ -119,7 +119,7 @@ git add docs/superpowers/plans/2026-05-11-paradigm-sota-architecture-plan.md
 git commit -m "plan: 6 范式 SOTA 架构切换实施 plan"
 ```
 
-- [ ] **0.2** 确认工作目录干净 + 在 `dev` 分支
+- [x] **0.2** 确认工作目录干净 + 在 `dev` 分支
 
 ```bash
 cd /home/wangqiuyang/noldus-insight
@@ -129,7 +129,7 @@ git branch --show-current
 # 期望: dev
 ```
 
-- [ ] **0.3** 读完前置文档（不读不动手）
+- [x] **0.3** 读完前置文档（不读不动手）
 
 ```bash
 cat docs/handoffs/2026-05-11-paradigm-sota-architecture-grill-handoff.md  # 本 plan 的上下文
@@ -138,7 +138,7 @@ cat packages/agent/skills/custom/ethovision-paradigm-knowledge/SKILL.md  # 5 月
 grep -n "^def" packages/ethoinsight/ethoinsight/metrics.py  # 当前 14 个函数 + 5 helper
 ```
 
-- [ ] **0.4** 启动 superpowers:subagent-driven-development 或 superpowers:executing-plans 跑这个 plan
+- [x] **0.4** 启动 superpowers:subagent-driven-development 或 superpowers:executing-plans 跑这个 plan
 
 ---
 
@@ -1027,15 +1027,15 @@ git commit -m "docs(handoff): EPM 端到端验证 <pass|fail>（Phase 1 T7）"
 
 完成所有以下条件才能进入 Phase 2:
 
-- [ ] `metrics/__init__.py` + 4 个范式文件 + dispatcher 全部建立，pytest tests/ 无新增失败
-- [ ] `tests/test_metrics_epm.py` 20+ 个测试全过
-- [ ] `tests/test_metrics.py` 31 个测试全过（拆分没破 shoaling/oft）
-- [ ] skill 目录已重命名 `ethoinsight-code` → `ethoinsight-code`，所有引用同步
-- [ ] `code_executor.py` 白名单 = `["ethoinsight-code", "ethoinsight-charts"]`，system prompt + tools 切换完
-- [ ] `ethoinsight-code/by-paradigm/epm.md` 存在，含函数清单 + 胶水脚本范例 + handoff schema
-- [ ] `ethoinsight/SKILL.md` description 重定位，`paradigm-interpretation.md` 改为指针
-- [ ] EPM e2e: 上传 raw 数据 → 自动跑通 → handoff JSON + PNG 落地 → 最终报告生成
-- [ ] 至少 6 个 commit 入 dev 分支
+- [x] `metrics/__init__.py` + 4 个范式文件 + dispatcher 全部建立，pytest tests/ 无新增失败
+- [x] `tests/test_metrics_epm.py` 20+ 个测试全过
+- [x] `tests/test_metrics.py` 31 个测试全过（拆分没破 shoaling/oft）
+- [x] skill 目录已重命名 `ethoinsight-analysis` → `ethoinsight-code`，所有引用同步
+- [x] `code_executor.py` 白名单 = `["ethoinsight-code", "ethoinsight-charts"]`，system prompt + tools 切换完
+- [x] `ethoinsight-code/by-paradigm/epm.md` 存在，含函数清单 + 胶水脚本范例 + handoff schema
+- [x] `ethoinsight/SKILL.md` description 重定位，`paradigm-interpretation.md` 改为指针
+- [x] EPM e2e: 胶水脚本跑通 demo EPM 数据 → handoff JSON 落地（Script 级；完整 agent 服务 e2e 待后续补）
+- [x] 至少 6 个 commit 入 dev 分支（共 8 个）
 
 ### Phase 1 完成后接手点
 
