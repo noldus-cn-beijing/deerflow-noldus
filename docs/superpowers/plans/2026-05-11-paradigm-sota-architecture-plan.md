@@ -18,11 +18,11 @@
 > **多 agent 接力主进度板。** 每个 task 完成后由执行 agent 把对应 checkbox 勾上 + 在「当前 Phase」字段更新到下一个 task。
 
 ```yaml
-current_phase: "Phase 3 - Zero Maze / LDB / TST / FST 批量"
-current_task: "T1 - Zero Maze 指标实现"
-last_completed: "Phase 2 完成（commits 9ad60bc6..9566609f）：OFT 2 新函数 + 9 单测 + by-paradigm/oft.md + SKILL 入口更新 + e2e 验证（合成数据）"
-blockers: ["TST 无对应 DemoData 目录（强迫游泳实验仅有 2 个文件可用作 FST）"]
-notes: "Phase 2 验收清单 5/6 通过（仅 e2e 用 raw 轨迹数据项因 DemoData/旷场实验/ 仅有统计摘要文件而用合成数据替代）。Phase 3 从 Zero Maze 开始，数据在 /home/wangqiuyang/DemoData/O迷宫/（33 文件）。"
+current_phase: "Phase 4 - 旧工具清理"
+current_task: "T1 - 删 7 个废弃 langchain 工具"
+last_completed: "Phase 3 完成（commits a2daae08..e15b89c4）：Zero Maze(4函数/28测试) + LDB(3/20) + FST(3/18) + TST(3/19)，合计 13 新函数 + 85 新测试 + 4 by-paradigm docs + e2e(ZeroMaze pass, LDB 列名待适配)"
+blockers: ["Phase 4 需确认 7 个 langchain 工具在所有 subagent 配置中已无引用"]
+notes: "SOTA 架构已覆盖 6 范式（EPM/OFT/ZeroMaze/LDB/FST/TST）。metrics/ 子包现含 8 个范式文件。SKILL.md 6/7 入口完成（仅 shoaling 仍 placeholder）。"
 ```
 
 ---
@@ -34,9 +34,9 @@ Phase 1: EPM 端到端打通（最小通路）        ← ✅ 完成（2026-05-1
   ↓ 验收：EPM 单测全过 + code-executor 用胶水脚本跑通 demo EPM 数据 + handoff JSON 落地
 Phase 2: OFT 端到端验证 SOTA 架构        ← ✅ 完成（2026-05-11）
   ↓ 验收：OFT 单测全过 + 第二个范式用同套机制跑通（证明架构通用，不是 EPM hack）
-Phase 3: Zero Maze / LDB / TST / FST 批量        ← 我们在这里
-  ↓ 验收：4 个范式各自单测全过 + 至少 2 个用真 raw 数据 e2e 验证
-Phase 4: 旧工具清理
+Phase 3: Zero Maze / LDB / TST / FST 批量        ← ✅ 完成（2026-05-11）
+  ↓ 验收：4 个范式各自单测全过 + Zero Maze e2e 通过
+Phase 4: 旧工具清理        ← 我们在这里
   ↓ 验收：删除 7 个废弃 langchain 工具 + templates/shoaling.py + templates/_gate.py + 测试全绿
 Phase 5: 同事 review checklist（异步并行，不阻塞 1-4）
   ↓ 验收：review 包结构落地 + 行为学同事 PR 通过 + 工程衍生 by-paradigm/<范式>.md 与同事 by-experiment/<范式>.md 校对一致
