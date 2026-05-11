@@ -31,6 +31,53 @@ def _resolve_placeholders(prompt: str) -> str:
     return _SHARED_PLACEHOLDER_RE.sub(lambda m: f"/mnt/shared/{m.group(1)}", prompt)
 
 
+# Handoff-file placeholder registry: subagent name → handoff filename.
+# Lead uses {{handoff://<name>}} in task prompt; task_tool resolves it to the
+# full workspace path AND adds the path to the per-task authorized_handoff_paths
+# set that flows into HandoffIsolationProvider.
+#
+# Pointing to a path via this placeholder IS the authorization. No placeholder =
+# no authorization (subagent cannot read peer handoff files).
+HANDOFF_FILE_REGISTRY: dict[str, str] = {
+    "code_executor": "handoff_code_executor.json",
+    "data_analyst": "handoff_data_analyst.json",
+    "report_writer": "handoff_report_writer.json",
+    "planning": "handoff_planning.json",
+}
+
+_HANDOFF_PLACEHOLDER_RE = re.compile(r"\{\{handoff://([^}]+)\}\}")
+
+
+def _resolve_handoff_placeholders(prompt: str) -> tuple[str, set[str]]:
+    """Replace ``{{handoff://<subagent_name>}}`` with the full workspace path.
+
+    Returns:
+        (replaced_prompt, authorized_absolute_paths) — the set is what
+        HandoffIsolationProvider uses as its allowlist for the subagent.
+
+    Raises:
+        ValueError: if any placeholder references an unknown subagent name
+            (fail-fast on typo so lead immediately learns about the error
+            rather than silently dispatching a subagent with a broken prompt).
+    """
+    authorized: set[str] = set()
+
+    def _replace(match: re.Match[str]) -> str:
+        name = match.group(1).strip()
+        if name not in HANDOFF_FILE_REGISTRY:
+            raise ValueError(
+                f"Unknown handoff subagent '{name}' in placeholder. "
+                f"Known: {sorted(HANDOFF_FILE_REGISTRY)}"
+            )
+        filename = HANDOFF_FILE_REGISTRY[name]
+        full_path = f"/mnt/user-data/workspace/{filename}"
+        authorized.add(full_path)
+        return full_path
+
+    replaced = _HANDOFF_PLACEHOLDER_RE.sub(_replace, prompt)
+    return replaced, authorized
+
+
 @tool("task", parse_docstring=True)
 async def task_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
@@ -135,6 +182,10 @@ async def task_tool(
 
     # Resolve {{shared://...}} placeholders to /mnt/shared/... paths
     prompt = _resolve_placeholders(prompt)
+
+    # Resolve {{handoff://...}} placeholders and capture authorized paths
+    prompt, authorized_handoff_paths = _resolve_handoff_placeholders(prompt)
+    _ = authorized_handoff_paths  # Threaded into SubagentExecutor in Task 10
 
     # Start background execution (always async to prevent blocking)
     # Use tool_call_id as task_id for better traceability
