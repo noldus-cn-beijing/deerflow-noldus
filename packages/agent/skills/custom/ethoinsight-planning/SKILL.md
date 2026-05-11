@@ -117,7 +117,7 @@ ask_clarification(
 | 样本量 < 3/组（规划阶段从文件数判断） | 规划摘要中注明"小样本量，仅描述性统计" + `ask_clarification` 确认 |
 | `data_quality_warnings` 非空（code-executor 返回后）| `ask_clarification` 询问排除异常还是继续 |
 | code-executor 失败 | 按失败类型分支（见 `references/failure-recovery.md`）|
-| data-analyst 超时/空返回 | 跳过，直接把 code_summary 展示给用户 |
+| data-analyst 超时/空返回 | 跳过，lead 自己 read_file handoff_code_executor.json，把统计摘要（metrics_summary + statistics）转述给用户 |
 | report-writer 超时/空返回 | 用 data-analyst 摘要作最终输出 |
 
 ### Step 5: 输出单行计划给用户
