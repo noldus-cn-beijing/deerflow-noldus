@@ -52,10 +52,15 @@ def test_code_executor_declares_matching_tools():
     _executor_mock.MAX_CONCURRENT_SUBAGENTS = 3
     sys.modules["deerflow.subagents.executor"] = _executor_mock
     from deerflow.subagents.builtins.code_executor import CODE_EXECUTOR_CONFIG as c
-    required = {"parse_trajectories", "compute_metrics", "run_statistics",
-                "generate_charts", "assess_and_handoff"}
+    # SOTA glue-script architecture: only filesystem + bash tools (no langchain pipeline tools)
+    required = {"bash", "read_file", "write_file", "ls", "str_replace"}
     declared = set(c.tools or [])
     missing = required - declared
     assert not missing, f"code_executor missing tools: {missing}"
-    assert c.max_turns == 12, f"max_turns should be 12 for 5-step pipeline, got {c.max_turns}"
+    # Old langchain pipeline tools must NOT be present
+    old_tools = {"parse_trajectories", "compute_metrics", "run_statistics",
+                 "generate_charts", "assess_and_handoff", "get_analysis_template"}
+    present_old = old_tools & declared
+    assert not present_old, f"code_executor still has deprecated tools: {present_old}"
+    assert c.max_turns == 12, f"max_turns should be 12, got {c.max_turns}"
     assert "ethoinsight-code" in (c.skills or [])
