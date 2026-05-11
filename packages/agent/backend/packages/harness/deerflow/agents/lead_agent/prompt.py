@@ -408,7 +408,7 @@ ask_clarification(
 
 [2-3 段中文概述：核心发现、组间差异方向、效应量大小]
 
-### 关键指标（从 code_summary.json 提取）
+### 关键指标（从 handoff_code_executor.json 提取）
 
 | 指标 | 对照组 (mean ± std, n=) | 实验组 (mean ± std, n=) | 检验 | p | 效应量 |
 |------|-------------------------|--------------------------|------|---|--------|
@@ -525,7 +525,7 @@ task(subagent_type="code-executor", description="执行旷场数据分析",
 # Turn 2: 读 handoff、写共享摘要，派遣 data-analyst
 # "统计已完成，正在请专家解读..."
 task(subagent_type="data-analyst", description="解读分析结果",
-     prompt="请分析 {{{{shared://code_summary.json}}}} 中的旷场实验数据。")
+     prompt="请分析 /mnt/user-data/workspace/handoff_code_executor.json 中的旷场实验数据。")
 
 # Turn 3: 自然语言整合呈现（2-3 段中文文本 + 指标表格 + 关键洞察 + 数据质量警告），
 # 然后 ask_clarification 三选一
@@ -569,7 +569,7 @@ task(subagent_type="code-executor", description="EPM数据分析",
 # Thinking: 单个知识问答，直接派遣 knowledge-assistant
 
 task(subagent_type="knowledge-assistant", description="解答 NND 指标含义",
-     prompt="用户问题: NND 偏高说明什么？\n已有分析结果: {{{{shared://code_summary.json}}}}")
+     prompt="用户问题: NND 偏高说明什么？\n相关数据在 /mnt/user-data/workspace/handoff_code_executor.json 和 /mnt/user-data/workspace/handoff_data_analyst.json，请 read_file 这两份文件后回答。")
 ```
 
 **CRITICAL**:
@@ -1057,16 +1057,21 @@ task(subagent_type="code-executor", description="执行数据分析代码",
      prompt="范式: shoaling\\n文件路径: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\\n特殊需求: 无")
 ```
 
-### Step 1.5: 数据质量校验 + 写共享摘要
-1. read_file /mnt/user-data/workspace/handoff_code_executor.json
-2. 检查 "data_quality_warnings" 字段：如有 critical 条目，系统会在你调度 task(data-analyst) 时拦截，届时你需按拦截提示调用 ask_clarification 告知用户并询问是否继续。
-3. **写共享摘要**（使用 write_file 工具）：
-   ```
-   write_file("/mnt/shared/code_summary.json", <JSON 字符串，包含以下字段>)
-   ```
-   code_summary.json 包含：paradigm, groups, metrics_summary, statistics, chart_paths, data_quality_warnings
-   （从 handoff 中直接提取这些字段，只包含分析结果，跳过 output_files.metrics 等原始文件路径）
-   **写完后直接进入下一步，回复消息保持简洁即可**
+### Step 1.5: 数据质量校验 + 准备呈现
+
+1. **首先看 code-executor 最终消息中的 `[gate_signals]` 块**（subagent 按契约输出，含 critical_count / warning_count / critical_items / statistical_validity / errors_count）：
+   - 如果 `data_quality.critical_count > 0` → 调 `ask_clarification` 询问用户是否继续（系统会在你随后调度 task(data-analyst) 时拦截，按拦截提示走）
+   - 如果 `statistical_validity == "failed"` → 同上，反问用户
+   - 否则进入第 2 步
+
+2. **如果 gate_signals 不完整或异常**（subagent 没按契约输出 `[gate_signals]` 块，或解析失败）：
+   - 兜底 `read_file /mnt/user-data/workspace/handoff_code_executor.json`，按 `data_quality_warnings` 字段中是否有 severity=critical 条目做拦截判断（原逻辑）
+   - 这是异常路径，正态情况不走
+
+3. **准备呈现**：在 Step 3 自然语言整合时，你将从 handoff_code_executor.json 中提取 M±SD / n / p / 效应量等数字填表格。
+   - 如果你在第 2 步**没有**为了校验而 read_file（即 gate_signals 正常使用），那么 Step 3 整合时你**首次** read_file handoff_code_executor.json 取数字
+   - 如果你在第 2 步**已经** read_file 了（异常路径走过），那么 Step 3 直接复用读到的内容，不重复 read_file
+   - **绝对不要再 write_file 到 /mnt/shared/，旧中转层已废弃**
 
 ### Step 2: 派遣 data-analyst
 ```python
@@ -1079,7 +1084,7 @@ task(subagent_type="data-analyst", description="分析实验数据",
 **关键变化**：report-writer 不再是默认步骤。在同一轮内：
 
 1. read_file /mnt/user-data/workspace/handoff_data_analyst.json，拿 key_findings / outlier_findings / method_warnings / recommendations
-2. 按"分析结果呈现模板"（见前面章节）用自然语言整合 code_summary.json + handoff_data_analyst.json 的内容呈现给用户
+2. 按"分析结果呈现模板"（见前面章节）用自然语言整合 handoff_code_executor.json + handoff_data_analyst.json 的内容呈现给用户
 3. 用 present_files 呈现 code-executor 产出的图表文件
 4. 调用 ask_clarification 三选一：
 
