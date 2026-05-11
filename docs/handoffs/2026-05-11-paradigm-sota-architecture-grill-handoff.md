@@ -51,7 +51,7 @@ Plan 要求（用户明确）：
 ✅ **6 个 custom skill 命运定**（grill-me 问题 9 用户全确认）：
 - `compaction-recovery` — 保留不动
 - `ethoinsight` — 保留 + 重定位（给 data-analyst + report-writer 看判读方法论）；`paradigm-interpretation.md` 改指针文件
-- `ethoinsight-analysis` — 重命名为 `ethoinsight-code` + 大改（删 5 工具流程描述、改写为 by-paradigm/<范式>.md）
+- `ethoinsight-code` — 重命名为 `ethoinsight-code` + 大改（删 5 工具流程描述、改写为 by-paradigm/<范式>.md）
 - `ethoinsight-charts` — 保留 + 移入 code-executor 白名单 + description 改为给 code-executor 用
 - `ethoinsight-planning` — 保留不动
 - `ethovision-paradigm-knowledge` — 保留不动（5月9日刚改过的）
@@ -97,7 +97,7 @@ T2 (EPM): 检查 5 个函数是否够用 / 补函数（同事填的"开臂进臂
 T3 (EPM): pytest 覆盖（参考 tests/test_metrics.py 现有测试）
 T6: ethoinsight-charts skill 移入 code-executor 白名单
 T7: paradigm-interpretation.md 改指针文件 + ethoinsight SKILL.md 改引用
-T5 (EPM): 改名 ethoinsight-analysis → ethoinsight-code + SKILL.md 大改 + by-paradigm/epm.md 撰写
+T5 (EPM): 改名 ethoinsight-code → ethoinsight-code + SKILL.md 大改 + by-paradigm/epm.md 撰写
 T8: code-executor 配置切换（code_executor.py 改 skills 白名单 + 改 system prompt）
 T9 (EPM): 端到端跑通（用 demodata 或 case-002 EPM raw 数据）
 ```
@@ -127,7 +127,7 @@ T9 (EPM): 端到端跑通（用 demodata 或 case-002 EPM raw 数据）
    - 5 Phase 完整任务清单
    - 含核心架构决策记录（grill-me 沉淀 11 条 + skill 命运 6 条 + 白名单矩阵）
    - 含"当前阶段状态字段"（让多 agent 接力可 track）
-   - **Phase 1 EPM 部分一部分工作已做完**（commit `16eeac9b`）：EPM 4 个新指标 + 测试已就位。plan Phase 1 应该体现这点，从"建 metrics/<范式>.py 目录拆分"和"改名 ethoinsight-analysis → ethoinsight-code"开始
+   - **Phase 1 EPM 部分一部分工作已做完**（commit `16eeac9b`）：EPM 4 个新指标 + 测试已就位。plan Phase 1 应该体现这点，从"建 metrics/<范式>.py 目录拆分"和"改名 ethoinsight-code → ethoinsight-code"开始
 
 ### P1 — Phase 1 启动后做
 

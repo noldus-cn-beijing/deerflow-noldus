@@ -89,7 +89,7 @@ class TestSubagentSampleExtraction:
                 "name": "task",
                 "args": {
                     "description": "analyze shoaling",
-                    "prompt": "Run ethoinsight-analysis on uploads",
+                    "prompt": "Run ethoinsight-code on uploads",
                     "subagent_type": "code-executor",
                 },
             }],

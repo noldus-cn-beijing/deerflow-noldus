@@ -191,7 +191,7 @@ frontend/
 
 ### 3.2 不动的内容(完全不修改)
 
-- 5 个 ethoinsight custom skill 的 markdown(`compaction-recovery / ethoinsight / ethoinsight-analysis / ethoinsight-charts / ethoinsight-planning`)
+- 5 个 ethoinsight custom skill 的 markdown(`compaction-recovery / ethoinsight / ethoinsight-code / ethoinsight-charts / ethoinsight-planning`)
 - `agents/lead_agent/prompt.py` 中文调度规则一字不动
 - `subagents/builtins/__init__.py` 4 个 ethoinsight 子代理注册不动
 - 中间件链顺序不动

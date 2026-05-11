@@ -246,7 +246,7 @@ cd $NOLDUS && diff <(git show deerflow/main:<upstream-path>) <local-path>
 
 按用户 2026-05-07 明确确认:
 
-1. **Skill 内容**: `packages/agent/skills/custom/` 5 个目录 (`compaction-recovery / ethoinsight / ethoinsight-analysis / ethoinsight-charts / ethoinsight-planning`) 的全部 markdown
+1. **Skill 内容**: `packages/agent/skills/custom/` 5 个目录 (`compaction-recovery / ethoinsight / ethoinsight-code / ethoinsight-charts / ethoinsight-planning`) 的全部 markdown
 2. **Prompt**: `agents/lead_agent/prompt.py` 中文调度规则 + Gate 反问 + subagent 描述 + EV19 模板路径
 3. **Subagent 名字**: `subagents/builtins/__init__.py` 注册的 4 个 ethoinsight 子代理
 4. **关键 setting**:

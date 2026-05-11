@@ -73,7 +73,7 @@ graph TB
     end
 
     subgraph Subagents["专业子代理"]
-        CE["code-executor<br/>━━━━━━━━━━━━<br/>ethoinsight 库<br/>run_paradigm_analysis<br/>统计检验 + 图表生成<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight-analysis"]
+        CE["code-executor<br/>━━━━━━━━━━━━<br/>ethoinsight 库<br/>run_paradigm_analysis<br/>统计检验 + 图表生成<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight-code"]
         DA["data-analyst<br/>━━━━━━━━━━━━<br/>解读统计结果<br/>应用领域知识<br/>发现数据洞察<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight"]
         RW["report-writer<br/>━━━━━━━━━━━━<br/>APA 格式报告<br/>Results + Discussion<br/>文献引用<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight"]
         KA["knowledge-assistant<br/>━━━━━━━━━━━━<br/>范式/术语问答<br/>追问已有结果<br/>━━━━━━━━━━━━<br/>noldus-kb MCP"]
@@ -85,7 +85,7 @@ graph TB
     end
 
     subgraph Knowledge["知识层"]
-        Skills["Skills (YAML)<br/>ethoinsight<br/>ethoinsight-analysis<br/>ethoinsight-charts"]
+        Skills["Skills (YAML)<br/>ethoinsight<br/>ethoinsight-code<br/>ethoinsight-charts"]
         KB["noldus-kb (MCP)<br/>范式指南 / 术语库<br/>方法论参考"]
     end
 

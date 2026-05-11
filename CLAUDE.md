@@ -58,7 +58,7 @@ noldus-insight/
 ```
 Lead Agent（deepseek-v4-pro，路由判断：有数据→分析，无数据→知识）
     ↓
-code-executor（按 ethoinsight-analysis skill 依次调用 5 个细粒度 tool：parse_trajectories → compute_metrics → run_statistics → generate_charts → assess_and_handoff，中间状态经 /mnt/user-data/workspace/ 文件传递）
+code-executor（按 ethoinsight-code skill 依次调用 5 个细粒度 tool：parse_trajectories → compute_metrics → run_statistics → generate_charts → assess_and_handoff，中间状态经 /mnt/user-data/workspace/ 文件传递）
     ↓
 data-analyst（审核统计方法、排查混杂因素、发现洞察）
     ↓
@@ -132,7 +132,7 @@ Noldus 独特改动包括(但不限于):
 - **Sandbox 接口扩展**:`sandbox/sandbox.py` 的 `extra_env` 参数、`local_sandbox.py` 的 venv PATH + `DEERFLOW_PATH_*` 环境变量、`sandbox/tools.py` 的 `{{shared://}}` 占位符
 - **Shared workspace 路径**:`config/paths.py` 的 `/mnt/shared`、`shared_dir()`、`thread_state.py` / `thread_data_middleware.py` 的 `shared_path` 字段
 - **错误处理增强**:`llm_error_handling_middleware.py` 的总超时上限 + 多种 timeout 关键字识别
-- **Skill 系统**:`skills/custom/` 下 5 个 ethoinsight 定制 skill 的注册和加载逻辑（`ethoinsight`、`ethoinsight-analysis`、`ethoinsight-charts`、`ethoinsight-planning`、**新增 `ethovision-paradigm-knowledge` — EV19 模板识别 + 学术范式映射的渐进披露知识库**）
+- **Skill 系统**:`skills/custom/` 下 5 个 ethoinsight 定制 skill 的注册和加载逻辑（`ethoinsight`、`ethoinsight-code`、`ethoinsight-charts`、`ethoinsight-planning`、**新增 `ethovision-paradigm-knowledge` — EV19 模板识别 + 学术范式映射的渐进披露知识库**）
 - **MCP / 工具截断**:`mcp/tools.py` 的 4096 字符截断
 - **Subagent executor 修复**:`subagents/executor.py` 的 `recursion_limit` 修复 + `max_turns` 硬限制
 
@@ -200,7 +200,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 ## 重要注意事项
 
-1. **skills/custom/ 是项目定制 skill 的目录** — `ethoinsight`、`ethoinsight-analysis`、`ethoinsight-charts`、`ethoinsight-planning`、`ethovision-paradigm-knowledge`（实施完成后）共 5 个定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）
+1. **skills/custom/ 是项目定制 skill 的目录** — `ethoinsight`、`ethoinsight-code`、`ethoinsight-charts`、`ethoinsight-planning`、`ethovision-paradigm-knowledge`（实施完成后）共 5 个定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）
 2. **noldus-kb 当前禁用** — `extensions_config.json` 里 `"enabled": false`，等 `180.184.84.124:7001` 恢复后再启用。禁用状态不要提交为 true
 3. **受保护文件修改后同步要小心** — `scripts/sync-deerflow.sh` 会把它们标为"需人工判断"
 4. **v0.1 是 9 月硬指标** — Phase 0（当前阶段）要完成 EPM + OFT 范式 + 鲁棒性验证 + 基础设施修复

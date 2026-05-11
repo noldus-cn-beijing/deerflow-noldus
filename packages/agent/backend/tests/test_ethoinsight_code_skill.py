@@ -1,10 +1,10 @@
-"""Verify ethoinsight-analysis skill wiring stays consistent with code-executor."""
+"""Verify ethoinsight-code skill wiring stays consistent with code-executor."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-SKILLS_DIR = Path(__file__).resolve().parent.parent.parent / "skills" / "custom" / "ethoinsight-analysis"
+SKILLS_DIR = Path(__file__).resolve().parent.parent.parent / "skills" / "custom" / "ethoinsight-code"
 
 
 def test_skill_md_exists():
@@ -47,4 +47,4 @@ def test_code_executor_declares_matching_tools():
     missing = required - declared
     assert not missing, f"code_executor missing tools: {missing}"
     assert c.max_turns == 12, f"max_turns should be 12 for 5-step pipeline, got {c.max_turns}"
-    assert "ethoinsight-analysis" in (c.skills or [])
+    assert "ethoinsight-code" in (c.skills or [])

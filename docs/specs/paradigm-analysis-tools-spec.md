@@ -22,7 +22,7 @@ code-executor subagent 通过 5 个细粒度工具完成一个范式的分析：
 | `charts.json` | generate_charts | assess_and_handoff |
 | `handoff_code_executor.json` | assess_and_handoff | lead agent → data-analyst |
 
-详细工具 API 见 `packages/agent/skills/custom/ethoinsight-analysis/references/tool-reference.md`。
+详细工具 API 见 `packages/agent/skills/custom/ethoinsight-code/references/tool-reference.md`。
 
 ## 兼容性约束
 

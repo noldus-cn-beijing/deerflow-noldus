@@ -42,7 +42,7 @@
 - **references/** = 不进 system prompt，agent 主动 `read_file` 才加载（渐进披露）
 - 各 agent 的 `available_skills` 白名单：
   - **lead** = `None` 全继承（看到全部 5 个 enabled skill，含 `ethovision-paradigm-knowledge`）
-  - **code-executor** = `["ethoinsight-analysis"]` 显式白名单（**看不到** `ethovision-paradigm-knowledge`）
+  - **code-executor** = `["ethoinsight-code"]` 显式白名单（**看不到** `ethovision-paradigm-knowledge`）
   - **data-analyst / report-writer / knowledge-assistant** = `None` 默认全继承
 
 ### Review 包的角色（澄清后）
@@ -145,7 +145,7 @@ cat /home/wangqiuyang/noldus-insight/packages/agent/skills/custom/ethovision-par
 2. **不要往 review 包里加东西** — 它是同事的工作目录，工程侧只读。同事下批 PR 时同样按搬运流程。
 3. **不要为 by-experiment 写转换脚本去 🟡 emoji / 注释** — 同事填好的 markdown 直接搬就行。emoji 是有意的视觉锚点。
 4. **MVP 范围外的 markdown 不要去填** — shoaling / AquariumTrack3D 等保持空模板形态。同事会异步补；agent read 到空模板时回 `default-template-fallback.md` 兜底。
-5. **`code-executor` 看不到 `ethovision-paradigm-knowledge` skill**（`skills=["ethoinsight-analysis"]` 显式白名单）— 这是**有意设计**：code-executor 是工具调用者，领域指标应该长在 `templates/<范式>.py` 工具实现里（确定性、不依赖 LLM 现场判断），不是让 code-executor 临时 read markdown 去"知道要算什么"。**不要**给 code-executor 加这个 skill。
+5. **`code-executor` 看不到 `ethovision-paradigm-knowledge` skill**（`skills=["ethoinsight-code"]` 显式白名单）— 这是**有意设计**：code-executor 是工具调用者，领域指标应该长在 `templates/<范式>.py` 工具实现里（确定性、不依赖 LLM 现场判断），不是让 code-executor 临时 read markdown 去"知道要算什么"。**不要**给 code-executor 加这个 skill。
 
 ### 不建议的方向
 

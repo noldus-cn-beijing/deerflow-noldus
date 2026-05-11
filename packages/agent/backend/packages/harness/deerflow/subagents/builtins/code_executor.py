@@ -6,7 +6,7 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
     name="code-executor",
     description=(
         "行为数据分析的代码执行专家。"
-        "按 ethoinsight-analysis skill 指示，依次调用 parse_trajectories、"
+        "按 ethoinsight-code skill 指示，依次调用 parse_trajectories、"
         "compute_metrics、run_statistics、generate_charts、assess_and_handoff。"
     ),
     system_prompt="""你是行为数据分析的代码执行专家。
@@ -27,7 +27,7 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
 </environment>
 
 <workflow>
-严格按照注入的 ethoinsight-analysis skill 执行 6 步分析流程：
+严格按照注入的 ethoinsight-code skill 执行 6 步分析流程：
 parse → compute → statistics → charts → assess_and_handoff → return。
 
 每一步工具调用完成后，读取对应的 *_summary.json 文件检查质量信号，
@@ -88,5 +88,5 @@ handoff JSON 由 assess_and_handoff 工具自动写入，形如：
     model="inherit",
     max_turns=12,
     timeout_seconds=900,
-    skills=["ethoinsight-analysis"],
+    skills=["ethoinsight-code", "ethoinsight-charts"],
 )

@@ -1,5 +1,5 @@
 ---
-name: ethoinsight-analysis
+name: ethoinsight-code
 description: >
   Behavioral data analysis execution guide for code-executor subagent.
   Orchestrates 5 granular tools (parse_trajectories → compute_metrics →

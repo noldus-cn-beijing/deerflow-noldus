@@ -186,7 +186,7 @@ cp -r /home/wangqiuyang/noldus-insight/packages/agent/skills/custom \
 ls -la /tmp/noldus-skills-backup-$(date +%Y%m%d)/custom/
 ```
 
-期望输出: 5 个目录 (`compaction-recovery / ethoinsight / ethoinsight-analysis / ethoinsight-charts / ethoinsight-planning`)。
+期望输出: 5 个目录 (`compaction-recovery / ethoinsight / ethoinsight-code / ethoinsight-charts / ethoinsight-planning`)。
 
 - [ ] **Step 2: 备份 noldus 旧 skills 加载代码**
 

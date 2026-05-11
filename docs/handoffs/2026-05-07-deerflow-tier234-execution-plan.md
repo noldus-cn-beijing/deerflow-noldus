@@ -538,7 +538,7 @@ make dev  # 看 LangGraph + Gateway 启动是否正常
 
 按你 2026-05-07 的明确确认,Noldus 价值在以下 4 类:
 
-1. **Skill 内容**: `packages/agent/skills/custom/` 5 个目录 (`compaction-recovery`、`ethoinsight`、`ethoinsight-analysis`、`ethoinsight-charts`、`ethoinsight-planning`) 的全部 markdown 文件
+1. **Skill 内容**: `packages/agent/skills/custom/` 5 个目录 (`compaction-recovery`、`ethoinsight`、`ethoinsight-code`、`ethoinsight-charts`、`ethoinsight-planning`) 的全部 markdown 文件
 2. **流程/提示词**:
    - `agents/lead_agent/prompt.py` 中文调度规则 + Gate 反问 + subagent 描述 + EV19 模板路径
    - subagent 系统 prompt(在 `subagents/builtins/<name>/`)
