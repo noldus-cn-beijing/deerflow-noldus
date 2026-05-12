@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>EthoInsight 真数据指标 review — 2026-05-12</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --card: #ffffff;
+    --border: #e5e3dc;
+    --text: #1f1f1c;
+    --muted: #6b6960;
+    --accent: #2d5f8f;
+    --ok: #2e7d32;
+    --warn: #c77700;
+    --err: #b00020;
+    --highlight: #fff8d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    margin: 0;
+    padding: 32px 24px 80px;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 15px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 22px; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+  h3 { font-size: 18px; margin: 24px 0 8px; color: var(--accent); }
+  h4 { font-size: 15px; margin: 16px 0 6px; }
+  .lede { color: var(--muted); margin-bottom: 32px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+  .meta span strong { color: var(--text); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  th, td { padding: 8px 12px; text-align: left; border: 1px solid var(--border); vertical-align: top; }
+  th { background: #f4f1e9; font-weight: 600; }
+  tr:nth-child(even) td { background: #fbfbf8; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .tag-ok    { background: #e6f4ea; color: var(--ok); }
+  .tag-warn  { background: #fff4e0; color: var(--warn); }
+  .tag-err   { background: #fce8e8; color: var(--err); }
+  .tag-info  { background: #e3effa; color: var(--accent); }
+  .question {
+    background: var(--highlight);
+    border-left: 4px solid var(--warn);
+    padding: 12px 16px;
+    margin: 14px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .question h4 { margin-top: 0; color: var(--warn); }
+  .question .num { display: inline-block; background: var(--warn); color: white; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; margin-right: 6px; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    background: #f1eee5;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+  }
+  pre {
+    background: #2a2a26;
+    color: #f0eee5;
+    padding: 12px 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .col2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ref-range { font-size: 12px; color: var(--muted); font-style: italic; margin-top: 6px; }
+  .checkbox { font-size: 16px; margin-right: 8px; }
+  .footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  details { margin: 8px 0; }
+  details summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+  details[open] summary { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>EthoInsight 真数据指标 review</h1>
+<p class="lede">用你提供的 3 个范式真数据（EPM/OFT/FST）跑了一遍我们的指标脚本。请你判断每个数字是否"在合理范围"、方向是否"符合行为学预期"。有疑问的地方在末尾的 <strong>待确认问题</strong> 区。</p>
+
+<div class="meta">
+  <span><strong>日期：</strong>2026-05-12</span>
+  <span><strong>数据来源：</strong><code>/home/wangqiuyang/DemoData/newdemodata/</code></span>
+  <span><strong>软件版本：</strong>ethoinsight @ dev (commits db630ec7..d8311bd3)</span>
+  <span><strong>测试覆盖：</strong>231 单测全绿</span>
+</div>
+
+<!-- ============================================================ -->
+<h2>1. EPM 高架十字迷宫</h2>
+<!-- ============================================================ -->
+
+<div class="card">
+  <h3>实验信息（来自 EthoVision .txt header）</h3>
+  <table>
+    <tr><th>项</th><th>值</th></tr>
+    <tr><td>EthoVision 模板</td><td><code>Elevated Plus Maze XT190</code></td></tr>
+    <tr><td>动物</td><td>小鼠（Subject 1）</td></tr>
+    <tr><td>追踪点</td><td>三点（中心 + 鼻 + 尾）</td></tr>
+    <tr><td>持续时间</td><td>5 min 00.32 s = 300.32 s</td></tr>
+    <tr><td>用户定义变量</td><td><code>Treatment = Drug</code></td></tr>
+    <tr><td>样本量</td><td>n = 1（只能看单只动物的合理性，无法做组间比较）</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>指标结果</h3>
+  <table>
+    <tr>
+      <th style="width: 40%;">指标</th>
+      <th>数值</th>
+      <th>典型范围（参考）</th>
+      <th>判断</th>
+    </tr>
+    <tr>
+      <td><strong>开臂滞留比例</strong><br><code>open_arm_time_ratio</code></td>
+      <td class="num">8.0 %</td>
+      <td>未给药小鼠：10–25 %<br>抗焦虑药后：25–40 %</td>
+      <td><span class="tag tag-info">单只</span> 偏低，可能是高焦虑表型；需对照组才能下结论</td>
+    </tr>
+    <tr>
+      <td><strong>开臂滞留时长</strong><br><code>open_arm_time</code></td>
+      <td class="num">23.56 s</td>
+      <td>5 min 试验中 30–75 s</td>
+      <td><span class="tag tag-info">单只</span> 与比例一致</td>
+    </tr>
+    <tr>
+      <td><strong>开臂进入次数</strong><br><code>open_arm_entry_count</code></td>
+      <td class="num">6 次</td>
+      <td>5 min 试验中 3–12 次</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+    <tr>
+      <td><strong>开臂进入比例</strong><br><code>open_arm_entry_ratio</code><br><span class="ref-range">= open / (open + closed)</span></td>
+      <td class="num">28.6 %</td>
+      <td>20–40 %（焦虑模型 &lt; 20%）</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+    <tr>
+      <td><strong>总进臂次数</strong><br><code>total_entry_count</code><br><span class="ref-range">运动抑制混杂筛查：&lt; 8 警告</span></td>
+      <td class="num">21 次</td>
+      <td>5 min 试验中 ≥ 8 次（充分活动）</td>
+      <td><span class="tag tag-ok">合理</span>，无运动抑制混杂</td>
+    </tr>
+    <tr>
+      <td>总移动距离</td>
+      <td class="num">1459.97 cm</td>
+      <td>5 min 小鼠 EPM：800–2500 cm</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+    <tr>
+      <td>平均速度</td>
+      <td class="num">4.96 cm/s</td>
+      <td>小鼠 EPM：3–7 cm/s</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<h2>2. OFT 旷场</h2>
+<!-- ============================================================ -->
+
+<div class="card">
+  <h3>实验信息</h3>
+  <table>
+    <tr><th>项</th><th>Trial 1</th><th>Trial 2</th></tr>
+    <tr><td>EthoVision 模板</td><td><code>Open Field test XT190</code></td><td><code>Open Field test XT190</code></td></tr>
+    <tr><td>动物</td><td>Subject 1（用户变量 <code>Dark mice</code>）</td><td>Subject 1（用户变量 <code>White mice</code>）</td></tr>
+    <tr><td>追踪点</td><td>三点</td><td>三点</td></tr>
+    <tr><td>持续时间</td><td>15 min 00.43 s = 900.43 s</td><td>15 min 00.43 s = 900.43 s</td></tr>
+    <tr><td>导出 zone</td><td colspan="2">EthoVision 模板里只导出了 1 个 zone 列（<code>分析区中</code>，未指明 center/periphery 名称），我们按 EthoVision 默认约定假定为 <strong>center zone</strong>。</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>指标结果</h3>
+  <table>
+    <tr>
+      <th style="width: 30%;">指标</th>
+      <th>Trial 1 (Dark)</th>
+      <th>Trial 2 (White)</th>
+      <th>典型范围</th>
+      <th>判断</th>
+    </tr>
+    <tr>
+      <td><strong>中心区时间占比</strong><br><code>center_time_ratio</code></td>
+      <td class="num">10.07 %</td>
+      <td class="num">10.92 %</td>
+      <td>正常小鼠：8–18 %<br>焦虑模型：&lt; 5 %</td>
+      <td><span class="tag tag-ok">合理</span> 且两 trial 高度一致</td>
+    </tr>
+    <tr>
+      <td><strong>趋触性指数</strong><br><code>thigmotaxis_index</code><br><span class="ref-range">= 1 − center_time_ratio</span></td>
+      <td class="num">89.93 %</td>
+      <td class="num">89.08 %</td>
+      <td>正常小鼠：80–92 %</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+    <tr>
+      <td><strong>中心区距离占比</strong><br><code>center_distance_ratio</code></td>
+      <td class="num">14.29 %</td>
+      <td class="num">17.13 %</td>
+      <td>—（一般 略大于 time ratio）</td>
+      <td><span class="tag tag-ok">方向合理</span><sup>※见问题 Q2</sup></td>
+    </tr>
+    <tr>
+      <td><strong>中心区进入次数</strong><br><code>center_entry_count</code></td>
+      <td class="num">55 次</td>
+      <td class="num">65 次</td>
+      <td>15 min 小鼠：40–80 次</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+    <tr>
+      <td>总移动距离</td>
+      <td class="num">6775 cm</td>
+      <td class="num">6725 cm</td>
+      <td>15 min 小鼠：4000–10000 cm</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+    <tr>
+      <td>平均速度</td>
+      <td class="num">7.53 cm/s</td>
+      <td class="num">7.48 cm/s</td>
+      <td>3–10 cm/s</td>
+      <td><span class="tag tag-ok">合理</span></td>
+    </tr>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<h2>3. FST 强迫游泳</h2>
+<!-- ============================================================ -->
+
+<div class="card">
+  <h3>实验信息</h3>
+  <table>
+    <tr><th>项</th><th>值</th></tr>
+    <tr><td>EthoVision 模板</td><td><code>Porsolt forced swim test XT190</code></td></tr>
+    <tr><td>动物</td><td>大鼠</td></tr>
+    <tr><td>持续时间</td><td>5 min 08.56 s = 308.56 s</td></tr>
+    <tr><td>分组（推测）</td><td>Arena 1 = <code>Drug</code>，Arena 2 = <code>Saline</code>（从用户变量列读出）<sup>※见问题 Q3</sup></td></tr>
+    <tr><td>目录 <code>Mobility_1</code> vs <code>Mobility_10</code></td><td><strong>不动检测阈值不同的两次分析</strong>（推测同一段视频用不同 bout 长度阈值重新跑了一次）<sup>※见问题 Q4</sup></td></tr>
+    <tr><td>Mobility state 导出</td><td>3 个 one-hot 列：<code>狂躁 / 活跃 / 静止</code>（Highly mobile / Mobile / Immobile）</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>指标结果（4 个文件全部跑出来）</h3>
+  <table>
+    <tr>
+      <th>阈值组</th>
+      <th>Arena / 处理</th>
+      <th>不动时长<br><code>immobility_time</code></th>
+      <th>首次不动潜伏期<br><code>immobility_latency</code></th>
+      <th>不动 bout 次数<br><code>immobility_bout_count</code></th>
+    </tr>
+    <tr>
+      <td rowspan="2"><strong>Mobility_1</strong><br>（短 bout 阈值，更敏感）</td>
+      <td>Arena 1 / Drug</td>
+      <td class="num">5.52 s</td>
+      <td class="num">23.92 s</td>
+      <td class="num">52</td>
+    </tr>
+    <tr>
+      <td>Arena 2 / Saline</td>
+      <td class="num">14.56 s</td>
+      <td class="num">32.88 s</td>
+      <td class="num">126</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><strong>Mobility_10</strong><br>（长 bout 阈值，更严格）</td>
+      <td>Arena 1 / Drug</td>
+      <td class="num">0.56 s</td>
+      <td class="num">293.92 s</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td>Arena 2 / Saline</td>
+      <td class="num">1.92 s</td>
+      <td class="num">96.16 s</td>
+      <td class="num">7</td>
+    </tr>
+  </table>
+
+  <h4>方向性判断</h4>
+  <ul>
+    <li><span class="tag tag-ok">合理</span> <strong>Saline &gt; Drug</strong> 在两组阈值下都成立（14.56&gt;5.52；1.92&gt;0.56）—— 提示药物有抗抑郁倾向，符合 imipramine / SSRI 类典型表型</li>
+    <li><span class="tag tag-ok">合理</span> <strong>阈值越长 immobility 越少</strong>（5.52→0.56；14.56→1.92）—— RLE bout 检测语义正确</li>
+    <li><span class="tag tag-warn">警告</span> <strong>n = 1 per group</strong>，所有统计推断都不可靠，只能看方向</li>
+  </ul>
+
+  <h4>典型 FST 大鼠参考范围（5 min Porsolt）</h4>
+  <table>
+    <tr><th>测度</th><th>对照组（Saline）</th><th>抗抑郁药</th></tr>
+    <tr><td>Immobility time</td><td>120–200 s</td><td>40–90 s</td></tr>
+    <tr><td>Immobility latency</td><td>30–90 s</td><td>120–240 s</td></tr>
+  </table>
+  <p style="color: var(--warn); font-size: 13px;">
+    <strong>注意：</strong>你给的数据里 immobility_time 都只有 1–15 s 级别，比文献典型值（百秒级）小 10–100 倍。这<strong>极大概率是 EthoVision 模板的 Mobility threshold 设定问题</strong>（"Highly mobile / Mobile / Immobile" 三态的阈值百分比），而不是我们指标算法的 bug。请你确认 → 见 <strong>问题 Q4</strong>。
+  </p>
+</div>
+
+<!-- ============================================================ -->
+<h2>待确认问题（请回答）</h2>
+<!-- ============================================================ -->
+
+<div class="question">
+  <h4><span class="num">Q1</span> EPM 单只动物结论的边界</h4>
+  <p>EPM 这只小鼠 <code>open_arm_time_ratio = 8 %</code>。如果你看到这个数字，你会：</p>
+  <ul>
+    <li>(A) 认为正常范围内的下沿（不焦虑）</li>
+    <li>(B) 认为是焦虑表型（需对照组确认）</li>
+    <li>(C) 认为可能是模板/数据问题，需重测</li>
+  </ul>
+  <p><strong>请回答：</strong> _____</p>
+</div>
+
+<div class="question">
+  <h4><span class="num">Q2</span> OFT 单 zone 导出的解释假定</h4>
+  <p>这批 OFT 数据的 EthoVision 模板里只导出了一列 zone（<code>分析区中</code>），<strong>没有标注是 center 还是 periphery</strong>。我们的代码现在按<strong>"裸 <code>in_zone</code> 列默认是 center zone"</strong>处理，得到 center_time = 10 % / thigmotaxis = 90 %，<strong>方向与小鼠 OFT 直觉一致</strong>。</p>
+  <p>请你确认两件事：</p>
+  <ol>
+    <li>EthoVision XT 19 的 OFT 出厂模板的<strong>默认单 zone 是不是 center zone</strong>？</li>
+    <li>未来同事建模板时是否应该<strong>强制把 zone 命名包含 "center" / "periphery" 字样</strong>（这样我们的 regex 能精确识别，不用 fallback 猜）？</li>
+  </ol>
+  <p><strong>请回答：</strong> _____</p>
+</div>
+
+<div class="question">
+  <h4><span class="num">Q3</span> FST 分组的 ground truth</h4>
+  <p>FST 数据里 Arena 1 和 Arena 2 各自的<strong>用户变量列</strong>名分别是 <code>Drug</code> 和 <code>Saline</code>。我们推测：</p>
+  <ul>
+    <li>这就是分组标签（Arena 1 = Drug 组，Arena 2 = Saline 组）</li>
+    <li>同事在 EthoVision 里用 "user-defined variable" 列记录分组身份</li>
+  </ul>
+  <p>这个推测对吗？还是 <code>Drug</code> / <code>Saline</code> 只是该 Arena 的<strong>动物个体属性</strong>（不一定是分组维度）？</p>
+  <p><strong>请回答：</strong> _____</p>
+</div>
+
+<div class="question">
+  <h4><span class="num">Q4</span> FST immobility 数值过小（核心问题）</h4>
+  <p>FST 这批数据的 immobility_time 只有 0.56–14.56 s，但文献典型 5 min Porsolt 大鼠 immobility ≥ 100 s。差 10–100 倍。原因可能是：</p>
+  <table>
+    <tr><th>可能性</th><th>具体表现</th><th>验证方法</th></tr>
+    <tr>
+      <td>(A) EthoVision Mobility threshold 设得太严</td>
+      <td>"Immobile" 状态阈值要求 body change &lt; 1%（默认是 5–20%）</td>
+      <td>请你打开 EthoVision Detection Settings 看 Mobility 三态的阈值百分比</td>
+    </tr>
+    <tr>
+      <td>(B) 大鼠真的没怎么不动</td>
+      <td>这只可能是抗抑郁药已经起效或健康状态过好</td>
+      <td>看视频回放</td>
+    </tr>
+    <tr>
+      <td>(C) 我们没用对列</td>
+      <td>EthoVision 还导出了 <code>Mobility continuous</code>（连续值 %），可能应该按它再做一次阈值判断</td>
+      <td>需要你告诉我们 FST 行业惯例用哪个列</td>
+    </tr>
+    <tr>
+      <td>(D) 单位换算问题</td>
+      <td>我们用每帧 dt 累加，dt 来自 trial_time 列两帧差（实测 0.04 s/帧 ≈ 25 fps）</td>
+      <td>我们已经验证了：5.52 s = 138 immobile 帧 × 0.04 s/帧，算法正确</td>
+    </tr>
+  </table>
+  <p><strong>请回答：</strong>(A) / (B) / (C) / (D) / 其他 _____</p>
+</div>
+
+<div class="question">
+  <h4><span class="num">Q5</span> FST 两份阈值数据（Mobility_1 vs Mobility_10）的语义</h4>
+  <p>同一段视频用两套阈值跑出来两份数据，目录命名为 <code>Mobility_1</code> 和 <code>Mobility_10</code>。我们的推测：</p>
+  <ul>
+    <li><code>Mobility_1</code>：EthoVision 的 "Immobile" 状态触发阈值 = 1（最严格，要求几乎完全不动）</li>
+    <li><code>Mobility_10</code>：阈值 = 10（更宽松，允许较小幅度移动也算 immobile）</li>
+  </ul>
+  <p>但数据显示<strong>恰好相反</strong>—— Mobility_1 的 immobility 反而<strong>更多</strong>（5.52 / 14.56 s），Mobility_10 的反而<strong>更少</strong>（0.56 / 1.92 s）。这说明：</p>
+  <ul>
+    <li>(A) 我们对目录名的理解反了 — <code>Mobility_1</code> = 1 s 最短 bout，<code>Mobility_10</code> = 10 s 最短 bout（这样 immobility 显著少符合直觉）</li>
+    <li>(B) 完全是另一个含义</li>
+  </ul>
+  <p><strong>请回答：</strong>(A) / (B) — 具体含义是 _____</p>
+</div>
+
+<div class="question">
+  <h4><span class="num">Q6</span> 报告里要呈现哪些指标？</h4>
+  <p>我们目前对 3 个范式实现的指标如下，请勾选"必须呈现给研究员看"的 + 补漏：</p>
+  <h4>EPM</h4>
+  <ul style="list-style: none; padding-left: 0;">
+    <li><label><input type="checkbox" class="checkbox"> open_arm_time_ratio</label></li>
+    <li><label><input type="checkbox" class="checkbox"> open_arm_time</label></li>
+    <li><label><input type="checkbox" class="checkbox"> open_arm_entry_count</label></li>
+    <li><label><input type="checkbox" class="checkbox"> open_arm_entry_ratio</label></li>
+    <li><label><input type="checkbox" class="checkbox"> total_entry_count</label></li>
+    <li><label><input type="checkbox" class="checkbox"> 我还想要：____________</label></li>
+  </ul>
+  <h4>OFT</h4>
+  <ul style="list-style: none; padding-left: 0;">
+    <li><label><input type="checkbox" class="checkbox"> center_time_ratio</label></li>
+    <li><label><input type="checkbox" class="checkbox"> thigmotaxis_index</label></li>
+    <li><label><input type="checkbox" class="checkbox"> center_distance_ratio</label></li>
+    <li><label><input type="checkbox" class="checkbox"> center_entry_count</label></li>
+    <li><label><input type="checkbox" class="checkbox"> 我还想要：____________</label></li>
+  </ul>
+  <h4>FST</h4>
+  <ul style="list-style: none; padding-left: 0;">
+    <li><label><input type="checkbox" class="checkbox"> immobility_time</label></li>
+    <li><label><input type="checkbox" class="checkbox"> immobility_latency</label></li>
+    <li><label><input type="checkbox" class="checkbox"> immobility_bout_count</label></li>
+    <li><label><input type="checkbox" class="checkbox"> 我还想要：____________（如 swimming time / climbing time / 平均 bout 长度等）</label></li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2>附：代码改动摘要（供软件同事参考）</h2>
+<!-- ============================================================ -->
+
+<details>
+<summary>展开 3 个 commit 的具体内容</summary>
+
+<div class="card">
+  <h4><code>db630ec7</code> · fix(parse): _slugify 补 mobility state + distance to wall 中文翻译</h4>
+  <p>4 行 subs 字典补：狂躁→highly_mobile / 活跃→mobile / 静止→immobile / 到墙壁距离→distance_to_wall。</p>
+</div>
+
+<div class="card">
+  <h4><code>96b15e49</code> · fix(metrics): FST/TST 支持 one-hot mobility_state_immobile 列</h4>
+  <p>EthoVision 真数据不导出合一的 <code>mobility_state</code>，而是 3 个 one-hot。新增 <code>_resolve_immobile_series</code> 收口两种 schema：合一列 immobile=0，one-hot 列 immobile=1。37 个 FST+TST 单测全绿（保持原语义）。</p>
+</div>
+
+<div class="card">
+  <h4><code>d8311bd3</code> · fix(metrics/oft): 支持单列 in_zone + thigmotaxis 用 1-center fallback</h4>
+  <p>OFT 模板只导出 1 个 zone 列时，按 EthoVision 约定假定为 center。thigmotaxis 加 fallback：(1) 显式 periphery 列 → (2) 1 - center_time_ratio → (3) x/y 几何计算。</p>
+</div>
+
+</details>
+
+<div class="footer">
+  <p><strong>Review 完毕后请把这份 HTML 标注好回传给软件同事</strong>（直接在浏览器里改 textarea / 勾选 checkbox 然后<kbd>Ctrl/⌘+S</kbd> 保存即可，或者扫成 PDF / 截图发即可）。</p>
+  <p>原始数据位置：<code>/home/wangqiuyang/DemoData/newdemodata/</code><br>
+  生成脚本：<code>/tmp/run_metrics_on_real_data.py</code><br>
+  代码仓库分支：<code>dev</code> @ commit <code>d8311bd3</code></p>
+</div>
+
+</div>
+</body>
+</html>
