@@ -334,6 +334,18 @@ class SubagentExecutor:
             passport=f"subagent:{self.config.name}",
         ))
 
+        # Attach ScriptInvocationOnlyProvider so code-executor's bash tool is
+        # whitelisted to ethoinsight.scripts.* invocations + safe file ops.
+        # Non-code-executor subagents pass through (provider self-gates by agent_id).
+        from deerflow.guardrails.script_invocation_only_provider import (
+            ScriptInvocationOnlyProvider,
+        )
+
+        middlewares.append(GuardrailMiddleware(
+            provider=ScriptInvocationOnlyProvider(),
+            passport=f"subagent:{self.config.name}",
+        ))
+
         # Build system prompt with inline skill injection
         system_prompt = self._build_system_prompt()
 
