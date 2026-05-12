@@ -134,3 +134,47 @@ class TestComputeTotalEntryCount:
         assert payload["metric"] == "total_entry_count"
         assert isinstance(payload["value"], int)
         assert payload["value"] >= 0
+
+
+class TestPlotBoxOpenArm:
+    def test_plot_with_groups(self, epm_trajectory_files: list[Path], tmp_path: Path):
+        inputs_file = tmp_path / "inputs.json"
+        inputs_file.write_text(json.dumps([str(p) for p in epm_trajectory_files]))
+
+        # First 3 = control, last 3 = treatment
+        groups_file = tmp_path / "groups.json"
+        groups_file.write_text(json.dumps({
+            "control": ["Subject 1", "Subject 2", "Subject 3"],
+            "treatment": ["Subject 4", "Subject 5", "Subject 6"],
+        }))
+
+        out_path = tmp_path / "box.png"
+        result = _run_script(
+            "ethoinsight.scripts.epm.plot_box_open_arm",
+            ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(out_path)],
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert out_path.exists()
+        assert out_path.stat().st_size > 1000
+
+
+class TestRunGroupwiseStats:
+    def test_stats_with_two_groups(self, epm_trajectory_files: list[Path], tmp_path: Path):
+        inputs_file = tmp_path / "inputs.json"
+        inputs_file.write_text(json.dumps([str(p) for p in epm_trajectory_files]))
+
+        groups_file = tmp_path / "groups.json"
+        groups_file.write_text(json.dumps({
+            "control": ["Subject 1", "Subject 2", "Subject 3"],
+            "treatment": ["Subject 4", "Subject 5", "Subject 6"],
+        }))
+
+        out_path = tmp_path / "stats.json"
+        result = _run_script(
+            "ethoinsight.scripts.epm.run_groupwise_stats",
+            ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(out_path)],
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        payload = json.loads(out_path.read_text())
+        assert "comparisons" in payload
+        assert "alpha" in payload
