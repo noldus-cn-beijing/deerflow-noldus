@@ -22,10 +22,10 @@
 → 检查 groups 字符串：必须是 JSON 字符串，键是组名，值是 subject ID 列表。例如：
 `'{"control":["Subject 1","Subject 2"],"treatment":["Subject 3"]}'`
 
-返回 `error: "compute_paradigm_metrics raised: ..."`：
+若脚本 stderr 包含 `"compute_paradigm_metrics"` 相关错误：
 1. 读 `workspace/parsed_summary.json` 看 `columns` 是否有 `x_center_mm`, `y_center_mm`
 2. 若列缺失，说明数据不适合该范式——调 `get_analysis_template` 走 fallback
-3. 若返回的 error 含 "unknown paradigm"，范式名拼写错误或未实现——参考 `fallback-workflow.md`
+3. 若 stderr 含 "unknown paradigm"，范式名拼写错误或未实现——参考 `fallback-workflow.md`
 
 ## run_statistics 失败
 
