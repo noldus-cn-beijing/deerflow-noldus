@@ -4,7 +4,7 @@ import { Client as LangGraphClient } from "@langchain/langgraph-sdk/client";
 
 import { getLangGraphBaseURL } from "../config";
 
-import { isStateChangingMethod, readCsrfCookie } from "./fetcher";
+import { fetch as csrfFetch, isStateChangingMethod, readCsrfCookie } from "./fetcher";
 import { sanitizeRunStreamOptions } from "./stream-mode";
 
 /**
@@ -84,27 +84,43 @@ export interface FeedbackRequest {
   note?: string;
 }
 
-export interface FeedbackItem extends FeedbackRequest {
-  submitted_at: string;
+export interface FeedbackItem {
+  feedback_id: string;
+  thread_id: string;
+  run_id: string;
+  user_id: string | null;
+  message_id: string | null;
+  verdict: FeedbackVerdict | null;
+  revised_text: string | null;
+  note: string | null;
+  created_at: string;
 }
 
 export async function submitFeedback(
   threadId: string,
+  runId: string,
   body: FeedbackRequest,
-): Promise<{ success: boolean }> {
-  const res = await fetch(`/api/threads/${threadId}/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+): Promise<FeedbackItem> {
+  const res = await csrfFetch(
+    `/api/threads/${threadId}/runs/${runId}/feedback`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
   if (!res.ok) throw new Error(`submitFeedback failed: ${res.status}`);
-  return res.json() as Promise<{ success: boolean }>;
+  return res.json() as Promise<FeedbackItem>;
 }
 
 export async function listFeedback(
   threadId: string,
+  runId: string,
 ): Promise<{ items: FeedbackItem[] }> {
-  const res = await fetch(`/api/threads/${threadId}/feedback`);
+  const res = await csrfFetch(
+    `/api/threads/${threadId}/runs/${runId}/feedback`,
+  );
   if (!res.ok) throw new Error(`listFeedback failed: ${res.status}`);
-  return res.json() as Promise<{ items: FeedbackItem[] }>;
+  const items = (await res.json()) as FeedbackItem[];
+  return { items };
 }

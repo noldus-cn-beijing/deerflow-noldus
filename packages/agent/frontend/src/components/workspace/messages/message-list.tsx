@@ -38,12 +38,14 @@ export function MessageList({
   className,
   threadId,
   thread,
+  messageRunIds,
   paddingBottom = MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
   onSelectClarificationOption,
 }: {
   className?: string;
   threadId: string;
   thread: BaseStream<AgentThreadState>;
+  messageRunIds?: Map<string, string>;
   paddingBottom?: number;
   /**
    * Optional callback fired when the user clicks one of the option buttons
@@ -72,6 +74,7 @@ export function MessageList({
                   message={msg}
                   isLoading={thread.isLoading}
                   threadId={threadId}
+                  messageRunIds={messageRunIds}
                 />
               );
             });
@@ -224,6 +227,7 @@ export function MessageList({
                     key={"task-group-" + taskId}
                     taskId={taskId!}
                     threadId={threadId}
+                    messageRunIds={messageRunIds}
                   />,
                 );
               }

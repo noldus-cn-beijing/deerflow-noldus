@@ -39,11 +39,13 @@ export function MessageListItem({
   message,
   isLoading,
   threadId,
+  messageRunIds,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
   threadId?: string;
+  messageRunIds?: Map<string, string>;
 }) {
   const isHuman = message.type === "human";
   return (
@@ -56,13 +58,18 @@ export function MessageListItem({
         message={message}
         isLoading={isLoading}
       />
-      {!isLoading && !isHuman && threadId && message.id && (
-        <FeedbackButtons
-          threadId={threadId}
-          messageId={message.id}
-          className="px-1"
-        />
-      )}
+      {!isLoading && !isHuman && threadId && message.id && (() => {
+        const runId = messageRunIds?.get(message.id);
+        if (!runId) return null; // run_id 还没拿到时不渲染，防止误绑
+        return (
+          <FeedbackButtons
+            threadId={threadId}
+            runId={runId}
+            messageId={message.id}
+            className="px-1"
+          />
+        );
+      })()}
       {!isLoading && (
         <MessageToolbar
           className={cn(

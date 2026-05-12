@@ -40,10 +40,12 @@ export function SubtaskCard({
   className,
   taskId,
   threadId,
+  messageRunIds,
 }: {
   className?: string;
   taskId: string;
   threadId?: string;
+  messageRunIds?: Map<string, string>;
 }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
@@ -168,13 +170,19 @@ export function SubtaskCard({
             ></ChainOfThoughtStep>
           )}
         </ChainOfThoughtContent>
-        {task.status === "completed" && threadId && (
-          <FeedbackButtons
-            threadId={threadId}
-            messageId={`subtask-${taskId}`}
-            className="px-4 pb-3"
-          />
-        )}
+        {task.status === "completed" && threadId && (() => {
+          const syntheticId = `subtask-${taskId}`;
+          const runId = messageRunIds?.get(syntheticId);
+          if (!runId) return null; // subtask 上下文暂缺 run_id，不渲染反馈
+          return (
+            <FeedbackButtons
+              threadId={threadId}
+              runId={runId}
+              messageId={syntheticId}
+              className="px-4 pb-3"
+            />
+          );
+        })()}
       </div>
     </ChainOfThought>
   );

@@ -43,7 +43,7 @@ export default function ChatPage() {
 
   const { showNotification } = useNotification();
 
-  const [thread, sendMessage, isUploading] = useThreadStream({
+  const [thread, sendMessage, isUploading, messageRunIds] = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: settings.context,
     isMock,
@@ -112,6 +112,7 @@ export default function ChatPage() {
                 className={cn("size-full", !isNewThread && "pt-10")}
                 threadId={threadId}
                 thread={thread}
+                messageRunIds={messageRunIds}
                 paddingBottom={messageListPaddingBottom}
                 onSelectClarificationOption={(optionText) => {
                   void sendMessage(threadId, { text: optionText, files: [] });
