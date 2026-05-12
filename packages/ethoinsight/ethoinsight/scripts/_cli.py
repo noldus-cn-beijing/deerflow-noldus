@@ -1,0 +1,107 @@
+"""统一的脚本 CLI helper。
+
+所有 ethoinsight.scripts.* 下的脚本通过本模块统一参数解析、I/O 接口。
+
+接口约定见 docs/superpowers/specs/2026-05-12-script-per-metric-architecture-design.md §3.2
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any
+
+
+# ============================================================================
+# Stdout marker - subagent uses this to extract per-script result
+# ============================================================================
+
+RESULT_MARKER = "[result]"
+
+
+def emit_result(payload: dict[str, Any]) -> None:
+    """Print a `[result] {json}` line to stdout for subagent extraction."""
+    print(f"{RESULT_MARKER} {json.dumps(payload, ensure_ascii=False)}")
+
+
+# ============================================================================
+# File I/O
+# ============================================================================
+
+
+def save_output_json(path: str | Path, data: dict[str, Any]) -> None:
+    """Write `data` to `path` atomically (temp file + rename), creating parent dirs."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, p)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+
+def read_inputs_json(path: str | Path) -> list[str]:
+    """Read a JSON file containing a list of input file paths.
+
+    Format: ``["/path/to/subject1.txt", "/path/to/subject2.txt", ...]``
+    """
+    p = Path(path)
+    data = json.loads(p.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError(f"{path} must be a JSON array of file paths, got {type(data).__name__}")
+    return [str(item) for item in data]
+
+
+def read_groups_json(path: str | Path) -> dict[str, list[str]]:
+    """Read a JSON file containing the groups mapping.
+
+    Format: ``{"group_name": ["subject_name_1", "subject_name_2"], ...}``
+    """
+    p = Path(path)
+    data = json.loads(p.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must be a JSON object mapping group names to subject lists")
+    return {k: list(v) for k, v in data.items()}
+
+
+# ============================================================================
+# Standard argparse builders for the three script types
+# ============================================================================
+
+
+def make_compute_parser(description: str) -> argparse.ArgumentParser:
+    """Argparse for ``compute_*.py``: --input <single trajectory> --output <metric.json>."""
+    ap = argparse.ArgumentParser(description=description)
+    ap.add_argument("--input", required=True, help="Path to a single EthoVision trajectory file")
+    ap.add_argument("--output", required=True, help="Path to write the metric JSON")
+    return ap
+
+
+def make_plot_parser(description: str, *, supports_groups: bool = False) -> argparse.ArgumentParser:
+    """Argparse for ``plot_*.py``.
+
+    Single-file plots use ``--input``; aggregated plots use ``--inputs`` + optional ``--groups``.
+    """
+    ap = argparse.ArgumentParser(description=description)
+    group = ap.add_mutually_exclusive_group(required=True)
+    group.add_argument("--input", help="Path to a single trajectory file (single-file plots)")
+    group.add_argument("--inputs", help="Path to a JSON file containing a list of trajectory file paths")
+    if supports_groups:
+        ap.add_argument("--groups", help="Path to a JSON file mapping group_name -> [subject_name, ...]")
+    ap.add_argument("--output", required=True, help="Path to write the PNG plot")
+    return ap
+
+
+def make_stats_parser(description: str) -> argparse.ArgumentParser:
+    """Argparse for ``run_*_stats.py``: --inputs --groups --output."""
+    ap = argparse.ArgumentParser(description=description)
+    ap.add_argument("--inputs", required=True, help="Path to a JSON file containing a list of trajectory file paths")
+    ap.add_argument("--groups", required=True, help="Path to a JSON file mapping group_name -> [subject_name, ...]")
+    ap.add_argument("--output", required=True, help="Path to write the stats JSON")
+    return ap
