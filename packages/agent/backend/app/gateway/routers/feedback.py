@@ -1,94 +1,114 @@
-"""Feedback router for training-data flywheel.
+"""Feedback router — Noldus verdict-based feedback for SFT 训练数据飞轮.
 
-Accepts expert ✅/⚠️/❌ verdicts on assistant messages and appends each
-feedback to ``.deer-flow/training-data/feedback/<thread_id>.jsonl``.
+Backed by FeedbackRepository (SQLite). URL aligned with upstream:
+POST/GET /api/threads/{thread_id}/runs/{run_id}/feedback
 
-Robustness contract: disk errors are logged and surfaced as 500, never
-allowed to crash the Gateway process.
+Noldus 语义：verdict ∈ {correct, needs_fix, wrong} + 可选 revised_text 作为
+SFT 训练种子。verdict 自动映射到上游 rating 字段，使上游 thumbs-up/down
+aggregate_by_run 统计仍可用。
 """
 from __future__ import annotations
 
-import json
 import logging
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
+from app.gateway.authz import require_permission
+from app.gateway.deps import get_current_user, get_feedback_repo, get_run_store
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/threads", tags=["feedback"])
+
+VerdictT = Literal["correct", "needs_fix", "wrong"]
+_VERDICT_TO_RATING: dict[str, int | None] = {
+    "correct": 1,
+    "wrong": -1,
+    "needs_fix": None,
+}
 
 
 class FeedbackRequest(BaseModel):
     message_id: str = Field(..., min_length=1)
-    verdict: Literal["correct", "needs_fix", "wrong"]
+    verdict: VerdictT
     revised_text: str | None = None
     note: str | None = None
 
 
-class FeedbackResponse(BaseModel):
-    success: bool
-
-
 class FeedbackItem(BaseModel):
-    message_id: str
-    verdict: str
+    feedback_id: str
+    thread_id: str
+    run_id: str
+    user_id: str | None
+    message_id: str | None
+    verdict: VerdictT | None
     revised_text: str | None
     note: str | None
-    submitted_at: str
+    created_at: str
 
 
-class FeedbackListResponse(BaseModel):
-    items: list[FeedbackItem]
+def _to_item(record: dict[str, Any]) -> FeedbackItem:
+    return FeedbackItem(
+        feedback_id=record["feedback_id"],
+        thread_id=record["thread_id"],
+        run_id=record["run_id"],
+        user_id=record.get("user_id"),
+        message_id=record.get("message_id"),
+        verdict=record.get("verdict"),
+        revised_text=record.get("revised_text"),
+        note=record.get("comment"),
+        created_at=record["created_at"],
+    )
 
 
-def _base_dir() -> Path:
-    """Return path to backend/.deer-flow. Overridden in tests."""
-    from deerflow.config.paths import get_paths
+@router.post(
+    "/{thread_id}/runs/{run_id}/feedback",
+    response_model=FeedbackItem,
+)
+@require_permission("threads", "write", owner_check=True, require_existing=True)
+async def submit_feedback(
+    thread_id: str,
+    run_id: str,
+    body: FeedbackRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Submit Noldus verdict-based feedback for a specific message in a run."""
+    run_store = get_run_store(request)
+    run = await run_store.get(run_id)
+    if run is None or run.get("thread_id") != thread_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run {run_id} not found in thread {thread_id}",
+        )
 
-    return Path(get_paths().base_dir)
+    user_id = await get_current_user(request)
+    feedback_repo = get_feedback_repo(request)
+    record = await feedback_repo.upsert(
+        thread_id=thread_id,
+        run_id=run_id,
+        user_id=user_id,
+        message_id=body.message_id,
+        verdict=body.verdict,
+        rating=_VERDICT_TO_RATING[body.verdict],
+        revised_text=body.revised_text,
+        comment=body.note,
+    )
+    return _to_item(record).model_dump()
 
 
-@router.post("/{thread_id}/feedback", response_model=FeedbackResponse)
-def post_feedback(thread_id: str, req: FeedbackRequest) -> FeedbackResponse:
-    try:
-        out_dir = _base_dir() / "training-data" / "feedback"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        record = {
-            "thread_id": thread_id,
-            "message_id": req.message_id,
-            "verdict": req.verdict,
-            "revised_text": req.revised_text,
-            "note": req.note,
-            "submitted_at": datetime.now(UTC).isoformat(),
-        }
-        path = out_dir / f"{thread_id}.jsonl"
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        return FeedbackResponse(success=True)
-    except OSError as exc:
-        logger.error("Feedback write failed for thread %s: %s", thread_id, exc)
-        raise HTTPException(status_code=500, detail="Failed to persist feedback")
-
-
-@router.get("/{thread_id}/feedback", response_model=FeedbackListResponse)
-def list_feedback(thread_id: str) -> FeedbackListResponse:
-    path = _base_dir() / "training-data" / "feedback" / f"{thread_id}.jsonl"
-    if not path.exists():
-        return FeedbackListResponse(items=[])
-    items: list[FeedbackItem] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        items.append(FeedbackItem(
-            message_id=rec["message_id"],
-            verdict=rec["verdict"],
-            revised_text=rec.get("revised_text"),
-            note=rec.get("note"),
-            submitted_at=rec["submitted_at"],
-        ))
-    return FeedbackListResponse(items=items)
+@router.get(
+    "/{thread_id}/runs/{run_id}/feedback",
+    response_model=list[FeedbackItem],
+)
+@require_permission("threads", "read", owner_check=True)
+async def list_run_feedback(
+    thread_id: str,
+    run_id: str,
+    request: Request,
+) -> list[dict[str, Any]]:
+    """List current user's feedback for a run."""
+    feedback_repo = get_feedback_repo(request)
+    user_id = await get_current_user(request)
+    rows = await feedback_repo.list_by_run(thread_id, run_id, user_id=user_id)
+    return [_to_item(r).model_dump() for r in rows]

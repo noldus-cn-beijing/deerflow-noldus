@@ -364,7 +364,9 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
     # Auth API is mounted at /api/v1/auth
     app.include_router(auth.router)
 
-    # Feedback API is mounted at /api/threads/{thread_id}/runs/{run_id}/feedback
+    # Noldus feedback API at /api/threads/{thread_id}/runs/{run_id}/feedback
+    # 走 FeedbackRepository (SQLite)；require_permission 闭 auth bypass；
+    # verdict 三分类 + 可选 revised_text（SFT 训练种子）。
     app.include_router(feedback.router)
 
     # Thread Runs API (LangGraph Platform-compatible runs lifecycle)
