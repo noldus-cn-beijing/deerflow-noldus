@@ -127,25 +127,39 @@ class FeedbackRepository:
         *,
         run_id: str,
         thread_id: str,
-        rating: int,
         user_id: str | None | _AutoSentinel = AUTO,
+        message_id: str | None = None,
+        rating: int | None = None,
         comment: str | None = None,
+        verdict: str | None = None,
+        revised_text: str | None = None,
     ) -> dict:
-        """Create or update feedback for (thread_id, run_id, user_id). rating must be +1 or -1."""
-        if rating not in (1, -1):
+        """Create or update feedback for (thread_id, run_id, user_id, message_id).
+
+        rating must be +1, -1, or None (Noldus verdict=needs_fix path).
+        verdict must be 'correct' / 'needs_fix' / 'wrong' or None (上游 rating-only path).
+        """
+        if rating is not None and rating not in (1, -1):
             raise ValueError(f"rating must be +1 or -1, got {rating}")
+        if verdict is not None and verdict not in {"correct", "needs_fix", "wrong"}:
+            raise ValueError(
+                f"verdict must be one of correct/needs_fix/wrong, got {verdict}"
+            )
         resolved_user_id = resolve_user_id(user_id, method_name="FeedbackRepository.upsert")
         async with self._sf() as session:
             stmt = select(FeedbackRow).where(
                 FeedbackRow.thread_id == thread_id,
                 FeedbackRow.run_id == run_id,
                 FeedbackRow.user_id == resolved_user_id,
+                FeedbackRow.message_id == message_id,
             )
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
             if row is not None:
                 row.rating = rating
                 row.comment = comment
+                row.verdict = verdict
+                row.revised_text = revised_text
                 row.created_at = datetime.now(UTC)
             else:
                 row = FeedbackRow(
@@ -153,8 +167,11 @@ class FeedbackRepository:
                     run_id=run_id,
                     thread_id=thread_id,
                     user_id=resolved_user_id,
+                    message_id=message_id,
                     rating=rating,
                     comment=comment,
+                    verdict=verdict,
+                    revised_text=revised_text,
                     created_at=datetime.now(UTC),
                 )
                 session.add(row)
