@@ -117,11 +117,38 @@ def _find_mobility_column(df: pd.DataFrame) -> str | None:
     for col in candidates:
         if col in df.columns:
             return col
-    # Fallback: regex match
+    # One-hot immobile indicator: EthoVision exports "Mobility state(Immobile)" as a
+    # separate 0/1 column (after slugify: mobility_state_immobile / activity_state_immobile).
+    for col in df.columns:
+        cl = col.lower()
+        if ("mobility_state" in cl or "activity_state" in cl) and "immobile" in cl:
+            return col
+    # Fallback: any column whose name contains mobility or activity.
     for col in df.columns:
         if "mobility" in col.lower() or "activity" in col.lower():
             return col
     return None
+
+
+def _resolve_immobile_series(
+    df: pd.DataFrame, mobility_col: str | None
+) -> tuple[pd.Series, int] | None:
+    """Resolve the mobility column to a (series, immobile_value) pair.
+
+    Handles two EthoVision export schemas:
+    - Single combined column (``mobility_state``): 0=immobile, 1=mobile → immobile_value=0
+    - One-hot immobile indicator (``mobility_state_immobile``): 1=immobile → immobile_value=1
+
+    Returns None when no usable column is present.
+    """
+    col = mobility_col or _find_mobility_column(df)
+    if col is None or col not in df.columns:
+        return None
+    series = df[col].dropna()
+    if series.empty:
+        return None
+    immobile_value = 1 if "immobile" in col.lower() else 0
+    return series, immobile_value
 
 
 def _runs(arr, value=0):
@@ -154,16 +181,16 @@ def compute_immobility_time(
 ) -> float | None:
     """Total immobility time (seconds).
 
-    Sums the duration of all immobility bouts (runs of 0 in the mobility column).
+    Sums the duration of all immobility bouts. Works with both the combined
+    ``mobility_state`` column (0=immobile) and the one-hot
+    ``mobility_state_immobile`` column (1=immobile).
     """
-    col = mobility_col or _find_mobility_column(df)
-    if col is None or col not in df.columns:
+    resolved = _resolve_immobile_series(df, mobility_col)
+    if resolved is None:
         return None
-    series = df[col].dropna()
-    if series.empty:
-        return None
+    series, immobile_value = resolved
 
-    bouts = _runs(series, value=0)
+    bouts = _runs(series, value=immobile_value)
     if not bouts:
         return 0.0
 
@@ -184,17 +211,15 @@ def compute_immobility_latency(
 ) -> float | None:
     """Latency to first immobility bout (seconds).
 
-    Returns the trial_time value of the first frame where mobility==0.
-    Returns None if the animal was never immobile.
+    Returns the trial_time value of the first immobile frame, or None if
+    the animal was never immobile.
     """
-    col = mobility_col or _find_mobility_column(df)
-    if col is None or col not in df.columns:
+    resolved = _resolve_immobile_series(df, mobility_col)
+    if resolved is None:
         return None
-    series = df[col].dropna()
-    if series.empty:
-        return None
+    series, immobile_value = resolved
 
-    immobile_mask = series == 0
+    immobile_mask = series == immobile_value
     if not immobile_mask.any():
         return None
 
@@ -211,16 +236,14 @@ def compute_immobility_bout_count(
 ) -> int | None:
     """Number of immobility bouts (run-length encoding).
 
-    Each consecutive run of 0 values counts as one bout.
+    Each consecutive run of immobile frames counts as one bout.
     """
-    col = mobility_col or _find_mobility_column(df)
-    if col is None or col not in df.columns:
+    resolved = _resolve_immobile_series(df, mobility_col)
+    if resolved is None:
         return None
-    series = df[col].dropna()
-    if series.empty:
-        return 0
+    series, immobile_value = resolved
 
-    bouts = _runs(series, value=0)
+    bouts = _runs(series, value=immobile_value)
     return len(bouts)
 
 
