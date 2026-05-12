@@ -11,6 +11,50 @@ from ethoinsight.metrics._common import _find_zone_column
 
 
 # ============================================================================
+# OFT zone column resolution
+# ============================================================================
+
+
+def _find_center_zone_column(df: pd.DataFrame, hint: str = "in_zone_center") -> str | None:
+    """Locate the OFT center-zone indicator column.
+
+    EthoVision exports vary by template:
+    1. ``in_zone_center`` / ``in_zone_centre`` — explicit center name
+    2. ``in_zone_center_<suffix>`` — name with extra qualifier
+    3. ``in_zone`` (no suffix) — minimal OFT template only exports one zone,
+       which by EthoVision convention is the center zone
+
+    Returns the matching column name or None.
+    """
+    # 1. Exact hint match
+    if hint in df.columns:
+        return hint
+    # 2. Regex: any in_zone column that mentions center/centre, excluding wall/edge/periphery
+    for col in df.columns:
+        cl = col.lower()
+        if not cl.startswith("in_zone"):
+            continue
+        if any(bad in cl for bad in ("wall", "edge", "peripher", "border", "outer")):
+            continue
+        if "center" in cl or "centre" in cl:
+            return col
+    # 3. Fallback: a single bare "in_zone" column is the center zone by convention
+    if "in_zone" in df.columns:
+        return "in_zone"
+    return None
+
+
+def _find_periphery_zone_column(df: pd.DataFrame) -> str | None:
+    """Locate the OFT periphery / wall-zone indicator column.
+
+    Recognises ``in_zone.*(peripher|edge|wall|border|outer)``.
+    Returns None if no such column exists (caller may fall back to
+    1 − center_time_ratio).
+    """
+    return _find_zone_column(df, r"in_zone.*(peripher|edge|wall|border|outer)")
+
+
+# ============================================================================
 # Open Field metrics
 # ============================================================================
 
@@ -21,14 +65,10 @@ def compute_center_time_ratio(
 ) -> float | None:
     """Ratio of time spent in center zone.
 
-    Tries exact column name first, then regex ``in_zone.*center``.
-    Zone columns are expected to be 0/1 integers.
+    Resolves the center zone column via :func:`_find_center_zone_column`,
+    which also handles the bare ``in_zone`` minimal-export case.
     """
-    col = None
-    if center_zone in df.columns:
-        col = center_zone
-    else:
-        col = _find_zone_column(df, r"in_zone.*center")
+    col = _find_center_zone_column(df, hint=center_zone)
     if col is None:
         return None
     series = df[col].dropna()
@@ -45,17 +85,24 @@ def compute_thigmotaxis_index(
 ) -> float | None:
     """Thigmotaxis index: fraction of time in peripheral zone.
 
-    If arena geometry is provided, computes from coordinates.
-    Otherwise tries to find a periphery zone column.
+    Priority:
+    1. Explicit periphery / wall-zone column
+    2. Complement of the center zone (1 − center_time_ratio)
+    3. Geometric derivation from x/y coordinates + arena spec
     """
-    # Try zone column first
-    col = _find_zone_column(df, r"in_zone.*(peripher|edge|wall|border)")
+    # 1. Explicit periphery column
+    col = _find_periphery_zone_column(df)
     if col is not None:
         series = df[col].dropna()
         if not series.empty:
             return float(series.mean())
 
-    # Compute from coordinates
+    # 2. Complement of center zone — works when EthoVision only exports center
+    center_ratio = compute_center_time_ratio(df)
+    if center_ratio is not None:
+        return float(1.0 - center_ratio)
+
+    # 3. Compute from coordinates
     if arena_center is None or arena_radius is None:
         return None
     if "x_center" not in df.columns or "y_center" not in df.columns:
@@ -82,13 +129,10 @@ def compute_center_distance_ratio(
     """Ratio of distance traveled inside center zone to total distance.
 
     Requires ``x_center`` and ``y_center`` columns for displacement calculation,
-    plus a center zone column (0/1 indicator).
+    plus a center zone column (0/1 indicator) — resolved via
+    :func:`_find_center_zone_column`.
     """
-    col = None
-    if center_zone in df.columns:
-        col = center_zone
-    else:
-        col = _find_zone_column(df, r"in_zone.*center")
+    col = _find_center_zone_column(df, hint=center_zone)
     if col is None:
         return None
     if "x_center" not in df.columns or "y_center" not in df.columns:
@@ -126,11 +170,7 @@ def compute_center_entry_count(
 
     First frame in center also counts as 1 entry.
     """
-    col = None
-    if center_zone in df.columns:
-        col = center_zone
-    else:
-        col = _find_zone_column(df, r"in_zone.*center")
+    col = _find_center_zone_column(df, hint=center_zone)
     if col is None:
         return None
 
