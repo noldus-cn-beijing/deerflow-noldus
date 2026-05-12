@@ -76,3 +76,61 @@ class TestComputeOpenArmTimeRatio:
         payload = json.loads(out_path.read_text())
         assert payload["metric"] == "open_arm_time_ratio"
         assert payload["value"] is None
+
+
+class TestComputeOpenArmEntryCount:
+    def test_happy_path(self, epm_trajectory_file: Path, tmp_path: Path):
+        out_path = tmp_path / "metric.json"
+        result = _run_script(
+            "ethoinsight.scripts.epm.compute_open_arm_entry_count",
+            ["--input", str(epm_trajectory_file), "--output", str(out_path)],
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        payload = json.loads(out_path.read_text())
+        assert payload["metric"] == "open_arm_entry_count"
+        assert isinstance(payload["value"], int)
+        assert payload["value"] >= 0
+
+
+class TestComputeOpenArmEntryRatio:
+    def test_happy_path(self, epm_trajectory_file: Path, tmp_path: Path):
+        out_path = tmp_path / "metric.json"
+        result = _run_script(
+            "ethoinsight.scripts.epm.compute_open_arm_entry_ratio",
+            ["--input", str(epm_trajectory_file), "--output", str(out_path)],
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        payload = json.loads(out_path.read_text())
+        assert payload["metric"] == "open_arm_entry_ratio"
+        # ratio is None or float in [0, 1]
+        assert payload["value"] is None or (
+            isinstance(payload["value"], float) and 0.0 <= payload["value"] <= 1.0
+        )
+
+
+class TestComputeOpenArmTime:
+    def test_happy_path(self, epm_trajectory_file: Path, tmp_path: Path):
+        out_path = tmp_path / "metric.json"
+        result = _run_script(
+            "ethoinsight.scripts.epm.compute_open_arm_time",
+            ["--input", str(epm_trajectory_file), "--output", str(out_path)],
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        payload = json.loads(out_path.read_text())
+        assert payload["metric"] == "open_arm_time"
+        assert isinstance(payload["value"], float)
+        assert payload["value"] >= 0.0
+
+
+class TestComputeTotalEntryCount:
+    def test_happy_path(self, epm_trajectory_file: Path, tmp_path: Path):
+        out_path = tmp_path / "metric.json"
+        result = _run_script(
+            "ethoinsight.scripts.epm.compute_total_entry_count",
+            ["--input", str(epm_trajectory_file), "--output", str(out_path)],
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        payload = json.loads(out_path.read_text())
+        assert payload["metric"] == "total_entry_count"
+        assert isinstance(payload["value"], int)
+        assert payload["value"] >= 0
