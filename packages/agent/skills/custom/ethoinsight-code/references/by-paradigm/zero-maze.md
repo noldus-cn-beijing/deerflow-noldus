@@ -1,191 +1,138 @@
-# Zero Maze 代码执行参考
+# Zero Maze（O迷宫）范式
 
 > 学术范式 key: `zero_maze`
-> EV19 模板映射: `ZeroMaze` 大类下所有变体（`ZeroMaze-AllZones`、`ZeroMaze-NoZones`）
+> EV19 模板映射: `ZeroMaze` 大类下所有变体
 > 行为学同事维护的领域知识: `docs/review-packages/2026-04-29-ev19-templates/by-experiment/zero_maze.md`
 
-## 可用指标函数（在 `ethoinsight.metrics.zero_maze`）
+## 可用脚本清单
 
-| 函数 | 输入 | 输出 | 含义 |
-|---|---|---|---|
-| `compute_open_zone_time_ratio(df, open_zones=None)` | DataFrame | `float \| None` | 开放区时间百分比（开放区帧数 / 总帧数） |
-| `compute_open_zone_time(df, open_zones=None)` | DataFrame | `float \| None` | 开放区滞留时长（秒；从 trial_time 列估算 dt） |
-| `compute_open_zone_distance(df, open_zones=None)` | DataFrame | `float \| None` | 开放区移动距离占比（开放区移动距离 / 总移动距离） |
-| `compute_hesitation_count(df, open_zones=None, closed_zones=None, min_gap_frames=5)` | DataFrame | `int \| None` | 犹豫次数（封闭区探头后缩回；开放区滞留 < min_gap_frames 帧） |
+所有脚本以 `python -m <module_path> --input ... --output ...` 调用。
 
-通用指标（任范式可用）:
-- `ethoinsight.metrics._common.compute_distance_moved(df) -> float | None` — 总移动距离
-- `ethoinsight.metrics._common.compute_velocity_stats(df) -> dict` — 速度描述统计
+### 核心指标脚本（compute_*.py）
 
-### 列名自动检测规则
+| 脚本 module | --input | --output | 输出 JSON | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts.zero_maze.compute_open_zone_time_ratio` | 单轨迹文件 | metric JSON | `{"metric": "open_zone_time_ratio", "value": float \| null}` | 开放区时间占比 |
+| `ethoinsight.scripts.zero_maze.compute_open_zone_time` | 单轨迹文件 | metric JSON | `{"metric": "open_zone_time", "value": float \| null}` | 开放区总停留时间（秒） |
+| `ethoinsight.scripts.zero_maze.compute_open_zone_distance` | 单轨迹文件 | metric JSON | `{"metric": "open_zone_distance", "value": float \| null}` | 开放区移动距离占比 |
+| `ethoinsight.scripts.zero_maze.compute_hesitation_count` | 单轨迹文件 | metric JSON | `{"metric": "hesitation_count", "value": int \| null}` | 犹豫次数（risk-assessment 行为） |
 
-| 指标类型 | Regex 模式 | 典型列名示例 |
-|---|---|---|
-| 开放区 | `in_zone.*open`（忽略大小写） | `in_zone_open_1`, `in_zone_open_2` |
-| 封闭区 | `in_zone.*closed`（忽略大小写） | `in_zone_closed_1`, `in_zone_closed_2` |
+### 通用指标脚本（任范式可用）
 
-多列时 OR 合并（动物在任一开放区段均视为"在开放区"）。
+| 脚本 module | --input | --output | 输出 JSON | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts._common.compute_distance_moved` | 单轨迹文件 | metric JSON | `{"metric": "distance_moved", "value": float \| null}` | 总移动距离 |
+| `ethoinsight.scripts._common.compute_velocity_stats` | 单轨迹文件 | metric JSON | `{"metric": "velocity_stats", "value": {mean, std, max, min, median} \| null}` | 速度描述统计 |
 
-### `compute_hesitation_count` 行为定义
+### 可视化脚本（plot_*.py）
 
-- 当动物从封闭区短暂进入开放区（< `min_gap_frames` 帧，默认 5 帧 ≈ 0.2s at 25 Hz）后立即返回封闭区，计为一次犹豫。
-- 犹豫次数与焦虑水平正相关（越焦虑，越频繁探头但不敢停留）。
-- 若动物一直在封闭区或开放区（无过渡），返回 0。
+| 脚本 module | --input / --inputs | --groups | --output | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts._common.plot_trajectory` | `--input <单文件>` 或 `--inputs <inputs.json>` | — | PNG | 轨迹图（**用户提到"轨迹"必跑**） |
+| `ethoinsight.scripts.zero_maze.plot_box_open_zone` | `--inputs <inputs.json>` | `--groups <groups.json>` | PNG | 开放区指标组间对比箱线图 |
 
-## 派发器（一次性算全套）
+### 统计脚本（run_*_stats.py）
 
-```python
-from ethoinsight.metrics import compute_paradigm_metrics
+| 脚本 module | --inputs | --groups | --output | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts.zero_maze.run_groupwise_stats` | `<inputs.json>` | `<groups.json>` | stats JSON | 4 指标全 Shapiro-Wilk 决策树检验 |
 
-result = compute_paradigm_metrics(parsed_data, paradigm="zero_maze", groups=groups)
-# result = {
-#   "paradigm": "zero_maze",
-#   "per_subject": {subject_name: {
-#       "distance_moved": float,
-#       "open_zone_time_ratio": float,   # 开放区时间百分比
-#       "open_zone_time": float,         # 开放区滞留时长（秒）
-#       "open_zone_distance": float,     # 开放区移动距离占比
-#       "hesitation_count": int,         # 犹豫次数
-#   }},
-#   "group_summary": {group_name: {metric: {mean, std, n, values}}},
-#   "data_quality_warnings": [...],      # n < 5/组 或 总移动距离过低时自动警告
-#   ...
-# }
+## 输入文件格式约定
+
+### `--input`（单文件）
+直接传 EthoVision 导出 `.txt` 文件的路径。
+
+### `--inputs`（多文件聚合）
+传一个 JSON 文件路径，内容是文件路径数组。subagent 先用 `write_file` 生成此 JSON：
+
+```json
+["/mnt/user-data/uploads/subject1.txt", "/mnt/user-data/uploads/subject2.txt"]
 ```
 
-## 胶水脚本范例（end-to-end）
+### `--groups`
+传一个 JSON 文件路径，内容是分组映射：
 
-文件名建议: `${workspace_path}/analysis.py`
-
-```python
-"""Zero Maze 分析胶水脚本。
-
-由 code-executor 写，bash 执行。
-"""
-import json
-from pathlib import Path
-
-from ethoinsight import parse, statistics, charts
-from ethoinsight.metrics import compute_paradigm_metrics
-
-WORKSPACE = Path("/mnt/user-data/workspace")
-RAW_FILES = list(WORKSPACE.glob("inputs/*.txt"))  # 用户上传的 EthoVision 导出
-GROUPS = {  # 由 lead 在 task() prompt 里给
-    "control": ["subject_1", "subject_2", "subject_3", "subject_4", "subject_5"],
-    "treatment": ["subject_6", "subject_7", "subject_8", "subject_9", "subject_10"],
+```json
+{
+  "control": ["Subject 1", "Subject 2", "Subject 3"],
+  "treatment": ["Subject 4", "Subject 5", "Subject 6"]
 }
-
-# 1. 解析（仍用现成 parse 模块）
-parsed_data = parse.parse_trajectories([str(f) for f in RAW_FILES])
-
-# 2. 算指标
-metrics_result = compute_paradigm_metrics(parsed_data, paradigm="zero_maze", groups=GROUPS)
-
-# 3. 统计
-stats_result = statistics.run_groupwise(
-    metrics_result["per_subject"],
-    groups=GROUPS,
-    metrics=["open_zone_time_ratio", "open_zone_time", "open_zone_distance", "hesitation_count", "distance_moved"],
-)
-
-# 4. 出图（read ethoinsight-charts skill 后选 box_plot / bar_chart 等）
-chart_files = []
-# 连续指标（时间比例 / 距离比例）→ box_plot
-for metric_name in ["open_zone_time_ratio", "open_zone_distance"]:
-    fig_path = WORKSPACE / "outputs" / f"zm_{metric_name}_boxplot.png"
-    charts.box_plot(
-        metrics_result["per_subject"],
-        groups=GROUPS,
-        metric=metric_name,
-        output_path=str(fig_path),
-    )
-    chart_files.append(str(fig_path))
-
-# 计数指标（犹豫次数）→ bar_chart
-for metric_name in ["hesitation_count"]:
-    fig_path = WORKSPACE / "outputs" / f"zm_{metric_name}_bar.png"
-    charts.bar_chart(
-        metrics_result["per_subject"],
-        groups=GROUPS,
-        metric=metric_name,
-        output_path=str(fig_path),
-    )
-    chart_files.append(str(fig_path))
-
-# 5. 写 handoff
-handoff = {
-    "paradigm": "zero_maze",
-    "metrics": metrics_result,
-    "statistics": stats_result,
-    "charts": chart_files,
-    "data_quality_warnings": metrics_result.get("data_quality_warnings", []),
-}
-(WORKSPACE / "handoff_code_executor.json").write_text(
-    json.dumps(handoff, ensure_ascii=False, indent=2)
-)
-
-# 给 lead 的结构化决策信号——让 lead 不读 handoff 也能做 Step 1.5 拦截。
-# 由 Python 代码确定性生成，不依赖模型推理。lead 解析这个块的存在 +
-# critical_count > 0 → 反问用户。详见 spec docs/superpowers/specs/2026-05-11-subagent-file-is-facts-design.md
-warnings = handoff.get("data_quality_warnings", [])
-critical = [w for w in warnings if w.get("severity") == "critical"]
-warn_only = [w for w in warnings if w.get("severity") == "warning"]
-
-print(f"OK: handoff written to {WORKSPACE / 'handoff_code_executor.json'}")
-print()
-print("[gate_signals]")
-print("data_quality:")
-print(f"  critical_count: {len(critical)}")
-print(f"  warning_count: {len(warn_only)}")
-print("  critical_items:")
-if critical:
-    for w in critical[:5]:
-        msg = (w.get("message") or "")[:80]
-        print(f"    - {msg}")
-else:
-    print("    (none)")
-status = handoff.get("status", "completed")
-if status == "failed":
-    validity = "failed"
-elif critical:
-    validity = "warning"
-else:
-    validity = "ok"
-print(f"statistical_validity: {validity}")
-print(f"errors_count: {len(handoff.get('errors', []))}")
 ```
 
-## 数据质量自动警告（dispatcher 内已实现）
+subject 名称由 EthoVision 文件 header 的 `对象名称` 字段决定。
 
-- `n < 5/组` → `warning` 级警告，提示统计功效不足
-- `distance_moved < 10.0` → `warning` 级警告，提示可能为运动抑制（混杂因素，开放区指标的下降可能不代表焦虑增加）
+## 实验设计决策树
 
-这些警告会自动进 `metrics_result["data_quality_warnings"]`，不需要胶水脚本额外加。
+根据 lead 提供的 `实验设计` 字段裁剪脚本列表：
 
-### 犹豫次数主观性注意
+### n=1（单样本描述性分析）
+- ✅ 跑全部 `compute_*.py`（4 个 Zero Maze 核心 + 2 个通用）
+- ✅ 跑 `_common.plot_trajectory` 单文件版
+- ❌ 跳过 `plot_box_open_zone`（无组间对比意义）
+- ❌ 跳过 `run_groupwise_stats`（无统计意义）
 
-`hesitation_count` 依赖 `min_gap_frames`（默认 5 帧≈0.2s）定义"短暂"。该阈值在不同实验室之间可能不一致。若需跨实验室比较，需在报告中明确标注所用阈值。
+### n_per_group ∈ [3, 4]（小样本）
+- ✅ 跑全部 `compute_*.py` for each subject
+- ✅ 跑 `plot_box_open_zone`（描述性，注意小样本）
+- ✅ 跑 `_common.plot_trajectory --inputs` 多文件版
+- ⚠️ 跑 `run_groupwise_stats`，但在 handoff 标注 `data_quality_warnings: 小样本统计功效不足`
 
-## 出图建议（详见 ethoinsight-charts skill）
+### n_per_group ≥ 5（标准）
+- ✅ 跑全部脚本
 
-- `open_zone_time_ratio` / `open_zone_distance`: `box_plot` 或 `raincloud_plot`（连续 + 组比较）
-- `open_zone_time`: `box_plot`（连续时长，单位秒）
-- `hesitation_count`: `bar_chart` 或 `box_plot`（计数，通常较小）
-- `distance_moved`: `box_plot`（用于运动混杂检查，与 open_zone 指标并排）
-
-## 与 EPM 的对应关系
-
-Zero Maze 与 EPM 原理相同，结构不同：
-
-| EPM 指标 | Zero Maze 等价指标 |
-|---|---|
-| `open_arm_time_ratio` | `open_zone_time_ratio` |
-| `open_arm_time` | `open_zone_time` |
-| `open_arm_entry_count` | — (Zero Maze 用 `hesitation_count` 替代) |
-| `total_entry_count` | — (无中心区，概念不适用) |
-| — | `open_zone_distance`（Zero Maze 新增） |
-| — | `hesitation_count`（Zero Maze 特有，EPM 无直接对应） |
+### 用户特殊需求
+- "只要轨迹图" → 仅跑 `_common.plot_trajectory`
+- "跳过统计" → 跳过 `run_groupwise_stats`
 
 ## handoff JSON 必须字段
 
-见 `../templates/output-contract.md`。Zero Maze 特别需要 `data_quality_warnings` 字段（dispatcher 已自动填）。
+`${workspace_path}/handoff_code_executor.json` schema:
+
+```json
+{
+  "paradigm": "zero_maze",
+  "per_subject": {
+    "Subject 1": {"open_zone_time_ratio": 0.15, "open_zone_time": 45.2, ...},
+    ...
+  },
+  "charts": ["/mnt/user-data/workspace/outputs/zero_maze_box.png", ...],
+  "statistics": { /* 直接复制 run_groupwise_stats 的输出 JSON，可选 */ },
+  "data_quality_warnings": [ /* 见下方 */ ],
+  "errors": [ /* 脚本执行报错记录 */ ]
+}
+```
+
+### data_quality_warnings 触发条件
+- subject 数 < 5/组 → `{"severity": "warning", "message": "小样本统计功效不足"}`
+- `hesitation_count` 过高（某 subject > 30）→ 疑为高焦虑表型，在 handoff 标注
+- 某指标在所有 subject 都返回 None → `{"severity": "critical", "message": "<metric> 列名识别失败，可能不是 Zero Maze 数据"}`
+
+## 错误处理
+
+脚本返回 non-zero 退出码或 stderr 非空时：
+
+| 错误模式 | 处理 |
+|---|---|
+| `ValueError: must be a JSON array` | inputs/groups JSON 格式错 → 检查 write_file 生成的 JSON 内容 |
+| `FileNotFoundError: <path>` | 路径不存在 → 用 `ls` 核对 |
+| `KeyError: 'in_zone_open_1'` 等 | 列名识别失败 → 写入 `data_quality_warnings`，标 critical，向 lead 反问 |
+| `UnicodeDecodeError` | 文件编码不是 UTF-16-LE → 文件可能不是 EthoVision 导出 |
+
+## 编排流程（subagent 工作流）
+
+1. **read** 本文件，看清单和决策树
+2. **裁剪**：根据 lead 给的实验设计 + 用户需求，决定要跑哪些脚本
+3. **准备输入文件**：用 `write_file` 生成 `inputs.json` 和 `groups.json`（如需要）
+4. **bash 循环调脚本**：每个脚本一个 bash 调用，**不要把多个脚本拼在一行**
+5. **收集**：每个脚本调用后，stdout 含 `[result] {...}` 行；用 `read_file` 读各 metric JSON
+6. **聚合**：构造 handoff JSON（schema 见上）
+7. **写 handoff**：`write_file` 到 `${workspace_path}/handoff_code_executor.json`
+8. **输出 [gate_signals]** 块（详见 code-executor system_prompt 的 `<output>` 段）
+
+## 范式简介（领域知识）
+
+- Zero Maze 是 EPM 的环形变体：开放区 ↓ ＝ 焦虑 ↑
+- 无中心区（与 EPM 不同），开放区/封闭区覆盖整条环
+- `hesitation_count`（犹豫次数）是特有的 risk-assessment 指标：动物短暂探头又缩回，正向关联焦虑水平
+- 典型 EthoVision 列名：`in_zone_open_1`, `in_zone_open_2`, `in_zone_closed_1`, `in_zone_closed_2`
+- 详细领域知识：见 `docs/review-packages/2026-04-29-ev19-templates/by-experiment/zero_maze.md`

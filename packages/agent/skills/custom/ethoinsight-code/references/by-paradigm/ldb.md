@@ -1,160 +1,138 @@
-# LDB (Light-Dark Box / 明暗箱) 代码执行参考
+# LDB (Light-Dark Box) 范式
 
 > 学术范式 key: `light_dark_box`
-> EV19 模板映射: `NoTemplate` — 需实验员手动配置竞技场，画明区和暗区（无专用 EV19 模板）
-> 行为学同事维护的领域知识: `packages/agent/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/light_dark_box.md`
+> EV19 模板映射: `LightDarkBox` 大类下所有变体
+> 行为学同事维护的领域知识: `docs/review-packages/2026-04-29-ev19-templates/by-experiment/light_dark_box.md`
 
-## 可用指标函数（在 `ethoinsight.metrics.ldb`）
+## 可用脚本清单
 
-| 函数 | 输入 | 输出 | 含义 |
-|---|---|---|---|
-| `compute_light_time_ratio(df, light_zone="in_zone_light")` | DataFrame | `float \| None` | 明箱时间百分比（明区帧数 / 总帧数） |
-| `compute_transition_count(df, light_zone="in_zone_light", dark_zone="in_zone_dark")` | DataFrame | `int \| None` | 穿梭次数（light→dark 和 dark→light 各自的 0→1 跨越，合计）|
-| `compute_light_latency(df, light_zone="in_zone_light")` | DataFrame | `float \| None` | 潜伏期：首次进入明区的时间（秒；无 trial_time 时退化为帧索引）|
+所有脚本以 `python -m <module_path> --input ... --output ...` 调用。
 
-通用指标（任范式可用）:
-- `ethoinsight.metrics._common.compute_distance_moved(df) -> float | None`
-- `ethoinsight.metrics._common.compute_velocity_stats(df) -> dict`
+### 核心指标脚本（compute_*.py）
 
-## EthoVision 列名约定
+| 脚本 module | --input | --output | 输出 JSON | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts.ldb.compute_light_time_ratio` | 单轨迹文件 | metric JSON | `{"metric": "light_time_ratio", "value": float \| null}` | 明箱时间占比 |
+| `ethoinsight.scripts.ldb.compute_transition_count` | 单轨迹文件 | metric JSON | `{"metric": "transition_count", "value": int \| null}` | 明暗箱穿梭次数 |
+| `ethoinsight.scripts.ldb.compute_light_latency` | 单轨迹文件 | metric JSON | `{"metric": "light_latency", "value": float \| null}` | 首次进入明箱的潜伏期（秒） |
 
-LDB 无专用 EV19 模板，实验员手动定义观察区。典型列名：
+### 通用指标脚本（任范式可用）
 
-| 含义 | 推荐列名 | 备注 |
-|---|---|---|
-| 明区占位指示符 | `in_zone_light` | 0/1，每帧 |
-| 暗区占位指示符 | `in_zone_dark` | 0/1，每帧；= 1 - in_zone_light（若无过渡区） |
-| 时间轴 | `trial_time` | 秒；缺失时 latency 退化为帧索引 |
+| 脚本 module | --input | --output | 输出 JSON | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts._common.compute_distance_moved` | 单轨迹文件 | metric JSON | `{"metric": "distance_moved", "value": float \| null}` | 总移动距离 |
+| `ethoinsight.scripts._common.compute_velocity_stats` | 单轨迹文件 | metric JSON | `{"metric": "velocity_stats", "value": {mean, std, max, min, median} \| null}` | 速度描述统计 |
 
-## 派发器（一次性算全套）
+### 可视化脚本（plot_*.py）
 
-```python
-from ethoinsight.metrics import compute_paradigm_metrics
+| 脚本 module | --input / --inputs | --groups | --output | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts._common.plot_trajectory` | `--input <单文件>` 或 `--inputs <inputs.json>` | — | PNG | 轨迹图（**用户提到"轨迹"必跑**） |
+| `ethoinsight.scripts.ldb.plot_box_light` | `--inputs <inputs.json>` | `--groups <groups.json>` | PNG | 明箱指标组间对比箱线图 |
 
-result = compute_paradigm_metrics(parsed_data, paradigm="light_dark_box", groups=groups)
-# result = {
-#   "paradigm": "light_dark_box",
-#   "per_subject": {subject_name: {light_time_ratio, transition_count, light_latency, ...}},
-#   "group_summary": {group_name: {metric: {mean, std, n, values}}},
-#   "data_quality_warnings": [...],  # n<5/组 或 transition_count<4 自动警告
-#   ...
-# }
+### 统计脚本（run_*_stats.py）
+
+| 脚本 module | --inputs | --groups | --output | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts.ldb.run_groupwise_stats` | `<inputs.json>` | `<groups.json>` | stats JSON | 3 指标全 Shapiro-Wilk 决策树检验 |
+
+## 输入文件格式约定
+
+### `--input`（单文件）
+直接传 EthoVision 导出 `.txt` 文件的路径。
+
+### `--inputs`（多文件聚合）
+传一个 JSON 文件路径，内容是文件路径数组。subagent 先用 `write_file` 生成此 JSON：
+
+```json
+["/mnt/user-data/uploads/subject1.txt", "/mnt/user-data/uploads/subject2.txt"]
 ```
 
-## 胶水脚本范例（end-to-end）
+### `--groups`
+传一个 JSON 文件路径，内容是分组映射：
 
-文件名建议: `${workspace_path}/analysis.py`
-
-```python
-"""LDB (明暗箱) 分析胶水脚本。
-
-由 code-executor 写，bash 执行。
-"""
-import json
-from pathlib import Path
-
-from ethoinsight import parse, statistics, charts
-from ethoinsight.metrics import compute_paradigm_metrics
-
-WORKSPACE = Path("/mnt/user-data/workspace")
-RAW_FILES = list(WORKSPACE.glob("inputs/*.txt"))  # 用户上传的 EthoVision 导出
-GROUPS = {  # 由 lead 在 task() prompt 里给
-    "control": ["subject_1", "subject_2", "subject_3", "subject_4", "subject_5"],
-    "treatment": ["subject_6", "subject_7", "subject_8", "subject_9", "subject_10"],
+```json
+{
+  "control": ["Subject 1", "Subject 2", "Subject 3"],
+  "treatment": ["Subject 4", "Subject 5", "Subject 6"]
 }
-
-# 1. 解析（仍用现成 parse 模块）
-parsed_data = parse.parse_trajectories([str(f) for f in RAW_FILES])
-
-# 2. 算指标
-metrics_result = compute_paradigm_metrics(parsed_data, paradigm="light_dark_box", groups=GROUPS)
-
-# 3. 统计
-stats_result = statistics.run_groupwise(
-    metrics_result["per_subject"],
-    groups=GROUPS,
-    metrics=["light_time_ratio", "transition_count", "light_latency"],
-)
-
-# 4. 出图
-chart_files = []
-for metric_name in ["light_time_ratio", "light_latency"]:
-    fig_path = WORKSPACE / "outputs" / f"ldb_{metric_name}_boxplot.png"
-    charts.box_plot(
-        metrics_result["per_subject"],
-        groups=GROUPS,
-        metric=metric_name,
-        output_path=str(fig_path),
-    )
-    chart_files.append(str(fig_path))
-
-fig_path = WORKSPACE / "outputs" / "ldb_transition_count_bar.png"
-charts.bar_chart(
-    metrics_result["per_subject"],
-    groups=GROUPS,
-    metric="transition_count",
-    output_path=str(fig_path),
-)
-chart_files.append(str(fig_path))
-
-# 5. 写 handoff
-handoff = {
-    "paradigm": "light_dark_box",
-    "metrics": metrics_result,
-    "statistics": stats_result,
-    "charts": chart_files,
-    "data_quality_warnings": metrics_result.get("data_quality_warnings", []),
-}
-(WORKSPACE / "handoff_code_executor.json").write_text(
-    json.dumps(handoff, ensure_ascii=False, indent=2)
-)
-
-# 给 lead 的结构化决策信号——让 lead 不读 handoff 也能做 Step 1.5 拦截。
-# 由 Python 代码确定性生成，不依赖模型推理。lead 解析这个块的存在 +
-# critical_count > 0 → 反问用户。详见 spec docs/superpowers/specs/2026-05-11-subagent-file-is-facts-design.md
-warnings = handoff.get("data_quality_warnings", [])
-critical = [w for w in warnings if w.get("severity") == "critical"]
-warn_only = [w for w in warnings if w.get("severity") == "warning"]
-
-print(f"OK: handoff written to {WORKSPACE / 'handoff_code_executor.json'}")
-print()
-print("[gate_signals]")
-print("data_quality:")
-print(f"  critical_count: {len(critical)}")
-print(f"  warning_count: {len(warn_only)}")
-print("  critical_items:")
-if critical:
-    for w in critical[:5]:
-        msg = (w.get("message") or "")[:80]
-        print(f"    - {msg}")
-else:
-    print("    (none)")
-status = handoff.get("status", "completed")
-if status == "failed":
-    validity = "failed"
-elif critical:
-    validity = "warning"
-else:
-    validity = "ok"
-print(f"statistical_validity: {validity}")
-print(f"errors_count: {len(handoff.get('errors', []))}")
 ```
 
-## 数据质量自动警告（dispatcher 内已实现）
+subject 名称由 EthoVision 文件 header 的 `对象名称` 字段决定。
 
-- `n < 5/组` → `warning` 级警告，提示统计功效不足
-- `transition_count < 4` → `warning` 级警告，提示探索动机不足（明箱时间百分比下降的替代解释）
+## 实验设计决策树
 
-这些警告会自动进 `metrics_result["data_quality_warnings"]`，不需要胶水脚本额外加。
+根据 lead 提供的 `实验设计` 字段裁剪脚本列表：
 
-**注意**（领域知识，非自动检测）：
-- 若明暗区光照强度差异不足，动物可能无法区分两区，导致数据失效。此类硬件问题需实验前确认，dispatcher 无法自动检测。
+### n=1（单样本描述性分析）
+- ✅ 跑全部 `compute_*.py`（3 个 LDB 核心 + 2 个通用）
+- ✅ 跑 `_common.plot_trajectory` 单文件版
+- ❌ 跳过 `plot_box_light`（无组间对比意义）
+- ❌ 跳过 `run_groupwise_stats`（无统计意义）
 
-## 出图建议（详见 ethoinsight-charts skill）
+### n_per_group ∈ [3, 4]（小样本）
+- ✅ 跑全部 `compute_*.py` for each subject
+- ✅ 跑 `plot_box_light`（描述性，注意小样本）
+- ✅ 跑 `_common.plot_trajectory --inputs` 多文件版
+- ⚠️ 跑 `run_groupwise_stats`，但在 handoff 标注 `data_quality_warnings: 小样本统计功效不足`
 
-- `light_time_ratio` / `light_latency`: `box_plot` 或 `raincloud_plot`（连续变量 + 组间比较）
-- `transition_count`: `bar_chart` 或 `box_plot`（计数变量）
+### n_per_group ≥ 5（标准）
+- ✅ 跑全部脚本
+
+### 用户特殊需求
+- "只要轨迹图" → 仅跑 `_common.plot_trajectory`
+- "跳过统计" → 跳过 `run_groupwise_stats`
 
 ## handoff JSON 必须字段
 
-见 `../templates/output-contract.md`。LDB 特别需要 `data_quality_warnings` 字段（dispatcher 已自动填）。
+`${workspace_path}/handoff_code_executor.json` schema:
+
+```json
+{
+  "paradigm": "light_dark_box",
+  "per_subject": {
+    "Subject 1": {"light_time_ratio": 0.40, "transition_count": 12, "light_latency": 15.3},
+    ...
+  },
+  "charts": ["/mnt/user-data/workspace/outputs/ldb_box.png", ...],
+  "statistics": { /* 直接复制 run_groupwise_stats 的输出 JSON，可选 */ },
+  "data_quality_warnings": [ /* 见下方 */ ],
+  "errors": [ /* 脚本执行报错记录 */ ]
+}
+```
+
+### data_quality_warnings 触发条件
+- subject 数 < 5/组 → `{"severity": "warning", "message": "小样本统计功效不足"}`
+- 某 subject 的 `light_latency == None`（从未进入明箱）→ `{"severity": "warning", "message": "<subject> 从未进入明箱，疑为极高焦虑或运动抑制"}`
+- `transition_count < 2`（某 subject）→ `{"severity": "warning", "message": "<subject> 穿梭次数异常低"}`
+- 某指标在所有 subject 都返回 None → `{"severity": "critical", "message": "<metric> 列名识别失败，可能不是 LDB 数据"}`
+
+## 错误处理
+
+脚本返回 non-zero 退出码或 stderr 非空时：
+
+| 错误模式 | 处理 |
+|---|---|
+| `ValueError: must be a JSON array` | inputs/groups JSON 格式错 → 检查 write_file 生成的 JSON 内容 |
+| `FileNotFoundError: <path>` | 路径不存在 → 用 `ls` 核对 |
+| `KeyError: 'in_zone_light'` 等 | 列名识别失败 → 写入 `data_quality_warnings`，标 critical，向 lead 反问 |
+| `UnicodeDecodeError` | 文件编码不是 UTF-16-LE → 文件可能不是 EthoVision 导出 |
+
+## 编排流程（subagent 工作流）
+
+1. **read** 本文件，看清单和决策树
+2. **裁剪**：根据 lead 给的实验设计 + 用户需求，决定要跑哪些脚本
+3. **准备输入文件**：用 `write_file` 生成 `inputs.json` 和 `groups.json`（如需要）
+4. **bash 循环调脚本**：每个脚本一个 bash 调用，**不要把多个脚本拼在一行**
+5. **收集**：每个脚本调用后，stdout 含 `[result] {...}` 行；用 `read_file` 读各 metric JSON
+6. **聚合**：构造 handoff JSON（schema 见上）
+7. **写 handoff**：`write_file` 到 `${workspace_path}/handoff_code_executor.json`
+8. **输出 [gate_signals]** 块（详见 code-executor system_prompt 的 `<output>` 段）
+
+## 范式简介（领域知识）
+
+- 基于啮齿类天然趋暗性：明箱时间 ↓ / 潜伏期 ↑ ＝ 焦虑 ↑
+- 与 EPM/OFT 互补，无运动需求混淆（不需要爬高）
+- 标准实验：5-10 分钟、单次曝光
+- 关键混杂因素：基线活动水平（看 `distance_moved`）
+- 详细领域知识：见 `docs/review-packages/2026-04-29-ev19-templates/by-experiment/light_dark_box.md`

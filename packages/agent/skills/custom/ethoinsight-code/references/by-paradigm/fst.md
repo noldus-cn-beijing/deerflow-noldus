@@ -1,179 +1,137 @@
-# FST (Forced Swim Test / 强迫游泳测试) 代码执行参考
+# FST (Forced Swim Test) 范式
 
 > 学术范式 key: `forced_swim`
-> EV19 模板映射: `Forced Swim Test` 大类（或等效变体）
-> 行为学同事维护的领域知识: `packages/agent/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/fst.md`
+> EV19 模板映射: `ForcedSwim` 大类下所有变体
+> 行为学同事维护的领域知识: `docs/review-packages/2026-04-29-ev19-templates/by-experiment/forced_swim.md`
 
-## 可用指标函数（在 `ethoinsight.metrics.fst`）
+## 可用脚本清单
 
-| 函数 | 输入 | 输出 | 含义 |
-|---|---|---|---|
-| `compute_immobility_time_fst(df)` | DataFrame | `float \| None` | 累计不动时间（秒；运行长度编码 Mobility_State==0 的总帧数 × dt） |
-| `compute_immobility_latency_fst(df)` | DataFrame | `float \| None` | 不动潜伏期：首次不动帧的 trial_time（秒；无 trial_time 时退化为帧索引） |
-| `compute_immobility_bout_count_fst(df)` | DataFrame | `int \| None` | 不动次数：RLE 检测 Mobility_State 列中连续 0 段的个数 |
+所有脚本以 `python -m <module_path> --input ... --output ...` 调用。
 
-通用指标（任范式可用）:
-- `ethoinsight.metrics._common.compute_distance_moved(df) -> float | None`
-- `ethoinsight.metrics._common.compute_velocity_stats(df) -> dict`
+### 核心指标脚本（compute_*.py）
 
-## EthoVision 列名约定
+| 脚本 module | --input | --output | 输出 JSON | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts.fst.compute_immobility_time` | 单轨迹文件 | metric JSON | `{"metric": "immobility_time", "value": float \| null}` | 总不动时间（秒） |
+| `ethoinsight.scripts.fst.compute_immobility_latency` | 单轨迹文件 | metric JSON | `{"metric": "immobility_latency", "value": float \| null}` | 首次不动潜伏期（秒） |
+| `ethoinsight.scripts.fst.compute_immobility_bout_count` | 单轨迹文件 | metric JSON | `{"metric": "immobility_bout_count", "value": int \| null}` | 不动发作次数 |
 
-FST 使用 EthoVision 内置的 Mobility 分析模块，典型列名：
+### 通用指标脚本（任范式可用）
 
-| 含义 | 列名 | 编码 |
-|---|---|---|
-| 运动状态 | `Mobility_State` | 1 = 运动（motile），0 = 不动（immobile） |
-| 时间轴 | `trial_time` | 秒；缺失时 latency/time 退化为帧数 |
+| 脚本 module | --input | --output | 输出 JSON | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts._common.compute_distance_moved` | 单轨迹文件 | metric JSON | `{"metric": "distance_moved", "value": float \| null}` | 总移动距离 |
+| `ethoinsight.scripts._common.compute_velocity_stats` | 单轨迹文件 | metric JSON | `{"metric": "velocity_stats", "value": {mean, std, max, min, median} \| null}` | 速度描述统计 |
 
-**重要**：Mobility_State 由 EthoVision 基于速度阈值自动标注（低于阈值即判为不动）。实验员需在 EthoVision 中确认阈值设置合理（通常 1–2 cm/s）。
+### 可视化脚本（plot_*.py）
 
-## RLE 不动次数算法说明
+| 脚本 module | --input / --inputs | --groups | --output | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts._common.plot_trajectory` | `--input <单文件>` 或 `--inputs <inputs.json>` | — | PNG | 轨迹图 |
+| `ethoinsight.scripts.fst.plot_box_immobility` | `--inputs <inputs.json>` | `--groups <groups.json>` | PNG | 不动时间组间对比箱线图 |
 
-连续 0 序列视为一次不动 bout，两段 0 之间哪怕只有一个 1 也算独立的 bout：
+### 统计脚本（run_*_stats.py）
 
-```
-Mobility_State: [0,0,0, 1,1, 0,0, 1, 0,0,0]
-                 bout1        bout2    bout3
-→ bout_count = 3
-```
+| 脚本 module | --inputs | --groups | --output | 含义 |
+|---|---|---|---|---|
+| `ethoinsight.scripts.fst.run_groupwise_stats` | `<inputs.json>` | `<groups.json>` | stats JSON | 3 指标全 Shapiro-Wilk 决策树检验 |
 
-这与直接计 0 的帧数不同（总不动帧 = 8，不动次数 = 3）。
+## 输入文件格式约定
 
-## 派发器（一次性算全套）
+### `--input`（单文件）
+直接传 EthoVision 导出 `.txt` 文件的路径。
 
-```python
-from ethoinsight.metrics import compute_paradigm_metrics
+### `--inputs`（多文件聚合）
+传一个 JSON 文件路径，内容是文件路径数组。subagent 先用 `write_file` 生成此 JSON：
 
-result = compute_paradigm_metrics(parsed_data, paradigm="forced_swim", groups=groups)
-# result = {
-#   "paradigm": "forced_swim",
-#   "per_subject": {subject_name: {immobility_time, immobility_latency, immobility_bout_count, ...}},
-#   "group_summary": {group_name: {metric: {mean, std, n, values}}},
-#   "data_quality_warnings": [...],  # n<5/组 自动警告
-#   ...
-# }
+```json
+["/mnt/user-data/uploads/subject1.txt", "/mnt/user-data/uploads/subject2.txt"]
 ```
 
-## 胶水脚本范例（end-to-end）
+### `--groups`
+传一个 JSON 文件路径，内容是分组映射：
 
-文件名建议: `${workspace_path}/analysis.py`
-
-```python
-"""FST (强迫游泳测试) 分析胶水脚本。
-
-由 code-executor 写，bash 执行。
-"""
-import json
-from pathlib import Path
-
-from ethoinsight import parse, statistics, charts
-from ethoinsight.metrics import compute_paradigm_metrics
-
-WORKSPACE = Path("/mnt/user-data/workspace")
-RAW_FILES = list(WORKSPACE.glob("inputs/*.txt"))  # 用户上传的 EthoVision 导出
-GROUPS = {  # 由 lead 在 task() prompt 里给
-    "control": ["subject_1", "subject_2", "subject_3", "subject_4", "subject_5"],
-    "treatment": ["subject_6", "subject_7", "subject_8", "subject_9", "subject_10"],
+```json
+{
+  "control": ["Subject 1", "Subject 2", "Subject 3"],
+  "treatment": ["Subject 4", "Subject 5", "Subject 6"]
 }
-
-# 1. 解析
-parsed_data = parse.parse_trajectories([str(f) for f in RAW_FILES])
-
-# 2. 算指标
-metrics_result = compute_paradigm_metrics(parsed_data, paradigm="forced_swim", groups=GROUPS)
-
-# 3. 统计
-stats_result = statistics.run_groupwise(
-    metrics_result["per_subject"],
-    groups=GROUPS,
-    metrics=["immobility_time", "immobility_latency", "immobility_bout_count"],
-)
-
-# 4. 出图
-chart_files = []
-for metric_name in ["immobility_time", "immobility_latency"]:
-    fig_path = WORKSPACE / "outputs" / f"fst_{metric_name}_boxplot.png"
-    charts.box_plot(
-        metrics_result["per_subject"],
-        groups=GROUPS,
-        metric=metric_name,
-        output_path=str(fig_path),
-    )
-    chart_files.append(str(fig_path))
-
-fig_path = WORKSPACE / "outputs" / "fst_immobility_bout_count_bar.png"
-charts.bar_chart(
-    metrics_result["per_subject"],
-    groups=GROUPS,
-    metric="immobility_bout_count",
-    output_path=str(fig_path),
-)
-chart_files.append(str(fig_path))
-
-# 5. 写 handoff
-handoff = {
-    "paradigm": "forced_swim",
-    "metrics": metrics_result,
-    "statistics": stats_result,
-    "charts": chart_files,
-    "data_quality_warnings": metrics_result.get("data_quality_warnings", []),
-}
-(WORKSPACE / "handoff_code_executor.json").write_text(
-    json.dumps(handoff, ensure_ascii=False, indent=2)
-)
-
-# 给 lead 的结构化决策信号——让 lead 不读 handoff 也能做 Step 1.5 拦截。
-# 由 Python 代码确定性生成，不依赖模型推理。lead 解析这个块的存在 +
-# critical_count > 0 → 反问用户。详见 spec docs/superpowers/specs/2026-05-11-subagent-file-is-facts-design.md
-warnings = handoff.get("data_quality_warnings", [])
-critical = [w for w in warnings if w.get("severity") == "critical"]
-warn_only = [w for w in warnings if w.get("severity") == "warning"]
-
-print(f"OK: handoff written to {WORKSPACE / 'handoff_code_executor.json'}")
-print()
-print("[gate_signals]")
-print("data_quality:")
-print(f"  critical_count: {len(critical)}")
-print(f"  warning_count: {len(warn_only)}")
-print("  critical_items:")
-if critical:
-    for w in critical[:5]:
-        msg = (w.get("message") or "")[:80]
-        print(f"    - {msg}")
-else:
-    print("    (none)")
-status = handoff.get("status", "completed")
-if status == "failed":
-    validity = "failed"
-elif critical:
-    validity = "warning"
-else:
-    validity = "ok"
-print(f"statistical_validity: {validity}")
-print(f"errors_count: {len(handoff.get('errors', []))}")
 ```
 
-## 数据质量自动警告（dispatcher 内已实现）
+subject 名称由 EthoVision 文件 header 的 `对象名称` 字段决定。
 
-- `n < 5/组` → `warning` 级警告，提示统计功效不足
+## 实验设计决策树
 
-这些警告会自动进 `metrics_result["data_quality_warnings"]`，不需要胶水脚本额外加。
+根据 lead 提供的 `实验设计` 字段裁剪脚本列表：
 
-**注意**（领域知识，非自动检测）：
-- FST 通常持续 6 分钟，前 2 分钟为适应期（部分研究只分析后 4 分钟）。若需分段分析，需在胶水脚本中按 `trial_time` 切片后再调指标函数。
-- Mobility_State 阈值须经行为学同事确认。阈值过低会把漂浮（passive floating）误标为运动，导致不动时间低估。
+### n=1（单样本描述性分析）
+- ✅ 跑全部 `compute_*.py`（3 个 FST 核心 + 2 个通用）
+- ✅ 跑 `_common.plot_trajectory` 单文件版
+- ❌ 跳过 `plot_box_immobility`（无组间对比意义）
+- ❌ 跳过 `run_groupwise_stats`（无统计意义）
 
-## 解读原则
+### n_per_group ∈ [3, 4]（小样本）
+- ✅ 跑全部 `compute_*.py` for each subject
+- ✅ 跑 `plot_box_immobility`（描述性，注意小样本）
+- ⚠️ 跑 `run_groupwise_stats`，但在 handoff 标注 `data_quality_warnings: 小样本统计功效不足`
 
-- **不动时间增加 + 潜伏期缩短** → 抑郁样行为（behavioral despair）增强，与应激/药物效应一致
-- **不动次数增加但每次持续短** → 间歇性挣扎，提示动物仍有应对尝试，情绪状态较 "passive floating" 更复杂
-- **组间比较优先于绝对值判断** — 参见 CLAUDE.md 第 9 条判读哲学
+### n_per_group ≥ 5（标准）
+- ✅ 跑全部脚本
 
-## 出图建议（详见 ethoinsight-charts skill）
-
-- `immobility_time` / `immobility_latency`: `box_plot` 或 `raincloud_plot`（连续变量 + 组间比较）
-- `immobility_bout_count`: `bar_chart` 或 `box_plot`（计数变量）
+### 用户特殊需求
+- "跳过统计" → 跳过 `run_groupwise_stats`
 
 ## handoff JSON 必须字段
 
-见 `../templates/output-contract.md`。FST 特别需要 `data_quality_warnings` 字段（dispatcher 已自动填）。
+`${workspace_path}/handoff_code_executor.json` schema:
+
+```json
+{
+  "paradigm": "forced_swim",
+  "per_subject": {
+    "Subject 1": {"immobility_time": 120.5, "immobility_latency": 45.0, "immobility_bout_count": 8},
+    ...
+  },
+  "charts": ["/mnt/user-data/workspace/outputs/fst_box.png", ...],
+  "statistics": { /* 直接复制 run_groupwise_stats 的输出 JSON，可选 */ },
+  "data_quality_warnings": [ /* 见下方 */ ],
+  "errors": [ /* 脚本执行报错记录 */ ]
+}
+```
+
+### data_quality_warnings 触发条件
+- subject 数 < 5/组 → `{"severity": "warning", "message": "小样本统计功效不足"}`
+- 某 subject 的 `immobility_latency == None`（从未进入不动状态）→ `{"severity": "warning", "message": "<subject> 从未进入不动状态，疑为运动亢进"}`
+- `immobility_bout_count < 2` 且 `immobility_time > 0`（某 subject）→ 少量长 bouts，疑为 floating 而非 immobility
+- 某指标在所有 subject 都返回 None → `{"severity": "critical", "message": "<metric> 列名识别失败，可能不是 FST 数据"}`
+
+## 错误处理
+
+脚本返回 non-zero 退出码或 stderr 非空时：
+
+| 错误模式 | 处理 |
+|---|---|
+| `ValueError: must be a JSON array` | inputs/groups JSON 格式错 → 检查 write_file 生成的 JSON 内容 |
+| `FileNotFoundError: <path>` | 路径不存在 → 用 `ls` 核对 |
+| `mobility_state` 列缺失 | 列名识别失败 → 写入 `data_quality_warnings`，标 critical，向 lead 反问 |
+| `UnicodeDecodeError` | 文件编码不是 UTF-16-LE → 文件可能不是 EthoVision 导出 |
+
+## 编排流程（subagent 工作流）
+
+1. **read** 本文件，看清单和决策树
+2. **裁剪**：根据 lead 给的实验设计 + 用户需求，决定要跑哪些脚本
+3. **准备输入文件**：用 `write_file` 生成 `inputs.json` 和 `groups.json`（如需要）
+4. **bash 循环调脚本**：每个脚本一个 bash 调用，**不要把多个脚本拼在一行**
+5. **收集**：每个脚本调用后，stdout 含 `[result] {...}` 行；用 `read_file` 读各 metric JSON
+6. **聚合**：构造 handoff JSON（schema 见上）
+7. **写 handoff**：`write_file` 到 `${workspace_path}/handoff_code_executor.json`
+8. **输出 [gate_signals]** 块（详见 code-executor system_prompt 的 `<output>` 段）
+
+## 范式简介（领域知识）
+
+- 抑郁样行为金标准：不动时间 ↑ ＝ 行为绝望 ↑ ＝ 抑郁样表型
+- 典型 EthoVision 列：`mobility_state`（0=immobile, 1=mobile，注意 normalize_columns 小写）
+- 标准实验：6 分钟、单次曝光（通常只分析后 4 分钟）
+- 关键混杂因素：水温、动物体重、前一天的应激事件
+- FST vs TST：FST 用于大鼠/小鼠，TST 仅用于小鼠（大鼠太重无法悬尾）
+- 详细领域知识：见 `docs/review-packages/2026-04-29-ev19-templates/by-experiment/forced_swim.md`
