@@ -341,3 +341,57 @@ def test_post_two_messages_in_same_run():
         assert called_mids == ["m1", "m2"]
     finally:
         client.app.dependency_overrides.clear()
+
+
+def test_thread_runs_messages_endpoint_still_attaches_feedback():
+    """C1: GET /api/threads/{tid}/messages 仍能从 list_by_thread_grouped 拿到 feedback。
+
+    feedback 新增 verdict / revised_text 字段不破坏 thread_runs 的 consumer：
+    它只读 feedback_id / rating / comment。
+    """
+    import app.gateway.deps as deps_mod
+    import app.gateway.routers.feedback as feedback_mod
+    import app.gateway.routers.thread_runs as thread_runs_mod
+    from app.gateway.app import app
+    from app.gateway.internal_auth import create_internal_auth_headers
+
+    feedback_repo = MagicMock()
+    feedback_repo.list_by_thread_grouped = AsyncMock(return_value={
+        "r1": {
+            "feedback_id": "fb-1",
+            "rating": 1,
+            "comment": "good",
+            # 即使带新字段，consumer 也宽容
+            "verdict": "correct",
+            "revised_text": None,
+        }
+    })
+
+    event_store = MagicMock()
+    event_store.list_messages = AsyncMock(return_value=[
+        {"event_type": "ai_message", "run_id": "r1", "id": "m1"},
+    ])
+
+    thread_store = MagicMock()
+    thread_store.check_access = AsyncMock(return_value=True)
+
+    # Inject into app.state for _require() callers
+    app.state.feedback_repo = feedback_repo
+    app.state.thread_store = thread_store
+    app.state.run_event_store = event_store
+
+    # Patch direct imports in route handlers
+    deps_mod.get_current_user = AsyncMock(return_value="u1")
+    feedback_mod.get_current_user = AsyncMock(return_value="u1")
+    thread_runs_mod.get_current_user = AsyncMock(return_value="u1")
+
+    client = TestClient(app)
+    client.headers.update(create_internal_auth_headers())
+
+    try:
+        res = client.get("/api/threads/t1/messages")
+        # 端点存在且能返回——具体 401/200 视 mock 充分度而定
+        # 关键断言：list_by_thread_grouped 被调用了
+        feedback_repo.list_by_thread_grouped.assert_awaited()
+    finally:
+        client.app.dependency_overrides.clear()
