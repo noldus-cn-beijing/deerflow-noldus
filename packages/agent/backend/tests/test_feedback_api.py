@@ -130,3 +130,214 @@ async def test_upstream_rating_only_path_still_works(repo: FeedbackRepository):
     assert row["comment"] == "thumbs up"
     assert row["verdict"] is None
     assert row["revised_text"] is None
+
+
+# ---------------------------------------------------------------------------
+# Router integration tests
+# ---------------------------------------------------------------------------
+
+from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, MagicMock
+
+
+def _make_client_with_mocks(
+    *,
+    user_id: str = "u1",
+    runs: dict[str, dict] | None = None,
+) -> tuple[TestClient, MagicMock]:
+    """Build TestClient with mocked feedback_repo, run_store, and current user.
+
+    Returns (client, feedback_repo_mock) so individual tests can assert on
+    upsert/list_by_run calls.
+    """
+    import app.gateway.deps as deps_mod
+    from app.gateway.app import app
+    from app.gateway.internal_auth import create_internal_auth_headers
+
+    feedback_repo = MagicMock()
+    feedback_repo.upsert = AsyncMock(side_effect=lambda **kw: {
+        "feedback_id": "fb-1",
+        "thread_id": kw["thread_id"],
+        "run_id": kw["run_id"],
+        "user_id": kw.get("user_id"),
+        "message_id": kw.get("message_id"),
+        "verdict": kw.get("verdict"),
+        "revised_text": kw.get("revised_text"),
+        "comment": kw.get("comment"),
+        "rating": kw.get("rating"),
+        "created_at": "2026-05-12T00:00:00+00:00",
+    })
+    feedback_repo.list_by_run = AsyncMock(return_value=[])
+
+    run_store = MagicMock()
+    run_store.get = AsyncMock(side_effect=lambda rid: runs.get(rid) if runs else None)
+
+    # _require() reads from app.state directly, not DI — inject mocks there
+    thread_store = MagicMock()
+    thread_store.check_access = AsyncMock(return_value=True)
+    app.state.feedback_repo = feedback_repo
+    app.state.run_store = run_store
+    app.state.thread_store = thread_store
+
+    # get_current_user is called directly (not via Depends) in the route handler;
+    # FastAPI dependency_overrides doesn't apply. Patch both the deps module
+    # (for indirect callers) and the feedback router module (for direct import).
+    import app.gateway.routers.feedback as feedback_mod
+    deps_mod.get_current_user = AsyncMock(return_value=user_id)
+    feedback_mod.get_current_user = AsyncMock(return_value=user_id)
+
+    client = TestClient(app)
+    # Bypass AuthMiddleware via internal auth token
+    client.headers.update(create_internal_auth_headers())
+    return client, feedback_repo
+    return client, feedback_repo
+    return client, feedback_repo
+
+
+def test_post_without_csrf_returns_403(monkeypatch):
+    """R1: POST 不带 X-CSRF-Token → 403。
+
+    CSRFMiddleware 在 should_check_csrf(POST) 路径上拦截 missing 头。
+    """
+    runs = {"r1": {"thread_id": "t1"}}
+    client, _ = _make_client_with_mocks(runs=runs)
+    try:
+        # 不设置 X-CSRF-Token，也不设置 csrf_token cookie
+        res = client.post(
+            "/api/threads/t1/runs/r1/feedback",
+            json={"message_id": "m1", "verdict": "correct"},
+        )
+        assert res.status_code == 403, res.text
+        assert "CSRF" in res.text or "csrf" in res.text.lower()
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_post_with_csrf_returns_200_and_persists():
+    """R2: 带 CSRF token + auth → 200，upsert 被调用，verdict + revised_text 持久化。"""
+    runs = {"r1": {"thread_id": "t1"}}
+    client, repo = _make_client_with_mocks(runs=runs)
+    try:
+        client.cookies.set("csrf_token", "test-token-1234")
+        res = client.post(
+            "/api/threads/t1/runs/r1/feedback",
+            headers={"X-CSRF-Token": "test-token-1234"},
+            json={
+                "message_id": "m1",
+                "verdict": "needs_fix",
+                "revised_text": "should be different",
+                "note": "wording",
+            },
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["verdict"] == "needs_fix"
+        assert body["revised_text"] == "should be different"
+        assert body["note"] == "wording"
+        # upsert kwargs：verdict 映射 needs_fix→rating=None
+        repo.upsert.assert_awaited_once()
+        kwargs = repo.upsert.await_args.kwargs
+        assert kwargs["verdict"] == "needs_fix"
+        assert kwargs["rating"] is None
+        assert kwargs["revised_text"] == "should be different"
+        assert kwargs["message_id"] == "m1"
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_post_run_not_in_thread_returns_404():
+    """R4: run_id 存在但属于另一 thread → 404。"""
+    runs = {"r1": {"thread_id": "other-thread"}}
+    client, _ = _make_client_with_mocks(runs=runs)
+    try:
+        client.cookies.set("csrf_token", "test-token")
+        res = client.post(
+            "/api/threads/t1/runs/r1/feedback",
+            headers={"X-CSRF-Token": "test-token"},
+            json={"message_id": "m1", "verdict": "correct"},
+        )
+        assert res.status_code == 404, res.text
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_post_nonexistent_run_returns_404():
+    """R5: run_id 不存在 → 404。"""
+    client, _ = _make_client_with_mocks(runs={})  # 任何 run_id 返回 None
+    try:
+        client.cookies.set("csrf_token", "test-token")
+        res = client.post(
+            "/api/threads/t1/runs/r1/feedback",
+            headers={"X-CSRF-Token": "test-token"},
+            json={"message_id": "m1", "verdict": "correct"},
+        )
+        assert res.status_code == 404, res.text
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_post_invalid_verdict_returns_422():
+    """R6: verdict 非三选一 → Pydantic 422。"""
+    runs = {"r1": {"thread_id": "t1"}}
+    client, _ = _make_client_with_mocks(runs=runs)
+    try:
+        client.cookies.set("csrf_token", "test-token")
+        res = client.post(
+            "/api/threads/t1/runs/r1/feedback",
+            headers={"X-CSRF-Token": "test-token"},
+            json={"message_id": "m1", "verdict": "not_a_verdict"},
+        )
+        assert res.status_code == 422, res.text
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_get_returns_feedback_list():
+    """R7: GET 返回当前用户反馈列表。"""
+    runs = {"r1": {"thread_id": "t1"}}
+    client, repo = _make_client_with_mocks(user_id="u1", runs=runs)
+    repo.list_by_run = AsyncMock(return_value=[
+        {
+            "feedback_id": "fb-1",
+            "thread_id": "t1",
+            "run_id": "r1",
+            "user_id": "u1",
+            "message_id": "m1",
+            "verdict": "correct",
+            "revised_text": None,
+            "comment": None,
+            "rating": 1,
+            "created_at": "2026-05-12T00:00:00+00:00",
+        }
+    ])
+    try:
+        res = client.get("/api/threads/t1/runs/r1/feedback")
+        assert res.status_code == 200, res.text
+        items = res.json()
+        assert len(items) == 1
+        assert items[0]["verdict"] == "correct"
+        assert items[0]["message_id"] == "m1"
+        repo.list_by_run.assert_awaited_with("t1", "r1", user_id="u1")
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_post_two_messages_in_same_run():
+    """R8: 同 run 不同 message 各提交一次 → upsert 两次，message_id 不同。"""
+    runs = {"r1": {"thread_id": "t1"}}
+    client, repo = _make_client_with_mocks(runs=runs)
+    try:
+        client.cookies.set("csrf_token", "test-token")
+        headers = {"X-CSRF-Token": "test-token"}
+        for mid in ("m1", "m2"):
+            res = client.post(
+                "/api/threads/t1/runs/r1/feedback",
+                headers=headers,
+                json={"message_id": mid, "verdict": "correct"},
+            )
+            assert res.status_code == 200, res.text
+        assert repo.upsert.await_count == 2
+        called_mids = [c.kwargs["message_id"] for c in repo.upsert.await_args_list]
+        assert called_mids == ["m1", "m2"]
+    finally:
+        client.app.dependency_overrides.clear()
