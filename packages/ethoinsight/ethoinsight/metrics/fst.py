@@ -9,7 +9,7 @@ from ethoinsight.metrics._common import (
 )
 
 # FST typically uses Mobility_State column
-DEFAULT_MOBILITY_COL = "Mobility_State"
+DEFAULT_MOBILITY_COL = "mobility_state"
 
 
 def compute_immobility_time_fst(df: pd.DataFrame) -> float | None:

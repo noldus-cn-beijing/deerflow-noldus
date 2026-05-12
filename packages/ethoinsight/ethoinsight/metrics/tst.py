@@ -9,7 +9,7 @@ from ethoinsight.metrics._common import (
 )
 
 # TST typically uses Activity_State column
-DEFAULT_MOBILITY_COL = "Activity_State"
+DEFAULT_MOBILITY_COL = "activity_state"
 
 
 def compute_immobility_time_tst(df: pd.DataFrame) -> float | None:

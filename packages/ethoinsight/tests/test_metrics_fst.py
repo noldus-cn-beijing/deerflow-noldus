@@ -17,7 +17,7 @@ from ethoinsight.metrics.fst import (
 # ============================================================================
 
 
-def _make_immobility_df(n_frames=100, *, pattern=None, mobility_col="Mobility_State"):
+def _make_immobility_df(n_frames=100, *, pattern=None, mobility_col="mobility_state"):
     """Synthetic FST DataFrame with trial_time and Mobility_State columns."""
     if pattern is None:
         # 3 bouts: [0]*10, [0]*10, [0]*5
@@ -64,7 +64,7 @@ class TestComputeImmobilityTimeFst:
     def test_no_trial_time_returns_frame_count(self):
         # Without trial_time, should return raw frame count
         df = pd.DataFrame({
-            "Mobility_State": [0, 0, 1, 1, 0, 0, 0, 1],
+            "mobility_state": [0, 0, 1, 1, 0, 0, 0, 1],
         })
         result = compute_immobility_time_fst(df)
         assert result == pytest.approx(5.0)  # 5 immobile frames

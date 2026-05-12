@@ -17,7 +17,7 @@ from ethoinsight.metrics.tst import (
 # ============================================================================
 
 
-def _make_immobility_df(n_frames=100, *, pattern=None, mobility_col="Activity_State"):
+def _make_immobility_df(n_frames=100, *, pattern=None, mobility_col="activity_state"):
     """Synthetic TST DataFrame with trial_time and Activity_State columns."""
     if pattern is None:
         # 3 bouts: [0]*10, [0]*10, [0]*5
@@ -64,7 +64,7 @@ class TestComputeImmobilityTimeTst:
     def test_no_trial_time_returns_frame_count(self):
         # Without trial_time, should return raw frame count
         df = pd.DataFrame({
-            "Activity_State": [0, 0, 1, 1, 0, 0, 0, 1],
+            "activity_state": [0, 0, 1, 1, 0, 0, 0, 1],
         })
         result = compute_immobility_time_tst(df)
         assert result == pytest.approx(5.0)  # 5 immobile frames
@@ -166,7 +166,7 @@ class TestComputeImmobilityBoutCountTst:
         # TST uses Activity_State; Mobility_State should not be recognized
         df = pd.DataFrame({
             "trial_time": np.arange(10) * 0.04,
-            "Activity_State": [0] * 5 + [1] * 5,
+            "activity_state": [0] * 5 + [1] * 5,
         })
         result = compute_immobility_bout_count_tst(df)
         assert result == 1
