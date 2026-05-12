@@ -99,9 +99,21 @@ export function groupMessages<T>(
           type: "assistant:subagent",
           messages: [message],
         });
+      } else if (
+        hasReasoning(message) &&
+        hasContent(message) &&
+        !hasToolCalls(message)
+      ) {
+        // Final answer with reasoning + content (no tool calls).
+        // Must NOT also enter the processing group below — one message, one group.
+        groups.push({
+          id: message.id,
+          type: "assistant",
+          messages: [message],
+        });
       } else if (hasReasoning(message) || hasToolCalls(message)) {
+        // Intermediate step: reasoning-only, tool_calls-only, or reasoning+tool_calls.
         const lastGroup = groups[groups.length - 1];
-        // Accumulate consecutive intermediate AI messages into one processing group.
         if (lastGroup?.type !== "assistant:processing") {
           groups.push({
             id: message.id,
@@ -111,12 +123,13 @@ export function groupMessages<T>(
         } else {
           lastGroup.messages.push(message);
         }
-      }
-
-      // Not an else-if: a message with reasoning + content (but no tool calls) goes
-      // into the processing group above AND gets its own assistant bubble here.
-      if (hasContent(message) && !hasToolCalls(message)) {
-        groups.push({ id: message.id, type: "assistant", messages: [message] });
+      } else if (hasContent(message)) {
+        // Content-only final answer (no reasoning, no tool calls).
+        groups.push({
+          id: message.id,
+          type: "assistant",
+          messages: [message],
+        });
       }
     }
   }

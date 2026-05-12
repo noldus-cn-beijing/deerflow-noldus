@@ -178,18 +178,6 @@ function MessageContent_({
     );
   }
 
-  // Reasoning-only AI message (no main response content yet)
-  if (!isHuman && reasoningContent && !rawContent) {
-    return (
-      <AIElementMessageContent className={className}>
-        <Reasoning isStreaming={isLoading}>
-          <ReasoningTrigger />
-          <ReasoningContent>{reasoningContent}</ReasoningContent>
-        </Reasoning>
-      </AIElementMessageContent>
-    );
-  }
-
   if (isHuman) {
     const messageResponse = contentToDisplay ? (
       <AIElementMessageResponse
@@ -216,12 +204,20 @@ function MessageContent_({
   return (
     <AIElementMessageContent className={className}>
       {filesList}
-      <MarkdownContent
-        content={contentToDisplay}
-        isLoading={isLoading}
-        className="my-3"
-        components={components}
-      />
+      {reasoningContent && (
+        <Reasoning isStreaming={isLoading}>
+          <ReasoningTrigger />
+          <ReasoningContent>{reasoningContent}</ReasoningContent>
+        </Reasoning>
+      )}
+      {contentToDisplay && (
+        <MarkdownContent
+          content={contentToDisplay}
+          isLoading={isLoading}
+          className="my-3"
+          components={components}
+        />
+      )}
     </AIElementMessageContent>
   );
 }
