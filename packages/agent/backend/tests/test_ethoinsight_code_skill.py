@@ -32,8 +32,8 @@ def test_old_data_quality_checks_removed():
 
 def test_skill_references_all_tools():
     skill_md = (SKILLS_DIR / "SKILL.md").read_text(encoding="utf-8")
-    # New SOTA architecture: glue-script workflow, not old langchain tools
-    for keyword in ["by-paradigm", "analysis.py", "handoff_code_executor.json", "error-recovery.md"]:
+    # New SOTA architecture: script-orchestration workflow, not old glue scripts
+    for keyword in ["by-paradigm", "inputs.json", "handoff_code_executor.json", "error-recovery.md"]:
         assert keyword in skill_md, f"SKILL.md missing reference to {keyword}"
     # Old langchain tools must not be referenced as active workflow steps
     for tool in ["parse_trajectories", "compute_metrics", "run_statistics",

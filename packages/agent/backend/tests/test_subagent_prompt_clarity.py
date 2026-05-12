@@ -46,8 +46,8 @@ class TestCodeExecutorPromptClarity:
         assert "handoff_code_executor.json" in self.prompt
 
     def test_describes_workflow_steps(self):
-        """Prompt must describe the glue-script workflow steps."""
-        assert "analysis.py" in self.prompt
+        """Prompt must describe the script-orchestration workflow steps."""
+        assert "inputs.json" in self.prompt or "scripts" in self.prompt
         assert "by-paradigm" in self.prompt
 
     def test_has_failure_section(self):
@@ -57,7 +57,9 @@ class TestCodeExecutorPromptClarity:
 
     def test_forbids_hardcoded_columns(self):
         """Must tell subagent NOT to hardcode column names."""
-        assert "硬编码" in self.prompt
+        # SOTA: script-orchestration arch — executor doesn't write code at all,
+        # so "hardcoded columns" is replaced by bash_constraints whitelist.
+        assert "bash_constraints" in self.prompt or "硬编码" in self.prompt
 
 
 class TestDataAnalystPromptClarity:

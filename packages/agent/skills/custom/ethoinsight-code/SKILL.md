@@ -2,22 +2,41 @@
 name: ethoinsight-code
 description: >
   EthoInsight 数据分析执行手册（给 code-executor subagent 用）。
-  按 paradigm 渐进披露指标函数清单、胶水脚本范例、handoff JSON schema。
+  按 paradigm 渐进披露脚本清单与决策手册。code-executor 选脚本编排而不写胶水代码。
   Use when code-executor receives a paradigm-specific analysis task.
 type: workflow
 ---
 
 # EthoInsight 代码执行指南
 
-## 工作模式
+## 工作流（脚本即指标架构）
 
-你（code-executor）拿到 lead 派遣的任务后:
+code-executor 的工作流程：
 
-1. **read** `references/by-paradigm/<paradigm>.md` — 看本范式可用的指标函数清单 + 调用范例 + handoff schema
-2. **read** ethoinsight-charts skill（已在你的白名单） — 按数据特性选图
-3. **write_file** 写胶水脚本 `analysis.py`（在 `${workspace_path}/` 下）— `import ethoinsight.metrics.<范式>` + 算指标 + 跑统计 + 出图 + 写 `handoff_code_executor.json`
-4. **bash** `python ${workspace_path}/analysis.py`
-5. 出错时按 `references/error-recovery.md` 处理；脚本崩溃 traceback 会自动回到你的 context，改代码重跑（最多 2 次）
+1. **read** `references/by-paradigm/<paradigm>.md` —— 看可用脚本清单 + 实验设计决策树
+2. **裁剪**：根据 lead 给的实验信息（范式、n、分组、用户特殊需求），决定要跑哪些脚本
+3. **准备输入**（如需多文件聚合）：`write_file` 生成 `inputs.json` 和 `groups.json`
+4. **bash 循环调脚本**：每个脚本一次 bash 调用，形如：
+   ```
+   python -m ethoinsight.scripts.<paradigm>.<script_name> --input ... --output ...
+   ```
+5. **收集**：脚本输出 JSON / PNG，stdout 含 `[result] {...}` 行
+6. **聚合**：构造 handoff JSON
+7. **写 handoff**：`write_file` 到 `${workspace_path}/handoff_code_executor.json`
+8. **输出 [gate_signals]** 块给 lead
+
+### 重要约束
+
+- 不要写胶水脚本拼接代码 —— 所有指标计算已经在脚本里，subagent 只是编排者
+- bash 命令必须是脚本调用（`python -m ethoinsight.scripts.*`）或文件操作（mkdir / cp / mv / ls / cat / grep / head / tail）。其他形式的 bash（包括 `python -c`、`pip install`、运行自定义脚本）会被运行时拦截
+- 遇到脚本报错：读 stderr → 查对应范式 md 的「错误处理」段 → 决定重试 / 跳过 / 反问 lead
+
+## Reference Materials
+
+- `references/by-paradigm/<paradigm>.md` — 每个范式的脚本清单 + 决策手册
+- `templates/output-contract.md` — handoff JSON schema 详细约定
+- `references/error-recovery.md` — 通用错误恢复指引
+- `references/quality-checks.md` — handoff 写入前的自检清单
 
 ## 范式渐进披露入口
 
@@ -37,15 +56,9 @@ type: workflow
 
 ## 最终消息约定（必读）
 
-胶水脚本 stdout 最后必须包含 `[gate_signals]` 块（已在每个范式 reference 的胶水脚本模板末尾给出代码）。这是 lead 做数据质量决策的依据，不输出会导致 lead 退化到回读 handoff 的兜底路径（仍能跑通但浪费 token）。
+每个脚本 stdout 末尾打印 `[result] {...}` 行。你收集所有脚本的 [result] 行 + 聚合构造 handoff JSON 后，在最终消息中输出 `[gate_signals]` 块。
 
 输出格式见 `templates/output-contract.md` 的 `[gate_signals]` 段。
 
-由 Python 代码生成，不要靠模型自己加这个块——它一定会忘或写错。
+`[gate_signals]` 块的 data_quality 等字段由你根据 handoff JSON 实际内容计算（不再靠胶水脚本自动生成），确保 lead 不读 handoff 也能做数据质量决策。
 
-## 反模式（永远禁止）
-
-1. ❌ 跑 `parse_trajectories` / `compute_metrics` / `run_statistics` 等老 langchain 工具（已废弃）
-2. ❌ 把整段范式分析包装成 1 个 `analyze_<paradigm>()` 函数（颗粒度错）
-3. ❌ 现场实现指标算法（如 run-length encoding）— 工程师已预制在 `ethoinsight.metrics.<范式>`
-4. ❌ 读 EthoVision raw txt 前几行确认列名 — 函数内部已固化列名识别（regex 匹配）
