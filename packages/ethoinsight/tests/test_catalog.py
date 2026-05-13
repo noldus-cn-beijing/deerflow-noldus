@@ -187,3 +187,126 @@ def test_catalog_loads_real_yaml(paradigm):
     cat = load_catalog(paradigm)
     assert cat.paradigm == paradigm
     assert len(cat.default_metrics) > 0
+
+
+# ── resolve tests ────────────────────────────────────────────────────────────
+
+
+def _epm_columns_full() -> list[str]:
+    """Returns column list that satisfies all EPM default metrics' requires_columns."""
+    return [
+        "time", "x_center", "y_center",
+        "in_zone_open_arms_center_point",
+        "in_zone_closed_arms_center_point",
+        "distance_moved",
+    ]
+
+
+def test_resolve_epm_default_path():
+    from ethoinsight.catalog import resolve
+
+    plan = resolve(
+        paradigm="epm",
+        columns=_epm_columns_full(),
+        raw_files=["/tmp/raw.txt"],
+        workspace_dir="/tmp/workspace",
+    )
+    assert plan.paradigm == "epm"
+    metric_ids = {m.id for m in plan.metrics}
+    assert metric_ids == EPM_Q6_WHITELIST
+    for m in plan.metrics:
+        assert m.input == "/tmp/raw.txt"
+        assert m.output.startswith("/tmp/workspace/")
+        assert m.required is True
+        assert m.reason == "paradigm.default"
+
+
+def test_resolve_user_include_outside_catalog_raises():
+    from ethoinsight.catalog import resolve, ResolveError
+
+    with pytest.raises(ResolveError) as exc:
+        resolve(
+            paradigm="epm",
+            columns=_epm_columns_full(),
+            raw_files=["/tmp/raw.txt"],
+            workspace_dir="/tmp/workspace",
+            include=["nonexistent_metric_xyz"],
+        )
+    assert exc.value.code == "unknown_metric"
+
+
+def test_resolve_user_exclude_marks_skipped():
+    from ethoinsight.catalog import resolve
+
+    plan = resolve(
+        paradigm="epm",
+        columns=_epm_columns_full(),
+        raw_files=["/tmp/raw.txt"],
+        workspace_dir="/tmp/workspace",
+        exclude=["open_arm_time"],
+    )
+    metric_ids = {m.id for m in plan.metrics}
+    assert "open_arm_time" not in metric_ids
+    skipped_ids = {s.id for s in plan.skipped}
+    assert "open_arm_time" in skipped_ids
+    excluded = next(s for s in plan.skipped if s.id == "open_arm_time")
+    assert excluded.reason == "user.exclude"
+
+
+def test_resolve_missing_required_columns_raises():
+    from ethoinsight.catalog import resolve, ResolveError
+
+    cols = ["time", "x_center", "y_center", "in_zone_closed_arms_center_point"]
+    with pytest.raises(ResolveError) as exc:
+        resolve(
+            paradigm="epm",
+            columns=cols,
+            raw_files=["/tmp/raw.txt"],
+            workspace_dir="/tmp/workspace",
+        )
+    assert exc.value.code == "columns_missing"
+    assert "in_zone_open_arms" in str(exc.value)
+
+
+def test_resolve_unknown_paradigm_raises():
+    from ethoinsight.catalog import resolve, ResolveError
+
+    with pytest.raises(ResolveError) as exc:
+        resolve(
+            paradigm="totally_made_up_paradigm",
+            columns=[],
+            raw_files=["/tmp/raw.txt"],
+            workspace_dir="/tmp/workspace",
+        )
+    assert exc.value.code == "unknown_paradigm"
+
+
+def test_resolve_statistics_skipped_when_n_per_group_too_small():
+    from ethoinsight.catalog import resolve
+
+    plan = resolve(
+        paradigm="epm",
+        columns=_epm_columns_full(),
+        raw_files=["/tmp/raw.txt"],
+        workspace_dir="/tmp/workspace",
+        n_per_group=1, n_groups=1,
+    )
+    assert plan.statistics is not None
+    assert plan.statistics.skip_reason is not None
+    assert "n_per_group" in plan.statistics.skip_reason or "n_groups" in plan.statistics.skip_reason
+
+
+def test_resolve_plan_to_dict_serializable():
+    from ethoinsight.catalog import resolve, plan_to_dict
+    import json
+
+    plan = resolve(
+        paradigm="epm",
+        columns=_epm_columns_full(),
+        raw_files=["/tmp/raw.txt"],
+        workspace_dir="/tmp/workspace",
+    )
+    d = plan_to_dict(plan)
+    s = json.dumps(d, ensure_ascii=False, indent=2)
+    assert '"paradigm": "epm"' in s
+    assert "schema_version" in d
