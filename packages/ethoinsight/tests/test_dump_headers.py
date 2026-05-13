@@ -17,7 +17,8 @@ def _fixtures_dir() -> Path:
 def _run_cli(args: list[str]) -> tuple[int, str, str]:
     proc = subprocess.run(
         [sys.executable, "-m", "ethoinsight.parse.dump_headers", *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -42,9 +43,14 @@ def test_dump_headers_writes_expected_keys(tmp_path):
 
 def test_dump_headers_file_not_found(tmp_path):
     out = tmp_path / "columns.json"
-    rc, _, stderr = _run_cli([
-        "--input", "/nonexistent/path/raw.txt", "--output", str(out),
-    ])
+    rc, _, stderr = _run_cli(
+        [
+            "--input",
+            "/nonexistent/path/raw.txt",
+            "--output",
+            str(out),
+        ]
+    )
     assert rc == 1
     err = json.loads(stderr.strip().splitlines()[-1])
     assert err["code"] == "file.not_found"

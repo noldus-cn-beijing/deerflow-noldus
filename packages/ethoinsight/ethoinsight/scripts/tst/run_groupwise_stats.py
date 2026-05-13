@@ -38,13 +38,20 @@ def main(argv: list[str] | None = None) -> int:
     groups = read_groups_json(args.groups)
 
     parsed = parse_batch(paths)
-    metrics = compute_paradigm_metrics(parsed, paradigm="tail_suspension", groups=groups)
+    metrics = compute_paradigm_metrics(
+        parsed, paradigm="tail_suspension", groups=groups
+    )
     stats = compare_groups(metrics, metrics_to_test=METRICS_TO_TEST)
 
     payload = {"paradigm": "tail_suspension", **stats}
     save_output_json(args.output, payload)
-    emit_result({"stats": "tst_groupwise", "n_metrics": len(METRICS_TO_TEST),
-                 "summary": stats.get("summary", "")})
+    emit_result(
+        {
+            "stats": "tst_groupwise",
+            "n_metrics": len(METRICS_TO_TEST),
+            "summary": stats.get("summary", ""),
+        }
+    )
     return 0
 
 

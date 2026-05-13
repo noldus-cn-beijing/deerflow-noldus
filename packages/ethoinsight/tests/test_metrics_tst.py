@@ -1,4 +1,5 @@
 """Tests for TST (Tail Suspension Test) immobility metric functions."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,10 +25,12 @@ def _make_immobility_df(n_frames=100, *, pattern=None, mobility_col="activity_st
         pattern = [0] * 10 + [1] * 30 + [0] * 10 + [1] * 40 + [0] * 5 + [1] * 5
     # Truncate or pad with 1s (mobile) to reach n_frames
     pattern = list(pattern[:n_frames]) + [1] * max(0, n_frames - len(pattern))
-    return pd.DataFrame({
-        "trial_time": np.arange(n_frames) * 0.04,
-        mobility_col: pattern,
-    })
+    return pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames) * 0.04,
+            mobility_col: pattern,
+        }
+    )
 
 
 # ============================================================================
@@ -63,9 +66,11 @@ class TestComputeImmobilityTimeTst:
 
     def test_no_trial_time_returns_frame_count(self):
         # Without trial_time, should return raw frame count
-        df = pd.DataFrame({
-            "activity_state": [0, 0, 1, 1, 0, 0, 0, 1],
-        })
+        df = pd.DataFrame(
+            {
+                "activity_state": [0, 0, 1, 1, 0, 0, 0, 1],
+            }
+        )
         result = compute_immobility_time_tst(df)
         assert result == pytest.approx(5.0)  # 5 immobile frames
 
@@ -164,9 +169,11 @@ class TestComputeImmobilityBoutCountTst:
 
     def test_uses_activity_state_column(self):
         # TST uses Activity_State; Mobility_State should not be recognized
-        df = pd.DataFrame({
-            "trial_time": np.arange(10) * 0.04,
-            "activity_state": [0] * 5 + [1] * 5,
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(10) * 0.04,
+                "activity_state": [0] * 5 + [1] * 5,
+            }
+        )
         result = compute_immobility_bout_count_tst(df)
         assert result == 1

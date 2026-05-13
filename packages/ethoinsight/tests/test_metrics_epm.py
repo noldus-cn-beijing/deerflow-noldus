@@ -11,11 +11,6 @@ docs/handoffs/2026-05-11-paradigm-sota-architecture-grill-handoff.md），
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-from pathlib import Path
-from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -51,20 +46,22 @@ def _make_epm_df(
     if center_cols is None:
         center_cols = ["in_zone_center-point"]
 
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames, dtype=float) * 0.04,
-        "x_center": rng.uniform(100, 500, n_frames),
-        "y_center": rng.uniform(100, 500, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "velocity": rng.uniform(0, 20, n_frames),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames, dtype=float) * 0.04,
+            "x_center": rng.uniform(100, 500, n_frames),
+            "y_center": rng.uniform(100, 500, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "velocity": rng.uniform(0, 20, n_frames),
+        }
+    )
 
     # Default: 5 open-arm entries (0→1 transitions)
     if open_arm_pattern is None:
         open_vals = np.zeros(n_frames, dtype=int)
         entries = [10, 25, 45, 65, 85]  # start frames for open-arm bouts
         for start in entries:
-            open_vals[start:start + 8] = 1
+            open_vals[start : start + 8] = 1
         open_arm_pattern = open_vals
 
     for col in open_arm_cols:
@@ -75,7 +72,7 @@ def _make_epm_df(
         closed_vals = np.zeros(n_frames, dtype=int)
         entries = [18, 35, 55, 75, 93]
         for start in entries:
-            closed_vals[start:start + 6] = 1
+            closed_vals[start : start + 6] = 1
         closed_arm_pattern = closed_vals
 
     for col in closed_arm_cols:
@@ -161,9 +158,12 @@ class TestComputeOpenArmEntryCount:
         from ethoinsight.metrics import compute_open_arm_entry_count
 
         vals = np.ones(50, dtype=int)
-        df = _make_epm_df(n_frames=50, open_arm_pattern=vals,
-                          closed_arm_pattern=np.zeros(50, dtype=int),
-                          center_pattern=np.zeros(50, dtype=int))
+        df = _make_epm_df(
+            n_frames=50,
+            open_arm_pattern=vals,
+            closed_arm_pattern=np.zeros(50, dtype=int),
+            center_pattern=np.zeros(50, dtype=int),
+        )
         result = compute_open_arm_entry_count(df)
         assert result == 1  # one entry at frame 0
 
@@ -209,10 +209,10 @@ class TestComputeOpenArmEntryRatio:
         ca = np.zeros(n, dtype=int)
         # Open: 5 entries
         for start in [5, 25, 45, 65, 85]:
-            oa[start:start + 6] = 1
+            oa[start : start + 6] = 1
         # Closed: 4 entries
         for start in [12, 32, 52, 72]:
-            ca[start:start + 6] = 1
+            ca[start : start + 6] = 1
 
         df = _make_epm_df(
             n_frames=n,
@@ -231,10 +231,12 @@ class TestComputeOpenArmEntryRatio:
     def test_no_entries_returns_none(self):
         from ethoinsight.metrics import compute_open_arm_entry_ratio
 
-        df = _make_epm_df(n_frames=100,
-                          open_arm_pattern=np.zeros(100, dtype=int),
-                          closed_arm_pattern=np.zeros(100, dtype=int),
-                          center_pattern=np.ones(100, dtype=int))
+        df = _make_epm_df(
+            n_frames=100,
+            open_arm_pattern=np.zeros(100, dtype=int),
+            closed_arm_pattern=np.zeros(100, dtype=int),
+            center_pattern=np.ones(100, dtype=int),
+        )
         result = compute_open_arm_entry_ratio(df)
         assert result is None  # 0/0 is undefined
 
@@ -272,11 +274,13 @@ class TestComputeOpenArmTime:
         n = 100
         oa = np.zeros(n, dtype=int)
         oa[10:30] = 1
-        df = pd.DataFrame({
-            "x_center": np.arange(n, dtype=float),
-            "y_center": np.arange(n, dtype=float),
-            "in_zone_open_arm_1": oa,
-        })
+        df = pd.DataFrame(
+            {
+                "x_center": np.arange(n, dtype=float),
+                "y_center": np.arange(n, dtype=float),
+                "in_zone_open_arm_1": oa,
+            }
+        )
         result = compute_open_arm_time(df)
         assert result == 20  # falls back to frame count
 
@@ -311,10 +315,12 @@ class TestComputeTotalEntryCount:
         n = 50
         center = np.ones(n, dtype=int)
         # Center-only should not count as arm entries → returns None (no arm columns)
-        df = pd.DataFrame({
-            "trial_time": np.arange(n, dtype=float) * 0.04,
-            "in_zone_center-point": center,
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n, dtype=float) * 0.04,
+                "in_zone_center-point": center,
+            }
+        )
         result = compute_total_entry_count(df)
         assert result is None
 
@@ -360,8 +366,12 @@ class TestComputeParadigmMetricsEpm:
 
         assert "control" in result["group_summary"]
         ctrl = result["group_summary"]["control"]
-        for m in ["open_arm_time_ratio", "open_arm_entry_ratio",
-                   "open_arm_entry_count", "total_entry_count"]:
+        for m in [
+            "open_arm_time_ratio",
+            "open_arm_entry_ratio",
+            "open_arm_entry_count",
+            "total_entry_count",
+        ]:
             assert m in ctrl, f"Missing group metric: {m}"
 
     def test_data_quality_warning_low_n(self):
@@ -401,12 +411,15 @@ class TestComputeParadigmMetricsEpm:
         from ethoinsight.metrics import compute_paradigm_metrics
 
         df = _make_epm_df(n_frames=300)  # 5 open + 5 closed = 10 entries, OK
-        parsed = _build_parsed_epm_data({
-            "S1": df, "S2": _make_epm_df(n_frames=300, seed=7),
-            "S3": _make_epm_df(n_frames=300, seed=8),
-            "S4": _make_epm_df(n_frames=300, seed=9),
-            "S5": _make_epm_df(n_frames=300, seed=10),
-        })
+        parsed = _build_parsed_epm_data(
+            {
+                "S1": df,
+                "S2": _make_epm_df(n_frames=300, seed=7),
+                "S3": _make_epm_df(n_frames=300, seed=8),
+                "S4": _make_epm_df(n_frames=300, seed=9),
+                "S5": _make_epm_df(n_frames=300, seed=10),
+            }
+        )
         result = compute_paradigm_metrics(parsed, "epm")
 
         warnings = result.get("data_quality_warnings", [])

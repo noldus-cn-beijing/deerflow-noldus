@@ -36,7 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     raw_path = Path(args.input)
 
     if not raw_path.is_file():
-        return _emit_error("file.not_found", f"Input not found: {raw_path}", {"path": str(raw_path)})
+        return _emit_error(
+            "file.not_found", f"Input not found: {raw_path}", {"path": str(raw_path)}
+        )
 
     if not detect_ethovision(str(raw_path)):
         return _emit_error(
@@ -73,7 +75,9 @@ def main(argv: list[str] | None = None) -> int:
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     print(f"Wrote {len(columns)} column names to {args.output}")
     return 0

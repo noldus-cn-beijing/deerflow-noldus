@@ -54,7 +54,9 @@ def read_inputs_json(path: str | Path) -> list[str]:
     p = Path(path)
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, list):
-        raise ValueError(f"{path} must be a JSON array of file paths, got {type(data).__name__}")
+        raise ValueError(
+            f"{path} must be a JSON array of file paths, got {type(data).__name__}"
+        )
     return [str(item) for item in data]
 
 
@@ -66,7 +68,9 @@ def read_groups_json(path: str | Path) -> dict[str, list[str]]:
     p = Path(path)
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError(f"{path} must be a JSON object mapping group names to subject lists")
+        raise ValueError(
+            f"{path} must be a JSON object mapping group names to subject lists"
+        )
     return {k: list(v) for k, v in data.items()}
 
 
@@ -78,22 +82,34 @@ def read_groups_json(path: str | Path) -> dict[str, list[str]]:
 def make_compute_parser(description: str) -> argparse.ArgumentParser:
     """Argparse for ``compute_*.py``: --input <single trajectory> --output <metric.json>."""
     ap = argparse.ArgumentParser(description=description)
-    ap.add_argument("--input", required=True, help="Path to a single EthoVision trajectory file")
+    ap.add_argument(
+        "--input", required=True, help="Path to a single EthoVision trajectory file"
+    )
     ap.add_argument("--output", required=True, help="Path to write the metric JSON")
     return ap
 
 
-def make_plot_parser(description: str, *, supports_groups: bool = False) -> argparse.ArgumentParser:
+def make_plot_parser(
+    description: str, *, supports_groups: bool = False
+) -> argparse.ArgumentParser:
     """Argparse for ``plot_*.py``.
 
     Single-file plots use ``--input``; aggregated plots use ``--inputs`` + optional ``--groups``.
     """
     ap = argparse.ArgumentParser(description=description)
     group = ap.add_mutually_exclusive_group(required=True)
-    group.add_argument("--input", help="Path to a single trajectory file (single-file plots)")
-    group.add_argument("--inputs", help="Path to a JSON file containing a list of trajectory file paths")
+    group.add_argument(
+        "--input", help="Path to a single trajectory file (single-file plots)"
+    )
+    group.add_argument(
+        "--inputs",
+        help="Path to a JSON file containing a list of trajectory file paths",
+    )
     if supports_groups:
-        ap.add_argument("--groups", help="Path to a JSON file mapping group_name -> [subject_name, ...]")
+        ap.add_argument(
+            "--groups",
+            help="Path to a JSON file mapping group_name -> [subject_name, ...]",
+        )
     ap.add_argument("--output", required=True, help="Path to write the PNG plot")
     return ap
 
@@ -101,7 +117,15 @@ def make_plot_parser(description: str, *, supports_groups: bool = False) -> argp
 def make_stats_parser(description: str) -> argparse.ArgumentParser:
     """Argparse for ``run_*_stats.py``: --inputs --groups --output."""
     ap = argparse.ArgumentParser(description=description)
-    ap.add_argument("--inputs", required=True, help="Path to a JSON file containing a list of trajectory file paths")
-    ap.add_argument("--groups", required=True, help="Path to a JSON file mapping group_name -> [subject_name, ...]")
+    ap.add_argument(
+        "--inputs",
+        required=True,
+        help="Path to a JSON file containing a list of trajectory file paths",
+    )
+    ap.add_argument(
+        "--groups",
+        required=True,
+        help="Path to a JSON file mapping group_name -> [subject_name, ...]",
+    )
     ap.add_argument("--output", required=True, help="Path to write the stats JSON")
     return ap

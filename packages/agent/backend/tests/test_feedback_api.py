@@ -136,8 +136,9 @@ async def test_upstream_rating_only_path_still_works(repo: FeedbackRepository):
 # Router integration tests
 # ---------------------------------------------------------------------------
 
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
+
+from fastapi.testclient import TestClient
 
 
 def _make_client_with_mocks(

@@ -7,8 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 
 def _run_script(module: str, args: list[str]) -> subprocess.CompletedProcess:
     """Run `python -m <module> <args>` and return CompletedProcess."""
@@ -43,7 +41,7 @@ class TestComputeOpenArmTimeRatio:
         result_line = next(
             l for l in result.stdout.splitlines() if l.startswith("[result]")
         )
-        result_payload = json.loads(result_line[len("[result] "):])
+        result_payload = json.loads(result_line[len("[result] ") :])
         assert result_payload["metric"] == "open_arm_time_ratio"
 
     def test_missing_input_arg_exits_nonzero(self, tmp_path: Path):
@@ -143,15 +141,26 @@ class TestPlotBoxOpenArm:
 
         # First 3 = control, last 3 = treatment
         groups_file = tmp_path / "groups.json"
-        groups_file.write_text(json.dumps({
-            "control": ["Subject 1", "Subject 2", "Subject 3"],
-            "treatment": ["Subject 4", "Subject 5", "Subject 6"],
-        }))
+        groups_file.write_text(
+            json.dumps(
+                {
+                    "control": ["Subject 1", "Subject 2", "Subject 3"],
+                    "treatment": ["Subject 4", "Subject 5", "Subject 6"],
+                }
+            )
+        )
 
         out_path = tmp_path / "box.png"
         result = _run_script(
             "ethoinsight.scripts.epm.plot_box_open_arm",
-            ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(out_path)],
+            [
+                "--inputs",
+                str(inputs_file),
+                "--groups",
+                str(groups_file),
+                "--output",
+                str(out_path),
+            ],
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert out_path.exists()
@@ -159,20 +168,33 @@ class TestPlotBoxOpenArm:
 
 
 class TestRunGroupwiseStats:
-    def test_stats_with_two_groups(self, epm_trajectory_files: list[Path], tmp_path: Path):
+    def test_stats_with_two_groups(
+        self, epm_trajectory_files: list[Path], tmp_path: Path
+    ):
         inputs_file = tmp_path / "inputs.json"
         inputs_file.write_text(json.dumps([str(p) for p in epm_trajectory_files]))
 
         groups_file = tmp_path / "groups.json"
-        groups_file.write_text(json.dumps({
-            "control": ["Subject 1", "Subject 2", "Subject 3"],
-            "treatment": ["Subject 4", "Subject 5", "Subject 6"],
-        }))
+        groups_file.write_text(
+            json.dumps(
+                {
+                    "control": ["Subject 1", "Subject 2", "Subject 3"],
+                    "treatment": ["Subject 4", "Subject 5", "Subject 6"],
+                }
+            )
+        )
 
         out_path = tmp_path / "stats.json"
         result = _run_script(
             "ethoinsight.scripts.epm.run_groupwise_stats",
-            ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(out_path)],
+            [
+                "--inputs",
+                str(inputs_file),
+                "--groups",
+                str(groups_file),
+                "--output",
+                str(out_path),
+            ],
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         payload = json.loads(out_path.read_text())

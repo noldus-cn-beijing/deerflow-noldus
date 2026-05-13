@@ -73,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     # Read raw-files-json
     try:
         raw_files = json.loads(Path(args.raw_files_json).read_text(encoding="utf-8"))
-        if not isinstance(raw_files, list) or not all(isinstance(p, str) for p in raw_files):
+        if not isinstance(raw_files, list) or not all(
+            isinstance(p, str) for p in raw_files
+        ):
             return _emit_error(
                 "schema_violation",
                 f"raw-files-json must be a JSON array of strings: {args.raw_files_json}",
@@ -109,7 +111,9 @@ def main(argv: list[str] | None = None) -> int:
     plan_dict = plan_to_dict(plan)
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_path.write_text(
+        json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     summary = (
         f"Plan written to {args.output}: paradigm={plan.paradigm}, "

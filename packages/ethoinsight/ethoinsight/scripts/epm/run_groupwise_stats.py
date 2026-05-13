@@ -45,8 +45,13 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = {"paradigm": "epm", **stats}
     save_output_json(args.output, payload)
-    emit_result({"stats": "epm_groupwise", "n_metrics": len(METRICS_TO_TEST),
-                 "summary": stats.get("summary", "")})
+    emit_result(
+        {
+            "stats": "epm_groupwise",
+            "n_metrics": len(METRICS_TO_TEST),
+            "summary": stats.get("summary", ""),
+        }
+    )
     return 0
 
 

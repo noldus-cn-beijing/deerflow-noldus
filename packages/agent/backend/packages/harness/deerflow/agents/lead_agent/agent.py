@@ -303,11 +303,11 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
 
     guardrails_cfg = get_guardrails_config()
     if guardrails_cfg.enabled:
-        from deerflow.guardrails.middleware import GuardrailMiddleware
         from deerflow.guardrails.ev19_template_provider import (
             Ev19TemplateGuardrailProvider,
             Ev19WorkspaceBridgeMiddleware,
         )
+        from deerflow.guardrails.middleware import GuardrailMiddleware
 
         provider = Ev19TemplateGuardrailProvider()
         middlewares.append(Ev19WorkspaceBridgeMiddleware())

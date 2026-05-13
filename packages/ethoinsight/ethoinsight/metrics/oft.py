@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 
 import numpy as np
 import pandas as pd
@@ -15,7 +14,9 @@ from ethoinsight.metrics._common import _find_zone_column
 # ============================================================================
 
 
-def _find_center_zone_column(df: pd.DataFrame, hint: str = "in_zone_center") -> str | None:
+def _find_center_zone_column(
+    df: pd.DataFrame, hint: str = "in_zone_center"
+) -> str | None:
     """Find the column representing the center zone.
 
     Returns:
@@ -108,8 +109,7 @@ def compute_thigmotaxis_index(
         return None
 
     dist = np.sqrt(
-        (x.loc[idx] - arena_center[0]) ** 2
-        + (y.loc[idx] - arena_center[1]) ** 2
+        (x.loc[idx] - arena_center[0]) ** 2 + (y.loc[idx] - arena_center[1]) ** 2
     )
     threshold = arena_radius * (1 - periphery_fraction)
     return float((dist > threshold).mean())

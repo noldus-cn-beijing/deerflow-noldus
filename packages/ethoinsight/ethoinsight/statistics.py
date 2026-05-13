@@ -25,8 +25,14 @@ def test_normality(values: list[float] | np.ndarray, alpha: float = 0.05) -> dic
     arr = arr[~np.isnan(arr)]
     n = len(arr)
     if n < 3:
-        return {"statistic": None, "p_value": None, "is_normal": None,
-                "test": "shapiro-wilk", "n": n, "note": "n < 3, cannot test"}
+        return {
+            "statistic": None,
+            "p_value": None,
+            "is_normal": None,
+            "test": "shapiro-wilk",
+            "n": n,
+            "note": "n < 3, cannot test",
+        }
     stat, p = sp_stats.shapiro(arr)
     return {
         "statistic": float(stat),
@@ -50,9 +56,14 @@ def test_homogeneity(
     arrays = [a[~np.isnan(a)] for a in arrays]
     arrays = [a for a in arrays if len(a) >= 2]
     if len(arrays) < 2:
-        return {"statistic": None, "p_value": None, "is_homogeneous": None,
-                "test": "levene", "n_groups": len(arrays),
-                "note": "need at least 2 groups with n >= 2"}
+        return {
+            "statistic": None,
+            "p_value": None,
+            "is_homogeneous": None,
+            "test": "levene",
+            "n_groups": len(arrays),
+            "note": "need at least 2 groups with n >= 2",
+        }
     stat, p = sp_stats.levene(*arrays)
     return {
         "statistic": float(stat),
@@ -393,7 +404,9 @@ def compare_groups(
 
     # Count total tests for Bonferroni correction
     n_tests = len(all_metrics)
-    adjusted_alpha = alpha / n_tests if correction == "bonferroni" and n_tests > 0 else alpha
+    adjusted_alpha = (
+        alpha / n_tests if correction == "bonferroni" and n_tests > 0 else alpha
+    )
 
     comparisons: dict[str, list[dict]] = {}
     sig_count = 0
@@ -417,7 +430,9 @@ def compare_groups(
         metric_comparisons = []
 
         if len(grp_names) == 2:
-            result = compare_two_groups(grp_arrays[0], grp_arrays[1], alpha=adjusted_alpha)
+            result = compare_two_groups(
+                grp_arrays[0], grp_arrays[1], alpha=adjusted_alpha
+            )
             result["group1"] = grp_names[0]
             result["group2"] = grp_names[1]
             metric_comparisons.append(result)
@@ -436,8 +451,11 @@ def compare_groups(
             # Pairwise post-hoc if omnibus significant
             if omnibus["significant"]:
                 from itertools import combinations
+
                 is_parametric = omnibus["test_used"] == "one-way-anova"
-                is_homogeneous = omnibus.get("variance_homogeneity", {}).get("is_homogeneous", False)
+                is_homogeneous = omnibus.get("variance_homogeneity", {}).get(
+                    "is_homogeneous", False
+                )
 
                 if is_parametric and is_homogeneous:
                     # Try Tukey HSD (scipy >= 1.8)
@@ -446,21 +464,31 @@ def compare_groups(
                         for i, j in combinations(range(len(grp_names)), 2):
                             pw = {
                                 "test_used": "tukey-hsd",
-                                "statistic": float(tukey.statistic[i][j]) if hasattr(tukey, "statistic") else None,
+                                "statistic": float(tukey.statistic[i][j])
+                                if hasattr(tukey, "statistic")
+                                else None,
                                 "p_value": float(tukey.pvalue[i][j]),
-                                "significant": bool(tukey.pvalue[i][j] < adjusted_alpha),
+                                "significant": bool(
+                                    tukey.pvalue[i][j] < adjusted_alpha
+                                ),
                                 "group1": grp_names[i],
                                 "group2": grp_names[j],
                                 "post_hoc": True,
-                                "effect_size": compute_cohens_d(grp_arrays[i], grp_arrays[j]),
-                                "effect_size_hedges_g": compute_hedges_g(grp_arrays[i], grp_arrays[j]),
+                                "effect_size": compute_cohens_d(
+                                    grp_arrays[i], grp_arrays[j]
+                                ),
+                                "effect_size_hedges_g": compute_hedges_g(
+                                    grp_arrays[i], grp_arrays[j]
+                                ),
                             }
                             metric_comparisons.append(pw)
                     except Exception:
                         # Fallback to pairwise comparisons
                         for i, j in combinations(range(len(grp_names)), 2):
                             pw = compare_two_groups(
-                                grp_arrays[i], grp_arrays[j], alpha=adjusted_alpha,
+                                grp_arrays[i],
+                                grp_arrays[j],
+                                alpha=adjusted_alpha,
                             )
                             pw["group1"] = grp_names[i]
                             pw["group2"] = grp_names[j]
@@ -470,7 +498,9 @@ def compare_groups(
                     # Non-parametric or unequal variance: pairwise comparisons
                     for i, j in combinations(range(len(grp_names)), 2):
                         pw = compare_two_groups(
-                            grp_arrays[i], grp_arrays[j], alpha=adjusted_alpha,
+                            grp_arrays[i],
+                            grp_arrays[j],
+                            alpha=adjusted_alpha,
                         )
                         pw["group1"] = grp_names[i]
                         pw["group2"] = grp_names[j]

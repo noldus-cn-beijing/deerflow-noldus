@@ -8,7 +8,6 @@ from functools import lru_cache
 # 旧「7 大类 18 范式」分类表已删除，替换为 ethovision-paradigm-knowledge skill 引导段。
 # EV19 模板识别 + 学术范式映射采用双层体系，详见
 # docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md
-
 from deerflow.config.agents_config import load_agent_soul
 from deerflow.config.app_config import AppConfig
 from deerflow.skills.storage import get_or_new_skill_storage

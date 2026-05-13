@@ -107,7 +107,9 @@ def parse_header(file_path: str) -> dict:
     col_line_idx = header_lines - 2
     unit_line_idx = header_lines - 1
     raw_col_names = _split_semicolons(lines[col_line_idx].strip())
-    raw_col_names = [c.strip('"').strip() for c in raw_col_names if c.strip('"').strip()]
+    raw_col_names = [
+        c.strip('"').strip() for c in raw_col_names if c.strip('"').strip()
+    ]
     columns = normalize_columns(raw_col_names)
 
     # Parse units
@@ -128,7 +130,9 @@ def parse_header(file_path: str) -> dict:
         "trial_name": raw_metadata.get("试验名称", raw_metadata.get("Trial Name", "")),
         "subject": raw_metadata.get("对象名称", raw_metadata.get("Subject", "")),
         "start_time": raw_metadata.get("开始时间", raw_metadata.get("Start Time", "")),
-        "duration": raw_metadata.get("试验持续时间", raw_metadata.get("Trial Duration", "")),
+        "duration": raw_metadata.get(
+            "试验持续时间", raw_metadata.get("Trial Duration", "")
+        ),
         "arena": raw_metadata.get("观察区名称", raw_metadata.get("Arena", "")),
         "paradigm": paradigm,
         "columns": columns,
@@ -238,8 +242,14 @@ def parse_batch(file_paths: list[str] | str) -> dict:
             "metadata": {},
             "subjects": {},
             "all_data": pd.DataFrame(),
-            "summary": {"total_files": 0, "total_rows": 0, "subjects": [],
-                         "paradigm": None, "columns": [], "duration_seconds": 0},
+            "summary": {
+                "total_files": 0,
+                "total_rows": 0,
+                "subjects": [],
+                "paradigm": None,
+                "columns": [],
+                "duration_seconds": 0,
+            },
         }
 
     # Parse all files
@@ -280,9 +290,9 @@ def parse_batch(file_paths: list[str] | str) -> dict:
     duration_str = first_header.get("duration", "") if first_header else ""
     duration_seconds = _parse_duration(duration_str)
 
-    unique_subjects = sorted(set(
-        df.attrs.get("subject", "") for df in subjects.values()
-    ))
+    unique_subjects = sorted(
+        set(df.attrs.get("subject", "") for df in subjects.values())
+    )
 
     return {
         "metadata": first_header or {},
@@ -310,7 +320,7 @@ def get_summary(parsed_data: dict, max_chars: int = 2000) -> str:
     all_data = parsed_data.get("all_data", pd.DataFrame())
 
     lines = []
-    lines.append(f"=== EthoVision Data Summary ===")
+    lines.append("=== EthoVision Data Summary ===")
     lines.append(f"Experiment: {metadata.get('experiment', 'Unknown')}")
     lines.append(f"Paradigm: {summary.get('paradigm', 'Unknown')}")
     lines.append(f"Files: {summary.get('total_files', 0)}")
@@ -337,13 +347,14 @@ def get_summary(parsed_data: dict, max_chars: int = 2000) -> str:
 
     text = "\n".join(lines)
     if len(text) > max_chars:
-        text = text[:max_chars - 3] + "..."
+        text = text[: max_chars - 3] + "..."
     return text
 
 
 # ============================================================================
 # Internal helpers
 # ============================================================================
+
 
 def _split_semicolons(line: str) -> list[str]:
     """Split a semicolon-delimited line, respecting quoted fields."""

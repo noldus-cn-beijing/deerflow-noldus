@@ -30,7 +30,9 @@ METRICS_TO_PLOT = ["open_zone_time_ratio", "open_zone_distance"]
 def main(argv: list[str] | None = None) -> int:
     args = make_plot_parser(description=__doc__, supports_groups=True).parse_args(argv)
     if not args.inputs:
-        print("error: plot_box_open_zone requires --inputs (multi-file)", file=sys.stderr)
+        print(
+            "error: plot_box_open_zone requires --inputs (multi-file)", file=sys.stderr
+        )
         return 2
 
     paths = read_inputs_json(args.inputs)
@@ -39,8 +41,12 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parse_batch(paths)
     metrics = compute_paradigm_metrics(parsed, paradigm="zero_maze", groups=groups)
 
-    output_path = box_plot(metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output)
-    emit_result({"plot": "box_open_zone", "path": output_path, "metrics": METRICS_TO_PLOT})
+    output_path = box_plot(
+        metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output
+    )
+    emit_result(
+        {"plot": "box_open_zone", "path": output_path, "metrics": METRICS_TO_PLOT}
+    )
     return 0
 
 

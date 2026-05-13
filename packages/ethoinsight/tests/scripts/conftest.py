@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import numpy as np
@@ -34,13 +33,15 @@ def _make_epm_df(
     if center_cols is None:
         center_cols = ["in_zone_center-point"]
 
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames, dtype=float) * 0.04,
-        "x_center": rng.uniform(100, 500, n_frames),
-        "y_center": rng.uniform(100, 500, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "velocity": rng.uniform(0, 20, n_frames),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames, dtype=float) * 0.04,
+            "x_center": rng.uniform(100, 500, n_frames),
+            "y_center": rng.uniform(100, 500, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "velocity": rng.uniform(0, 20, n_frames),
+        }
+    )
 
     if open_arm_pattern is None:
         # Alternating: 20 frames in, 20 out, repeat
@@ -67,7 +68,9 @@ def _make_epm_df(
 # ============================================================================
 
 
-def _df_to_ethovision_file(df: pd.DataFrame, path: Path, *, subject: str = "Subject 1") -> None:
+def _df_to_ethovision_file(
+    df: pd.DataFrame, path: Path, *, subject: str = "Subject 1"
+) -> None:
     """Write `df` as a minimal EthoVision-style trajectory file (UTF-16-LE BOM, semicolon-delimited).
 
     Format matches what ``ethoinsight.parse.parse_trajectory()`` expects:
@@ -131,7 +134,7 @@ def epm_trajectory_files(tmp_path: Path) -> list[Path]:
         if i <= 3:
             pattern = ([1] * 30 + [0] * 10) * 10  # 75% open arm
         else:
-            pattern = ([1] * 5 + [0] * 35) * 10   # 12.5% open arm
+            pattern = ([1] * 5 + [0] * 35) * 10  # 12.5% open arm
         df = _make_epm_df(n_frames=400, open_arm_pattern=pattern[:400])
         path = tmp_path / f"epm_subject_{i}.txt"
         _df_to_ethovision_file(df, path, subject=f"Subject {i}")
@@ -165,13 +168,15 @@ def _make_zero_maze_df(
     if closed_zone_cols is None:
         closed_zone_cols = ["in_zone_closed_1", "in_zone_closed_2"]
 
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames, dtype=float) * 0.04,
-        "x_center": rng.uniform(100, 500, n_frames),
-        "y_center": rng.uniform(100, 500, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "velocity": rng.uniform(0, 20, n_frames),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames, dtype=float) * 0.04,
+            "x_center": rng.uniform(100, 500, n_frames),
+            "y_center": rng.uniform(100, 500, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "velocity": rng.uniform(0, 20, n_frames),
+        }
+    )
 
     if open_zone_pattern is None:
         pat = ([1] * 20 + [0] * 20) * (n_frames // 40 + 1)
@@ -204,7 +209,7 @@ def zero_maze_trajectory_files(tmp_path: Path) -> list[Path]:
         if i <= 3:
             pattern = ([1] * 30 + [0] * 10) * 10  # 75% open zone
         else:
-            pattern = ([1] * 5 + [0] * 35) * 10   # 12.5% open zone
+            pattern = ([1] * 5 + [0] * 35) * 10  # 12.5% open zone
         df = _make_zero_maze_df(n_frames=400, open_zone_pattern=pattern[:400])
         path = tmp_path / f"zm_subject_{i}.txt"
         _df_to_ethovision_file(df, path, subject=f"Subject {i}")
@@ -231,13 +236,15 @@ def _make_oft_df(
         pat = ([1] * 20 + [0] * 20) * (n_frames // 40 + 1)
         center_pattern = pat[:n_frames]
 
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames, dtype=float) * 0.04,
-        "x_center": rng.uniform(100, 500, n_frames),
-        "y_center": rng.uniform(100, 500, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "velocity": rng.uniform(0, 20, n_frames),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames, dtype=float) * 0.04,
+            "x_center": rng.uniform(100, 500, n_frames),
+            "y_center": rng.uniform(100, 500, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "velocity": rng.uniform(0, 20, n_frames),
+        }
+    )
 
     df[center_zone_col] = center_pattern
     # Periphery zone = inverse of center (needed for thigmotaxis_index)
@@ -264,7 +271,7 @@ def oft_trajectory_files(tmp_path: Path) -> list[Path]:
         if i <= 3:
             pattern = ([1] * 30 + [0] * 10) * 10  # 75% center
         else:
-            pattern = ([1] * 5 + [0] * 35) * 10   # 12.5% center
+            pattern = ([1] * 5 + [0] * 35) * 10  # 12.5% center
         df = _make_oft_df(n_frames=400, center_pattern=pattern[:400])
         path = tmp_path / f"oft_subject_{i}.txt"
         _df_to_ethovision_file(df, path, subject=f"Subject {i}")
@@ -319,13 +326,15 @@ def _make_shoaling_df(
 
     velocity = distance_moved / dt
 
-    return pd.DataFrame({
-        "trial_time": times,
-        "x_center": x_center,
-        "y_center": y_center,
-        "distance_moved": distance_moved,
-        "velocity": velocity,
-    })
+    return pd.DataFrame(
+        {
+            "trial_time": times,
+            "x_center": x_center,
+            "y_center": y_center,
+            "distance_moved": distance_moved,
+            "velocity": velocity,
+        }
+    )
 
 
 @pytest.fixture
@@ -344,8 +353,14 @@ def shoaling_trajectory_files(tmp_path: Path) -> list[Path]:
     ]
     files = []
     for name, sx, sy, dx, dy, seed in fish_configs:
-        df = _make_shoaling_df(n_frames=200, start_x=sx, start_y=sy,
-                               dx_per_frame=dx, dy_per_frame=dy, seed=seed)
+        df = _make_shoaling_df(
+            n_frames=200,
+            start_x=sx,
+            start_y=sy,
+            dx_per_frame=dx,
+            dy_per_frame=dy,
+            seed=seed,
+        )
         path = tmp_path / f"shoaling_{name.replace(' ', '_').lower()}.txt"
         _df_to_ethovision_file(df, path, subject=name)
         files.append(path)
@@ -374,14 +389,16 @@ def _make_fst_df(
         pat = ([0] * 20 + [1] * 20) * (n_frames // 40 + 1)
         mobility_pattern = pat[:n_frames]
 
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames, dtype=float) * 0.04,
-        "Mobility_State": mobility_pattern,
-        "x_center": rng.uniform(100, 500, n_frames),
-        "y_center": rng.uniform(100, 500, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "velocity": rng.uniform(0, 20, n_frames),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames, dtype=float) * 0.04,
+            "Mobility_State": mobility_pattern,
+            "x_center": rng.uniform(100, 500, n_frames),
+            "y_center": rng.uniform(100, 500, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "velocity": rng.uniform(0, 20, n_frames),
+        }
+    )
 
     return df
 
@@ -441,14 +458,16 @@ def _make_tst_df(
         pat = ([0] * 20 + [1] * 20) * (n_frames // 40 + 1)
         mobility_pattern = pat[:n_frames]
 
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames, dtype=float) * 0.04,
-        "Activity_State": mobility_pattern,
-        "x_center": rng.uniform(100, 500, n_frames),
-        "y_center": rng.uniform(100, 500, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "velocity": rng.uniform(0, 20, n_frames),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames, dtype=float) * 0.04,
+            "Activity_State": mobility_pattern,
+            "x_center": rng.uniform(100, 500, n_frames),
+            "y_center": rng.uniform(100, 500, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "velocity": rng.uniform(0, 20, n_frames),
+        }
+    )
 
     return df
 
@@ -513,13 +532,15 @@ def _make_ldb_df(
         pat = ([0] * 30 + [1] * 20) * (n_frames // 50 + 1)
         light_pattern = pat[:n_frames]
 
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames, dtype=float) * 0.04,
-        "x_center": rng.uniform(100, 500, n_frames),
-        "y_center": rng.uniform(100, 500, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "velocity": rng.uniform(0, 20, n_frames),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames, dtype=float) * 0.04,
+            "x_center": rng.uniform(100, 500, n_frames),
+            "y_center": rng.uniform(100, 500, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "velocity": rng.uniform(0, 20, n_frames),
+        }
+    )
 
     df[light_zone] = light_pattern
     df[dark_zone] = [1 - v for v in light_pattern]
@@ -545,7 +566,7 @@ def ldb_trajectory_files(tmp_path: Path) -> list[Path]:
         if i <= 3:
             pattern = ([1] * 30 + [0] * 10) * 10  # 75% light
         else:
-            pattern = ([1] * 5 + [0] * 35) * 10   # 12.5% light
+            pattern = ([1] * 5 + [0] * 35) * 10  # 12.5% light
         df = _make_ldb_df(n_frames=400, light_pattern=pattern[:400])
         path = tmp_path / f"ldb_subject_{i}.txt"
         _df_to_ethovision_file(df, path, subject=f"Subject {i}")

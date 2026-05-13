@@ -80,6 +80,7 @@ EV19_TEMPLATE_PARADIGM_MAP: dict[str, list[str]] = {
 
 # 公开函数 ---------------------------------------------------------------------
 
+
 def is_valid_ev19_template(template_id: str) -> bool:
     """Check if a template_id is in the 62-variant whitelist."""
     return template_id in EV19_VARIANTS

@@ -8,6 +8,7 @@ CLI: python -m ethoinsight.scripts.shoaling.run_groupwise_stats \
    "comparisons": {metric: [{"group1", "group2", "p_value", ...}]},
    "summary": str, "alpha": float, "correction": str}
 """
+
 from __future__ import annotations
 
 import sys
@@ -24,7 +25,11 @@ from ethoinsight.scripts._cli import (
 from ethoinsight.statistics import compare_groups
 
 
-METRICS_TO_TEST = ["inter_individual_distance", "nearest_neighbor_distance", "group_polarity"]
+METRICS_TO_TEST = [
+    "inter_individual_distance",
+    "nearest_neighbor_distance",
+    "group_polarity",
+]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,8 +43,13 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = {"paradigm": "shoaling", **stats}
     save_output_json(args.output, payload)
-    emit_result({"stats": "shoaling_groupwise", "n_metrics": len(METRICS_TO_TEST),
-                 "summary": stats.get("summary", "")})
+    emit_result(
+        {
+            "stats": "shoaling_groupwise",
+            "n_metrics": len(METRICS_TO_TEST),
+            "summary": stats.get("summary", ""),
+        }
+    )
     return 0
 
 

@@ -1,4 +1,5 @@
 """Tests for OFT (Open Field Test) metric functions."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -6,24 +7,27 @@ import pandas as pd
 import pytest
 
 from ethoinsight.metrics.oft import (
-    compute_center_time_ratio,
-    compute_thigmotaxis_index,
     compute_center_distance_ratio,
     compute_center_entry_count,
 )
 
 
-def _make_oft_df(n_frames: int = 100, *, center_pattern: list[int] | None = None, seed: int = 42) -> pd.DataFrame:
+def _make_oft_df(
+    n_frames: int = 100, *, center_pattern: list[int] | None = None, seed: int = 42
+) -> pd.DataFrame:
     """Synthetic OFT DataFrame with controllable center presence."""
     rng = np.random.default_rng(seed)
     if center_pattern is None:
         center_pattern = [1] * 20 + [0] * 80
-    df = pd.DataFrame({
-        "trial_time": np.arange(n_frames) * 0.04,
-        "x_center": rng.uniform(-10, 10, n_frames),
-        "y_center": rng.uniform(-10, 10, n_frames),
-        "in_zone_center": center_pattern[:n_frames] + [0] * max(0, n_frames - len(center_pattern)),
-    })
+    df = pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames) * 0.04,
+            "x_center": rng.uniform(-10, 10, n_frames),
+            "y_center": rng.uniform(-10, 10, n_frames),
+            "in_zone_center": center_pattern[:n_frames]
+            + [0] * max(0, n_frames - len(center_pattern)),
+        }
+    )
     return df
 
 
@@ -83,10 +87,12 @@ def test_compute_center_time_returns_seconds():
     import pandas as pd
     from ethoinsight.metrics.oft import compute_center_time
 
-    df = pd.DataFrame({
-        "time": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
-        "in_zone_center_center_point": [1, 1, 0, 0, 1, 0],
-    })
+    df = pd.DataFrame(
+        {
+            "time": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+            "in_zone_center_center_point": [1, 1, 0, 0, 1, 0],
+        }
+    )
     result = compute_center_time(df)
     assert result is not None
     assert result > 0
@@ -96,11 +102,13 @@ def test_compute_center_distance_returns_cm():
     import pandas as pd
     from ethoinsight.metrics.oft import compute_center_distance
 
-    df = pd.DataFrame({
-        "time": [0.0, 0.1, 0.2, 0.3],
-        "in_zone_center_center_point": [1, 1, 0, 1],
-        "distance_moved": [0.0, 1.5, 2.0, 0.5],
-    })
+    df = pd.DataFrame(
+        {
+            "time": [0.0, 0.1, 0.2, 0.3],
+            "in_zone_center_center_point": [1, 1, 0, 1],
+            "distance_moved": [0.0, 1.5, 2.0, 0.5],
+        }
+    )
     result = compute_center_distance(df)
     assert result is not None
     assert 1.8 <= result <= 2.2

@@ -80,8 +80,10 @@ def _align_subjects_xy(
 
     times = common_idx.to_numpy()
     coords = np.stack(
-        [dfs[name].loc[common_idx, ["x_center", "y_center"]].to_numpy()
-         for name in dfs],
+        [
+            dfs[name].loc[common_idx, ["x_center", "y_center"]].to_numpy()
+            for name in dfs
+        ],
         axis=0,
     )
     return times, coords
@@ -113,7 +115,12 @@ def _find_mobility_column(df: pd.DataFrame) -> str | None:
     Mobility_State, Activity_State, mobility_state, activity_state.
     Returns the first match.
     """
-    candidates = ["Mobility_State", "Activity_State", "mobility_state", "activity_state"]
+    candidates = [
+        "Mobility_State",
+        "Activity_State",
+        "mobility_state",
+        "activity_state",
+    ]
     for col in candidates:
         if col in df.columns:
             return col
@@ -157,6 +164,7 @@ def _runs(arr, value=0):
     Used for immobility bout detection.
     """
     import numpy as np
+
     a = np.asarray(arr, dtype=int)
     if len(a) == 0:
         return []

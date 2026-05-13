@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -13,7 +12,12 @@ from ethoinsight.metrics.shoaling import (
     compute_nearest_neighbor_distance,
     compute_group_polarity,
 )
-from ethoinsight.metrics.oft import compute_center_time_ratio, compute_thigmotaxis_index, compute_center_distance_ratio, compute_center_entry_count
+from ethoinsight.metrics.oft import (
+    compute_center_time_ratio,
+    compute_thigmotaxis_index,
+    compute_center_distance_ratio,
+    compute_center_entry_count,
+)
 from ethoinsight.metrics.epm import (
     compute_open_arm_time_ratio,
     compute_open_arm_entry_count,
@@ -133,7 +137,9 @@ def compute_paradigm_metrics(
                 # NND is genuinely per-subject (each fish has its own nearest neighbour).
                 for name in per_subject:
                     sub_nnd = nnd.loc[nnd["subject"] == name, "nnd"]
-                    per_subject[name]["mean_nnd"] = float(sub_nnd.mean()) if not sub_nnd.empty else None
+                    per_subject[name]["mean_nnd"] = (
+                        float(sub_nnd.mean()) if not sub_nnd.empty else None
+                    )
             pol = compute_group_polarity(subjects)
             if pol is not None:
                 timeseries["group_polarity"] = pol
@@ -176,7 +182,8 @@ def compute_paradigm_metrics(
             values = [
                 per_subject[s][mname]
                 for s in matched
-                if mname in per_subject[s] and per_subject[s][mname] is not None
+                if mname in per_subject[s]
+                and per_subject[s][mname] is not None
                 and isinstance(per_subject[s][mname], (int, float))
             ]
             if values:
@@ -189,10 +196,9 @@ def compute_paradigm_metrics(
                 }
         group_summary[grp_name] = grp_metrics
 
-    computed = sorted({
-        k for subj in per_subject.values()
-        for k, v in subj.items() if v is not None
-    })
+    computed = sorted(
+        {k for subj in per_subject.values() for k, v in subj.items() if v is not None}
+    )
 
     # Data quality warnings — surface critical sample-size concerns without blocking.
     data_quality_warnings: list[dict] = []
@@ -202,23 +208,27 @@ def compute_paradigm_metrics(
         # All metrics within a group share the same n (they come from the same subjects)
         sample_n = next(iter(grp_metrics.values())).get("n", 0)
         if sample_n < 3:
-            data_quality_warnings.append({
-                "severity": "critical",
-                "metric": "all",
-                "message": (
-                    f"Group '{grp_name}' has n={sample_n} (<3). "
-                    "Statistical inference will be unreliable; descriptive statistics only."
-                ),
-            })
+            data_quality_warnings.append(
+                {
+                    "severity": "critical",
+                    "metric": "all",
+                    "message": (
+                        f"Group '{grp_name}' has n={sample_n} (<3). "
+                        "Statistical inference will be unreliable; descriptive statistics only."
+                    ),
+                }
+            )
     if paradigm == "shoaling" and len(subjects) < 2:
-        data_quality_warnings.append({
-            "severity": "warning",
-            "metric": "mean_iid,mean_polarity",
-            "message": (
-                "Shoaling group metrics (IID, polarity) are not applicable: "
-                "only 1 subject detected. Group metrics require ≥2 simultaneously tracked subjects."
-            ),
-        })
+        data_quality_warnings.append(
+            {
+                "severity": "warning",
+                "metric": "mean_iid,mean_polarity",
+                "message": (
+                    "Shoaling group metrics (IID, polarity) are not applicable: "
+                    "only 1 subject detected. Group metrics require ≥2 simultaneously tracked subjects."
+                ),
+            }
+        )
     if paradigm == "epm":
         # Per epm.md: n < 5 per group → low statistical power
         for grp_name, grp_metrics in group_summary.items():
@@ -226,26 +236,30 @@ def compute_paradigm_metrics(
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
             if 0 < sample_n < 5:
-                data_quality_warnings.append({
-                    "severity": "warning",
-                    "metric": "all",
-                    "message": (
-                        f"Group '{grp_name}' has n={sample_n} (<5). "
-                        "统计功效不足，结论需谨慎。"
-                    ),
-                })
+                data_quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "metric": "all",
+                        "message": (
+                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            "统计功效不足，结论需谨慎。"
+                        ),
+                    }
+                )
         # Per epm.md: total entries < 8 → motor suppression confound
         for name, m in per_subject.items():
             te = m.get("total_entry_count")
             if te is not None and isinstance(te, (int, float)) and te < 8:
-                data_quality_warnings.append({
-                    "severity": "warning",
-                    "metric": "total_entry_count",
-                    "message": (
-                        f"Subject '{name}' 总进臂次数={int(te)} (<8)。"
-                        "开臂指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
-                    ),
-                })
+                data_quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "metric": "total_entry_count",
+                        "message": (
+                            f"Subject '{name}' 总进臂次数={int(te)} (<8)。"
+                            "开臂指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
+                        ),
+                    }
+                )
     if paradigm == "zero_maze":
         # Per zero_maze.md: n < 5 per group → low statistical power
         for grp_name, grp_metrics in group_summary.items():
@@ -253,27 +267,35 @@ def compute_paradigm_metrics(
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
             if 0 < sample_n < 5:
-                data_quality_warnings.append({
-                    "severity": "warning",
-                    "metric": "all",
-                    "message": (
-                        f"Group '{grp_name}' has n={sample_n} (<5). "
-                        "统计功效不足，结论需谨慎。"
-                    ),
-                })
+                data_quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "metric": "all",
+                        "message": (
+                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            "统计功效不足，结论需谨慎。"
+                        ),
+                    }
+                )
         # Per zero_maze.md: total distance too low → motor suppression confound
         _ZM_LOW_DISTANCE_THRESHOLD = 10.0  # cm; very low → movement suppressed
         for name, m in per_subject.items():
             td = m.get("distance_moved")
-            if td is not None and isinstance(td, (int, float)) and td < _ZM_LOW_DISTANCE_THRESHOLD:
-                data_quality_warnings.append({
-                    "severity": "warning",
-                    "metric": "distance_moved",
-                    "message": (
-                        f"Subject '{name}' 总移动距离={td:.2f} (<{_ZM_LOW_DISTANCE_THRESHOLD})。"
-                        "开放区指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
-                    ),
-                })
+            if (
+                td is not None
+                and isinstance(td, (int, float))
+                and td < _ZM_LOW_DISTANCE_THRESHOLD
+            ):
+                data_quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "metric": "distance_moved",
+                        "message": (
+                            f"Subject '{name}' 总移动距离={td:.2f} (<{_ZM_LOW_DISTANCE_THRESHOLD})。"
+                            "开放区指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
+                        ),
+                    }
+                )
     if paradigm == "light_dark_box":
         # Per ldb.md: n < 5 per group → low statistical power
         for grp_name, grp_metrics in group_summary.items():
@@ -281,26 +303,30 @@ def compute_paradigm_metrics(
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
             if 0 < sample_n < 5:
-                data_quality_warnings.append({
-                    "severity": "warning",
-                    "metric": "all",
-                    "message": (
-                        f"Group '{grp_name}' has n={sample_n} (<5). "
-                        "统计功效不足，结论需谨慎。"
-                    ),
-                })
+                data_quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "metric": "all",
+                        "message": (
+                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            "统计功效不足，结论需谨慎。"
+                        ),
+                    }
+                )
         # Per ldb.md: transitions < 4 → insufficient exploration motivation
         for name, m in per_subject.items():
             tc = m.get("transition_count")
             if tc is not None and isinstance(tc, (int, float)) and tc < 4:
-                data_quality_warnings.append({
-                    "severity": "warning",
-                    "metric": "transition_count",
-                    "message": (
-                        f"Subject '{name}' 穿梭次数={int(tc)} (<4)。"
-                        "明箱时间百分比的下降可能为探索动机不足而非焦虑增加，需标注警告。"
-                    ),
-                })
+                data_quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "metric": "transition_count",
+                        "message": (
+                            f"Subject '{name}' 穿梭次数={int(tc)} (<4)。"
+                            "明箱时间百分比的下降可能为探索动机不足而非焦虑增加，需标注警告。"
+                        ),
+                    }
+                )
     if paradigm in ("forced_swim", "tail_suspension"):
         # n < 5 per group → low statistical power for immobility paradigms
         for grp_name, grp_metrics in group_summary.items():
@@ -308,14 +334,16 @@ def compute_paradigm_metrics(
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
             if 0 < sample_n < 5:
-                data_quality_warnings.append({
-                    "severity": "warning",
-                    "metric": "all",
-                    "message": (
-                        f"Group '{grp_name}' has n={sample_n} (<5). "
-                        "统计功效不足，结论需谨慎。"
-                    ),
-                })
+                data_quality_warnings.append(
+                    {
+                        "severity": "warning",
+                        "metric": "all",
+                        "message": (
+                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            "统计功效不足，结论需谨慎。"
+                        ),
+                    }
+                )
 
     return {
         "paradigm": paradigm,
