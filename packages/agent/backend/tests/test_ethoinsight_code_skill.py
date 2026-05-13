@@ -17,8 +17,8 @@ def test_references_files_exist():
     present = {p.name for p in refs_dir.glob("*.md")}
     missing = required - present
     assert not missing, f"Missing references: {missing}"
-    # by-paradigm/ directory must exist with at least epm.md
-    assert (refs_dir / "by-paradigm" / "epm.md").exists(), "Missing references/by-paradigm/epm.md"
+    # by-paradigm/ directory must NOT exist (knowledge moved to ethoinsight catalog YAML)
+    assert not (refs_dir / "by-paradigm").exists(), "references/by-paradigm/ should have been removed (knowledge now in ethoinsight catalog YAML)"
     # obsolete files must not exist
     obsolete = {"tool-reference.md", "fallback-workflow.md", "run-paradigm-analysis-api.md", "shoaling-paradigm.md"}
     present_obsolete = obsolete & present
@@ -33,7 +33,7 @@ def test_old_data_quality_checks_removed():
 def test_skill_references_all_tools():
     skill_md = (SKILLS_DIR / "SKILL.md").read_text(encoding="utf-8")
     # New SOTA architecture: script-orchestration workflow, not old glue scripts
-    for keyword in ["by-paradigm", "inputs.json", "handoff_code_executor.json", "error-recovery.md"]:
+    for keyword in ["metric_plan.json", "handoff_code_executor.json", "error-recovery.md"]:
         assert keyword in skill_md, f"SKILL.md missing reference to {keyword}"
     # Old langchain tools must not be referenced as active workflow steps
     for tool in ["parse_trajectories", "compute_metrics", "run_statistics",
