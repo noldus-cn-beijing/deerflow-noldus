@@ -301,3 +301,9 @@ def plan_to_dict(plan: Plan) -> dict:
         ],
         "notes": plan.notes,
     }
+
+
+if __name__ == "__main__":
+    import sys
+    from ethoinsight.catalog.cli import main
+    sys.exit(main())

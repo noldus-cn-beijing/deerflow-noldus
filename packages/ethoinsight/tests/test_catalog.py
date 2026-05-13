@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+
 import pytest
 
 
@@ -310,3 +314,108 @@ def test_resolve_plan_to_dict_serializable():
     s = json.dumps(d, ensure_ascii=False, indent=2)
     assert '"paradigm": "epm"' in s
     assert "schema_version" in d
+
+
+# ── CLI tests ──────────────────────────────────────────────────────────────────
+
+import subprocess
+
+
+def _run_cli(args: list[str]) -> tuple[int, str, str]:
+    """Run `python -m ethoinsight.catalog.resolve <args>` and capture."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "ethoinsight.catalog.resolve", *args],
+        capture_output=True, text=True,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def test_cli_happy_path(tmp_path):
+    columns_file = tmp_path / "columns.json"
+    columns_file.write_text(json.dumps({
+        "file": "raw.txt",
+        "columns": _epm_columns_full(),
+        "n_subjects": 1,
+        "duration_s": 300.0,
+    }), encoding="utf-8")
+
+    raw_files_json = tmp_path / "raw_files.json"
+    raw_files_json.write_text(json.dumps(["/tmp/raw.txt"]), encoding="utf-8")
+
+    output = tmp_path / "plan.json"
+
+    rc, stdout, stderr = _run_cli([
+        "--paradigm", "epm",
+        "--columns-file", str(columns_file),
+        "--raw-files-json", str(raw_files_json),
+        "--workspace-dir", str(tmp_path),
+        "--output", str(output),
+    ])
+    assert rc == 0, f"stderr: {stderr}"
+    plan = json.loads(output.read_text())
+    assert plan["paradigm"] == "epm"
+    assert plan["schema_version"] == "1.0"
+    assert len(plan["metrics"]) == 5
+
+
+def test_cli_unknown_paradigm_exit1_with_json(tmp_path):
+    columns_file = tmp_path / "columns.json"
+    columns_file.write_text(json.dumps({"columns": []}), encoding="utf-8")
+    raw_files_json = tmp_path / "raw_files.json"
+    raw_files_json.write_text(json.dumps(["/tmp/raw.txt"]), encoding="utf-8")
+
+    rc, stdout, stderr = _run_cli([
+        "--paradigm", "totally_made_up",
+        "--columns-file", str(columns_file),
+        "--raw-files-json", str(raw_files_json),
+        "--workspace-dir", str(tmp_path),
+        "--output", str(tmp_path / "plan.json"),
+    ])
+    assert rc == 1
+    err = json.loads(stderr.strip().splitlines()[-1])
+    assert err["code"] == "unknown_paradigm"
+
+
+def test_cli_user_include_unknown_exit1(tmp_path):
+    columns_file = tmp_path / "columns.json"
+    columns_file.write_text(json.dumps({"columns": _epm_columns_full()}), encoding="utf-8")
+    raw_files_json = tmp_path / "raw_files.json"
+    raw_files_json.write_text(json.dumps(["/tmp/raw.txt"]), encoding="utf-8")
+
+    rc, _, stderr = _run_cli([
+        "--paradigm", "epm",
+        "--columns-file", str(columns_file),
+        "--raw-files-json", str(raw_files_json),
+        "--workspace-dir", str(tmp_path),
+        "--output", str(tmp_path / "plan.json"),
+        "--include", "nonexistent_metric_xyz",
+    ])
+    assert rc == 1
+    err = json.loads(stderr.strip().splitlines()[-1])
+    assert err["code"] == "unknown_metric"
+    assert "nonexistent_metric_xyz" in err["details"]["requested"]
+
+
+# ── Anti-regression: all catalog scripts must be importable ───────────────────
+
+
+@pytest.mark.parametrize("paradigm", ["epm", "oft", "fst"])
+def test_all_catalog_scripts_are_importable(paradigm):
+    """catalog 里声明的 script dotted path 必须真的能 import 到一个有 main() 的模块。"""
+    import importlib
+    from ethoinsight.catalog import load_catalog
+
+    cat = load_catalog(paradigm)
+    scripts = (
+        [m.script for m in cat.default_metrics]
+        + [m.script for m in cat.optional_metrics]
+        + [c.script for c in cat.charts]
+        + ([cat.statistics_default.script] if cat.statistics_default else [])
+    )
+    for dotted in scripts:
+        try:
+            mod = importlib.import_module(dotted)
+        except ImportError as e:
+            pytest.fail(f"Catalog references non-importable script '{dotted}': {e}")
+        assert hasattr(mod, "main"), f"Script {dotted} has no main() entry"
+        assert callable(mod.main), f"Script {dotted}.main is not callable"
