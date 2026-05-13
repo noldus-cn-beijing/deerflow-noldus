@@ -58,7 +58,7 @@ noldus-insight/
 ```
 Lead Agent（deepseek-v4-pro，路由判断：有数据→分析，无数据→知识）
     ↓
-code-executor（按 ethoinsight-code skill 依次调用 5 个细粒度 tool：parse_trajectories → compute_metrics → run_statistics → generate_charts → assess_and_handoff，中间状态经 /mnt/user-data/workspace/ 文件传递）
+code-executor（按 lead 生成的 metric_plan.json 逐条 bash 调用对应脚本：python -m ethoinsight.scripts.<paradigm>.<script_name>。指标清单来自 packages/ethoinsight/ethoinsight/catalog/<paradigm>.yaml（single source of truth），由 lead 通过 catalog.resolve CLI 在派遣 code-executor 之前生成 plan.json。中间状态经 /mnt/user-data/workspace/ 文件传递。详见 docs/superpowers/specs/2026-05-13-metric-catalog-architecture-design.md）
     ↓
 data-analyst（审核统计方法、排查混杂因素、发现洞察）
     ↓
@@ -204,7 +204,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 2. **noldus-kb 当前禁用** — `extensions_config.json` 里 `"enabled": false`，等 `180.184.84.124:7001` 恢复后再启用。禁用状态不要提交为 true
 3. **受保护文件修改后同步要小心** — `scripts/sync-deerflow.sh` 会把它们标为"需人工判断"
 4. **v0.1 是 9 月硬指标** — Phase 0（当前阶段）要完成 EPM + OFT 范式 + 鲁棒性验证 + 基础设施修复
-5. **微调方案已锁定** — Qwen3-8B Dense + Fireworks.ai（SFT 先行，DPO 推迟到 v0.1 后）
+5. **微调方案已锁定** — Qwen3-8B Dense + Fireworks.ai（SFT 先行，DPO 推迟到 v0.1 后）。**2026-05-13 提出升级提议**：基座改 Qwen3-30B-A3B-Instruct-2507 MoE + 客户硬件锁定 RTX 5090 32GB（放弃 5060 Ti 兜底）+ 后训练候选火山引擎 verl / Fireworks，详见 [docs/plans/2026-05-13-base-model-decision-memo.md](docs/plans/2026-05-13-base-model-decision-memo.md)，**待团队对齐前仍按原锁定方案执行**
 6. **deepseek 的正面提示** — 不要用"禁止 X""不要 X"，会反向激活；必须用正面指令描述想要的行为
 7. **训练数据飞轮已启动** — 每次 agent 会话自动录制到 `packages/agent/backend/.deer-flow/training-data/auto-collected/`；专家反馈走 `/api/threads/{tid}/runs/{rid}/feedback` API（**SQLite 后端，verdict 三分类 + revised_text**）+ 前端三按钮。查看累计进度：`cd packages/agent/backend && make training-stats`。详见 [docs/sop/training-data-flywheel-sop.md](docs/sop/training-data-flywheel-sop.md)。
 8. **Golden-case 是专家知识注入的正式途径** — 行为学同事对一份数据标注"期望的分析结论"，同时承担**领域知识源 + 回归测试 + SFT 种子数据**三重角色。结构由 [golden-cases/SCHEMA.md](golden-cases/SCHEMA.md) 定义，模板在 `golden-cases/TEMPLATE/`，校验用 `python3 scripts/validate_golden_case.py`。**不要为范式知识另建文档系统（如 `docs/domain/`），所有专家领域知识统一走 golden-cases/**。详见 [docs/sop/golden-case-sop.md](docs/sop/golden-case-sop.md)。
