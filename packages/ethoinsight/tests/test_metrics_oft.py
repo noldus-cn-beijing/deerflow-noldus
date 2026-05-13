@@ -71,3 +71,36 @@ class TestComputeCenterEntryCount:
     def test_no_center_column_returns_none(self):
         df = pd.DataFrame({"x_center": [1, 2], "y_center": [1, 2]})
         assert compute_center_entry_count(df) is None
+
+
+# ============================================================================
+# New metrics from 2026-05-13 review: center_time, center_distance
+# ============================================================================
+
+
+def test_compute_center_time_returns_seconds():
+    """center_time = center_time_ratio * total_duration"""
+    import pandas as pd
+    from ethoinsight.metrics.oft import compute_center_time
+
+    df = pd.DataFrame({
+        "time": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+        "in_zone_center_center_point": [1, 1, 0, 0, 1, 0],
+    })
+    result = compute_center_time(df)
+    assert result is not None
+    assert result > 0
+
+
+def test_compute_center_distance_returns_cm():
+    import pandas as pd
+    from ethoinsight.metrics.oft import compute_center_distance
+
+    df = pd.DataFrame({
+        "time": [0.0, 0.1, 0.2, 0.3],
+        "in_zone_center_center_point": [1, 1, 0, 1],
+        "distance_moved": [0.0, 1.5, 2.0, 0.5],
+    })
+    result = compute_center_distance(df)
+    assert result is not None
+    assert 1.8 <= result <= 2.2

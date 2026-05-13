@@ -182,3 +182,34 @@ def compute_center_entry_count(
     entries = 1 if vals[0] == 1 else 0
     transitions = (vals[1:] == 1) & (vals[:-1] == 0)
     return entries + int(transitions.sum())
+
+
+def compute_center_time(df: pd.DataFrame) -> float | None:
+    """Total time the subject spent in center zone (seconds).
+
+    = center_time_ratio * total_duration
+
+    Returns None if center column cannot be resolved.
+    """
+    ratio = compute_center_time_ratio(df)
+    if ratio is None:
+        return None
+    if "time" not in df.columns:
+        return None
+    duration = float(df["time"].iloc[-1] - df["time"].iloc[0])
+    return ratio * duration
+
+
+def compute_center_distance(df: pd.DataFrame) -> float | None:
+    """Total distance moved while in center zone (cm).
+
+    Accumulates ``distance_moved`` only at frames where the center-zone indicator is 1.
+    Returns None if either column is missing.
+    """
+    if "distance_moved" not in df.columns:
+        return None
+    center_col = _find_center_zone_column(df)
+    if center_col is None:
+        return None
+    mask = df[center_col].fillna(0) > 0
+    return float(df.loc[mask, "distance_moved"].sum())
