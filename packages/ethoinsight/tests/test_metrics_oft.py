@@ -104,3 +104,26 @@ def test_compute_center_distance_returns_cm():
     result = compute_center_distance(df)
     assert result is not None
     assert 1.8 <= result <= 2.2
+
+
+# ============================================================================
+# _find_center_zone_column — 2026-05-13 cleanup: no silent bare in_zone fallback
+# ============================================================================
+
+
+def test_find_center_zone_does_not_silently_fallback_to_bare_in_zone():
+    """同事 Q2：列名歧义时不要猜要问。裸 in_zone 不应被当成 center。"""
+    import pandas as pd
+    from ethoinsight.metrics.oft import _find_center_zone_column
+
+    df = pd.DataFrame({"time": [0.0], "in_zone": [1]})
+    assert _find_center_zone_column(df) is None
+
+
+def test_find_center_zone_still_finds_explicit_center_columns():
+    """显式 center 列仍应被找到（不影响 happy path）."""
+    import pandas as pd
+    from ethoinsight.metrics.oft import _find_center_zone_column
+
+    df = pd.DataFrame({"time": [0.0], "in_zone_center_center_point": [1]})
+    assert _find_center_zone_column(df) == "in_zone_center_center_point"

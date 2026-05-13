@@ -16,15 +16,13 @@ from ethoinsight.metrics._common import _find_zone_column
 
 
 def _find_center_zone_column(df: pd.DataFrame, hint: str = "in_zone_center") -> str | None:
-    """Locate the OFT center-zone indicator column.
+    """Find the column representing the center zone.
 
-    EthoVision exports vary by template:
-    1. ``in_zone_center`` / ``in_zone_centre`` — explicit center name
-    2. ``in_zone_center_<suffix>`` — name with extra qualifier
-    3. ``in_zone`` (no suffix) — minimal OFT template only exports one zone,
-       which by EthoVision convention is the center zone
-
-    Returns the matching column name or None.
+    Returns:
+        Column name if an explicit center-zone column exists.
+        None otherwise. Bare ``in_zone`` (without ``_center`` / ``_centre`` suffix)
+        is NOT treated as center by default — list-name ambiguity should
+        trigger an upstream user clarification (see 2026-05-13 feedback Q2).
     """
     # 1. Exact hint match
     if hint in df.columns:
@@ -38,9 +36,6 @@ def _find_center_zone_column(df: pd.DataFrame, hint: str = "in_zone_center") -> 
             continue
         if "center" in cl or "centre" in cl:
             return col
-    # 3. Fallback: a single bare "in_zone" column is the center zone by convention
-    if "in_zone" in df.columns:
-        return "in_zone"
     return None
 
 
@@ -65,9 +60,7 @@ def compute_center_time_ratio(
 ) -> float | None:
     """Ratio of time spent in center zone.
 
-    Resolves the center zone column via :func:`_find_center_zone_column`,
-    which also handles the bare ``in_zone`` minimal-export case.
-    """
+    Resolves the center zone column via :func:`_find_center_zone_column`."""
     col = _find_center_zone_column(df, hint=center_zone)
     if col is None:
         return None

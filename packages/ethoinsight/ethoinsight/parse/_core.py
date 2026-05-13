@@ -380,3 +380,38 @@ def _header_to_attrs(header: dict) -> dict:
         "columns": header.get("columns", []),
         "units": header.get("units", []),
     }
+
+
+def infer_groups_from_result_block(subjects: list[dict]) -> dict[str, list[str]] | None:
+    """Infer groupings from EthoVision 'result block name'.
+
+    EthoVision 数据选择配置的"结果块命名"出现在 raw 文件末列。
+    - 默认占位名（"Result 1", "Result 2", ...）→ 视为未分组，返回 None
+    - 规范命名（"Drug" / "Saline" / "Control" 等）→ 按命名聚合
+
+    Source: 2026-05-13 同事反馈 Q3。
+
+    Args:
+        subjects: list of dicts with keys 'name' (subject name) and optional
+                  'result_block_name' (str)
+
+    Returns:
+        {group_name: [subject_name, ...]} 或 None（未分组）
+    """
+    import re
+
+    if not subjects:
+        return None
+
+    block_names: dict[str, list[str]] = {}
+    for s in subjects:
+        block = s.get("result_block_name")
+        if not block:
+            return None
+        if re.fullmatch(r"Result\s+\d+", block.strip()):
+            return None
+        block_names.setdefault(block, []).append(s["name"])
+
+    if len(block_names) < 2:
+        return None
+    return block_names

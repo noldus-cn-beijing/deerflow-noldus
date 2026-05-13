@@ -320,3 +320,39 @@ class TestDetectParadigm:
 
     def test_empty(self):
         assert detect_paradigm("") is None
+
+
+# ============================================================================
+# infer_groups_from_result_block — 2026-05-13 同事反馈 Q3: 自动分组重写
+# ============================================================================
+
+
+def test_parse_groups_from_result_block_name():
+    from ethoinsight.parse._core import infer_groups_from_result_block
+
+    result = infer_groups_from_result_block(
+        subjects=[
+            {"name": "A1", "result_block_name": "Drug"},
+            {"name": "A2", "result_block_name": "Drug"},
+            {"name": "A3", "result_block_name": "Saline"},
+            {"name": "A4", "result_block_name": "Saline"},
+        ]
+    )
+    assert result == {"Drug": ["A1", "A2"], "Saline": ["A3", "A4"]}
+
+    result_default = infer_groups_from_result_block(
+        subjects=[
+            {"name": "A1", "result_block_name": "Result 1"},
+            {"name": "A2", "result_block_name": "Result 1"},
+        ]
+    )
+    assert result_default is None
+
+
+def test_parse_groups_handles_missing_field():
+    from ethoinsight.parse._core import infer_groups_from_result_block
+
+    result = infer_groups_from_result_block(
+        subjects=[{"name": "A1"}, {"name": "A2"}],
+    )
+    assert result is None
