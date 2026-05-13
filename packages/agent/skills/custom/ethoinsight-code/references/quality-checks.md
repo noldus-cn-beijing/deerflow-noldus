@@ -41,4 +41,3 @@
 - "3 组以上独立" → `run_statistics` 会自动用 one-way ANOVA 或 Kruskal-Wallis
 - "对照 vs 实验" → `run_statistics` 会自动用 t-test 或 Mann-Whitney
 
-若设计类型与方法不匹配，在 `assess_and_handoff` 产出的 handoff 的 `errors` 字段中应包含对应提示。

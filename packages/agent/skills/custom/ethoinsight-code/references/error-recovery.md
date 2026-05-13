@@ -43,10 +43,3 @@
 全部 chart 失败（`chart_paths` 为空）：
 → 读 errors 列表，常见原因：metrics.pkl 损坏（回步骤 2）、chart_types 拼写错误。
 
-## assess_and_handoff 失败
-
-返回 `error: "missing dependency: .../metrics.pkl"`：
-→ 回到步骤 2。
-
-返回 `error: "assess_results raised: ..."`：
-→ 非致命。handoff 中 `assessment` 会为空，但其他字段齐全，可继续返回给 lead agent。
