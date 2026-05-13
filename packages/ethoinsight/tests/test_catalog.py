@@ -399,7 +399,7 @@ def test_cli_user_include_unknown_exit1(tmp_path):
 # ── Anti-regression: all catalog scripts must be importable ───────────────────
 
 
-@pytest.mark.parametrize("paradigm", ["epm", "oft", "fst"])
+@pytest.mark.parametrize("paradigm", ["epm", "oft", "fst", "tst", "ldb", "zero_maze", "shoaling"])
 def test_all_catalog_scripts_are_importable(paradigm):
     """catalog 里声明的 script dotted path 必须真的能 import 到一个有 main() 的模块。"""
     import importlib

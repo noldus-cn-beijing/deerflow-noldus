@@ -1,0 +1,47 @@
+paradigm: ldb
+ev19_templates:
+  - Light Dark Box XT190
+
+default_metrics:
+  - id: light_time_ratio
+    script: ethoinsight.scripts.ldb.compute_light_time_ratio
+    requires_columns:
+      - in_zone_light*
+    output_unit: ratio
+    display_name_zh: 亮室时间比例
+    unit_zh: 比例
+    one_liner: 动物在亮室停留时间占总时长的比例，LDB 焦虑样回避评估的核心指标
+    direction_for_anxiety: lower_is_anxious
+    statistical_default: groupwise_compare
+
+  - id: transition_count
+    script: ethoinsight.scripts.ldb.compute_transition_count
+    requires_columns:
+      - in_zone_light*
+    output_unit: count
+    display_name_zh: 跨室次数
+    unit_zh: 次
+    one_liner: 动物在亮室与暗室之间穿梭的累计次数
+    direction_for_anxiety: lower_is_anxious
+    statistical_default: groupwise_compare
+
+  - id: light_latency
+    script: ethoinsight.scripts.ldb.compute_light_latency
+    requires_columns:
+      - in_zone_light*
+    output_unit: seconds
+    display_name_zh: 首次进入亮室潜伏期
+    unit_zh: 秒
+    one_liner: 从测试开始到首次进入亮室的时间
+    direction_for_anxiety: higher_is_anxious
+    statistical_default: groupwise_compare
+
+optional_metrics: []
+
+charts: []
+
+statistics:
+  default:
+    id: groupwise_compare
+    script: ethoinsight.scripts.ldb.run_groupwise_stats
+    when: n_per_group >= 2 and n_groups >= 2
