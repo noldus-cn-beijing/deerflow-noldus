@@ -56,6 +56,12 @@ total_entry_count:        21
 ```
 All 5 scripts produced valid JSON output with realistic metric values.
 
+## 合并与推送
+
+- 2026-05-13: worktree 分支 `worktree-metric-catalog-implementation` 合并到 `dev`（冲突：CLAUDE.md §5 保留 dev 较新版本、experiment_context.py 保留 dev EV19 校验逻辑）
+- 已推送 `dev` → `origin/dev`（e6fc6d50..447fee73）
+- worktree 分支已删除
+
 ## 未完成 / 已知限制
 - shoaling 多文件场景：resolve 当前用 raw_files[0]，多文件 wrapper JSON 待 v0.2 扩展
 - catalog i18n：仅有中文展示字段，英文待加
