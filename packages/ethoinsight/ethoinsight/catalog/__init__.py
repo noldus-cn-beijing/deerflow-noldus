@@ -9,22 +9,31 @@ report-writer 多方共读、被 dispatcher / 单测 / golden-case 共消费。
 
 from __future__ import annotations
 
+from ethoinsight.catalog.loader import CatalogError, load_catalog
 from ethoinsight.catalog.schema import (
     Catalog,
+    ChartEntry,
     MetricEntry,
     Plan,
+    PlanChart,
+    PlanInputs,
     PlanMetric,
     PlanSkipped,
+    PlanStatistics,
     StatisticsEntry,
-    ChartEntry,
 )
 
 __all__ = [
     "Catalog",
+    "CatalogError",
+    "ChartEntry",
     "MetricEntry",
     "Plan",
+    "PlanChart",
+    "PlanInputs",
     "PlanMetric",
     "PlanSkipped",
+    "PlanStatistics",
     "StatisticsEntry",
-    "ChartEntry",
+    "load_catalog",
 ]
