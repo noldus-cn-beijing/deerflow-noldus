@@ -30,7 +30,7 @@ class TestDefaultPipelineIsTwoStep:
         section = _section()
         # The Step 3 flow must include ask_clarification with 3 options
         # before any report-writer dispatch in Example 1.
-        assert "需要 APA 格式报告" in section
+        assert "需要结构化研究报告" in section
         assert "不需要，谢谢" in section
 
     def test_orchestration_guide_documents_conditional_report_writer(self):

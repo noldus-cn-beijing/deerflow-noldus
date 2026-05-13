@@ -161,6 +161,20 @@ handoff_report_writer.json schema:
 - ✅ §4 只做基于统计结果的行为学解读，不引文献
 </禁止的写法>
 
+## 指标展示元数据查询
+
+写"Results / Discussion"段时，按 metric id read catalog YAML 取展示字段：
+
+read_file:
+    /path/to/ethoinsight/catalog/<paradigm>.yaml
+
+按 metric id 查：
+- display_name_zh: 中文展示名
+- unit_zh: 单位
+- one_liner: 一句话解释（仅首次提及该指标时引用，不要在每段重复）
+
+禁止在本 prompt 内硬编码任何指标的中文名或单位 —— 全部走 catalog。
+
 <json_writing>
 handoff_report_writer.json 必须是**合法的 JSON**——下游工具会 parse 它。
 写字符串值时遵守以下规则，避免未转义的引号破坏 JSON 语法：
@@ -233,4 +247,5 @@ write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里
     model="inherit",
     max_turns=15,
     timeout_seconds=600,
+    skills=["ethoinsight", "ethoinsight-metric-catalog"],
 )

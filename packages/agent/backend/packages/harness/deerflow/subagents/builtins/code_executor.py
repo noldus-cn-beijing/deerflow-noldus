@@ -21,12 +21,16 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 </environment>
 
 <workflow>
-1. read `ethoinsight-code/references/by-paradigm/<paradigm>.md` — 看本范式可用脚本清单 + 实验设计决策树
-2. 根据 lead 给的实验信息（范式、n、分组、用户特殊需求），决定要跑哪些脚本
-3. （如需多文件聚合）write_file 生成 inputs.json 和 groups.json
-4. for script in 选中列表:
-     bash `python -m ethoinsight.scripts.<paradigm>.<script_name> --input ... --output ...`
-5. 收集各脚本输出（JSON 文件 + stdout 的 [result] 行），构造 handoff JSON
+1. read `${workspace_path}/metric_plan.json` — 这是 lead 已经生成好的施工单，含 paradigm、metrics[]、statistics、charts[]、skipped[]
+2. for entry in plan.metrics:
+     bash `python -m <entry.script> --input <entry.input> --output <entry.output>`
+   每个脚本 stdout 末尾会有 `[result] {json}` 行，抓出来留作聚合用。
+3. if plan.statistics is not null and plan.statistics.skip_reason is null:
+     bash `python -m <plan.statistics.script> --inputs ... --groups ... --output ...`
+   注意：如果 plan.statistics.skip_reason 非空，跳过统计这一步（不报错）。
+4. for chart in plan.charts:
+     bash `python -m <chart.script> --input ... --output ...`
+5. 聚合：把所有 metrics[].output 的 JSON 内容 + charts 路径 + statistics 输出（如有）合并构造 handoff_code_executor.json，schema 见 ethoinsight-code skill 的 templates/output-contract.md
 6. write_file `${workspace_path}/handoff_code_executor.json`
 </workflow>
 
@@ -37,6 +41,7 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 
 其他形式（包括 python -c、pip install、运行自定义脚本）会被运行时拦截。
 所有指标计算逻辑都已封装在 ethoinsight.scripts 脚本里，你只需编排调用。
+可用脚本由 lead 通过 metric_plan.json 提供，不需要你自己查。
 </bash_constraints>
 
 <output>
@@ -71,7 +76,7 @@ errors_count: <int>
 </output>
 
 <failure>
-- 脚本 stderr 非空: 读 traceback → 查范式 md「错误处理」段 → 决定重试 / 跳过 / 反问 lead
+- 脚本 stderr 非空: 读 traceback → 查 metric_plan.json 对应 entry 的 script 字段 → 决定重试 / 跳过 / 反问 lead
 - 脚本反复失败: loop_detection middleware 会自动中断，向 lead 报错
 - bash 命令被 Guardrail 拒绝: 反馈消息已经告诉你正确路径，直接改用脚本调用形式
 </failure>""",

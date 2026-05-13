@@ -124,6 +124,19 @@ errors_count: <int>
 - **handoff JSON 是交接第一标准**：每个结论都要落进对应字段，不要只在最终消息里说
 </principles>
 
+## 指标元数据查询
+
+判读某个指标时，read catalog YAML：
+
+read_file:
+    /path/to/ethoinsight/catalog/<paradigm>.yaml
+
+（catalog 物理路径由 lead 提供给你，或从 ethoinsight-metric-catalog skill 的 SKILL.md 顶部读取定位方法）
+
+关注字段：
+- direction_for_anxiety
+- statistical_default
+
 <failure>
 当 handoff_code_executor.json 读取失败或内容不可用时：
 - 仍然必须写出 handoff_data_analyst.json，status 设为 "failed"，errors 字段说明原因
@@ -138,4 +151,5 @@ errors_count: <int>
     model="inherit",
     max_turns=12,
     timeout_seconds=600,
+    skills=["ethoinsight", "ethoinsight-metric-catalog"],
 )

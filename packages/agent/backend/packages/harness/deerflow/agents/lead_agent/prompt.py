@@ -1051,6 +1051,12 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
 **规划本身不占用 `task` 调用配额**——它只是读 skill + 可能的 `ask_clarification`。
 
+## 可用 skill 说明
+
+- **ethoinsight-planning**: 实验规划与意图分类手册。分析流水线起点，范式识别与分组推断。
+- **ethovision-paradigm-knowledge**: EV19 模板识别体系（20 大类 / 62 变体）与实验设计知识库。
+- **ethoinsight-metric-catalog**: 范式指标 catalog 读取手册。**在派遣 code-executor 之前**，按 SKILL.md 中 lead role 段的指引：(1) bash dump_headers 提取列名 (2) bash catalog.resolve 生成 metric_plan.json。失败时按 stderr JSON 的 code 字段 ask_clarification。
+
 ## EthoVision 数据分析派遣流程
 
 当用户上传 EthoVision 数据并请求分析时，按以下流程派遣 subagent：
@@ -1060,6 +1066,15 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 - 确认分组定义（哪些 Subject 是对照/实验组）
 - 如果信息不足，使用 ask_clarification 工具提问
 - **你自己不需要读取数据文件**，只需要把文件路径传给 code-executor
+
+### Step 0.5: 生成 metric_plan.json（**派遣 code-executor 前必做**，详见 ethoinsight-metric-catalog skill）
+
+1. bash dump_headers 提取数据列名到 /mnt/user-data/workspace/columns.json
+2. write_file /mnt/user-data/workspace/raw_files.json（JSON 数组含 raw 文件路径）
+3. bash catalog.resolve 生成 /mnt/user-data/workspace/metric_plan.json
+4. 派遣 prompt 仅需告诉 code-executor plan.json 路径，**不要展开指标清单**
+
+resolve 失败时（stderr JSON 含 code 字段）按 skill 的话术映射反问用户。
 
 ### Step 1: 派遣 code-executor
 把文件路径、范式、分组、用户需求传给 code-executor，让它自己处理。
