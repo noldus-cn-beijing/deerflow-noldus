@@ -137,3 +137,53 @@ statistics: null
     with pytest.raises(CatalogError) as exc:
         load_catalog("epm_test", catalog_dir=str(tmp_path))
     assert "dup_id" in str(exc.value)
+
+
+# ── Q6 白名单对齐测试 ────────────────────────────────────────────────────────
+
+# Q6 白名单来源：docs/review-packages/2026-05-12-feedback.md
+EPM_Q6_WHITELIST = {
+    "open_arm_time_ratio",
+    "open_arm_time",
+    "open_arm_entry_count",
+    "open_arm_entry_ratio",
+    "total_entry_count",
+}
+
+OFT_Q6_WHITELIST = {
+    "center_time_ratio",
+    "center_distance_ratio",
+    "center_entry_count",
+    "center_time",
+    "center_distance",
+}
+
+FST_Q6_WHITELIST = {
+    "immobility_time",
+    "immobility_latency",
+    "immobility_bout_count",
+}
+
+
+@pytest.mark.parametrize("paradigm,whitelist", [
+    ("epm", EPM_Q6_WHITELIST),
+    ("oft", OFT_Q6_WHITELIST),
+    ("fst", FST_Q6_WHITELIST),
+])
+def test_catalog_default_metrics_match_q6_whitelist(paradigm, whitelist):
+    from ethoinsight.catalog import load_catalog
+    cat = load_catalog(paradigm)
+    catalog_ids = {m.id for m in cat.default_metrics}
+    assert catalog_ids == whitelist, (
+        f"{paradigm} default_metrics 与 Q6 白名单偏差：\n"
+        f"  catalog 有但 Q6 没: {catalog_ids - whitelist}\n"
+        f"  Q6 有但 catalog 没: {whitelist - catalog_ids}"
+    )
+
+
+@pytest.mark.parametrize("paradigm", ["epm", "oft", "fst"])
+def test_catalog_loads_real_yaml(paradigm):
+    from ethoinsight.catalog import load_catalog
+    cat = load_catalog(paradigm)
+    assert cat.paradigm == paradigm
+    assert len(cat.default_metrics) > 0
