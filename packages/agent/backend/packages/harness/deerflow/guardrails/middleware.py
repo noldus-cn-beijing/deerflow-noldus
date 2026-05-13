@@ -26,10 +26,23 @@ class GuardrailMiddleware(AgentMiddleware[AgentState]):
       - False: allow it through with a warning
     """
 
-    def __init__(self, provider: GuardrailProvider, *, fail_closed: bool = True, passport: str | None = None):
+    def __init__(self, provider: GuardrailProvider, *, fail_closed: bool = True, passport: str | None = None, name: str | None = None):
         self.provider = provider
         self.fail_closed = fail_closed
         self.passport = passport
+        # langchain >= recent versions enforce unique middleware names within an
+        # agent's middleware list. When multiple GuardrailMiddleware instances are
+        # attached (e.g. HandoffIsolationProvider + ScriptInvocationOnlyProvider on
+        # code-executor), they share class name 'GuardrailMiddleware' and trip the
+        # uniqueness check, failing agent creation with
+        #     AssertionError: Please remove duplicate middleware instances.
+        # Per-instance name (override of AgentMiddleware.name @property) fixes this.
+        # Default: derive from provider's `name` attribute when available.
+        self._name = name or f"GuardrailMiddleware[{getattr(provider, 'name', provider.__class__.__name__)}]"
+
+    @property
+    def name(self) -> str:  # type: ignore[override]
+        return self._name
 
     def _build_request(self, request: ToolCallRequest) -> GuardrailRequest:
         return GuardrailRequest(
