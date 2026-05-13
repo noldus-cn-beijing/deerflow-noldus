@@ -96,6 +96,19 @@
   details { margin: 8px 0; }
   details summary { cursor: pointer; color: var(--accent); font-weight: 500; }
   details[open] summary { margin-bottom: 8px; }
+  .correction-banner {
+    background: #fde7e9;
+    border: 1px solid #f5b6bc;
+    border-left: 6px solid var(--err);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 16px 0 24px;
+    color: #5a1a22;
+  }
+  .correction-banner h3 { margin: 0 0 8px; color: var(--err); font-size: 16px; }
+  .correction-banner ul { margin: 6px 0 0; padding-left: 22px; }
+  .correction-banner li { margin: 4px 0; }
+  .correction-banner strong { color: #5a1a22; }
 </style>
 </head>
 <body>
@@ -103,6 +116,20 @@
 
 <h1>EthoInsight 真数据指标 review</h1>
 <p class="lede">用你提供的 3 个范式真数据（EPM/OFT/FST）跑了一遍我们的指标脚本。请你判断每个数字是否"在合理范围"、方向是否"符合行为学预期"。有疑问的地方在末尾的 <strong>待确认问题</strong> 区。</p>
+
+<div class="correction-banner">
+  <h3>📌 2026-05-13 校正声明（请先读）</h3>
+  <p style="margin:0 0 8px;">本 review 原文是 2026-05-12 写的初稿，行为学同事已于 2026-05-13 给出 <a href="../2026-05-12-feedback.md"><code>feedback.md</code></a>。<strong>下列推断/提议已被同事推翻，正文中相关段落仅作历史记录保留</strong>：</p>
+  <ul>
+    <li><strong>Q4「FST immobility 数值过小」整题作废</strong> ——「比文献典型 100s+ 小 10–100 倍」这种和常模 / 文献基线对比的判读方式本身就错。同事原话："还是陷入了和常模对比的幻觉。<strong>不要参考常模或基线</strong>。所有的数据指标要和对照组比。" 由此衍生的"新增基于 <code>mobility_continuous</code> 连续值的 immobility 算法路径"提议同步作废。</li>
+    <li><strong>Q5「Mobility_1 / Mobility_10 是两套检测阈值」推断错误</strong> —— 真实含义是 <strong>采样率</strong>：Mobility_1 = 每帧采样、Mobility_10 = 每 10 帧平均。一般用户只会给出一种采样率，同时给两份是非典型情况。</li>
+    <li><strong>Q2「OFT 单 zone 命中后裸 <code>in_zone</code> 当作 center 列」做法错误</strong> —— 同事原话："对于不知道哪一列是代表什么分析区，要问，不要猜。<strong>虽然这次猜中了，但是不要猜</strong>。" 后续应改为在列名歧义时由 agent 反问用户，而不是 silent fallback。</li>
+    <li><strong>Q1「EPM 单只 8% 偏低但在生理范围"」判读越权</strong> —— 单只动物无对照组时不做结论，待对照组数据齐再比。</li>
+    <li><strong>Q3「user-defined variable 列」概念错误</strong> —— raw 的最后一列其实是「数据选择配置中对结果块的命名」（默认 <code>Result 1</code>，规范用户会改成体现分组的名字），后续 parse 层的分组推断要按此重写。</li>
+    <li><strong>Q6 已给出指标白名单</strong>，会按白名单补/收口（EPM 加 <code>open_arm_entry_ratio</code>、OFT 加 <code>center_distance</code> + <code>center_distance_ratio</code>、FST 命名收口为 <code>immobility_time / _latency / _count</code>）。</li>
+  </ul>
+  <p style="margin:8px 0 0; font-size:13px; color:#6b6960;">下一阶段行动追踪：<a href="../../handoffs/2026-05/2026-05-13-feedback-corrections-handoff.md">2026-05-13 同事反馈校正交接</a>（待写）。</p>
+</div>
 
 <div class="meta">
   <span><strong>日期：</strong>2026-05-12</span>
