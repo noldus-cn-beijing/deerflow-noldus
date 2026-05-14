@@ -5,16 +5,16 @@
 | Issue | 检查项 | 期望 | 实测 | 结论 |
 |-------|--------|------|------|------|
 | #1 | gateway reload 次数 | 0 | 0 (gateway.log grep确认) | ✅ |
-| #2 | thinking 400 次数 | 0 | _(需人工dogfood)_ | ⏳ |
-| #3 | lead 自写判读 | 0 | _(需人工dogfood)_ | ⏳ |
-| #3 | lead 编品系 | 不出现 | _(需人工dogfood)_ | ⏳ |
-| #3 | lead 引常模/金标准 | 不出现 | _(需人工dogfood)_ | ⏳ |
-| #4 | reasoning 自动折叠 | 不发生 | _(需人工dogfood)_ | ⏳ |
-| #5 | 阶段播报次数 | ≥4 次 | _(需人工dogfood)_ | ⏳ |
-| #6 | plan.json 输出虚拟路径 | 全虚拟 | _(需人工dogfood)_ | ⏳ |
-| #7 | compute_* 重跑次数 | 1 次/个 | _(需人工dogfood)_ | ⏳ |
-| #8 | report-writer 被派 | 观察 | _(需人工dogfood)_ | ⏳ |
-| #8 | report-writer 读 catalog YAML | 观察 | _(需人工dogfood)_ | ⏳ |
+| #2 | thinking 400 次数 | 0 | 0 (langgraph.log grep) | ✅ |
+| #3 | lead 自写判读 | 0 | 子agent手递含"典型高焦虑""参考范围"，lead透传 | ❌ |
+| #3 | lead 编品系 | 不出现 | 0 (grep确认) | ✅ |
+| #3 | lead 引常模/金标准 | 不出现 | subagent手递含"金标准"，lead透传 | ❌ |
+| #4 | reasoning 自动折叠 | 不发生 | 未观察到折叠（thinking面板保持展开） | ✅ |
+| #5 | 阶段播报次数 | ≥4 次 | 1 (archived messages中仅1个emoji匹配) | ❌ |
+| #6 | plan.json 输出虚拟路径 | 全虚拟 | False（仍为物理路径） | ❌ |
+| #7 | compute_* 重跑次数 | 1 次/个 | 5个compute各1次 | ✅ |
+| #8 | report-writer 被派 | 观察 | 1 次派遣，后被lead取消（用户新消息打断） | ✅ |
+| #8 | report-writer 读 catalog YAML | 观察 | 未完成即被取消 | ⚠️ |
 
 ### 可自动验证的项（已验证）
 
@@ -35,11 +35,11 @@
 7. 按上述检查清单逐项打勾
 
 ## thread 信息
-- thread_id: _(待人工dogfood后填写)_
-- run_ids: _(待人工dogfood后填写)_
-- 数据文件: _(待人工dogfood后填写)_
-- 开始时间: _(待人工dogfood后填写)_
-- 结束时间: _(待人工dogfood后填写)_
+- thread_id: 8ff3be6d-43b5-4724-ab09-60ce23db6f2e
+- run_ids: 019e257b-5668-74f0-aa56-2a9432f539f3 (lead parse+catalog), 019e2584-e304-74a0-b8a2-89210048abaf (report-writer, cancelled)
+- 数据文件: 轨迹-Elevated Plus Maze XT190-Trial 1-Arena 1-Subject 1.txt
+- 开始时间: 2026-05-14 15:51 (CST)
+- 结束时间: 2026-05-14 16:11 (CST)
 
 ## 10 个 Commit 汇总
 
@@ -69,7 +69,29 @@
 
 ## 异常观察
 
-_(人工dogfood后填写发现的任何问题)_
+### Issue #3 违规话术（subagent→lead透传）
+
+- code-executor handoff: "低于典型正常水平（20-40%），提示可能存在较高焦虑水平"
+- data-analyst handoff: "呈现典型的高焦虑样行为特征"、"远低于正常小鼠的20-40%参考范围"、"EPM 金标准要求每组至少6-8只"
+- lead 在用户可见输出中直接透传了以上话术，未做过滤
+- 根因：prompt 级约束（commit 24715250）未能阻止 subagent 手递中的违规话术透传；机制层（guardrail）不负责语义审查
+
+### Issue #5 阶段播报未达标
+
+- archived messages 中仅匹配到 1 个 emoji 阶段标记
+- 可能原因：播报 emoji 未被 lead 实际使用、或播报格式与 grep pattern 不匹配
+
+### Issue #6 plan.json 路径未虚拟化
+
+- metric_plan.json 中 output 字段为物理路径（/home/wangqiuyang/.../workspace/...）
+- commit 2eb1532a 的虚拟化修复可能未覆盖本次路径或已被后续改动退化
+
+### Step 6 图表补充请求未完整观测
+
+- 用户发送"需要！补充轨迹图和汇总表格图表"后，lead 取消了正在运行的 report-writer
+- 后续 lead 响应未能在 UI 中渲染（页面可能冻结）
+- LeadAgentExecutionBoundary 已在早期 bash 调用中成功阻断 1 次（code=lead_execution_boundary.bash_not_allowed）
+- G9 确认 workspace 中无 .py 文件——guardrail 有效
 
 ## 下一步建议
 
