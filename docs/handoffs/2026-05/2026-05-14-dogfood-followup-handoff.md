@@ -78,3 +78,25 @@ _(人工dogfood后填写发现的任何问题)_
 3. **如果 thinking 400 仍未消除** — 回 Task 4，可能丢字段链路不止一处
 4. **后置 Issue #9 / #11 / #12 / #13** — 不在本次修复范围，需独立设计讨论
 5. **如果所有 ✅** — 可以 merge 回 dev 分支
+
+## 阶段 1.5 LeadAgentExecutionBoundaryProvider 验证（2026-05-14）
+
+复现 thread b0d3a611 路径：
+- 步骤 1-2: 上传 EPM Subject 1 数据 + "请分析这份EPM数据"
+- 步骤 3: lead 正常反问 (Gate 1) — "仅有Subject 1的数据，无法进行组间统计分析"
+- 步骤 4: 选择 "只有 Subject 1，先看看单个被试的数据质量和轨迹可视化"
+- 步骤 5: lead 调用 set_experiment_paradigm → 尝试 bash 命令
+
+grep 验证：
+```
+$ grep "lead_execution_boundary" packages/agent/logs/langgraph.log | tail -5
+Guardrail denied: tool=bash policy=lead_execution_boundary code=lead_execution_boundary.bash_not_allowed
+Guardrail denied: tool=bash policy=lead_execution_boundary code=lead_execution_boundary.bash_not_allowed
+```
+
+结果：
+- 第 1 次 deny: lead 尝试非白名单 bash → GuardrailMiddleware 机制层阻断
+- 第 2 次 deny: lead 尝试 `python -c "from ethoinsight.parse import dump_headers; print('ok')"` → deny（不在白名单，不是 python -m ethoinsight.parse.* 格式）
+- 系统正常运行，无 import 错误，中间件链初始化成功
+
+判定：**plan 成功** — LeadAgentExecutionBoundaryProvider 在机制层阻断 lead 越权 bash 调用。白名单内命令 (python -m ethoinsight.parse.dump_headers) 正常通过。
