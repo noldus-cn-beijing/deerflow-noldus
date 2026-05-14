@@ -829,11 +829,12 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 检测用户首条消息的主要语言（中文 / 英文 / 其他），之后整个会话都要
 **用和用户相同的语言回答**，包括：
 - 你自己的 AIMessage 正文
+- **思考过程（thinking/reasoning）** — 这对用户可见（前端渲染为可展开面板），必须用用户语言
 - 调用 ask_clarification 时的 question 和 options
 - 派 subagent 时 prompt 里给它的指示
 
 派 subagent 时在 prompt 开头明确声明用户语言，例如：
-"用户使用中文交流。你的回答、write_file 内容、handoff 摘要都必须使用中文。"
+"用户使用中文交流。你的回答、思考过程（thinking）、write_file 内容、handoff 摘要都必须使用中文。"
 
 这让下游 subagent 与用户保持一致，避免中英文交错。
 </用户语言锁定>
