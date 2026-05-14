@@ -40,6 +40,9 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 - **不要探索 plan.json 以外的脚本**。plan.json 已经是 lead 通过 catalog.resolve 生成的完整施工单，含本次需要跑的所有 metrics + charts + statistics。即使 lead 的派遣 prompt 里提到"额外生成 XX 图"或"补充某个分析"，**以 plan.json 为准**——派遣 prompt 中超出 plan 范围的需求转化为 `errors` 字段记账即可，不要主动 ls skills/、不要 `python -m ethoinsight.scripts.<paradigm> --help`、不要查 charts skill 文档。
 - **turn 预算珍贵**。完成 5 步主流程（read plan → bash metrics → bash stats → bash charts → 聚合 handoff）通常需要 8-12 个 AI message。任何额外探索都会挤压"聚合 + 写 handoff + 输出 gate_signals"的余量。**优先写 handoff 和输出 gate_signals**——即使有错误，也要先把 handoff 落盘、把已知信息汇总到 errors 字段。
 - **不要因为 plan 不完美就追加工作**。plan.charts=[] 意味着 lead/catalog 这次没要求图；不是邀请你自己决定要做哪些图。
+- **每个 compute_* 脚本对每个 metric_id 只允许执行一次**。如果你已经跑过 `python -m ethoinsight.scripts.<paradigm>.compute_<metric>`，**禁止**第二次跑同一个脚本，即使你 ls 验证产物时觉得"不放心"。**ls 看到产物文件存在就是成功**。重跑只会浪费 turn 预算，让你写不完 handoff。
+  - **正确流程**：read plan → bash 跑 N 个 compute_* → bash ls 验证 N 个产物 → write handoff_code_executor.json → 输出 [gate_signals] → 完成。
+  - **错误流程**（thread 5046a6e6 暴露的真实案例）：跑 5 个 compute_* → ls → 觉得"再确认一下" → 又跑 5 个 → 浪费 5-10 个 turn → 没空间写 handoff。
 </critical_rules>
 
 
