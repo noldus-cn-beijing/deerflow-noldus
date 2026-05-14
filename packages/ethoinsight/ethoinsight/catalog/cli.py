@@ -6,7 +6,12 @@
   --raw-files-json PATH          必填（指向 JSON 数组）
   --groups-file PATH             可选
   --workspace-dir PATH           必填（物理路径，用于脚本执行）
-  --virtual-workspace-dir PATH   可选（plan.json output 虚拟路径，默认用 --workspace-dir 值）
+  --virtual-workspace-dir PATH   可选（plan.json output 虚拟路径）
+                                  fallback 顺序：
+                                    1. 显式传入的 --virtual-workspace-dir 值（如果不是物理路径）
+                                    2. 环境变量 DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE 的 key 反推
+                                       （sandbox 注入的标准 env var，详见 deerflow.sandbox.tools._build_path_env）
+                                    3. 兜底使用 --workspace-dir（非 sandbox 调试场景）
   --include METRIC_ID            可重复
   --exclude METRIC_ID            可重复
   --n-per-group INT              可选
@@ -17,16 +22,55 @@
 行为:
   成功: exit 0 + 写 plan.json
   失败: exit 1 + stderr 最后一行写 {"code": "...", "message": "...", "details": {...}}
+
+G5 回归修复（thread 8ff3be6d）:
+  sandbox replace_virtual_paths_in_command 会把命令字符串里所有 /mnt/user-data/...
+  字面量翻译成物理路径——包括 --virtual-workspace-dir 参数的值。修复方案是改用
+  sandbox 已经注入的 env var 作为虚拟路径来源（env var 的 key 名稳定编码虚拟路径，
+  即便 value 是物理路径，key 本身仍可反推回虚拟字符串）。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from ethoinsight.catalog.resolve import ResolveError, plan_to_dict, resolve
+
+
+# 与 deerflow.sandbox.tools._build_path_env 完全一致的命名规则：
+# 虚拟路径 /mnt/user-data/workspace → env key DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE
+_WORKSPACE_VIRTUAL_PATH = "/mnt/user-data/workspace"
+_WORKSPACE_ENV_KEY = "DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE"
+
+
+def _resolve_virtual_workspace_dir(arg_value: str | None, workspace_dir: str) -> str:
+    """决定 plan.json output 字段用的"虚拟"路径，三级 fallback：
+
+    1. 如果 arg_value 已经是虚拟路径前缀（/mnt/user-data/...），用 arg_value
+       （兼容直接命令行调试时显式传入虚拟字符串的场景）
+    2. 否则如果 env var DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE 存在，
+       用 _WORKSPACE_VIRTUAL_PATH（env key 反推的稳定虚拟字符串）
+    3. 否则兜底用 workspace_dir（非 sandbox 调试场景，行为同 commit 2eb1532a 之前）
+
+    为什么 env var 的 VALUE 不直接当虚拟路径用：
+      sandbox 注入的 env var value 是物理路径（用于 Python 脚本运行时读真实文件），
+      不是虚拟路径。但 env var 的 KEY 是稳定的——它的存在本身就证明"sandbox 抽象在生效"，
+      此时我们可以用代码中硬编码的虚拟路径常量 _WORKSPACE_VIRTUAL_PATH 作为返回值。
+    """
+    # 1) 显式传入的虚拟路径优先（直接调试场景）
+    if arg_value and arg_value.startswith(_WORKSPACE_VIRTUAL_PATH):
+        return arg_value
+
+    # 2) sandbox 模式：env var 存在 → 用硬编码虚拟路径
+    if _WORKSPACE_ENV_KEY in os.environ:
+        return _WORKSPACE_VIRTUAL_PATH
+
+    # 3) 非 sandbox 调试场景：兜底物理 workspace_dir
+    return arg_value or workspace_dir
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -90,6 +134,11 @@ def main(argv: list[str] | None = None) -> int:
             {"path": args.raw_files_json},
         )
 
+    # 三级 fallback 决定 plan.json output 用的虚拟路径
+    virtual_workspace_dir = _resolve_virtual_workspace_dir(
+        args.virtual_workspace_dir, args.workspace_dir
+    )
+
     try:
         plan = resolve(
             paradigm=args.paradigm,
@@ -103,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
             groups_file=args.groups_file,
             columns_file=args.columns_file,
             ev19_template=args.ev19_template,
-            virtual_workspace_dir=args.virtual_workspace_dir or args.workspace_dir,
+            virtual_workspace_dir=virtual_workspace_dir,
         )
     except ResolveError as e:
         return _emit_error(e.code, str(e), e.details)
