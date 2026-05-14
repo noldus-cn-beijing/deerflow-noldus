@@ -150,7 +150,7 @@ fi
 # Extra flags for uvicorn/langgraph
 LANGGRAPH_EXTRA_FLAGS="--no-reload"
 if $DEV_MODE && ! $DAEMON_MODE; then
-    GATEWAY_EXTRA_FLAGS="--reload --reload-include='*.yaml' --reload-include='.env' --reload-exclude='*.pyc' --reload-exclude='__pycache__' --reload-exclude='sandbox/*' --reload-exclude='.deer-flow/*'"
+    GATEWAY_EXTRA_FLAGS="--reload --reload-dir='app' --reload-dir='packages/harness' --reload-include='*.yaml' --reload-include='.env' --reload-exclude='*.pyc' --reload-exclude='__pycache__' --reload-exclude='sandbox/**' --reload-exclude='.deer-flow/**'"
 else
     GATEWAY_EXTRA_FLAGS=""
 fi
