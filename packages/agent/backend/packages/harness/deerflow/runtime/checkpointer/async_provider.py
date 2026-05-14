@@ -54,9 +54,13 @@ async def _async_checkpointer(config) -> AsyncIterator[Checkpointer]:
         except ImportError as exc:
             raise ImportError(SQLITE_INSTALL) from exc
 
+        from deerflow.runtime.checkpointer.deerflow_saver import (
+            DeerFlowAsyncSqliteSaver,
+        )
+
         conn_str = resolve_sqlite_conn_str(config.connection_string or "store.db")
         await asyncio.to_thread(ensure_sqlite_parent_dir, conn_str)
-        async with AsyncSqliteSaver.from_conn_string(conn_str) as saver:
+        async with DeerFlowAsyncSqliteSaver.from_conn_string(conn_str) as saver:
             await saver.setup()
             yield saver
         return
@@ -98,9 +102,13 @@ async def _async_checkpointer_from_database(db_config) -> AsyncIterator[Checkpoi
         except ImportError as exc:
             raise ImportError(SQLITE_INSTALL) from exc
 
+        from deerflow.runtime.checkpointer.deerflow_saver import (
+            DeerFlowAsyncSqliteSaver,
+        )
+
         conn_str = db_config.checkpointer_sqlite_path
         ensure_sqlite_parent_dir(conn_str)
-        async with AsyncSqliteSaver.from_conn_string(conn_str) as saver:
+        async with DeerFlowAsyncSqliteSaver.from_conn_string(conn_str) as saver:
             await saver.setup()
             yield saver
         return

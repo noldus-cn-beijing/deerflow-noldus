@@ -264,12 +264,12 @@ class TestAsyncCheckpointer:
         mock_saver_cls = MagicMock()
         mock_saver_cls.from_conn_string.return_value = mock_cm
 
-        mock_module = MagicMock()
-        mock_module.AsyncSqliteSaver = mock_saver_cls
-
         with (
             patch("deerflow.runtime.checkpointer.async_provider.get_app_config", return_value=mock_config),
-            patch.dict(sys.modules, {"langgraph.checkpoint.sqlite.aio": mock_module}),
+            patch(
+                "deerflow.runtime.checkpointer.deerflow_saver.DeerFlowAsyncSqliteSaver.from_conn_string",
+                mock_saver_cls.from_conn_string,
+            ),
             patch("deerflow.runtime.checkpointer.async_provider.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
             patch(
                 "deerflow.runtime.checkpointer.async_provider.resolve_sqlite_conn_str",
