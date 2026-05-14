@@ -3,16 +3,21 @@
 CLI: python -m ethoinsight.scripts.shoaling.plot_box_iid \
        --inputs <inputs.json> --groups <groups.json> --output <png>
 """
+
 from __future__ import annotations
-import sys, json
+import sys
 from ethoinsight.charts import box_plot
 from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 from ethoinsight.parse import parse_batch
 from ethoinsight.scripts._cli import (
-    emit_result, make_plot_parser, read_groups_json, read_inputs_json,
+    emit_result,
+    make_plot_parser,
+    read_groups_json,
+    read_inputs_json,
 )
 
 METRICS_TO_PLOT = ["inter_individual_distance", "nearest_neighbor_distance"]
+
 
 def main(argv=None):
     ap = make_plot_parser(description=__doc__, supports_groups=True)
@@ -24,9 +29,12 @@ def main(argv=None):
     groups = read_groups_json(args.groups) if args.groups else None
     parsed = parse_batch(paths)
     metrics = compute_paradigm_metrics(parsed, paradigm="shoaling", groups=groups)
-    output_path = box_plot(metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output)
+    output_path = box_plot(
+        metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output
+    )
     emit_result({"plot": "box_iid", "path": output_path, "metrics": METRICS_TO_PLOT})
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

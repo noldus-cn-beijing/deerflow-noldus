@@ -1,4 +1,5 @@
 """Tests for LDB (Light-Dark Box) metric functions."""
+
 from __future__ import annotations
 import numpy as np
 import pandas as pd
@@ -14,15 +15,17 @@ def _make_ldb_df(n_frames=100, *, light_pattern=None, seed=42):
     """Synthetic LDB DataFrame with light/dark zone columns and trial_time."""
     rng = np.random.default_rng(seed)
     if light_pattern is None:
-        light_pattern = [1]*30 + [0]*30 + [1]*10 + [0]*30  # starts in light
-    pattern = light_pattern[:n_frames] + [0]*max(0, n_frames-len(light_pattern))
-    return pd.DataFrame({
-        "trial_time": np.arange(n_frames) * 0.04,
-        "x_center": rng.uniform(-10, 10, n_frames),
-        "y_center": rng.uniform(-10, 10, n_frames),
-        "in_zone_light": pattern,
-        "in_zone_dark": [1-v for v in pattern],
-    })
+        light_pattern = [1] * 30 + [0] * 30 + [1] * 10 + [0] * 30  # starts in light
+    pattern = light_pattern[:n_frames] + [0] * max(0, n_frames - len(light_pattern))
+    return pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames) * 0.04,
+            "x_center": rng.uniform(-10, 10, n_frames),
+            "y_center": rng.uniform(-10, 10, n_frames),
+            "in_zone_light": pattern,
+            "in_zone_dark": [1 - v for v in pattern],
+        }
+    )
 
 
 def _build_parsed_ldb_data(
@@ -66,12 +69,12 @@ class TestComputeLightTimeRatio:
         assert result == pytest.approx(0.40)
 
     def test_all_in_light(self):
-        df = _make_ldb_df(n_frames=50, light_pattern=[1]*50)
+        df = _make_ldb_df(n_frames=50, light_pattern=[1] * 50)
         result = compute_light_time_ratio(df)
         assert result == pytest.approx(1.0)
 
     def test_all_in_dark(self):
-        df = _make_ldb_df(n_frames=50, light_pattern=[0]*50)
+        df = _make_ldb_df(n_frames=50, light_pattern=[0] * 50)
         result = compute_light_time_ratio(df)
         assert result == pytest.approx(0.0)
 
@@ -81,10 +84,12 @@ class TestComputeLightTimeRatio:
         assert result is None
 
     def test_custom_column_name(self):
-        df = pd.DataFrame({
-            "trial_time": np.arange(10) * 0.04,
-            "my_light_zone": [1, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(10) * 0.04,
+                "my_light_zone": [1, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+            }
+        )
         result = compute_light_time_ratio(df, light_zone="my_light_zone")
         assert result == pytest.approx(3 / 10)
 
@@ -119,7 +124,7 @@ class TestComputeTransitionCount:
 
     def test_no_transitions(self):
         # Always in light — no transitions
-        df = _make_ldb_df(n_frames=50, light_pattern=[1]*50)
+        df = _make_ldb_df(n_frames=50, light_pattern=[1] * 50)
         result = compute_transition_count(df)
         assert result == 0
 
@@ -159,7 +164,7 @@ class TestComputeLightLatency:
     def test_latency_when_starts_in_dark(self):
         # animal is in dark for 20 frames then enters light
         # trial_time = frame * 0.04, so first light frame = 20 → t = 0.80s
-        pattern = [0]*20 + [1]*80
+        pattern = [0] * 20 + [1] * 80
         df = _make_ldb_df(n_frames=100, light_pattern=pattern)
         result = compute_light_latency(df)
         assert result == pytest.approx(20 * 0.04)
@@ -171,7 +176,7 @@ class TestComputeLightLatency:
         assert result == pytest.approx(0.0)
 
     def test_never_enters_light_returns_none(self):
-        df = _make_ldb_df(n_frames=50, light_pattern=[0]*50)
+        df = _make_ldb_df(n_frames=50, light_pattern=[0] * 50)
         result = compute_light_latency(df)
         assert result is None
 
@@ -183,12 +188,14 @@ class TestComputeLightLatency:
     def test_latency_without_trial_time_returns_frame_index(self):
         # Without trial_time, returns frame index of first light entry
         n = 30
-        pattern = [0]*10 + [1]*20
-        df = pd.DataFrame({
-            "x_center": np.zeros(n),
-            "in_zone_light": pattern,
-            "in_zone_dark": [1-v for v in pattern],
-        })
+        pattern = [0] * 10 + [1] * 20
+        df = pd.DataFrame(
+            {
+                "x_center": np.zeros(n),
+                "in_zone_light": pattern,
+                "in_zone_dark": [1 - v for v in pattern],
+            }
+        )
         result = compute_light_latency(df)
         assert result == 10  # frame index, not time
 
@@ -245,7 +252,7 @@ class TestComputeParadigmMetricsLdb:
         from ethoinsight.metrics import compute_paradigm_metrics
 
         # animal stays in light the whole time → transitions = 0 < 4
-        df = _make_ldb_df(n_frames=200, light_pattern=[1]*200)
+        df = _make_ldb_df(n_frames=200, light_pattern=[1] * 200)
         parsed = _build_parsed_ldb_data({"Subject_1": df})
         result = compute_paradigm_metrics(parsed, "light_dark_box")
 

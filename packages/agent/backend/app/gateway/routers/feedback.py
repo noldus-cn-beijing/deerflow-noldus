@@ -12,11 +12,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.authz import require_permission
-from app.gateway.deps import get_current_user, get_feedback_repo, get_run_store
+from app.gateway.deps import get_current_user, get_feedback_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/threads", tags=["feedback"])
@@ -66,22 +66,27 @@ def _to_item(record: dict[str, Any]) -> FeedbackItem:
     "/{thread_id}/runs/{run_id}/feedback",
     response_model=FeedbackItem,
 )
-@require_permission("threads", "write", owner_check=True, require_existing=True)
+@require_permission("threads", "write", owner_check=True)
 async def submit_feedback(
     thread_id: str,
     run_id: str,
     body: FeedbackRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Submit Noldus verdict-based feedback for a specific message in a run."""
-    run_store = get_run_store(request)
-    run = await run_store.get(run_id)
-    if run is None or run.get("thread_id") != thread_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Run {run_id} not found in thread {thread_id}",
-        )
+    """Submit Noldus verdict-based feedback for a specific message in a run.
 
+    Note: 不校验 run_id 是否存在于 run_store —— 当前架构下没有任何 producer
+    往 run_store 写入（LangGraph 模式 run 由 langgraph 自己管），导致校验
+    永远 404。feedback 表是写给 SFT 飞轮用的，verdict + revised_text 才是
+    核心信息，少量脏 run_id 不影响下游训练数据筛选。
+
+    Note: 装饰器用 owner_check=True 但 **不用 require_existing=True**。
+    threads_meta 表在 LangGraph 直连模式下不会被写入（前端通过
+    langgraph-sdk 写 checkpointer.db、跳过 Gateway 的 POST /api/threads
+    路由），导致 require_existing=True 会因 row missing 永远抛 404。
+    feedback 是审计 / 训练数据写入，不是 destructive 操作，宽松校验是
+    正确语义；与 GET list_run_feedback 装饰器对齐。
+    """
     user_id = await get_current_user(request)
     feedback_repo = get_feedback_repo(request)
     record = await feedback_repo.upsert(

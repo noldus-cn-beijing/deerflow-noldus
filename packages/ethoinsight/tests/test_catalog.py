@@ -11,6 +11,7 @@ import pytest
 
 def test_schema_classes_importable():
     from ethoinsight.catalog import schema
+
     assert hasattr(schema, "MetricEntry")
     assert hasattr(schema, "Catalog")
     assert hasattr(schema, "Plan")
@@ -18,6 +19,7 @@ def test_schema_classes_importable():
 
 def test_metric_entry_minimal_construction():
     from ethoinsight.catalog.schema import MetricEntry
+
     m = MetricEntry(
         id="open_arm_time_ratio",
         script="ethoinsight.scripts.epm.compute_open_arm_time_ratio",
@@ -169,13 +171,17 @@ FST_Q6_WHITELIST = {
 }
 
 
-@pytest.mark.parametrize("paradigm,whitelist", [
-    ("epm", EPM_Q6_WHITELIST),
-    ("oft", OFT_Q6_WHITELIST),
-    ("fst", FST_Q6_WHITELIST),
-])
+@pytest.mark.parametrize(
+    "paradigm,whitelist",
+    [
+        ("epm", EPM_Q6_WHITELIST),
+        ("oft", OFT_Q6_WHITELIST),
+        ("fst", FST_Q6_WHITELIST),
+    ],
+)
 def test_catalog_default_metrics_match_q6_whitelist(paradigm, whitelist):
     from ethoinsight.catalog import load_catalog
+
     cat = load_catalog(paradigm)
     catalog_ids = {m.id for m in cat.default_metrics}
     assert catalog_ids == whitelist, (
@@ -188,6 +194,7 @@ def test_catalog_default_metrics_match_q6_whitelist(paradigm, whitelist):
 @pytest.mark.parametrize("paradigm", ["epm", "oft", "fst"])
 def test_catalog_loads_real_yaml(paradigm):
     from ethoinsight.catalog import load_catalog
+
     cat = load_catalog(paradigm)
     assert cat.paradigm == paradigm
     assert len(cat.default_metrics) > 0
@@ -199,7 +206,9 @@ def test_catalog_loads_real_yaml(paradigm):
 def _epm_columns_full() -> list[str]:
     """Returns column list that satisfies all EPM default metrics' requires_columns."""
     return [
-        "time", "x_center", "y_center",
+        "time",
+        "x_center",
+        "y_center",
         "in_zone_open_arms_center_point",
         "in_zone_closed_arms_center_point",
         "distance_moved",
@@ -293,11 +302,15 @@ def test_resolve_statistics_skipped_when_n_per_group_too_small():
         columns=_epm_columns_full(),
         raw_files=["/tmp/raw.txt"],
         workspace_dir="/tmp/workspace",
-        n_per_group=1, n_groups=1,
+        n_per_group=1,
+        n_groups=1,
     )
     assert plan.statistics is not None
     assert plan.statistics.skip_reason is not None
-    assert "n_per_group" in plan.statistics.skip_reason or "n_groups" in plan.statistics.skip_reason
+    assert (
+        "n_per_group" in plan.statistics.skip_reason
+        or "n_groups" in plan.statistics.skip_reason
+    )
 
 
 def test_resolve_plan_to_dict_serializable():
@@ -318,39 +331,50 @@ def test_resolve_plan_to_dict_serializable():
 
 # ── CLI tests ──────────────────────────────────────────────────────────────────
 
-import subprocess
-
 
 def _run_cli(args: list[str]) -> tuple[int, str, str]:
     """Run `python -m ethoinsight.catalog.resolve <args>` and capture."""
     proc = subprocess.run(
         [sys.executable, "-m", "ethoinsight.catalog.resolve", *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     return proc.returncode, proc.stdout, proc.stderr
 
 
 def test_cli_happy_path(tmp_path):
     columns_file = tmp_path / "columns.json"
-    columns_file.write_text(json.dumps({
-        "file": "raw.txt",
-        "columns": _epm_columns_full(),
-        "n_subjects": 1,
-        "duration_s": 300.0,
-    }), encoding="utf-8")
+    columns_file.write_text(
+        json.dumps(
+            {
+                "file": "raw.txt",
+                "columns": _epm_columns_full(),
+                "n_subjects": 1,
+                "duration_s": 300.0,
+            }
+        ),
+        encoding="utf-8",
+    )
 
     raw_files_json = tmp_path / "raw_files.json"
     raw_files_json.write_text(json.dumps(["/tmp/raw.txt"]), encoding="utf-8")
 
     output = tmp_path / "plan.json"
 
-    rc, stdout, stderr = _run_cli([
-        "--paradigm", "epm",
-        "--columns-file", str(columns_file),
-        "--raw-files-json", str(raw_files_json),
-        "--workspace-dir", str(tmp_path),
-        "--output", str(output),
-    ])
+    rc, stdout, stderr = _run_cli(
+        [
+            "--paradigm",
+            "epm",
+            "--columns-file",
+            str(columns_file),
+            "--raw-files-json",
+            str(raw_files_json),
+            "--workspace-dir",
+            str(tmp_path),
+            "--output",
+            str(output),
+        ]
+    )
     assert rc == 0, f"stderr: {stderr}"
     plan = json.loads(output.read_text())
     assert plan["paradigm"] == "epm"
@@ -364,13 +388,20 @@ def test_cli_unknown_paradigm_exit1_with_json(tmp_path):
     raw_files_json = tmp_path / "raw_files.json"
     raw_files_json.write_text(json.dumps(["/tmp/raw.txt"]), encoding="utf-8")
 
-    rc, stdout, stderr = _run_cli([
-        "--paradigm", "totally_made_up",
-        "--columns-file", str(columns_file),
-        "--raw-files-json", str(raw_files_json),
-        "--workspace-dir", str(tmp_path),
-        "--output", str(tmp_path / "plan.json"),
-    ])
+    rc, stdout, stderr = _run_cli(
+        [
+            "--paradigm",
+            "totally_made_up",
+            "--columns-file",
+            str(columns_file),
+            "--raw-files-json",
+            str(raw_files_json),
+            "--workspace-dir",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "plan.json"),
+        ]
+    )
     assert rc == 1
     err = json.loads(stderr.strip().splitlines()[-1])
     assert err["code"] == "unknown_paradigm"
@@ -378,18 +409,28 @@ def test_cli_unknown_paradigm_exit1_with_json(tmp_path):
 
 def test_cli_user_include_unknown_exit1(tmp_path):
     columns_file = tmp_path / "columns.json"
-    columns_file.write_text(json.dumps({"columns": _epm_columns_full()}), encoding="utf-8")
+    columns_file.write_text(
+        json.dumps({"columns": _epm_columns_full()}), encoding="utf-8"
+    )
     raw_files_json = tmp_path / "raw_files.json"
     raw_files_json.write_text(json.dumps(["/tmp/raw.txt"]), encoding="utf-8")
 
-    rc, _, stderr = _run_cli([
-        "--paradigm", "epm",
-        "--columns-file", str(columns_file),
-        "--raw-files-json", str(raw_files_json),
-        "--workspace-dir", str(tmp_path),
-        "--output", str(tmp_path / "plan.json"),
-        "--include", "nonexistent_metric_xyz",
-    ])
+    rc, _, stderr = _run_cli(
+        [
+            "--paradigm",
+            "epm",
+            "--columns-file",
+            str(columns_file),
+            "--raw-files-json",
+            str(raw_files_json),
+            "--workspace-dir",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "plan.json"),
+            "--include",
+            "nonexistent_metric_xyz",
+        ]
+    )
     assert rc == 1
     err = json.loads(stderr.strip().splitlines()[-1])
     assert err["code"] == "unknown_metric"
@@ -399,7 +440,9 @@ def test_cli_user_include_unknown_exit1(tmp_path):
 # ── Anti-regression: all catalog scripts must be importable ───────────────────
 
 
-@pytest.mark.parametrize("paradigm", ["epm", "oft", "fst", "tst", "ldb", "zero_maze", "shoaling"])
+@pytest.mark.parametrize(
+    "paradigm", ["epm", "oft", "fst", "tst", "ldb", "zero_maze", "shoaling"]
+)
 def test_all_catalog_scripts_are_importable(paradigm):
     """catalog 里声明的 script dotted path 必须真的能 import 到一个有 main() 的模块。"""
     import importlib

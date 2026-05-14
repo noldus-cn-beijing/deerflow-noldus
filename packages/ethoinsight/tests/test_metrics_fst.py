@@ -1,4 +1,5 @@
 """Tests for FST (Forced Swim Test) immobility metric functions."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,10 +25,12 @@ def _make_immobility_df(n_frames=100, *, pattern=None, mobility_col="mobility_st
         pattern = [0] * 10 + [1] * 30 + [0] * 10 + [1] * 40 + [0] * 5 + [1] * 5
     # Truncate or pad with 1s (mobile) to reach n_frames
     pattern = list(pattern[:n_frames]) + [1] * max(0, n_frames - len(pattern))
-    return pd.DataFrame({
-        "trial_time": np.arange(n_frames) * 0.04,
-        mobility_col: pattern,
-    })
+    return pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames) * 0.04,
+            mobility_col: pattern,
+        }
+    )
 
 
 # ============================================================================
@@ -63,9 +66,11 @@ class TestComputeImmobilityTimeFst:
 
     def test_no_trial_time_returns_frame_count(self):
         # Without trial_time, should return raw frame count
-        df = pd.DataFrame({
-            "mobility_state": [0, 0, 1, 1, 0, 0, 0, 1],
-        })
+        df = pd.DataFrame(
+            {
+                "mobility_state": [0, 0, 1, 1, 0, 0, 0, 1],
+            }
+        )
         result = compute_immobility_time_fst(df)
         assert result == pytest.approx(5.0)  # 5 immobile frames
 
@@ -87,7 +92,9 @@ class TestComputeImmobilityLatencyFst:
         # First immobile frame is frame 10 (0-indexed), trial_time = 10 * 0.04 = 0.4s
         df = _make_immobility_df(n_frames=100)
         result = compute_immobility_latency_fst(df)
-        assert result == pytest.approx(0.0)  # frame 0 is immobile (pattern starts with 0s)
+        assert result == pytest.approx(
+            0.0
+        )  # frame 0 is immobile (pattern starts with 0s)
 
     def test_latency_when_first_bout_starts_later(self):
         # 10 mobile frames, then immobile

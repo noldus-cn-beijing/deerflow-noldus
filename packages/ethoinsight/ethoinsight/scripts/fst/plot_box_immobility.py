@@ -30,7 +30,9 @@ METRICS_TO_PLOT = ["immobility_time", "immobility_bout_count"]
 def main(argv: list[str] | None = None) -> int:
     args = make_plot_parser(description=__doc__, supports_groups=True).parse_args(argv)
     if not args.inputs:
-        print("error: plot_box_immobility requires --inputs (multi-file)", file=sys.stderr)
+        print(
+            "error: plot_box_immobility requires --inputs (multi-file)", file=sys.stderr
+        )
         return 2
 
     paths = read_inputs_json(args.inputs)
@@ -39,8 +41,12 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parse_batch(paths)
     metrics = compute_paradigm_metrics(parsed, paradigm="forced_swim", groups=groups)
 
-    output_path = box_plot(metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output)
-    emit_result({"plot": "box_immobility", "path": output_path, "metrics": METRICS_TO_PLOT})
+    output_path = box_plot(
+        metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output
+    )
+    emit_result(
+        {"plot": "box_immobility", "path": output_path, "metrics": METRICS_TO_PLOT}
+    )
     return 0
 
 

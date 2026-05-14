@@ -34,14 +34,16 @@ def _make_zm_df(
     # Pad or trim to n_frames
     pat = (open_pattern + [0] * max(0, n_frames - len(open_pattern)))[:n_frames]
 
-    return pd.DataFrame({
-        "trial_time": np.arange(n_frames) * 0.04,
-        "x_center": rng.uniform(-10, 10, n_frames),
-        "y_center": rng.uniform(-10, 10, n_frames),
-        "distance_moved": rng.uniform(0, 5, n_frames),
-        "in_zone_open_1": [v for v in pat],
-        "in_zone_closed_1": [1 - v for v in pat],
-    })
+    return pd.DataFrame(
+        {
+            "trial_time": np.arange(n_frames) * 0.04,
+            "x_center": rng.uniform(-10, 10, n_frames),
+            "y_center": rng.uniform(-10, 10, n_frames),
+            "distance_moved": rng.uniform(0, 5, n_frames),
+            "in_zone_open_1": [v for v in pat],
+            "in_zone_closed_1": [1 - v for v in pat],
+        }
+    )
 
 
 def _build_parsed_zm_data(
@@ -118,13 +120,15 @@ class TestComputeOpenZoneTimeRatio:
         from ethoinsight.metrics.zero_maze import compute_open_zone_time_ratio
 
         n = 100
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "x_center": np.zeros(n),
-            "y_center": np.zeros(n),
-            "in_zone_open_1": [1] * 25 + [0] * 75,
-            "in_zone_open_2": [0] * 75 + [1] * 25,
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "x_center": np.zeros(n),
+                "y_center": np.zeros(n),
+                "in_zone_open_1": [1] * 25 + [0] * 75,
+                "in_zone_open_2": [0] * 75 + [1] * 25,
+            }
+        )
         result = compute_open_zone_time_ratio(df)
         # 50 of 100 frames are open (non-overlapping)
         assert result == pytest.approx(0.5)
@@ -149,11 +153,13 @@ class TestComputeOpenZoneTime:
         from ethoinsight.metrics.zero_maze import compute_open_zone_time
 
         n = 60
-        df = pd.DataFrame({
-            "x_center": np.zeros(n),
-            "y_center": np.zeros(n),
-            "in_zone_open_1": [1] * 20 + [0] * 40,
-        })
+        df = pd.DataFrame(
+            {
+                "x_center": np.zeros(n),
+                "y_center": np.zeros(n),
+                "in_zone_open_1": [1] * 20 + [0] * 40,
+            }
+        )
         result = compute_open_zone_time(df)
         assert result == 20  # falls back to frame count
 
@@ -187,14 +193,16 @@ class TestComputeOpenZoneDistance:
         n = 100
         dist = rng.uniform(1, 3, n)
         open_flags = np.array([1] * 25 + [0] * 75)
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "x_center": np.zeros(n),
-            "y_center": np.zeros(n),
-            "distance_moved": dist,
-            "in_zone_open_1": open_flags,
-            "in_zone_closed_1": 1 - open_flags,
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "x_center": np.zeros(n),
+                "y_center": np.zeros(n),
+                "distance_moved": dist,
+                "in_zone_open_1": open_flags,
+                "in_zone_closed_1": 1 - open_flags,
+            }
+        )
         result = compute_open_zone_distance(df)
         expected = dist[:25].sum() / dist.sum()
         assert result == pytest.approx(expected)
@@ -210,10 +218,12 @@ class TestComputeOpenZoneDistance:
     def test_no_open_columns_returns_none(self):
         from ethoinsight.metrics.zero_maze import compute_open_zone_distance
 
-        df = pd.DataFrame({
-            "trial_time": [0, 1, 2],
-            "distance_moved": [1.0, 2.0, 3.0],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": [0, 1, 2],
+                "distance_moved": [1.0, 2.0, 3.0],
+            }
+        )
         result = compute_open_zone_distance(df)
         assert result is None
 
@@ -221,13 +231,15 @@ class TestComputeOpenZoneDistance:
         from ethoinsight.metrics.zero_maze import compute_open_zone_distance
 
         n = 50
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "x_center": np.zeros(n),
-            "y_center": np.zeros(n),
-            "distance_moved": np.zeros(n),
-            "in_zone_open_1": [1] * 25 + [0] * 25,
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "x_center": np.zeros(n),
+                "y_center": np.zeros(n),
+                "distance_moved": np.zeros(n),
+                "in_zone_open_1": [1] * 25 + [0] * 25,
+            }
+        )
         result = compute_open_zone_distance(df)
         assert result is None
 
@@ -235,13 +247,15 @@ class TestComputeOpenZoneDistance:
         from ethoinsight.metrics.zero_maze import compute_open_zone_distance
 
         n = 50
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "x_center": np.zeros(n),
-            "y_center": np.zeros(n),
-            "distance_moved": np.ones(n),
-            "in_zone_open_1": np.ones(n, dtype=int),
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "x_center": np.zeros(n),
+                "y_center": np.zeros(n),
+                "distance_moved": np.ones(n),
+                "in_zone_open_1": np.ones(n, dtype=int),
+            }
+        )
         result = compute_open_zone_distance(df)
         assert result == pytest.approx(1.0)
 
@@ -261,11 +275,13 @@ class TestComputeHesitationCount:
         # closed(20) → open(20 frames, >= min_gap=5) → closed(rest)
         n = 80
         open_pat = [0] * 20 + [1] * 20 + [0] * 40
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "in_zone_open_1": open_pat,
-            "in_zone_closed_1": [1 - v for v in open_pat],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "in_zone_open_1": open_pat,
+                "in_zone_closed_1": [1 - v for v in open_pat],
+            }
+        )
         result = compute_hesitation_count(df)
         assert result == 0
 
@@ -276,11 +292,13 @@ class TestComputeHesitationCount:
         # closed(20) → open(3 frames < 5) → closed(rest) → 1 hesitation
         n = 80
         open_pat = [0] * 20 + [1] * 3 + [0] * 57
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "in_zone_open_1": open_pat,
-            "in_zone_closed_1": [1 - v for v in open_pat],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "in_zone_open_1": open_pat,
+                "in_zone_closed_1": [1 - v for v in open_pat],
+            }
+        )
         result = compute_hesitation_count(df)
         assert result == 1
 
@@ -289,12 +307,16 @@ class TestComputeHesitationCount:
         from ethoinsight.metrics.zero_maze import compute_hesitation_count
 
         n = 120
-        open_pat = [0] * 10 + [1] * 2 + [0] * 10 + [1] * 2 + [0] * 10 + [1] * 2 + [0] * 84
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "in_zone_open_1": open_pat,
-            "in_zone_closed_1": [1 - v for v in open_pat],
-        })
+        open_pat = (
+            [0] * 10 + [1] * 2 + [0] * 10 + [1] * 2 + [0] * 10 + [1] * 2 + [0] * 84
+        )
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "in_zone_open_1": open_pat,
+                "in_zone_closed_1": [1 - v for v in open_pat],
+            }
+        )
         result = compute_hesitation_count(df)
         assert result == 3
 
@@ -321,15 +343,17 @@ class TestComputeHesitationCount:
         # With min_gap=5:  open(7 frames) → NOT hesitation (7 >= 5)
         n = 80
         open_pat = [0] * 20 + [1] * 7 + [0] * 53
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "in_zone_open_1": open_pat,
-            "in_zone_closed_1": [1 - v for v in open_pat],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "in_zone_open_1": open_pat,
+                "in_zone_closed_1": [1 - v for v in open_pat],
+            }
+        )
         result_default = compute_hesitation_count(df, min_gap_frames=5)
         result_high = compute_hesitation_count(df, min_gap_frames=10)
         assert result_default == 0  # 7 >= 5, not a hesitation
-        assert result_high == 1     # 7 < 10, counts as hesitation
+        assert result_high == 1  # 7 < 10, counts as hesitation
 
     def test_explicit_zones_parameter(self):
         """Using explicit zone parameters."""
@@ -337,11 +361,13 @@ class TestComputeHesitationCount:
 
         n = 60
         open_pat = [0] * 20 + [1] * 2 + [0] * 38
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "in_zone_open_1": open_pat,
-            "in_zone_closed_1": [1 - v for v in open_pat],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "in_zone_open_1": open_pat,
+                "in_zone_closed_1": [1 - v for v in open_pat],
+            }
+        )
         result = compute_hesitation_count(
             df,
             open_zones=["in_zone_open_1"],
@@ -416,14 +442,16 @@ class TestComputeParadigmMetricsZeroMaze:
         from ethoinsight.metrics import compute_paradigm_metrics
 
         n = 100
-        df = pd.DataFrame({
-            "trial_time": np.arange(n) * 0.04,
-            "x_center": np.zeros(n),
-            "y_center": np.zeros(n),
-            "distance_moved": np.full(n, 0.1),  # very low movement
-            "in_zone_open_1": [1] * 25 + [0] * 75,
-            "in_zone_closed_1": [0] * 25 + [1] * 75,
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": np.arange(n) * 0.04,
+                "x_center": np.zeros(n),
+                "y_center": np.zeros(n),
+                "distance_moved": np.full(n, 0.1),  # very low movement
+                "in_zone_open_1": [1] * 25 + [0] * 75,
+                "in_zone_closed_1": [0] * 25 + [1] * 75,
+            }
+        )
         parsed = _build_parsed_zm_data({"S1": df})
         result = compute_paradigm_metrics(parsed, "zero_maze")
 

@@ -39,7 +39,9 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parse_batch(paths)
     metrics = compute_paradigm_metrics(parsed, paradigm="open_field", groups=groups)
 
-    output_path = box_plot(metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output)
+    output_path = box_plot(
+        metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output
+    )
     emit_result({"plot": "box_center", "path": output_path, "metrics": METRICS_TO_PLOT})
     return 0
 

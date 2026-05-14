@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 
-import numpy as np
 import pandas as pd
 
 
@@ -27,7 +26,9 @@ def _get_open_zone_cols(df: pd.DataFrame, open_zones: list[str] | None) -> list[
     return [c for c in df.columns if re.search(r"in_zone.*open", c, re.I)]
 
 
-def _get_closed_zone_cols(df: pd.DataFrame, closed_zones: list[str] | None) -> list[str]:
+def _get_closed_zone_cols(
+    df: pd.DataFrame, closed_zones: list[str] | None
+) -> list[str]:
     """Return closed zone column names, auto-detecting if not provided."""
     if closed_zones:
         return [c for c in closed_zones if c in df.columns]

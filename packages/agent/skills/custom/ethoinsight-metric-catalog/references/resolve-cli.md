@@ -7,7 +7,8 @@
 | `--paradigm` | str | 范式 key: epm / oft / fst / tst / ldb / zero_maze / shoaling |
 | `--columns-file` | path | dump_headers 产物路径 `columns.json` |
 | `--raw-files-json` | path | JSON 数组文件 含 raw 文件绝对路径 |
-| `--workspace-dir` | path | 工作区根目录 |
+| `--workspace-dir` | path | 工作区根目录（物理路径，用于脚本执行） |
+| `--virtual-workspace-dir` | path | plan.json output 字段使用的虚拟路径（面向 downstream subagent），未提供时兜底用 `--workspace-dir` |
 | `--output` | path | 输出 plan.json 路径 |
 
 ## 可选参数

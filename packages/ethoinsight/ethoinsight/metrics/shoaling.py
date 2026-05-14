@@ -38,15 +38,17 @@ def compute_inter_individual_distance(
     dists = np.empty((n_pairs, len(times)))
     for k, (i, j) in enumerate(pair_indices):
         diff = coords[i] - coords[j]
-        dists[k] = np.sqrt((diff ** 2).sum(axis=1))
+        dists[k] = np.sqrt((diff**2).sum(axis=1))
 
-    return pd.DataFrame({
-        "trial_time": times,
-        "mean_iid": dists.mean(axis=0),
-        "std_iid": dists.std(axis=0),
-        "min_iid": dists.min(axis=0),
-        "max_iid": dists.max(axis=0),
-    })
+    return pd.DataFrame(
+        {
+            "trial_time": times,
+            "mean_iid": dists.mean(axis=0),
+            "std_iid": dists.std(axis=0),
+            "min_iid": dists.min(axis=0),
+            "max_iid": dists.max(axis=0),
+        }
+    )
 
 
 def compute_nearest_neighbor_distance(
@@ -73,10 +75,12 @@ def compute_nearest_neighbor_distance(
         others = [j for j in range(n_sub) if j != i]
         other_coords = coords[others]  # (n_others, n_time, 2)
         diff = other_coords - coords[i][np.newaxis, :, :]  # broadcast
-        dist_to_others = np.sqrt((diff ** 2).sum(axis=2))  # (n_others, n_time)
+        dist_to_others = np.sqrt((diff**2).sum(axis=2))  # (n_others, n_time)
         nnd = dist_to_others.min(axis=0)  # (n_time,)
         for t_idx, t in enumerate(times):
-            rows.append({"trial_time": t, "subject": subject_names[i], "nnd": float(nnd[t_idx])})
+            rows.append(
+                {"trial_time": t, "subject": subject_names[i], "nnd": float(nnd[t_idx])}
+            )
 
     return pd.DataFrame(rows)
 
@@ -129,13 +133,15 @@ def compute_group_polarity(
     # Trim time to match valid window
     offset = (len(times) - 1) - n_valid  # diff loses 1, convolve valid loses (window-1)
     start = 1 + (smooth_window - 1)  # skip first diff + convolution padding
-    valid_times = times[start: start + n_valid]
+    valid_times = times[start : start + n_valid]
 
     if len(valid_times) != len(mean_r):
         # Edge case: just use first n_valid times
         valid_times = times[:n_valid]
 
-    return pd.DataFrame({
-        "trial_time": valid_times,
-        "polarity": mean_r,
-    })
+    return pd.DataFrame(
+        {
+            "trial_time": valid_times,
+            "polarity": mean_r,
+        }
+    )

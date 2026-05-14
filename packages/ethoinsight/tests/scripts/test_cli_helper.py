@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -20,7 +18,7 @@ class TestEmitResult:
         assert "[result]" in captured.out
         # The JSON payload must follow the marker on the same line
         line = next(l for l in captured.out.splitlines() if l.startswith("[result]"))
-        payload = json.loads(line[len("[result] "):])
+        payload = json.loads(line[len("[result] ") :])
         assert payload == {"metric": "open_arm_time_ratio", "value": 0.35}
 
 

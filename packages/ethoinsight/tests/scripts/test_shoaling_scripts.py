@@ -7,8 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 
 def _run_script(module: str, args: list[str]) -> subprocess.CompletedProcess:
     """Run `python -m <module> <args>` and return CompletedProcess."""
@@ -31,7 +29,9 @@ class TestComputeInterIndividualDistance:
     def test_happy_path_writes_json_and_emits_result(
         self, shoaling_trajectory_files: list[Path], tmp_path: Path
     ):
-        inputs_file = _build_inputs_json(shoaling_trajectory_files, tmp_path / "inputs.json")
+        inputs_file = _build_inputs_json(
+            shoaling_trajectory_files, tmp_path / "inputs.json"
+        )
         out_path = tmp_path / "metric.json"
         result = _run_script(
             "ethoinsight.scripts.shoaling.compute_inter_individual_distance",
@@ -54,7 +54,7 @@ class TestComputeInterIndividualDistance:
         result_line = next(
             l for l in result.stdout.splitlines() if l.startswith("[result]")
         )
-        result_payload = json.loads(result_line[len("[result] "):])
+        result_payload = json.loads(result_line[len("[result] ") :])
         assert result_payload["metric"] == "inter_individual_distance"
 
     def test_missing_inputs_arg_exits_nonzero(self, tmp_path: Path):
@@ -88,7 +88,9 @@ class TestComputeInterIndividualDistance:
 
 class TestComputeNearestNeighborDistance:
     def test_happy_path(self, shoaling_trajectory_files: list[Path], tmp_path: Path):
-        inputs_file = _build_inputs_json(shoaling_trajectory_files, tmp_path / "inputs.json")
+        inputs_file = _build_inputs_json(
+            shoaling_trajectory_files, tmp_path / "inputs.json"
+        )
         out_path = tmp_path / "metric.json"
         result = _run_script(
             "ethoinsight.scripts.shoaling.compute_nearest_neighbor_distance",
@@ -105,7 +107,9 @@ class TestComputeNearestNeighborDistance:
 
 class TestComputeGroupPolarity:
     def test_happy_path(self, shoaling_trajectory_files: list[Path], tmp_path: Path):
-        inputs_file = _build_inputs_json(shoaling_trajectory_files, tmp_path / "inputs.json")
+        inputs_file = _build_inputs_json(
+            shoaling_trajectory_files, tmp_path / "inputs.json"
+        )
         out_path = tmp_path / "metric.json"
         result = _run_script(
             "ethoinsight.scripts.shoaling.compute_group_polarity",
@@ -121,9 +125,13 @@ class TestComputeGroupPolarity:
 
 
 class TestPlotBoxIid:
-    def test_plot_without_groups(self, shoaling_trajectory_files: list[Path], tmp_path: Path):
+    def test_plot_without_groups(
+        self, shoaling_trajectory_files: list[Path], tmp_path: Path
+    ):
         """Plot without groups uses all subjects in a default group."""
-        inputs_file = _build_inputs_json(shoaling_trajectory_files, tmp_path / "inputs.json")
+        inputs_file = _build_inputs_json(
+            shoaling_trajectory_files, tmp_path / "inputs.json"
+        )
         out_path = tmp_path / "box.png"
         result = _run_script(
             "ethoinsight.scripts.shoaling.plot_box_iid",
@@ -133,21 +141,36 @@ class TestPlotBoxIid:
         assert out_path.exists()
         assert out_path.stat().st_size > 1000
 
-    def test_plot_with_groups(self, shoaling_trajectory_files: list[Path], tmp_path: Path):
+    def test_plot_with_groups(
+        self, shoaling_trajectory_files: list[Path], tmp_path: Path
+    ):
         """Plot with two fake groups."""
-        inputs_file = _build_inputs_json(shoaling_trajectory_files, tmp_path / "inputs.json")
+        inputs_file = _build_inputs_json(
+            shoaling_trajectory_files, tmp_path / "inputs.json"
+        )
 
         # Split 5 fish into two groups
         groups_file = tmp_path / "groups.json"
-        groups_file.write_text(json.dumps({
-            "control": ["Fish 1", "Fish 2", "Fish 3"],
-            "treatment": ["Fish 4", "Fish 5"],
-        }))
+        groups_file.write_text(
+            json.dumps(
+                {
+                    "control": ["Fish 1", "Fish 2", "Fish 3"],
+                    "treatment": ["Fish 4", "Fish 5"],
+                }
+            )
+        )
 
         out_path = tmp_path / "box.png"
         result = _run_script(
             "ethoinsight.scripts.shoaling.plot_box_iid",
-            ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(out_path)],
+            [
+                "--inputs",
+                str(inputs_file),
+                "--groups",
+                str(groups_file),
+                "--output",
+                str(out_path),
+            ],
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert out_path.exists()
@@ -164,19 +187,34 @@ class TestPlotBoxIid:
 
 
 class TestRunGroupwiseStats:
-    def test_stats_with_two_groups(self, shoaling_trajectory_files: list[Path], tmp_path: Path):
-        inputs_file = _build_inputs_json(shoaling_trajectory_files, tmp_path / "inputs.json")
+    def test_stats_with_two_groups(
+        self, shoaling_trajectory_files: list[Path], tmp_path: Path
+    ):
+        inputs_file = _build_inputs_json(
+            shoaling_trajectory_files, tmp_path / "inputs.json"
+        )
 
         groups_file = tmp_path / "groups.json"
-        groups_file.write_text(json.dumps({
-            "control": ["Fish 1", "Fish 2", "Fish 3"],
-            "treatment": ["Fish 4", "Fish 5"],
-        }))
+        groups_file.write_text(
+            json.dumps(
+                {
+                    "control": ["Fish 1", "Fish 2", "Fish 3"],
+                    "treatment": ["Fish 4", "Fish 5"],
+                }
+            )
+        )
 
         out_path = tmp_path / "stats.json"
         result = _run_script(
             "ethoinsight.scripts.shoaling.run_groupwise_stats",
-            ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(out_path)],
+            [
+                "--inputs",
+                str(inputs_file),
+                "--groups",
+                str(groups_file),
+                "--output",
+                str(out_path),
+            ],
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         payload = json.loads(out_path.read_text())
@@ -184,8 +222,12 @@ class TestRunGroupwiseStats:
         assert "comparisons" in payload
         assert "alpha" in payload
 
-    def test_requires_groups(self, shoaling_trajectory_files: list[Path], tmp_path: Path):
-        inputs_file = _build_inputs_json(shoaling_trajectory_files, tmp_path / "inputs.json")
+    def test_requires_groups(
+        self, shoaling_trajectory_files: list[Path], tmp_path: Path
+    ):
+        inputs_file = _build_inputs_json(
+            shoaling_trajectory_files, tmp_path / "inputs.json"
+        )
         result = _run_script(
             "ethoinsight.scripts.shoaling.run_groupwise_stats",
             ["--inputs", str(inputs_file), "--output", str(tmp_path / "stats.json")],

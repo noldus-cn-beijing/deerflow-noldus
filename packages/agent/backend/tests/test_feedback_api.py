@@ -136,8 +136,9 @@ async def test_upstream_rating_only_path_still_works(repo: FeedbackRepository):
 # Router integration tests
 # ---------------------------------------------------------------------------
 
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
+
+from fastapi.testclient import TestClient
 
 
 def _make_client_with_mocks(
@@ -245,33 +246,32 @@ def test_post_with_csrf_returns_200_and_persists():
         client.app.dependency_overrides.clear()
 
 
-def test_post_run_not_in_thread_returns_404():
-    """R4: run_id 存在但属于另一 thread → 404。"""
-    runs = {"r1": {"thread_id": "other-thread"}}
-    client, _ = _make_client_with_mocks(runs=runs)
+def test_post_accepts_arbitrary_run_id_no_run_store_check():
+    """R4 (updated 2026-05-13): feedback 接口不再校验 run_id 是否在 run_store。
+
+    原因：当前架构下没有任何 producer 往 run_store 写入（LangGraph 模式 run
+    由 langgraph 自管），原"run 不存在 → 404"分支永远命中、前端反馈按钮
+    100% 失败。修复后任意 run_id 都接受 —— feedback 表的核心价值是收集
+    verdict + revised_text 给 SFT 飞轮，run_id 只是关联标识。
+
+    本测试同时取代旧的 test_post_run_not_in_thread_returns_404 和
+    test_post_nonexistent_run_returns_404。
+    """
+    # run_store 是空的：任何 run_id 都拿不到 run 记录
+    client, repo = _make_client_with_mocks(runs={})
     try:
         client.cookies.set("csrf_token", "test-token")
         res = client.post(
-            "/api/threads/t1/runs/r1/feedback",
+            "/api/threads/t1/runs/nonexistent-run-id/feedback",
             headers={"X-CSRF-Token": "test-token"},
             json={"message_id": "m1", "verdict": "correct"},
         )
-        assert res.status_code == 404, res.text
-    finally:
-        client.app.dependency_overrides.clear()
-
-
-def test_post_nonexistent_run_returns_404():
-    """R5: run_id 不存在 → 404。"""
-    client, _ = _make_client_with_mocks(runs={})  # 任何 run_id 返回 None
-    try:
-        client.cookies.set("csrf_token", "test-token")
-        res = client.post(
-            "/api/threads/t1/runs/r1/feedback",
-            headers={"X-CSRF-Token": "test-token"},
-            json={"message_id": "m1", "verdict": "correct"},
-        )
-        assert res.status_code == 404, res.text
+        assert res.status_code == 200, res.text
+        repo.upsert.assert_awaited_once()
+        kwargs = repo.upsert.await_args.kwargs
+        assert kwargs["thread_id"] == "t1"
+        assert kwargs["run_id"] == "nonexistent-run-id"
+        assert kwargs["verdict"] == "correct"
     finally:
         client.app.dependency_overrides.clear()
 

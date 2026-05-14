@@ -41,6 +41,33 @@ _DEFAULT_BILLING_HEADER = "x-anthropic-billing-header: cc_version=2.1.85.351; cc
 OAUTH_BILLING_HEADER = os.environ.get("ANTHROPIC_BILLING_HEADER", _DEFAULT_BILLING_HEADER)
 
 
+def _strip_malformed_thinking_blocks(messages: list[dict]) -> list[dict]:
+    """Remove thinking blocks that lack the 'thinking' key (signature_delta artifact).
+
+    langchain_anthropic's streaming handler creates a separate content block from
+    signature_delta events with type="thinking" but no "thinking" key.  When these
+    survive through the checkpointer and are sent back as conversation history,
+    the API rejects them with 400 "missing field thinking".
+
+    This function strips only the malformed blocks; valid thinking blocks that DO
+    have the "thinking" key are preserved.
+
+    Args:
+        messages: List of message dicts (as in the formatted payload).
+
+    Returns:
+        The same list (mutated in place), with malformed blocks removed.
+    """
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            msg["content"] = [
+                b for b in content
+                if not (isinstance(b, dict) and b.get("type") == "thinking" and "thinking" not in b)
+            ]
+    return messages
+
+
 class ClaudeChatModel(ChatAnthropic):
     """ChatAnthropic with OAuth Bearer auth, prompt caching, and smart thinking.
 
@@ -138,8 +165,18 @@ class ClaudeChatModel(ChatAnthropic):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> dict:
-        """Override to inject prompt caching, thinking budget, and OAuth billing."""
+        """Override to inject prompt caching, thinking budget, and OAuth billing.
+
+        Also strips malformed thinking blocks (type="thinking" without "thinking" key)
+        produced by langchain_anthropic's streaming handler when it creates a separate
+        content block from signature_delta events.  Those blocks survive through the
+        checkpointer and cause 400 "missing field thinking" errors from the API on
+        subsequent turns.
+        """
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        # Strip thinking blocks that lack the 'thinking' key (signature_delta artifact).
+        _strip_malformed_thinking_blocks(payload.get("messages", []))
 
         if self._is_oauth:
             self._apply_oauth_billing(payload)

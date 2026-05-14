@@ -10,6 +10,7 @@ import os
 import time
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
@@ -28,18 +29,20 @@ _DEFAULT_OUTPUT_DIR = "/tmp/ethoinsight"
 
 
 def _setup_style() -> None:
-    plt.rcParams.update({
-        "font.family": "sans-serif",
-        "font.size": 10,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.linewidth": 0.8,
-        "xtick.major.width": 0.8,
-        "ytick.major.width": 0.8,
-        "figure.dpi": 100,
-        "savefig.dpi": 300,
-        "savefig.bbox": "tight",
-    })
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.size": 10,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "axes.linewidth": 0.8,
+            "xtick.major.width": 0.8,
+            "ytick.major.width": 0.8,
+            "figure.dpi": 100,
+            "savefig.dpi": 300,
+            "savefig.bbox": "tight",
+        }
+    )
 
 
 def _resolve_output_path(output_path: str | None, prefix: str) -> str:
@@ -97,7 +100,9 @@ def box_plot(
         groups, values = _extract_group_data(metrics, mname)
         if not groups:
             ax.set_title(mname)
-            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes
+            )
             continue
         bp = ax.boxplot(values, tick_labels=groups, patch_artist=True, widths=0.6)
         for i, patch in enumerate(bp["boxes"]):
@@ -160,9 +165,17 @@ def bar_chart(
             continue
 
         x = np.arange(len(groups))
-        bars = ax.bar(x, means, yerr=errors, capsize=4, width=0.6,
-                       color=[PALETTE[i % len(PALETTE)] for i in range(len(groups))],
-                       alpha=0.8, edgecolor="black", linewidth=0.5)
+        bars = ax.bar(
+            x,
+            means,
+            yerr=errors,
+            capsize=4,
+            width=0.6,
+            color=[PALETTE[i % len(PALETTE)] for i in range(len(groups))],
+            alpha=0.8,
+            edgecolor="black",
+            linewidth=0.5,
+        )
         ax.set_xticks(x)
         ax.set_xticklabels(groups)
         ax.set_title(mname.replace("_", " ").title())
@@ -239,8 +252,14 @@ def trajectory_plot(
     fig, ax = plt.subplots(figsize=(8, 6))
 
     if "x_center" not in df.columns or "y_center" not in df.columns:
-        ax.text(0.5, 0.5, "No position data", ha="center", va="center",
-                transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No position data",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         path = _resolve_output_path(output_path, "trajectory")
         fig.savefig(path)
         plt.close(fig)
@@ -250,13 +269,19 @@ def trajectory_plot(
         groups = df[color_by].unique()
         for i, grp in enumerate(groups):
             sub = df[df[color_by] == grp]
-            ax.plot(sub["x_center"], sub["y_center"],
-                    alpha=0.5, linewidth=0.5,
-                    color=PALETTE[i % len(PALETTE)], label=str(grp))
+            ax.plot(
+                sub["x_center"],
+                sub["y_center"],
+                alpha=0.5,
+                linewidth=0.5,
+                color=PALETTE[i % len(PALETTE)],
+                label=str(grp),
+            )
         ax.legend(fontsize=8, loc="upper right")
     else:
-        ax.plot(df["x_center"], df["y_center"], alpha=0.5, linewidth=0.5,
-                color=PALETTE[0])
+        ax.plot(
+            df["x_center"], df["y_center"], alpha=0.5, linewidth=0.5, color=PALETTE[0]
+        )
 
     ax.set_xlabel("X (position)")
     ax.set_ylabel("Y (position)")
@@ -281,15 +306,19 @@ def timeseries_plot(
     fig, ax = plt.subplots(figsize=(10, 4))
 
     if x_col not in timeseries_df.columns or y_col not in timeseries_df.columns:
-        ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                transform=ax.transAxes)
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
         path = _resolve_output_path(output_path, "timeseries")
         fig.savefig(path)
         plt.close(fig)
         return path
 
-    ax.plot(timeseries_df[x_col], timeseries_df[y_col],
-            linewidth=0.8, color=PALETTE[0], alpha=0.8)
+    ax.plot(
+        timeseries_df[x_col],
+        timeseries_df[y_col],
+        linewidth=0.8,
+        color=PALETTE[0],
+        alpha=0.8,
+    )
     ax.set_xlabel("Time (s)")
     ax.set_ylabel(y_col.replace("_", " ").title())
     ax.set_title(y_col.replace("_", " ").title())
@@ -317,8 +346,9 @@ def add_significance_markers(ax: plt.Axes, comparisons: list[dict]) -> None:
         text = comp.get("text", _p_to_stars(p))
 
         y = y_max + step * (i + 1)
-        ax.plot([x1, x1, x2, x2], [y - step * 0.2, y, y, y - step * 0.2],
-                lw=0.8, c="black")
+        ax.plot(
+            [x1, x1, x2, x2], [y - step * 0.2, y, y, y - step * 0.2], lw=0.8, c="black"
+        )
         ax.text((x1 + x2) / 2, y, text, ha="center", va="bottom", fontsize=9)
 
     # Extend y-axis to fit markers
@@ -347,7 +377,9 @@ def raincloud_plot(
         groups, values = _extract_group_data(metrics, mname)
         if not groups or all(len(v) == 0 for v in values):
             ax.set_title(mname)
-            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes
+            )
             continue
 
         positions = np.arange(len(groups))
@@ -358,26 +390,47 @@ def raincloud_plot(
             color = PALETTE[i % len(PALETTE)]
 
             # Half-violin (right side only)
-            parts = ax.violinplot([vals_arr], positions=[positions[i]], showmeans=False,
-                                  showmedians=False, showextrema=False, widths=0.6)
+            parts = ax.violinplot(
+                [vals_arr],
+                positions=[positions[i]],
+                showmeans=False,
+                showmedians=False,
+                showextrema=False,
+                widths=0.6,
+            )
             for body in parts.get("bodies", []):
                 m_path = body.get_paths()[0]
-                m_path.vertices[:, 0] = np.clip(m_path.vertices[:, 0], positions[i], positions[i] + 0.4)
+                m_path.vertices[:, 0] = np.clip(
+                    m_path.vertices[:, 0], positions[i], positions[i] + 0.4
+                )
                 body.set_facecolor(color)
                 body.set_alpha(0.4)
 
             # Box plot (narrow, center)
-            bp = ax.boxplot([vals_arr], positions=[positions[i]], widths=0.12,
-                            patch_artist=True, showfliers=False,
-                            boxprops=dict(facecolor=color, alpha=0.8),
-                            medianprops=dict(color="white", linewidth=1.5),
-                            whiskerprops=dict(linewidth=0.8),
-                            capprops=dict(linewidth=0.8))
+            bp = ax.boxplot(
+                [vals_arr],
+                positions=[positions[i]],
+                widths=0.12,
+                patch_artist=True,
+                showfliers=False,
+                boxprops=dict(facecolor=color, alpha=0.8),
+                medianprops=dict(color="white", linewidth=1.5),
+                whiskerprops=dict(linewidth=0.8),
+                capprops=dict(linewidth=0.8),
+            )
 
             # Jittered scatter (left side)
             jitter = np.random.default_rng(42).uniform(-0.15, -0.02, size=len(vals_arr))
-            ax.scatter(positions[i] + jitter, vals_arr, s=15, color=color,
-                       alpha=0.7, edgecolor="white", linewidth=0.3, zorder=3)
+            ax.scatter(
+                positions[i] + jitter,
+                vals_arr,
+                s=15,
+                color=color,
+                alpha=0.7,
+                edgecolor="white",
+                linewidth=0.3,
+                zorder=3,
+            )
 
         ax.set_xticks(positions)
         ax.set_xticklabels(groups)
@@ -418,7 +471,9 @@ def beeswarm_plot(
         groups, values = _extract_group_data(metrics, mname)
         if not groups or all(len(v) == 0 for v in values):
             ax.set_title(mname)
-            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes
+            )
             continue
 
         # Build DataFrame for seaborn
@@ -429,8 +484,16 @@ def beeswarm_plot(
         df = pd.DataFrame(rows)
 
         # Swarm plot
-        sns.swarmplot(data=df, x="group", y="value", ax=ax, size=6,
-                      palette=PALETTE[:len(groups)], alpha=0.8, zorder=3)
+        sns.swarmplot(
+            data=df,
+            x="group",
+            y="value",
+            ax=ax,
+            size=6,
+            palette=PALETTE[: len(groups)],
+            alpha=0.8,
+            zorder=3,
+        )
 
         # Mean ± SEM overlay
         for i, (grp, vals) in enumerate(zip(groups, values)):
@@ -438,7 +501,11 @@ def beeswarm_plot(
                 continue
             vals_arr = np.array(vals, dtype=float)
             mean = np.mean(vals_arr)
-            sem = np.std(vals_arr, ddof=1) / np.sqrt(len(vals_arr)) if len(vals_arr) > 1 else 0
+            sem = (
+                np.std(vals_arr, ddof=1) / np.sqrt(len(vals_arr))
+                if len(vals_arr) > 1
+                else 0
+            )
             ax.hlines(mean, i - 0.25, i + 0.25, color="black", linewidth=1.5, zorder=4)
             ax.vlines(i, mean - sem, mean + sem, color="black", linewidth=1.2, zorder=4)
 
@@ -486,8 +553,14 @@ def correlogram(
 
     if len(all_metrics) < 2:
         fig, ax = plt.subplots(figsize=(6, 5))
-        ax.text(0.5, 0.5, "Need ≥2 metrics for correlogram",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "Need ≥2 metrics for correlogram",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         path = _resolve_output_path(output_path, "correlogram")
         fig.savefig(path)
         plt.close(fig)
@@ -504,7 +577,9 @@ def correlogram(
     fig, ax = plt.subplots(figsize=(max(6, len(corr) * 0.8), max(5, len(corr) * 0.7)))
     cmap = plt.cm.RdBu_r
 
-    im = ax.imshow(corr.where(~mask, np.nan).values, cmap=cmap, vmin=-1, vmax=1, aspect="auto")
+    im = ax.imshow(
+        corr.where(~mask, np.nan).values, cmap=cmap, vmin=-1, vmax=1, aspect="auto"
+    )
     fig.colorbar(im, ax=ax, shrink=0.8, label="Pearson r")
 
     # Labels
@@ -523,8 +598,9 @@ def correlogram(
             if np.isnan(val):
                 continue
             color = "white" if abs(val) > 0.6 else "black"
-            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
-                    fontsize=7, color=color)
+            ax.text(
+                j, i, f"{val:.2f}", ha="center", va="center", fontsize=7, color=color
+            )
 
     ax.set_title("Metric Correlation Matrix")
     fig.tight_layout()
@@ -565,10 +641,12 @@ def _add_significance_from_stats(
         g1 = comp.get("group1", "")
         g2 = comp.get("group2", "")
         if g1 in groups and g2 in groups:
-            markers.append({
-                "group1": groups.index(g1),
-                "group2": groups.index(g2),
-                "p_value": comp.get("p_value", 1.0),
-            })
+            markers.append(
+                {
+                    "group1": groups.index(g1),
+                    "group2": groups.index(g2),
+                    "p_value": comp.get("p_value", 1.0),
+                }
+            )
     if markers:
         add_significance_markers(ax, markers)

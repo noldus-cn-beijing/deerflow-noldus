@@ -96,18 +96,14 @@ def _parse_metric_list(raw: dict, key: str, source: Path) -> list[MetricEntry]:
     for i, item in enumerate(items):
         if not isinstance(item, dict):
             raise CatalogError(f"{source}: {key}[{i}] must be a mapping")
-        result.append(
-            _parse_metric_entry(item, where=f"{key}[{i}]", source=source)
-        )
+        result.append(_parse_metric_entry(item, where=f"{key}[{i}]", source=source))
     return result
 
 
 def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
     def req(field: str, expected_type: type | tuple) -> Any:
         if field not in item:
-            raise CatalogError(
-                f"{source} {where}: missing required field '{field}'"
-            )
+            raise CatalogError(f"{source} {where}: missing required field '{field}'")
         v = item[field]
         if not isinstance(v, expected_type):
             raise CatalogError(
@@ -126,9 +122,7 @@ def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
     if not isinstance(requires_columns, list) or not all(
         isinstance(c, str) for c in requires_columns
     ):
-        raise CatalogError(
-            f"{source} {where}: 'requires_columns' must be list[str]"
-        )
+        raise CatalogError(f"{source} {where}: 'requires_columns' must be list[str]")
 
     output_unit = req("output_unit", str)
     display_name_zh = req("display_name_zh", str)

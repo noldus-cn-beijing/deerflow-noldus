@@ -6,19 +6,26 @@ pyproject.toml）。YAML 校验由 loader.py 手工做。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 DirectionEnum = Literal["lower_is_anxious", "higher_is_anxious"] | None
 StatDefault = Literal["groupwise_compare", "paired_compare"]
 ChartCondition = str  # e.g. "always", "n_per_group >= 3"
 
-ALLOWED_DIRECTIONS: frozenset[str | None] = frozenset({
-    "lower_is_anxious", "higher_is_anxious", None,
-})
-ALLOWED_STAT_DEFAULTS: frozenset[str] = frozenset({
-    "groupwise_compare", "paired_compare",
-})
+ALLOWED_DIRECTIONS: frozenset[str | None] = frozenset(
+    {
+        "lower_is_anxious",
+        "higher_is_anxious",
+        None,
+    }
+)
+ALLOWED_STAT_DEFAULTS: frozenset[str] = frozenset(
+    {
+        "groupwise_compare",
+        "paired_compare",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -31,7 +38,7 @@ class MetricEntry:
     unit_zh: str
     one_liner: str
     direction_for_anxiety: str | None  # validated against ALLOWED_DIRECTIONS
-    statistical_default: str           # validated against ALLOWED_STAT_DEFAULTS
+    statistical_default: str  # validated against ALLOWED_STAT_DEFAULTS
 
 
 @dataclass(frozen=True)
@@ -64,12 +71,16 @@ class Catalog:
 
 
 PlanReasonEnum = Literal[
-    "paradigm.default", "paradigm.required",
-    "user.include", "paradigm.optional.applicable",
+    "paradigm.default",
+    "paradigm.required",
+    "user.include",
+    "paradigm.optional.applicable",
 ]
 SkippedReasonEnum = Literal[
-    "user.exclude", "columns.missing",
-    "paradigm.not_applicable", "catalog.unknown",
+    "user.exclude",
+    "columns.missing",
+    "paradigm.not_applicable",
+    "catalog.unknown",
 ]
 
 

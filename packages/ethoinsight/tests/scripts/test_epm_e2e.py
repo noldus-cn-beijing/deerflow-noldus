@@ -22,11 +22,15 @@ from pathlib import Path
 def _run(module: str, args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", module, *args],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
-def test_epm_full_orchestration(epm_trajectory_files: list[Path], tmp_path: Path) -> None:
+def test_epm_full_orchestration(
+    epm_trajectory_files: list[Path], tmp_path: Path
+) -> None:
     """Happy path: 6 subjects * 5 metrics + box plot + groupwise stats → handoff JSON."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -38,10 +42,14 @@ def test_epm_full_orchestration(epm_trajectory_files: list[Path], tmp_path: Path
     inputs_file.write_text(json.dumps([str(p) for p in epm_trajectory_files]))
 
     groups_file = workspace / "groups.json"
-    groups_file.write_text(json.dumps({
-        "control": ["Subject 1", "Subject 2", "Subject 3"],
-        "treatment": ["Subject 4", "Subject 5", "Subject 6"],
-    }))
+    groups_file.write_text(
+        json.dumps(
+            {
+                "control": ["Subject 1", "Subject 2", "Subject 3"],
+                "treatment": ["Subject 4", "Subject 5", "Subject 6"],
+            }
+        )
+    )
 
     # ----- Step 1: per-subject compute scripts (simulate subagent loop) -----
     per_subject: dict[str, dict[str, object]] = {}
@@ -68,7 +76,14 @@ def test_epm_full_orchestration(epm_trajectory_files: list[Path], tmp_path: Path
     box_path = outputs / "epm_box.png"
     result = _run(
         "ethoinsight.scripts.epm.plot_box_open_arm",
-        ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(box_path)],
+        [
+            "--inputs",
+            str(inputs_file),
+            "--groups",
+            str(groups_file),
+            "--output",
+            str(box_path),
+        ],
     )
     assert result.returncode == 0, f"box plot failed: {result.stderr}"
     assert box_path.exists()
@@ -77,7 +92,14 @@ def test_epm_full_orchestration(epm_trajectory_files: list[Path], tmp_path: Path
     stats_path = outputs / "epm_stats.json"
     result = _run(
         "ethoinsight.scripts.epm.run_groupwise_stats",
-        ["--inputs", str(inputs_file), "--groups", str(groups_file), "--output", str(stats_path)],
+        [
+            "--inputs",
+            str(inputs_file),
+            "--groups",
+            str(groups_file),
+            "--output",
+            str(stats_path),
+        ],
     )
     assert result.returncode == 0, f"stats failed: {result.stderr}"
     stats = json.loads(stats_path.read_text())
@@ -107,7 +129,9 @@ def test_epm_full_orchestration(epm_trajectory_files: list[Path], tmp_path: Path
     assert "comparisons" in handoff["statistics"]
 
 
-def test_epm_single_subject_descriptive(epm_trajectory_file: Path, tmp_path: Path) -> None:
+def test_epm_single_subject_descriptive(
+    epm_trajectory_file: Path, tmp_path: Path
+) -> None:
     """n=1 single-subject scenario: skip stats / group plots, only run compute_* + plot_trajectory."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()

@@ -5,7 +5,8 @@
   --columns-file PATH            必填（dump_headers 产物）
   --raw-files-json PATH          必填（指向 JSON 数组）
   --groups-file PATH             可选
-  --workspace-dir PATH           必填
+  --workspace-dir PATH           必填（物理路径，用于脚本执行）
+  --virtual-workspace-dir PATH   可选（plan.json output 虚拟路径，默认用 --workspace-dir 值）
   --include METRIC_ID            可重复
   --exclude METRIC_ID            可重复
   --n-per-group INT              可选
@@ -34,6 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--columns-file", required=True)
     p.add_argument("--raw-files-json", required=True)
     p.add_argument("--workspace-dir", required=True)
+    p.add_argument("--virtual-workspace-dir", default=None)
     p.add_argument("--groups-file", default=None)
     p.add_argument("--include", action="append", default=[])
     p.add_argument("--exclude", action="append", default=[])
@@ -73,7 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     # Read raw-files-json
     try:
         raw_files = json.loads(Path(args.raw_files_json).read_text(encoding="utf-8"))
-        if not isinstance(raw_files, list) or not all(isinstance(p, str) for p in raw_files):
+        if not isinstance(raw_files, list) or not all(
+            isinstance(p, str) for p in raw_files
+        ):
             return _emit_error(
                 "schema_violation",
                 f"raw-files-json must be a JSON array of strings: {args.raw_files_json}",
@@ -99,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             groups_file=args.groups_file,
             columns_file=args.columns_file,
             ev19_template=args.ev19_template,
+            virtual_workspace_dir=args.virtual_workspace_dir or args.workspace_dir,
         )
     except ResolveError as e:
         return _emit_error(e.code, str(e), e.details)
@@ -109,7 +114,9 @@ def main(argv: list[str] | None = None) -> int:
     plan_dict = plan_to_dict(plan)
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_path.write_text(
+        json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     summary = (
         f"Plan written to {args.output}: paradigm={plan.paradigm}, "
