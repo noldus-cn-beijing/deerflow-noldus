@@ -64,8 +64,14 @@ def resolve(
     groups_file: str | None = None,
     columns_file: str | None = None,
     ev19_template: str | None = None,
+    virtual_workspace_dir: str | None = None,
 ) -> Plan:
-    """生成 Plan dataclass。失败抛 ResolveError。"""
+    """生成 Plan dataclass。失败抛 ResolveError。
+
+    workspace_dir: 真实物理路径（用于脚本实际执行时的 input 引用等）。
+    virtual_workspace_dir: plan.json output 字段使用的虚拟路径（面向 downstream subagent）。
+                           未提供时兜底使用 workspace_dir（兼容旧调用方）。
+    """
     try:
         cat = load_catalog(paradigm)
     except CatalogError as e:
@@ -129,7 +135,8 @@ def resolve(
             )
         plan_metrics.append(
             _metric_to_plan(
-                m, raw_files, workspace_dir, required=True, reason="paradigm.default"
+                m, raw_files, workspace_dir, required=True, reason="paradigm.default",
+                virtual_workspace_dir=virtual_workspace_dir,
             )
         )
 
@@ -159,7 +166,8 @@ def resolve(
             continue
         plan_metrics.append(
             _metric_to_plan(
-                m, raw_files, workspace_dir, required=False, reason="user.include"
+                m, raw_files, workspace_dir, required=False, reason="user.include",
+                virtual_workspace_dir=virtual_workspace_dir,
             )
         )
 
@@ -174,7 +182,7 @@ def resolve(
     plan_charts: list[PlanChart] = []
     for ch in cat.charts:
         if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups):
-            plan_charts.append(_chart_to_plan(ch, raw_files, workspace_dir))
+            plan_charts.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
 
     # Step 5: statistics
     plan_stats: PlanStatistics | None = None
@@ -183,13 +191,15 @@ def resolve(
             cat.statistics_default.when, n_per_group=n_per_group, n_groups=n_groups
         ):
             plan_stats = _stats_to_plan(
-                cat.statistics_default, workspace_dir, skip_reason=None
+                cat.statistics_default, workspace_dir, skip_reason=None,
+                virtual_workspace_dir=virtual_workspace_dir,
             )
         else:
             plan_stats = _stats_to_plan(
                 cat.statistics_default,
                 workspace_dir,
                 skip_reason=f"condition '{cat.statistics_default.when}' not met (n_per_group={n_per_group}, n_groups={n_groups})",
+                virtual_workspace_dir=virtual_workspace_dir,
             )
 
     notes: list[str] = []
@@ -240,9 +250,11 @@ def _metric_to_plan(
     *,
     required: bool,
     reason: str,
+    virtual_workspace_dir: str | None = None,
 ) -> PlanMetric:
     input_path = raw_files[0]
-    output_path = str(Path(workspace_dir) / f"m_{m.id}.json")
+    effective_workspace = virtual_workspace_dir or workspace_dir
+    output_path = str(Path(effective_workspace) / f"m_{m.id}.json")
     return PlanMetric(
         id=m.id,
         script=m.script,
@@ -254,24 +266,28 @@ def _metric_to_plan(
 
 
 def _chart_to_plan(
-    ch: ChartEntry, raw_files: list[str], workspace_dir: str
+    ch: ChartEntry, raw_files: list[str], workspace_dir: str,
+    virtual_workspace_dir: str | None = None,
 ) -> PlanChart:
+    effective_workspace = virtual_workspace_dir or workspace_dir
     return PlanChart(
         id=ch.id,
         script=ch.script,
         input=raw_files[0],
-        output=str(Path(workspace_dir) / f"plot_{ch.id}.png"),
+        output=str(Path(effective_workspace) / f"plot_{ch.id}.png"),
     )
 
 
 def _stats_to_plan(
-    st: StatisticsEntry, workspace_dir: str, skip_reason: str | None
+    st: StatisticsEntry, workspace_dir: str, skip_reason: str | None,
+    virtual_workspace_dir: str | None = None,
 ) -> PlanStatistics:
+    effective_workspace = virtual_workspace_dir or workspace_dir
     return PlanStatistics(
         id=st.id,
         script=st.script,
-        input=str(Path(workspace_dir) / "handoff_code_executor.json"),
-        output=str(Path(workspace_dir) / "stats.json"),
+        input=str(Path(effective_workspace) / "handoff_code_executor.json"),
+        output=str(Path(effective_workspace) / "stats.json"),
         skip_reason=skip_reason,
     )
 

@@ -51,6 +51,7 @@ python -m ethoinsight.catalog.resolve \
     --columns-file /mnt/user-data/workspace/columns.json \
     --raw-files-json /mnt/user-data/workspace/raw_files.json \
     --workspace-dir /mnt/user-data/workspace \
+    --virtual-workspace-dir /mnt/user-data/workspace \
     --groups-file /mnt/user-data/workspace/groups.json \
     --output /mnt/user-data/workspace/metric_plan.json \
     [--include METRIC_ID]* \
