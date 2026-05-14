@@ -313,6 +313,18 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         middlewares.append(Ev19WorkspaceBridgeMiddleware())
         middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
 
+        # LeadAgentExecutionBoundary — block lead from writing scripts or running
+        # non-whitelisted bash. Self-gates by agent_id; subagents pass through.
+        # See: spec §5.5.1, fix thread b0d3a611 E2E failure root cause A.
+        from deerflow.guardrails.lead_execution_boundary_provider import (
+            LeadAgentExecutionBoundaryProvider,
+        )
+
+        middlewares.append(GuardrailMiddleware(
+            provider=LeadAgentExecutionBoundaryProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
