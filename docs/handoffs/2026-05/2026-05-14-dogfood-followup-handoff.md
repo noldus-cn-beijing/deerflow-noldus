@@ -11,7 +11,7 @@
 | #3 | lead 引常模/金标准 | 不出现 | subagent手递含"金标准"，lead透传 | ❌ |
 | #4 | reasoning 自动折叠 | 不发生 | 未观察到折叠（thinking面板保持展开） | ✅ |
 | #5 | 阶段播报次数 | ≥4 次 | 1 (archived messages中仅1个emoji匹配) | ❌ |
-| #6 | plan.json 输出虚拟路径 | 全虚拟 | False（仍为物理路径） | ❌ |
+| #6 | plan.json 输出虚拟路径 | 全虚拟 | True（G5 修复生效，全部 /mnt/user-data/workspace/ 前缀） | ✅ |
 | #7 | compute_* 重跑次数 | 1 次/个 | 5个compute各1次 | ✅ |
 | #8 | report-writer 被派 | 观察 | 1 次派遣，后被lead取消（用户新消息打断） | ✅ |
 | #8 | report-writer 读 catalog YAML | 观察 | 未完成即被取消 | ⚠️ |
@@ -83,8 +83,9 @@
 
 ### Issue #6 plan.json 路径未虚拟化
 
-- metric_plan.json 中 output 字段为物理路径（/home/wangqiuyang/.../workspace/...）
-- commit 2eb1532a 的虚拟化修复可能未覆盖本次路径或已被后续改动退化
+- ~~metric_plan.json 中 output 字段为物理路径（/home/wangqiuyang/.../workspace/...）~~
+- ~~commit 2eb1532a 的虚拟化修复可能未覆盖本次路径或已被后续改动退化~~
+- **2026-05-14 G5 修复复测通过**：新 thread `ab36da5f-2d36-450f-a24e-050350cc517f`，metric_plan.json output 字段全部 `/mnt/user-data/workspace/` 前缀，G5 修复生效（commit `f2a60122`，CLI 改用 env var DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE 兜底虚拟路径）
 
 ### Step 6 图表补充请求未完整观测
 
@@ -122,3 +123,22 @@ Guardrail denied: tool=bash policy=lead_execution_boundary code=lead_execution_b
 - 系统正常运行，无 import 错误，中间件链初始化成功
 
 判定：**plan 成功** — LeadAgentExecutionBoundaryProvider 在机制层阻断 lead 越权 bash 调用。白名单内命令 (python -m ethoinsight.parse.dump_headers) 正常通过。
+
+## G5 修复复测（2026-05-14）
+
+修复 commit hash: f2a60122
+
+修复后 thread: ab36da5f-2d36-450f-a24e-050350cc517f
+
+metric_plan.json output 字段抽样：
+```
+/mnt/user-data/workspace/m_open_arm_time_ratio.json
+/mnt/user-data/workspace/m_open_arm_time.json
+/mnt/user-data/workspace/m_open_arm_entry_count.json
+/mnt/user-data/workspace/m_open_arm_entry_ratio.json
+/mnt/user-data/workspace/m_total_entry_count.json
+```
+
+判定：✅ G5 修复成功（output 字段全部 /mnt/user-data/workspace/ 前缀）
+
+Batch A/B 检查表 G5 行原"实测"列从 "False（仍为物理路径）" 改为 "True"，结论 ❌ 改为 ✅。
