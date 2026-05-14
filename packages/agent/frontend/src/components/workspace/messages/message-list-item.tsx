@@ -1,7 +1,7 @@
 import type { Message } from "@langchain/langgraph-sdk";
 import { FileIcon, Loader2Icon } from "lucide-react";
 import { useParams } from "next/navigation";
-import { memo, useMemo, type ImgHTMLAttributes } from "react";
+import { memo, useMemo, useState, type ImgHTMLAttributes } from "react";
 
 import { Loader } from "@/components/ai-elements/loader";
 import {
@@ -212,10 +212,10 @@ function MessageContent_({
     <AIElementMessageContent className={className}>
       {filesList}
       {reasoningContent && (
-        <Reasoning isStreaming={isLoading}>
-          <ReasoningTrigger />
-          <ReasoningContent>{reasoningContent}</ReasoningContent>
-        </Reasoning>
+        <ReasoningPanel
+          isStreaming={isLoading}
+          reasoningContent={reasoningContent}
+        />
       )}
       {contentToDisplay && (
         <MarkdownContent
@@ -395,3 +395,41 @@ function RichFileCard({
 }
 
 const MessageContent = memo(MessageContent_);
+
+/**
+ * Local wrapper around ai-elements/Reasoning to keep the panel expanded by
+ * default and skip the upstream "auto-close 1s after streaming ends" behavior.
+ *
+ * Why: Upstream Vercel AI Elements assumes "users only care about the answer."
+ * For EthoInsight (a research assistant for behavioral scientists), users need
+ * to inspect the full reasoning trace to trust the conclusion.
+ *
+ * Implementation: We don't modify ai-elements/reasoning.tsx (it's generated
+ * from upstream and CLAUDE.md forbids manual edits). Instead we drive
+ * `defaultOpen={false}` (which gates the auto-close useEffect at
+ * ai-elements/reasoning.tsx:84) combined with controlled `open` state — the
+ * Radix useControllableState contract guarantees that internal setIsOpen() is
+ * a no-op while controlled, so the panel stays open until the user clicks the
+ * trigger to collapse it.
+ */
+function ReasoningPanel({
+  isStreaming,
+  reasoningContent,
+}: {
+  isStreaming: boolean;
+  reasoningContent: string;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <Reasoning
+      isStreaming={isStreaming}
+      defaultOpen={false}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <ReasoningTrigger />
+      <ReasoningContent>{reasoningContent}</ReasoningContent>
+    </Reasoning>
+  );
+}
