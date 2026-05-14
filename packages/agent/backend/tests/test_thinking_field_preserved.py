@@ -15,7 +15,9 @@ thread 5046a6e6 实际触发链路：
     signature_delta 事件创建的 AIMessageChunk 有 type="thinking" 但没有 thinking 键。
     当合并后的消息通过 checkpointer 序列化再反序列化后作为历史发送给模型时，
     _format_messages 过滤这个块只保留 thinking/signature 键 → 缺少 thinking 键 → 400。
-    详见 docs/handoffs/2026-05/2026-05-14-thinking-field-diagnosis-notes.md
+
+    修复 (Task 4): 在 ClaudeChatModel._get_request_payload 中调用
+    _strip_malformed_thinking_blocks() 剔除 type="thinking" 但缺 thinking 键的块。
 """
 
 import pytest
@@ -181,20 +183,23 @@ class TestAnthropicFormatMessages:
             )
 
     def test_signature_delta_without_thinking_creates_malformed_block(self) -> None:
-        """复现：signature_delta 产生 type=thinking 但无 thinking 键的块。
+        """复现 + 修复验证：signature_delta 产生 type=thinking 但无 thinking 键的块。
 
         在 langchain_anthropic streaming handler 中（line 2071-2075），
         signature_delta 事件创建 content_block 后强制 type="thinking"，
         但 signature_delta 的 model_dump 不含 thinking 键，
         导致合并后的消息中包含 type=thinking 但缺 thinking 键的块。
 
-        当该消息作为历史发送时，_format_messages 过滤键后输出
-        {"type": "thinking", "signature": "..."}，被 newapi 以 400 拒绝。
+        本测试验证两步：
+        1. _format_messages 确实会产生 malformed block（上游 bug）
+        2. _strip_malformed_thinking_blocks 修复能正确剔除 malformed block（Task 4 fix）
         """
         try:
             from langchain_anthropic.chat_models import _format_messages
         except ImportError:
             pytest.skip("langchain_anthropic 未安装")
+
+        from deerflow.models.claude_provider import _strip_malformed_thinking_blocks
 
         # 模拟 signature_delta 产生的不完整 thinking block
         msg = AIMessage(
@@ -213,14 +218,165 @@ class TestAnthropicFormatMessages:
         thinking_blocks = [b for b in content if isinstance(b, dict) and b.get("type") == "thinking"]
         assert len(thinking_blocks) == 2, "应有 2 个 thinking block（1 正常 + 1 signature-only）"
 
-        # 检查 signature-only block 是否有 thinking 键
-        for i, block in enumerate(thinking_blocks):
-            has_thinking = "thinking" in block
-            if not has_thinking:
-                # 这正是导致 400 错误的情形
-                pytest.fail(
-                    f"thinking block[{i}] 缺少 thinking 键: keys={list(block.keys())}。"
-                    f"这会导致 newapi 返回 400 'missing field thinking'。"
-                    f"根本原因：langchain_anthropic streaming handler 将 signature_delta "
-                    f"创建为独立的 type=thinking 块而非合并到已有的 thinking 块。"
-                )
+        # 验证上游 bug 存在：signature-only block 缺少 thinking 键
+        malformed = [b for b in thinking_blocks if "thinking" not in b]
+        assert len(malformed) == 1, "应有 1 个 malformed block（上游 bug 存在）"
+        assert malformed[0].get("signature") == "EqQBCgIY..."
+
+        # 应用 Task 4 修复
+        _strip_malformed_thinking_blocks(formatted)
+
+        # 修复后：malformed block 应被移除，valid thinking block 应保留
+        content_after = formatted[0]["content"]
+        thinking_after = [b for b in content_after if isinstance(b, dict) and b.get("type") == "thinking"]
+        assert len(thinking_after) == 1, (
+            f"修复后应有 1 个 thinking block（signature-only 应被移除），got {len(thinking_after)}"
+        )
+        assert "thinking" in thinking_after[0], "保留的 thinking block 必须有 thinking 键"
+        assert thinking_after[0]["thinking"] == "real reasoning..."
+
+        text_after = [b for b in content_after if isinstance(b, dict) and b.get("type") == "text"]
+        assert len(text_after) == 1, "text block 应保留"
+
+
+class TestStripMalformedThinkingBlocks:
+    """验证 _strip_malformed_thinking_blocks 修复逻辑。
+
+    Task 4 修复：在 ClaudeChatModel._get_request_payload 中调用此函数，
+    剔除 type="thinking" 但缺少 thinking 键的 malformed blocks（signature_delta artifact）。
+    """
+
+    def test_strips_signature_only_block(self) -> None:
+        """type=thinking 但无 thinking 键的块应被移除。"""
+        from deerflow.models.claude_provider import _strip_malformed_thinking_blocks
+
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "valid reasoning..."},
+                    # signature_delta artifact — must be stripped
+                    {"type": "thinking", "signature": "EqQBCgIY..."},
+                    {"type": "text", "text": "answer"},
+                ],
+            }
+        ]
+
+        _strip_malformed_thinking_blocks(messages)
+
+        content = messages[0]["content"]
+        assert len(content) == 2, f"应有 2 个块（valid thinking + text），got {len(content)}"
+        assert content[0] == {"type": "thinking", "thinking": "valid reasoning..."}, "valid thinking block 应保留"
+        assert content[1] == {"type": "text", "text": "answer"}, "text block 应保留"
+
+    def test_preserves_valid_thinking_block(self) -> None:
+        """type=thinking 且有 thinking 键的块应完整保留。"""
+        from deerflow.models.claude_provider import _strip_malformed_thinking_blocks
+
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "reasoning", "signature": "sig"},
+                    {"type": "text", "text": "answer"},
+                ],
+            }
+        ]
+
+        _strip_malformed_thinking_blocks(messages)
+
+        content = messages[0]["content"]
+        assert len(content) == 2, f"应有 2 个块，got {len(content)}"
+        assert content[0] == {"type": "thinking", "thinking": "reasoning", "signature": "sig"}
+
+    def test_no_thinking_blocks_unaffected(self) -> None:
+        """没有 thinking block 的消息不应被修改。"""
+        from deerflow.models.claude_provider import _strip_malformed_thinking_blocks
+
+        messages = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
+        ]
+
+        _strip_malformed_thinking_blocks(messages)
+
+        assert messages[0]["content"] == "hello"
+        assert messages[1]["content"] == [{"type": "text", "text": "hi"}]
+
+    def test_empty_content_unaffected(self) -> None:
+        """空 content 不应崩溃。"""
+        from deerflow.models.claude_provider import _strip_malformed_thinking_blocks
+
+        messages = [
+            {"role": "assistant", "content": []},
+            {"role": "assistant", "content": ""},
+        ]
+
+        _strip_malformed_thinking_blocks(messages)
+
+        assert messages[0]["content"] == []
+        assert messages[1]["content"] == ""
+
+    def test_all_malformed_thinking_blocks_stripped(self) -> None:
+        """如果消息只有 malformed thinking blocks，应全部移除。"""
+        from deerflow.models.claude_provider import _strip_malformed_thinking_blocks
+
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "signature": "sig1"},
+                    {"type": "thinking", "signature": "sig2"},
+                ],
+            }
+        ]
+
+        _strip_malformed_thinking_blocks(messages)
+
+        content = messages[0]["content"]
+        assert len(content) == 0, f"所有 malformed blocks 都应移除，got {content}"
+
+    def test_end_to_end_simulated_round_trip(self) -> None:
+        """端到端模拟：signature_delta malformed block → checkpointer → fix → clean。
+
+        模拟完整链路：
+        1. streaming 产生带 malformed thinking block 的 AIMessage content
+        2. checkpointer 序列化后作为历史发送
+        3. _strip_malformed_thinking_blocks 清理
+        4. 验证清理后的消息没有 malformed blocks
+        """
+        try:
+            from langchain_anthropic.chat_models import _format_messages
+        except ImportError:
+            pytest.skip("langchain_anthropic 未安装")
+
+        from deerflow.models.claude_provider import _strip_malformed_thinking_blocks
+
+        # Step 1: 模拟 streaming 产生的消息（含 signature_delta artifact）
+        msg = AIMessage(
+            content=[
+                {"type": "thinking", "thinking": "real reasoning..."},
+                {"type": "thinking", "signature": "EqQBCgIY..."},  # malformed
+                {"type": "text", "text": "answer"},
+            ],
+            response_metadata={"model_provider": "anthropic"},
+        )
+
+        # Step 2: 模拟 _format_messages（checkpointer 恢复后作为历史发送时经过的格式化）
+        system, formatted = _format_messages([msg])
+
+        # Step 3: 应用修复 — 剔除 malformed thinking blocks
+        _strip_malformed_thinking_blocks(formatted)
+
+        # Step 4: 验证
+        content = formatted[0]["content"]
+        thinking_blocks = [b for b in content if isinstance(b, dict) and b.get("type") == "thinking"]
+        assert len(thinking_blocks) == 1, (
+            f"修复后应有 1 个 thinking block（signature-only 应被移除），got {len(thinking_blocks)}"
+        )
+        assert "thinking" in thinking_blocks[0], "保留的 thinking block 必须有 thinking 键"
+        assert thinking_blocks[0]["thinking"] == "real reasoning..."
+
+        text_blocks = [b for b in content if isinstance(b, dict) and b.get("type") == "text"]
+        assert len(text_blocks) == 1, "text block 应保留"
+        assert text_blocks[0]["text"] == "answer"
