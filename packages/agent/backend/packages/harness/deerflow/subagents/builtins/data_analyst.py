@@ -70,7 +70,8 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 </json_writing>
 
 <workflow>
-1. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
+1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+2. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
    （一次读完，包含 per_subject / statistics / metrics_summary，不要零碎读多次）
 2. 一次性完成核心分析推理（单轮 LLM 思考，不拆分多个 turn）：
    a. **方法学把关**：检查 statistics.test_used 是否匹配实验设计
@@ -102,6 +103,7 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 
 ```
 [gate_signals]
+constitution_acknowledged: true
 method_warnings_count: <int>          # method_warnings 数组长度
 outlier_count: <int>                  # outlier_findings 数组长度
 excluded_metrics_count: <int>         # excluded_metrics 数组长度

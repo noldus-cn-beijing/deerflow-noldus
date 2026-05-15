@@ -188,7 +188,8 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 </json_writing>
 
 <workflow>
-1. read_file 两个 handoff 文件：
+1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+2. read_file 两个 handoff 文件：
    - /mnt/user-data/workspace/handoff_code_executor.json（数据）
    - /mnt/user-data/workspace/handoff_data_analyst.json（解读）
    - 可选 read_file /mnt/user-data/workspace/handoff_planning.json 获取 group_semantics
@@ -211,6 +212,7 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 
 ```
 [gate_signals]
+constitution_acknowledged: true
 sections_written_count: <int>         # sections_written 数组长度（期望 6）
 sections_missing: [<str>, ...]        # 6 段骨架中未写成功的章节名（中文），为空则 []
 statistical_validity: ok | failed     # report-writer 不评估统计有效性，按 handoff_code_executor 透传

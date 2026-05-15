@@ -51,7 +51,6 @@ python -m ethoinsight.catalog.resolve \
     --columns-file /mnt/user-data/workspace/columns.json \
     --raw-files-json /mnt/user-data/workspace/raw_files.json \
     --workspace-dir /mnt/user-data/workspace \
-    --virtual-workspace-dir /mnt/user-data/workspace \
     --groups-file /mnt/user-data/workspace/groups.json \
     --output /mnt/user-data/workspace/metric_plan.json \
     [--include METRIC_ID]* \
@@ -60,6 +59,11 @@ python -m ethoinsight.catalog.resolve \
     [--n-groups N] \
     [--ev19-template TEMPLATE_ID]
 ```
+
+> 注：早期版本要求显式传 `--virtual-workspace-dir /mnt/user-data/workspace`。
+> 现已改用 sandbox 注入的 env var（`DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE`）作为兜底，
+> lead 无需再传该参数——sandbox 会自动确保 plan.json output 字段是虚拟路径。
+> 该参数仍保留以兼容直接命令行调试（无 sandbox env var 的场景）。
 
 完整参数文档见 [`references/resolve-cli.md`](references/resolve-cli.md)。
 

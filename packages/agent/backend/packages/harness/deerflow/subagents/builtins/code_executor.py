@@ -21,7 +21,8 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 </environment>
 
 <workflow>
-1. read `${workspace_path}/metric_plan.json` — 这是 lead 已经生成好的施工单，含 paradigm、metrics[]、statistics、charts[]、skipped[]
+1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+2. read `${workspace_path}/metric_plan.json` — 这是 lead 已经生成好的施工单，含 paradigm、metrics[]、statistics、charts[]、skipped[]
 2. for entry in plan.metrics:
      bash `python -m <entry.script> --input <entry.input> --output <entry.output>`
    每个脚本 stdout 末尾会有 `[result] {json}` 行，抓出来留作聚合用。
@@ -65,6 +66,7 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 
 ```
 [gate_signals]
+constitution_acknowledged: true
 data_quality:
   critical_count: <int>
   warning_count: <int>
