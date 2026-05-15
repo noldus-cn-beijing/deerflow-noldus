@@ -28,6 +28,7 @@ import {
   extractReasoningContentFromMessage,
   findToolCallResult,
 } from "@/core/messages/utils";
+import { getStageBroadcastForBash } from "@/core/tools/stage-broadcast";
 import { extractTitleFromMarkdown } from "@/core/utils/markdown";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -368,13 +369,15 @@ export function ToolCall({
       </ChainOfThoughtStep>
     );
   } else if (name === "bash") {
+    const command: string | undefined = (args as { command: string })?.command;
     const description: string | undefined = (args as { description: string })
       ?.description;
-    const command: string | undefined = (args as { command: string })?.command;
+    const stageBroadcast = getStageBroadcastForBash(command ?? "", t);
+    const label = stageBroadcast ?? description ?? t.toolCalls.executeCommand;
     return (
       <ChainOfThoughtStep
         key={id}
-        label={description ?? t.toolCalls.executeCommand}
+        label={label}
         icon={SquareTerminalIcon}
       >
         {command && (
@@ -391,7 +394,7 @@ export function ToolCall({
     return (
       <ChainOfThoughtStep
         key={id}
-        label={t.toolCalls.needYourHelp}
+        label={t.toolCalls.stageBroadcast.askClarification}
         icon={MessageCircleQuestionMarkIcon}
       ></ChainOfThoughtStep>
     );

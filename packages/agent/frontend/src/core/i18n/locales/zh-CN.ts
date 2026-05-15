@@ -1,4 +1,4 @@
-﻿import {
+import {
   CompassIcon,
   GraduationCapIcon,
   ImageIcon,
@@ -242,6 +242,7 @@ export const zhCN: Translations = {
     untitled: "未命名",
   },
 
+
   // Tool calls
   toolCalls: {
     moreSteps: (count: number) => `查看其他 ${count} 个步骤`,
@@ -249,12 +250,12 @@ export const zhCN: Translations = {
     executeCommand: "执行命令",
     presentFiles: "展示文件",
     needYourHelp: "需要你的协助",
-    useTool: (toolName: string) => `使用 “${toolName}” 工具`,
-    searchFor: (query: string) => `搜索 “${query}”`,
+    useTool: (toolName: string) => `使用 "${toolName}" 工具`,
+    searchFor: (query: string) => `搜索 "${query}"`,
     searchForRelatedInfo: "搜索相关信息",
     searchForRelatedImages: "搜索相关图片",
-    searchForRelatedImagesFor: (query: string) => `搜索相关图片 “${query}”`,
-    searchOnWebFor: (query: string) => `在网络上搜索 “${query}”`,
+    searchForRelatedImagesFor: (query: string) => `搜索相关图片 "${query}"`,
+    searchOnWebFor: (query: string) => `在网络上搜索 "${query}"`,
     viewWebPage: "查看网页",
     listFolder: "列出文件夹",
     readFile: "读取文件",
@@ -262,6 +263,22 @@ export const zhCN: Translations = {
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
     skillInstallTooltip: "安装技能并使其可在 DeerFlow 中使用",
+    stageBroadcast: {
+      dispatchSubagent: (subagentType: string) => {
+        const labels: Record<string, string> = {
+          "code-executor": "🧮 正在计算指标，预计 30-60 秒...",
+          "data-analyst": "🔬 指标已完成，正在请专家解读，预计 1-2 分钟...",
+          "report-writer": "📝 解读已完成，正在生成中文研究报告...",
+          "knowledge-assistant": "📚 正在查阅领域知识...",
+        };
+        return labels[subagentType] ?? `🛠 正在派遣 ${subagentType}...`;
+      },
+      parseHeaders: "📂 正在解析 EthoVision 文件结构...",
+      resolveCatalog: "📋 正在生成指标计划...",
+      askClarification: "⚠️ 我需要先确认一件事...",
+      runScript: (scriptName: string) => `⚙️ 正在运行 ${scriptName}...`,
+      genericBash: "💻 正在执行命令...",
+    },
   },
 
   uploads: {

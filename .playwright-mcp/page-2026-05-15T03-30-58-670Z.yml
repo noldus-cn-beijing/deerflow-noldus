@@ -1,0 +1,124 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e266]: 新对话 - DeerFlow
+  - generic [ref=e267]:
+    - generic [ref=e270]:
+      - generic [ref=e271]:
+        - generic [ref=e273]:
+          - generic [ref=e274]: Noldus
+          - button "Toggle Sidebar" [ref=e275] [cursor=pointer]:
+            - img
+            - generic [ref=e276]: Toggle Sidebar
+        - list [ref=e277]:
+          - listitem [ref=e278]:
+            - link "新对话" [ref=e279] [cursor=pointer]:
+              - /url: /workspace/chats/new
+              - img [ref=e280]
+              - generic [ref=e282]: 新对话
+      - generic [ref=e283]:
+        - list [ref=e285]:
+          - listitem [ref=e286]:
+            - link "对话" [ref=e287] [cursor=pointer]:
+              - /url: /workspace/chats
+              - img [ref=e288]
+              - generic [ref=e291]: 对话
+          - listitem [ref=e292]:
+            - link "智能体" [ref=e293] [cursor=pointer]:
+              - /url: /workspace/agents
+              - img [ref=e294]
+              - generic [ref=e297]: 智能体
+        - generic [ref=e384]:
+          - generic [ref=e385]: 最近的对话
+          - list [ref=e387]:
+            - listitem [ref=e389]:
+              - generic [ref=e390]:
+                - link "Untitled" [ref=e391] [cursor=pointer]:
+                  - /url: /workspace/chats/bcec74e2-921b-42d4-8edc-02897549000f
+                - button "更多" [ref=e392]:
+                  - img [ref=e393]
+                  - generic [ref=e397]: 更多
+      - list [ref=e299]:
+        - listitem [ref=e300]:
+          - button "设置和更多" [ref=e301]:
+            - generic [ref=e302]:
+              - img [ref=e303]
+              - generic [ref=e306]: 设置和更多
+              - img [ref=e307]
+      - button "Toggle Sidebar" [ref=e310]
+    - main [ref=e311]:
+      - generic [ref=e312]:
+        - generic [ref=e315]:
+          - generic [ref=e398]:
+            - button "0" [ref=e399]:
+              - img [ref=e400]
+              - generic [ref=e405]: "0"
+            - button "导出" [ref=e406] [cursor=pointer]:
+              - img
+              - text: 导出
+          - main [ref=e317]:
+            - log [ref=e319]:
+              - generic [ref=e321]:
+                - generic [ref=e408]:
+                  - generic [ref=e410]:
+                    - generic [ref=e411]:
+                      - img [ref=e412]
+                      - generic "epm-test-data.txt" [ref=e415]
+                    - generic [ref=e416]:
+                      - generic [ref=e417]: TXT
+                      - generic [ref=e418]: 1.6 MB
+                  - paragraph [ref=e421]: 请分析这个 EPM 单只数据
+                - button "思考" [ref=e423] [cursor=pointer]:
+                  - generic [ref=e424]:
+                    - generic [ref=e425]:
+                      - generic [ref=e426]:
+                        - img
+                      - generic [ref=e428]: 思考
+                    - generic [ref=e429]:
+                      - img
+                - generic [ref=e432]:
+                  - button "Thinking..." [expanded] [ref=e433] [cursor=pointer]:
+                    - img [ref=e434]
+                    - paragraph [ref=e442]: Thinking...
+                    - img [ref=e443]
+                  - paragraph [ref=e447]: The user has uploaded a file called "epm-test-data.txt" and wants to analyze it as EPM (Elevated
+            - generic [ref=e324]:
+              - generic [ref=e325]:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - generic: To-dos
+                    - generic:
+                      - img
+                  - main:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - list
+              - group [ref=e328]:
+                - textbox "今天我能为你做些什么？" [ref=e339]
+                - group [ref=e340]:
+                  - generic [ref=e341]:
+                    - button [ref=e342] [cursor=pointer]:
+                      - img
+                    - button "全自动" [ref=e343] [cursor=pointer]:
+                      - generic [ref=e344]:
+                        - img
+                      - generic [ref=e345]: 全自动
+                  - generic [ref=e346]:
+                    - button "deepseek" [ref=e347] [cursor=pointer]:
+                      - generic [ref=e349]: deepseek
+                    - button "Submit" [ref=e350] [cursor=pointer]:
+                      - img
+        - separator
+        - generic [ref=e368]:
+          - generic:
+            - button [ref=e370] [cursor=pointer]:
+              - img
+            - generic [ref=e453]:
+              - img [ref=e455]
+              - generic [ref=e459]:
+                - heading "No artifact selected" [level=3] [ref=e460]
+                - paragraph [ref=e461]: Select an artifact to view its details
+  - region "Notifications alt+T"

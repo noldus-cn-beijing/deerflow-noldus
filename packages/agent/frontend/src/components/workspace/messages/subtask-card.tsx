@@ -22,6 +22,7 @@ import { useI18n } from "@/core/i18n/hooks";
 import { hasToolCalls } from "@/core/messages/utils";
 import { streamdownPlugins } from "@/core/streamdown";
 import { useSubtask } from "@/core/tasks/context";
+import { getStageBroadcastForSubagent } from "@/core/tools/stage-broadcast";
 import { explainLastToolCall } from "@/core/tools/utils";
 import { cn } from "@/lib/utils";
 
@@ -82,10 +83,10 @@ export function SubtaskCard({
                 label={
                   task.status === "in_progress" ? (
                     <Shimmer duration={3} spread={3}>
-                      {task.description}
+                      {getStageBroadcastForSubagent(task.subagent_type, t)}
                     </Shimmer>
                   ) : (
-                    task.description
+                    getStageBroadcastForSubagent(task.subagent_type, t)
                   )
                 }
                 icon={<ClipboardListIcon />}
