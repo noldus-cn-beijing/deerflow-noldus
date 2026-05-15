@@ -398,7 +398,7 @@ export function ToolCall({
     return (
       <ChainOfThoughtStep
         key={id}
-        label={t.toolCalls.needYourHelp}
+        label={t.toolCalls.stageBroadcast.askClarification}
         icon={MessageCircleQuestionMarkIcon}
       ></ChainOfThoughtStep>
     );
