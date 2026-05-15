@@ -205,6 +205,14 @@ export interface Translations {
     clickToViewContent: string;
     writeTodos: string;
     skillInstallTooltip: string;
+    stageBroadcast: {
+      dispatchSubagent: (subagentType: string) => string;
+      parseHeaders: string;
+      resolveCatalog: string;
+      askClarification: string;
+      runScript: (scriptName: string) => string;
+      genericBash: string;
+    };
   };
 
   // Uploads
