@@ -157,7 +157,7 @@ function ThemePreviewCard({
           "relative overflow-hidden rounded-md border text-xs transition-colors",
           previewMode === "dark"
             ? "border-neutral-800 bg-neutral-900 text-neutral-200"
-            : "border-slate-200 bg-white text-slate-900",
+            : "border-border bg-card text-foreground",
         )}
       >
         <div className="border-border/50 flex items-center gap-2 border-b px-3 py-2">

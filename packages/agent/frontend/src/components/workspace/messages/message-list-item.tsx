@@ -1,8 +1,7 @@
 import type { Message } from "@langchain/langgraph-sdk";
 import { FileIcon, Loader2Icon } from "lucide-react";
 import { useParams } from "next/navigation";
-import { memo, useMemo, type ImgHTMLAttributes } from "react";
-import rehypeKatex from "rehype-katex";
+import { memo, useMemo, useState, type ImgHTMLAttributes } from "react";
 
 import { Loader } from "@/components/ai-elements/loader";
 import {
@@ -28,7 +27,6 @@ import {
   stripUploadedFilesTag,
   type FileInMessage,
 } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { humanMessagePlugins } from "@/core/streamdown";
 import { cn } from "@/lib/utils";
 
@@ -41,11 +39,13 @@ export function MessageListItem({
   message,
   isLoading,
   threadId,
+  messageRunIds,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
   threadId?: string;
+  messageRunIds?: Map<string, string>;
 }) {
   const isHuman = message.type === "human";
   return (
@@ -58,13 +58,18 @@ export function MessageListItem({
         message={message}
         isLoading={isLoading}
       />
-      {!isLoading && !isHuman && threadId && message.id && (
-        <FeedbackButtons
-          threadId={threadId}
-          messageId={message.id}
-          className="px-1"
-        />
-      )}
+      {!isLoading && !isHuman && threadId && message.id && (() => {
+        const runId = messageRunIds?.get(message.id);
+        if (!runId) return null; // run_id 还没拿到时不渲染，防止误绑
+        return (
+          <FeedbackButtons
+            threadId={threadId}
+            runId={runId}
+            messageId={message.id}
+            className="px-1"
+          />
+        );
+      })()}
       {!isLoading && (
         <MessageToolbar
           className={cn(
@@ -126,7 +131,6 @@ function MessageContent_({
   message: Message;
   isLoading?: boolean;
 }) {
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const isHuman = message.type === "human";
   const { thread_id } = useParams<{ thread_id: string }>();
   const components = useMemo(
@@ -181,18 +185,6 @@ function MessageContent_({
     );
   }
 
-  // Reasoning-only AI message (no main response content yet)
-  if (!isHuman && reasoningContent && !rawContent) {
-    return (
-      <AIElementMessageContent className={className}>
-        <Reasoning isStreaming={isLoading}>
-          <ReasoningTrigger />
-          <ReasoningContent>{reasoningContent}</ReasoningContent>
-        </Reasoning>
-      </AIElementMessageContent>
-    );
-  }
-
   if (isHuman) {
     const messageResponse = contentToDisplay ? (
       <AIElementMessageResponse
@@ -219,13 +211,20 @@ function MessageContent_({
   return (
     <AIElementMessageContent className={className}>
       {filesList}
-      <MarkdownContent
-        content={contentToDisplay}
-        isLoading={isLoading}
-        rehypePlugins={[...rehypePlugins, [rehypeKatex, { output: "html" }]]}
-        className="my-3"
-        components={components}
-      />
+      {reasoningContent && (
+        <ReasoningPanel
+          isStreaming={isLoading}
+          reasoningContent={reasoningContent}
+        />
+      )}
+      {contentToDisplay && (
+        <MarkdownContent
+          content={contentToDisplay}
+          isLoading={isLoading}
+          className="my-3"
+          components={components}
+        />
+      )}
     </AIElementMessageContent>
   );
 }
@@ -396,3 +395,41 @@ function RichFileCard({
 }
 
 const MessageContent = memo(MessageContent_);
+
+/**
+ * Local wrapper around ai-elements/Reasoning to keep the panel expanded by
+ * default and skip the upstream "auto-close 1s after streaming ends" behavior.
+ *
+ * Why: Upstream Vercel AI Elements assumes "users only care about the answer."
+ * For EthoInsight (a research assistant for behavioral scientists), users need
+ * to inspect the full reasoning trace to trust the conclusion.
+ *
+ * Implementation: We don't modify ai-elements/reasoning.tsx (it's generated
+ * from upstream and CLAUDE.md forbids manual edits). Instead we drive
+ * `defaultOpen={false}` (which gates the auto-close useEffect at
+ * ai-elements/reasoning.tsx:84) combined with controlled `open` state — the
+ * Radix useControllableState contract guarantees that internal setIsOpen() is
+ * a no-op while controlled, so the panel stays open until the user clicks the
+ * trigger to collapse it.
+ */
+function ReasoningPanel({
+  isStreaming,
+  reasoningContent,
+}: {
+  isStreaming: boolean;
+  reasoningContent: string;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <Reasoning
+      isStreaming={isStreaming}
+      defaultOpen={false}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <ReasoningTrigger />
+      <ReasoningContent>{reasoningContent}</ReasoningContent>
+    </Reasoning>
+  );
+}

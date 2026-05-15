@@ -159,7 +159,7 @@ Agent 完整跑完 `planning → code-executor → data-analyst` 流水线，产
 
 ### 🔴 P1 — shoaling 范式离群判据固化到 skill
 
-**修改位置**: `packages/agent/backend/skills/custom/ethoinsight-analysis/`（shoaling 范式部分）
+**修改位置**: `packages/agent/backend/skills/custom/ethoinsight-code/`（shoaling 范式部分）
 
 **加一条 reference**：
 
@@ -219,7 +219,7 @@ should_not_contain:
 
 ### 🟢 P3 — 把 notes.md 的 ANSWER 段提炼为通用行为学规则
 
-**修改位置**: 新建 `packages/agent/backend/skills/custom/ethoinsight-analysis/references/interpretation-rules.md`
+**修改位置**: 新建 `packages/agent/backend/skills/custom/ethoinsight-code/references/interpretation-rules.md`
 
 **内容**：从 case-001 notes.md 提取跨 case 通用的行为学判读规则：
 

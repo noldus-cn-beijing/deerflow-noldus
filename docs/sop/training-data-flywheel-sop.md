@@ -52,9 +52,9 @@ make training-stats
 | 组件 | 位置 |
 |------|------|
 | 录制中间件 | `packages/agent/backend/packages/harness/deerflow/agents/middlewares/training_data_middleware.py` |
-| 反馈 API | `GET/POST /api/threads/{id}/feedback` |
+| 反馈 API | `GET/POST /api/threads/{tid}/runs/{rid}/feedback`（SQLite 后端，verdict 三分类 + revised_text） |
 | 原始录制 | `.deer-flow/training-data/auto-collected/<thread_id>.jsonl` |
-| 反馈文件 | `.deer-flow/training-data/feedback/<thread_id>.jsonl` |
+| 反馈数据 | SQLite `feedback` 表（schema 见 `packages/agent/backend/packages/harness/deerflow/persistence/feedback/model.py`），离线导出脚本 `scripts/export_feedback_jsonl.py` 待实现 |
 | 后处理脚本 | `scripts/extract_e2e_sessions.py` |
 | 进度命令 | `make training-stats` |
 

@@ -1,5 +1,18 @@
 # 多用户部署实施计划
 
+> ⚠️ **DEPRECATED 2026-05-07** — 本计划已被上游 better-auth 路线取代。
+> noldus user-backend 自建路线弃用，改为合入上游 deerflow 的 `94eee95f / 848ace98 / da174dfd / 98a5b34f / 4e4e4f92` 五个 commit（轮 3 实施）。
+> 详见 `docs/superpowers/specs/2026-05-07-deerflow-tier234-round2-design.md` §1.1。
+> 本文档保留作为历史参考。
+>
+> **轮 3 (2026-05-08 完成) 已合入上游 better-auth 实现**, 替代本计划 Task 1-15:
+> - 实施 spec: `docs/superpowers/specs/2026-05-07-deerflow-tier234-round3-design.md`
+> - 实施 plan: `docs/superpowers/plans/2026-05-07-deerflow-tier234-round3-plan.md`
+> - 完成 handoff: `docs/handoffs/2026-05-08-deerflow-tier234-round3-completed-handoff.md`
+> - 部署 SOP: `docs/sop/multi-user-deployment-sop.md`
+>
+> 本文档保留作历史参考, 体现"造轮子 vs 用上游"的决策路径。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 把 EthoInsight（DeerFlow fork）从单用户 Demo 改造成 10 人并发使用的在线部署版本：独立 user-backend 签发 JWT，Gateway 验证并按 user_id 过滤 thread，LangGraph 用 Postgres checkpointer 共享，sandbox 切换到 AioSandbox 做每-thread 容器隔离，memory 按 user_id 分文件。整个部署是 Docker Compose 单机，8C16G 云 VM 即可。

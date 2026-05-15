@@ -18,12 +18,26 @@ from deerflow.agents.middlewares.tool_error_handling_middleware import build_lea
 from deerflow.agents.middlewares.training_data_middleware import TrainingDataMiddleware
 from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from deerflow.agents.thread_state import ThreadState
-from deerflow.config.agents_config import load_agent_config
+from deerflow.config.agents_config import load_agent_config, validate_agent_name
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
+from deerflow.runtime.user_context import set_current_user
 
 logger = logging.getLogger(__name__)
+
+
+class _AuthUser:
+    """Minimal duck-typed user satisfying the CurrentUser Protocol.
+
+    Used to bridge LangGraph's `langgraph_auth_user_id` (a plain str) into
+    deerflow's user_context, which expects an object with an `.id` attribute.
+    """
+
+    __slots__ = ("id",)
+
+    def __init__(self, user_id: str) -> None:
+        self.id = user_id
 
 
 def _resolve_model_name(requested_model_name: str | None = None) -> str:
@@ -79,6 +93,11 @@ def _create_summarization_middleware() -> ArchivingSummarizationMiddleware | Non
 
     if config.summary_prompt is not None:
         kwargs["summary_prompt"] = config.summary_prompt
+
+    kwargs["preserve_recent_skill_count"] = config.preserve_recent_skill_count
+    kwargs["preserve_recent_skill_tokens"] = config.preserve_recent_skill_tokens
+    kwargs["preserve_recent_skill_tokens_per_skill"] = config.preserve_recent_skill_tokens_per_skill
+    kwargs["skills_container_path"] = get_app_config().skills.container_path
 
     return ArchivingSummarizationMiddleware(**kwargs)
 
@@ -279,6 +298,33 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     # renders it in a collapsible Reasoning block rather than the main bubble.
     middlewares.append(ThinkTagMiddleware())
 
+    # Ev19TemplateGuardrail — block task(code-executor) when ev19_template is unset
+    from deerflow.config.guardrails_config import get_guardrails_config
+
+    guardrails_cfg = get_guardrails_config()
+    if guardrails_cfg.enabled:
+        from deerflow.guardrails.ev19_template_provider import (
+            Ev19TemplateGuardrailProvider,
+            Ev19WorkspaceBridgeMiddleware,
+        )
+        from deerflow.guardrails.middleware import GuardrailMiddleware
+
+        provider = Ev19TemplateGuardrailProvider()
+        middlewares.append(Ev19WorkspaceBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
+
+        # LeadAgentExecutionBoundary — block lead from writing scripts or running
+        # non-whitelisted bash. Self-gates by agent_id; subagents pass through.
+        # See: spec §5.5.1, fix thread b0d3a611 E2E failure root cause A.
+        from deerflow.guardrails.lead_execution_boundary_provider import (
+            LeadAgentExecutionBoundaryProvider,
+        )
+
+        middlewares.append(GuardrailMiddleware(
+            provider=LeadAgentExecutionBoundaryProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
@@ -302,6 +348,17 @@ def make_lead_agent(config: RunnableConfig):
 
     cfg = config.get("configurable", {})
 
+    # Copy LangGraph's auth user_id into the deerflow ContextVar.
+    # `make_lead_agent` runs on the bg-loop worker task that subsequently
+    # invokes the middlewares (UploadsMiddleware, ThreadDataMiddleware, …),
+    # so a ContextVar set here is task-local and visible to every middleware
+    # in this run. It cannot be set in `authenticate()` / `@auth.on` because
+    # those run in the request-handling thread, where ContextVars do not
+    # propagate to the bg-loop asyncio task.
+    auth_user_id = cfg.get("langgraph_auth_user_id")
+    if auth_user_id:
+        set_current_user(_AuthUser(str(auth_user_id)))
+
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
@@ -310,7 +367,7 @@ def make_lead_agent(config: RunnableConfig):
     subagent_enabled = cfg.get("subagent_enabled", True)
     max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
     is_bootstrap = cfg.get("is_bootstrap", False)
-    agent_name = cfg.get("agent_name")
+    agent_name = validate_agent_name(cfg.get("agent_name"))
 
     agent_config = load_agent_config(agent_name) if not is_bootstrap else None
     # Custom agent model from agent config (if any), or None to let _resolve_model_name pick the default

@@ -48,10 +48,33 @@ class DataQualityWarning(BaseModel):
     message: str
 
 
-class CodeExecutorHandoff(BaseModel):
-    """Handoff JSON produced by the code-executor subagent's assess_and_handoff tool.
+class GateSignals(BaseModel):
+    """Structured decision signals from subagent to lead.
 
-    Matches the shape written by ethoinsight.templates.tool.assess_and_handoff_tool.
+    Lead reads these from subagent's final AIMessage (not from the handoff
+    file itself) to make Step 1.5 quality-gate decisions without inflating
+    context with the full handoff JSON. Also persisted in handoff JSON for
+    audit/replay (optional field).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    data_quality: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Summary of data_quality_warnings: "
+            "{'critical_count': int, 'warning_count': int, "
+            "'critical_items': [str, ...]  # 关键 critical 条目摘要，每条 <80 字}"
+        ),
+    )
+    statistical_validity: Literal["ok", "warning", "failed"] = "ok"
+    errors_count: int = 0
+
+
+class CodeExecutorHandoff(BaseModel):
+    """Handoff JSON produced by the code-executor subagent (SOTA glue-script architecture).
+
+    Written by the glue script to handoff_code_executor.json in the workspace.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -84,6 +107,14 @@ class CodeExecutorHandoff(BaseModel):
         ge=0.0,
         le=1.0,
         description="Optional overall confidence score in [0,1].",
+    )
+    gate_signals: GateSignals | None = Field(
+        default=None,
+        description=(
+            "Structured signals for lead's decision-making. "
+            "Optional in JSON file (lead reads from final AIMessage instead), "
+            "but recommended to include for audit/replay."
+        ),
     )
 
 
@@ -151,6 +182,7 @@ class DataAnalystHandoff(BaseModel):
         description="Suggested next steps or follow-up analyses.",
     )
     errors: list[str] = Field(default_factory=list)
+    gate_signals: GateSignals | None = Field(default=None)
 
 
 class ReportWriterHandoff(BaseModel):
@@ -165,12 +197,14 @@ class ReportWriterHandoff(BaseModel):
         description="E.g. ['Results', 'Discussion'].",
     )
     errors: list[str] = Field(default_factory=list)
+    gate_signals: GateSignals | None = Field(default=None)
 
 
 __all__ = [
     "CodeExecutorHandoff",
     "DataAnalystHandoff",
     "DataQualityWarning",
+    "GateSignals",
     "MetricStat",
     "OutlierFinding",
     "ReportWriterHandoff",

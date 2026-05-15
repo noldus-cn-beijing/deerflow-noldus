@@ -28,7 +28,6 @@ import {
   extractReasoningContentFromMessage,
   findToolCallResult,
 } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { getStageBroadcastForBash } from "@/core/tools/stage-broadcast";
 import { extractTitleFromMarkdown } from "@/core/utils/markdown";
 import { env } from "@/env";
@@ -77,7 +76,6 @@ export function MessageGroup({
       return filteredSteps[filteredSteps.length - 1];
     }
   }, [lastToolCallStep, steps]);
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   return (
     <ChainOfThought
       className={cn("w-full gap-2 rounded-lg border p-0.5", className)}
@@ -120,7 +118,6 @@ export function MessageGroup({
                     <MarkdownContent
                       content={step.reasoning ?? ""}
                       isLoading={isLoading}
-                      rehypePlugins={rehypePlugins}
                     />
                   }
                 ></ChainOfThoughtStep>
@@ -172,7 +169,6 @@ export function MessageGroup({
                   <MarkdownContent
                     content={lastReasoningStep.reasoning ?? ""}
                     isLoading={isLoading}
-                    rehypePlugins={rehypePlugins}
                   />
                 }
               ></ChainOfThoughtStep>

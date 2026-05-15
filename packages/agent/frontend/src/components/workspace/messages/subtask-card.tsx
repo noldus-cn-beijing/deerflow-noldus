@@ -18,11 +18,9 @@ import {
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
 import { Button } from "@/components/ui/button";
-import { ShineBorder } from "@/components/ui/shine-border";
 import { useI18n } from "@/core/i18n/hooks";
 import { hasToolCalls } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
-import { streamdownPluginsWithWordAnimation } from "@/core/streamdown";
+import { streamdownPlugins } from "@/core/streamdown";
 import { useSubtask } from "@/core/tasks/context";
 import { getStageBroadcastForSubagent } from "@/core/tools/stage-broadcast";
 import { explainLastToolCall } from "@/core/tools/utils";
@@ -42,17 +40,16 @@ import {
 export function SubtaskCard({
   className,
   taskId,
-  isLoading,
   threadId,
+  messageRunIds,
 }: {
   className?: string;
   taskId: string;
-  isLoading: boolean;
   threadId?: string;
+  messageRunIds?: Map<string, string>;
 }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const task = useSubtask(taskId)!;
   const icon = useMemo(() => {
     if (task.status === "completed") {
@@ -65,23 +62,14 @@ export function SubtaskCard({
   }, [task.status]);
   return (
     <ChainOfThought
-      className={cn("relative w-full gap-2 rounded-lg border py-0", className)}
+      className={cn(
+        "relative w-full gap-2 rounded-lg border py-0 transition-colors",
+        task.status === "in_progress" &&
+          "border-brand/50 animate-pulse-soft",
+        className,
+      )}
       open={!collapsed}
     >
-      <div
-        className={cn(
-          "ambilight z-[-1]",
-          task.status === "in_progress" ? "enabled" : "",
-        )}
-      ></div>
-      {task.status === "in_progress" && (
-        <>
-          <ShineBorder
-            borderWidth={1.5}
-            shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]}
-          />
-        </>
-      )}
       <div className="bg-background/95 flex w-full flex-col rounded-lg">
         <div className="flex w-full items-center justify-between p-0.5">
           <Button
@@ -145,7 +133,7 @@ export function SubtaskCard({
             >
               <div className="pt-1">
                 <Streamdown
-                  {...streamdownPluginsWithWordAnimation}
+                  {...streamdownPlugins}
                   components={{ a: CitationLink }}
                 >
                   {task.prompt}
@@ -157,7 +145,6 @@ export function SubtaskCard({
             <SubtaskCoTTimeline
               messages={task.messages}
               isLoading={task.status === "in_progress"}
-              rehypePlugins={rehypePlugins}
             />
           )}
           {task.status === "completed" && task.result && (
@@ -173,7 +160,6 @@ export function SubtaskCard({
                 <MarkdownContent
                   content={task.result}
                   isLoading={false}
-                  rehypePlugins={rehypePlugins}
                 />
               </div>
             </ChainOfThoughtStep>
@@ -185,13 +171,19 @@ export function SubtaskCard({
             ></ChainOfThoughtStep>
           )}
         </ChainOfThoughtContent>
-        {task.status === "completed" && threadId && (
-          <FeedbackButtons
-            threadId={threadId}
-            messageId={`subtask-${taskId}`}
-            className="px-4 pb-3"
-          />
-        )}
+        {task.status === "completed" && threadId && (() => {
+          const syntheticId = `subtask-${taskId}`;
+          const runId = messageRunIds?.get(syntheticId);
+          if (!runId) return null; // subtask 上下文暂缺 run_id，不渲染反馈
+          return (
+            <FeedbackButtons
+              threadId={threadId}
+              runId={runId}
+              messageId={syntheticId}
+              className="px-4 pb-3"
+            />
+          );
+        })()}
       </div>
     </ChainOfThought>
   );
@@ -200,11 +192,9 @@ export function SubtaskCard({
 function SubtaskCoTTimeline({
   messages,
   isLoading,
-  rehypePlugins,
 }: {
   messages: AIMessage[];
   isLoading: boolean;
-  rehypePlugins: ReturnType<typeof useRehypeSplitWordsIntoSpans>;
 }) {
   const steps = useMemo(
     () => convertToSteps(messages, SUBTASK_HIDDEN_TOOL_CALL_NAMES, true),
@@ -219,7 +209,6 @@ function SubtaskCoTTimeline({
           step={step}
           messages={messages}
           isLoading={isLoading}
-          rehypePlugins={rehypePlugins}
         />
       ))}
     </>
@@ -230,12 +219,10 @@ function CoTStepRenderer({
   step,
   messages,
   isLoading,
-  rehypePlugins,
 }: {
   step: CoTStep;
   messages: AIMessage[];
   isLoading: boolean;
-  rehypePlugins: ReturnType<typeof useRehypeSplitWordsIntoSpans>;
 }) {
   if (step.type === "reasoning") {
     return (
@@ -246,7 +233,6 @@ function CoTStepRenderer({
           <MarkdownContent
             content={step.reasoning ?? ""}
             isLoading={isLoading}
-            rehypePlugins={rehypePlugins}
           />
         }
       />
@@ -260,7 +246,6 @@ function CoTStepRenderer({
           <MarkdownContent
             content={step.content}
             isLoading={isLoading}
-            rehypePlugins={rehypePlugins}
           />
         }
       />

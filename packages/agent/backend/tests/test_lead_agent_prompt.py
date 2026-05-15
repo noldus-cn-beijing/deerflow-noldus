@@ -1,5 +1,6 @@
 import threading
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import anyio
 
@@ -65,7 +66,9 @@ def test_refresh_skills_system_prompt_cache_async_reloads_immediately(monkeypatc
         )
 
     state = {"skills": [make_skill("first-skill")]}
-    monkeypatch.setattr(prompt_module, "load_skills", lambda enabled_only=True: list(state["skills"]))
+    mock_storage = Mock()
+    mock_storage.load_skills = lambda enabled_only=True: list(state["skills"])
+    monkeypatch.setattr(prompt_module, "get_or_new_skill_storage", lambda: mock_storage)
     prompt_module._reset_skills_system_prompt_cache_state()
 
     try:
@@ -118,7 +121,9 @@ def test_clear_cache_does_not_spawn_parallel_refresh_workers(monkeypatch, tmp_pa
 
         return [make_skill(f"skill-{current_call}")]
 
-    monkeypatch.setattr(prompt_module, "load_skills", fake_load_skills)
+    mock_storage = Mock()
+    mock_storage.load_skills = fake_load_skills
+    monkeypatch.setattr(prompt_module, "get_or_new_skill_storage", lambda: mock_storage)
     prompt_module._reset_skills_system_prompt_cache_state()
 
     try:

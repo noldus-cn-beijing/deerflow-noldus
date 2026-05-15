@@ -156,20 +156,45 @@ def test_format_memory_renders_correction_without_source_error_normally() -> Non
     assert "avoid:" not in result
 
 
-def test_format_memory_includes_long_term_background() -> None:
-    """longTermBackground in history must be injected into the prompt."""
+def test_format_memory_does_not_inject_history_or_topofmind() -> None:
+    """2026-05-13 隔离更新：history.* 和 user.topOfMind 不再注入到 prompt。
+
+    这些字段容易被 LLM 写入"上传了 X 文件"、"刚跑了 Y 分析"等会话级状态，
+    新 thread 读到后会产生"以为当前 thread 也上传过那些文件"的幻觉。本测试
+    锁死："即使 memory.json 里有这些字段，注入到 prompt 时也不出现"。
+
+    facts、user.workContext、user.personalContext 仍正常注入。
+    """
     memory_data = {
-        "user": {},
+        "user": {
+            "workContext": {"summary": "Senior backend engineer"},
+            "personalContext": {"summary": "Prefers English markdown output"},
+            "topOfMind": {"summary": "已上传 5 个 EPM 文件，等待分组信息"},
+        },
         "history": {
             "recentMonths": {"summary": "Recent activity summary"},
             "earlierContext": {"summary": "Earlier context summary"},
             "longTermBackground": {"summary": "Core expertise in distributed systems"},
         },
-        "facts": [],
+        "facts": [
+            {"content": "User studies zebrafish behavior", "category": "context", "confidence": 0.9},
+        ],
     }
 
     result = format_memory_for_injection(memory_data, max_tokens=2000)
 
-    assert "Background: Core expertise in distributed systems" in result
-    assert "Recent: Recent activity summary" in result
-    assert "Earlier: Earlier context summary" in result
+    # 长期画像层 — 注入
+    assert "Work: Senior backend engineer" in result
+    assert "Personal: Prefers English markdown output" in result
+    assert "User studies zebrafish behavior" in result
+
+    # 会话级 / 历史叙述层 — 不注入
+    assert "已上传" not in result, "topOfMind 不应注入"
+    assert "Current Focus" not in result, "topOfMind label 不应出现"
+    assert "Recent activity summary" not in result, "history.recentMonths 不应注入"
+    assert "Earlier context summary" not in result, "history.earlierContext 不应注入"
+    assert "Core expertise in distributed systems" not in result, "history.longTermBackground 不应注入"
+    assert "Background:" not in result
+    assert "Recent:" not in result
+    assert "Earlier:" not in result
+    assert "History:" not in result

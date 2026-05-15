@@ -8,6 +8,11 @@ system prompt to explicitly state:
 
 These tests lock in the presence of those sections so future prompt edits
 cannot drop them silently.
+
+Note: code-executor was migrated to SOTA glue-script architecture (Phase 1 T5).
+Its prompt no longer embeds the full handoff schema inline — that detail lives
+in the by-paradigm skill reference files. Tests for code-executor check the
+new invariants (workflow steps, glue-script output path, failure middleware).
 """
 
 from __future__ import annotations
@@ -29,27 +34,33 @@ from deerflow.subagents.builtins.report_writer import REPORT_WRITER_CONFIG  # no
 
 
 class TestCodeExecutorPromptClarity:
+    """Tests for the SOTA glue-script architecture (Phase 1 T5)."""
+
     @property
     def prompt(self) -> str:
         return CODE_EXECUTOR_CONFIG.system_prompt or ""
 
-    def test_describes_handoff_schema(self):
+    def test_describes_handoff_output(self):
+        """Prompt must reference the handoff JSON output path."""
         assert "handoff" in self.prompt.lower()
-        assert "status" in self.prompt
-        assert "metrics_summary" in self.prompt
-        assert "data_quality_warnings" in self.prompt
+        assert "handoff_code_executor.json" in self.prompt
 
-    def test_references_handoff_schema_module(self):
-        assert "CodeExecutorHandoff" in self.prompt
+    def test_describes_workflow_steps(self):
+        """Prompt must describe the script-orchestration workflow steps."""
+        assert "inputs.json" in self.prompt or "scripts" in self.prompt
+        # New catalog architecture: code-executor reads metric_plan.json, not by-paradigm md
+        assert "metric_plan.json" in self.prompt
 
     def test_has_failure_section(self):
         assert "<failure>" in self.prompt
-        assert "failed" in self.prompt
+        # New arch: failure is handled by middleware (traceback auto-returned)
+        assert "traceback" in self.prompt or "loop_detection" in self.prompt
 
-    def test_forbids_silent_bypass(self):
-        """Must tell subagent NOT to silently hard-write results."""
-        p = self.prompt.lower()
-        assert "不要硬写" in self.prompt or "bypass" in p
+    def test_forbids_hardcoded_columns(self):
+        """Must tell subagent NOT to hardcode column names."""
+        # SOTA: script-orchestration arch — executor doesn't write code at all,
+        # so "hardcoded columns" is replaced by bash_constraints whitelist.
+        assert "bash_constraints" in self.prompt or "硬编码" in self.prompt
 
 
 class TestDataAnalystPromptClarity:

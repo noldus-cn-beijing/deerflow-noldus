@@ -950,7 +950,7 @@ Expected: 无新增 warning 或 error。
 在 `- **skills/custom/ 是 gitignored**` 这一行之后加入：
 
 ```
-   - 项目定制 skill 包括：`ethoinsight`, `ethoinsight-analysis`, `ethoinsight-charts`, `ethoinsight-planning`（规划框架，2026-04-17 新增）
+   - 项目定制 skill 包括：`ethoinsight`, `ethoinsight-code`, `ethoinsight-charts`, `ethoinsight-planning`（规划框架，2026-04-17 新增）
 ```
 
 （Edit old_string 要精确匹配现有那行原文，参照 Task 开始前 Read CLAUDE.md 的结果。）

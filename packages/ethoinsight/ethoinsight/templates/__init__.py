@@ -1,14 +1,7 @@
-"""Analysis templates for behavioral data paradigms.
+"""Paradigm registry for behavioral data paradigms.
 
 Public API:
-- get_analysis_template_tool: LangChain tool for code-executor subagent (legacy)
-- run_paradigm_analysis_tool: LangChain tool that executes analysis in one call
-- run_paradigm_analysis_core: Pure function for testing (no langchain dependency)
-- get_available_paradigms: list available paradigm template names
-- render_template: render a template with given parameters (used internally)
-
-Paradigm Registry:
-- CATEGORIES: 7 major experiment categories for two-level ask_clarification
+- CATEGORIES: 7 major experiment categories
 - PARADIGMS: 18 behavioral paradigms with zones, columns, subject type, and status
 - list_categories(): return all 7 categories
 - list_paradigms(status=, category=): filtered paradigm listing
@@ -21,18 +14,9 @@ import logging
 
 from pathlib import Path
 
-# Lazy imports for langchain-dependent tools (only used in agent process).
-# Standalone ethoinsight does not depend on langchain.
-_tool_exports: dict = {}
-
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "get_analysis_template_tool",
-    "get_available_paradigms",
-    "render_template",
-    "run_paradigm_analysis_core",
-    "run_paradigm_analysis_tool",
     # Paradigm registry
     "CATEGORIES",
     "PARADIGMS",
@@ -43,32 +27,14 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
-    """Lazy-import langchain-dependent tools so standalone ethoinsight works."""
-    if name in {
-        "get_analysis_template_tool",
-        "get_available_paradigms",
-        "render_template",
-        "run_paradigm_analysis_core",
-        "run_paradigm_analysis_tool",
-    }:
-        if name not in _tool_exports:
-            from . import tool as _tool_mod
-
-            _tool_exports.update({
-                "get_analysis_template_tool": _tool_mod.get_analysis_template_tool,
-                "get_available_paradigms": _tool_mod.get_available_paradigms,
-                "render_template": _tool_mod.render_template,
-                "run_paradigm_analysis_core": _tool_mod.run_paradigm_analysis_core,
-                "run_paradigm_analysis_tool": _tool_mod.run_paradigm_analysis_tool,
-            })
-        return _tool_exports[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
 # ===== Paradigm Categories (7 major groups for two-level ask_clarification) =====
 
 CATEGORIES: list[dict] = [
-    {"name": "open_field", "cn": "旷场及物体识别", "en": "Open Field & Object Recognition"},
+    {
+        "name": "open_field",
+        "cn": "旷场及物体识别",
+        "en": "Open Field & Object Recognition",
+    },
     {"name": "anxiety", "cn": "焦虑迷宫", "en": "Anxiety Mazes"},
     {"name": "spatial_memory", "cn": "空间学习记忆迷宫", "en": "Spatial Memory Mazes"},
     {"name": "social", "cn": "社会交互与偏好", "en": "Social Interaction & Preference"},
@@ -98,7 +64,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "open_field",
         "subject": "rodent",
         "zones": ["center", "periphery", "corners"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "distance_moved", "time_center", "time_periphery"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "distance_moved",
+            "time_center",
+            "time_periphery",
+        ],
         "ev19_arena_templates": ["Open field, round", "Open field, square"],
         "status": "planned",
     },
@@ -108,7 +81,15 @@ PARADIGMS: dict[str, dict] = {
         "category": "open_field",
         "subject": "rodent",
         "zones": ["object_a", "object_b", "arena"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "time_novel", "time_familiar", "approaches_novel", "approaches_familiar"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "time_novel",
+            "time_familiar",
+            "approaches_novel",
+            "approaches_familiar",
+        ],
         "ev19_arena_templates": ["Open field, round", "Open field, square"],
         "status": "planned",
     },
@@ -118,7 +99,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "open_field",
         "subject": "rodent",
         "zones": ["holes", "arena"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "head_dips", "total_entries", "time_near_holes"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "head_dips",
+            "total_entries",
+            "time_near_holes",
+        ],
         "ev19_arena_templates": [],
         "status": "planned",
     },
@@ -129,7 +117,15 @@ PARADIGMS: dict[str, dict] = {
         "category": "anxiety",
         "subject": "rodent",
         "zones": ["open_arm", "closed_arm", "center"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "time_open", "time_closed", "entries_open", "entries_closed"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "time_open",
+            "time_closed",
+            "entries_open",
+            "entries_closed",
+        ],
         "ev19_arena_templates": ["Elevated plus maze"],
         "status": "planned",
     },
@@ -139,7 +135,15 @@ PARADIGMS: dict[str, dict] = {
         "category": "anxiety",
         "subject": "rodent",
         "zones": ["open_quadrant", "closed_quadrant"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "time_open", "time_closed", "entries_open", "head_dips"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "time_open",
+            "time_closed",
+            "entries_open",
+            "head_dips",
+        ],
         "ev19_arena_templates": ["O-maze"],
         "status": "planned",
     },
@@ -149,7 +153,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "anxiety",
         "subject": "rodent",
         "zones": ["light", "dark"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "time_light", "time_dark", "transitions"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "time_light",
+            "time_dark",
+            "transitions",
+        ],
         "ev19_arena_templates": [],
         "status": "planned",
     },
@@ -160,7 +171,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "spatial_memory",
         "subject": "rodent",
         "zones": ["target_quadrant", "other_quadrants", "platform"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "latency", "target_time", "distance_to_platform"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "latency",
+            "target_time",
+            "distance_to_platform",
+        ],
         "ev19_arena_templates": ["Morris water maze"],
         "status": "planned",
     },
@@ -170,7 +188,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "spatial_memory",
         "subject": "rodent",
         "zones": ["target_hole", "other_holes", "arena"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "latency", "target_time", "errors"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "latency",
+            "target_time",
+            "errors",
+        ],
         "ev19_arena_templates": ["Barnes maze"],
         "status": "planned",
     },
@@ -179,8 +204,25 @@ PARADIGMS: dict[str, dict] = {
         "en": "Radial Arm Maze",
         "category": "spatial_memory",
         "subject": "rodent",
-        "zones": ["arm_1", "arm_2", "arm_3", "arm_4", "arm_5", "arm_6", "arm_7", "arm_8", "center"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "working_errors", "reference_errors", "total_arm_entries"],
+        "zones": [
+            "arm_1",
+            "arm_2",
+            "arm_3",
+            "arm_4",
+            "arm_5",
+            "arm_6",
+            "arm_7",
+            "arm_8",
+            "center",
+        ],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "working_errors",
+            "reference_errors",
+            "total_arm_entries",
+        ],
         "ev19_arena_templates": ["Radial 8-arm maze"],
         "status": "planned",
     },
@@ -190,7 +232,15 @@ PARADIGMS: dict[str, dict] = {
         "category": "spatial_memory",
         "subject": "rodent",
         "zones": ["arm_a", "arm_b", "arm_c", "center"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "alternations", "arm_entries_a", "arm_entries_b", "arm_entries_c"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "alternations",
+            "arm_entries_a",
+            "arm_entries_b",
+            "arm_entries_c",
+        ],
         "ev19_arena_templates": ["Y-maze"],
         "status": "planned",
     },
@@ -200,7 +250,15 @@ PARADIGMS: dict[str, dict] = {
         "category": "spatial_memory",
         "subject": "rodent",
         "zones": ["left_arm", "right_arm", "start_arm", "center"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "alternation_rate", "left_entries", "right_entries", "latency"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "alternation_rate",
+            "left_entries",
+            "right_entries",
+            "latency",
+        ],
         "ev19_arena_templates": ["T-maze"],
         "status": "planned",
     },
@@ -210,7 +268,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "spatial_memory",
         "subject": "fish",
         "zones": ["start_box", "arms", "goal_zones", "center"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "arm_entries", "goal_latency", "correct_choices"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "arm_entries",
+            "goal_latency",
+            "correct_choices",
+        ],
         "ev19_arena_templates": ["Cross maze"],
         "status": "planned",
     },
@@ -221,7 +286,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "social",
         "subject": "rodent",
         "zones": ["interaction_zone", "avoidance_zone"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "time_interaction", "time_avoidance", "approaches"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "time_interaction",
+            "time_avoidance",
+            "approaches",
+        ],
         "ev19_arena_templates": ["Sociability chamber"],
         "status": "planned",
     },
@@ -231,7 +303,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "social",
         "subject": "rodent",
         "zones": ["drug_paired", "vehicle_paired", "neutral"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "time_drug", "time_vehicle", "preference_score"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "time_drug",
+            "time_vehicle",
+            "preference_score",
+        ],
         "ev19_arena_templates": [],
         "status": "planned",
     },
@@ -242,7 +321,14 @@ PARADIGMS: dict[str, dict] = {
         "category": "depression",
         "subject": "rodent",
         "zones": ["water", "bottom"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "immobility_time", "swimming_time", "climbing_time"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "immobility_time",
+            "swimming_time",
+            "climbing_time",
+        ],
         "ev19_arena_templates": ["Porsolt cylinder"],
         "status": "planned",
     },
@@ -252,7 +338,13 @@ PARADIGMS: dict[str, dict] = {
         "category": "depression",
         "subject": "rodent",
         "zones": ["upper", "lower"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "immobility_time", "mobility_time"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "immobility_time",
+            "mobility_time",
+        ],
         "ev19_arena_templates": [],
         "status": "planned",
     },
@@ -263,11 +355,23 @@ PARADIGMS: dict[str, dict] = {
         "category": "fear",
         "subject": "rodent",
         "zones": ["safe_zone", "shock_zone"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "freezing_time", "avoidance_latency", "escapes", "shocks_received"],
-        "ev19_arena_templates": ["Ugo Basile Active Avoidance", "Ugo Basile FCS 1 cubicle", "Ugo Basile FCS 4 cubicles"],
+        "expected_columns": [
+            "X_center",
+            "Y_center",
+            "velocity",
+            "freezing_time",
+            "avoidance_latency",
+            "escapes",
+            "shocks_received",
+        ],
+        "ev19_arena_templates": [
+            "Ugo Basile Active Avoidance",
+            "Ugo Basile FCS 1 cubicle",
+            "Ugo Basile FCS 4 cubicles",
+        ],
         "status": "planned",
     },
-    # ===== 斑马鱼行为 (1, ready) =====
+    # ===== 斑马鱼行为 (1) =====
     "shoaling": {
         "cn": "斑马鱼鱼群行为",
         "en": "Shoaling",
@@ -276,7 +380,7 @@ PARADIGMS: dict[str, dict] = {
         "zones": ["center", "periphery"],
         "expected_columns": ["X_center", "Y_center", "velocity", "IID", "NND"],
         "ev19_arena_templates": ["DanioVision DVOC 004x, 96 round wells"],
-        "status": "ready",
+        "status": "planned",
     },
 }
 
@@ -286,7 +390,9 @@ def list_categories() -> list[dict]:
     return CATEGORIES
 
 
-def list_paradigms(status: str | None = None, category: str | None = None) -> list[dict]:
+def list_paradigms(
+    status: str | None = None, category: str | None = None
+) -> list[dict]:
     """Return paradigms filtered by status and/or category.
 
     Each entry includes name, cn, en, zones, status, category, subject.
@@ -297,15 +403,17 @@ def list_paradigms(status: str | None = None, category: str | None = None) -> li
             continue
         if category is not None and info.get("category") != category:
             continue
-        result.append({
-            "name": name,
-            "cn": info["cn"],
-            "en": info["en"],
-            "zones": info["zones"],
-            "status": info["status"],
-            "category": info["category"],
-            "subject": info["subject"],
-        })
+        result.append(
+            {
+                "name": name,
+                "cn": info["cn"],
+                "en": info["en"],
+                "zones": info["zones"],
+                "status": info["status"],
+                "category": info["category"],
+                "subject": info["subject"],
+            }
+        )
     return result
 
 
@@ -327,11 +435,15 @@ def verify_paradigm_columns(paradigm_name: str, file_path: str) -> dict | None:
         Raises ValueError if paradigm_name is not in PARADIGMS.
     """
     if paradigm_name not in PARADIGMS:
-        raise ValueError(f"Unknown paradigm: {paradigm_name!r}. Available: {sorted(PARADIGMS)}")
+        raise ValueError(
+            f"Unknown paradigm: {paradigm_name!r}. Available: {sorted(PARADIGMS)}"
+        )
 
     path = Path(file_path)
     if not path.exists():
-        logger.debug("verify_paradigm_columns: file not found %s, returning None", file_path)
+        logger.debug(
+            "verify_paradigm_columns: file not found %s, returning None", file_path
+        )
         return None
 
     expected = PARADIGMS[paradigm_name]["expected_columns"]
@@ -342,9 +454,16 @@ def verify_paradigm_columns(paradigm_name: str, file_path: str) -> dict | None:
             try:
                 header = next(reader)
             except StopIteration:
-                return {"match": False, "expected": expected, "found": [], "missing": expected}
+                return {
+                    "match": False,
+                    "expected": expected,
+                    "found": [],
+                    "missing": expected,
+                }
     except Exception:
-        logger.debug("verify_paradigm_columns: failed to read %s", file_path, exc_info=True)
+        logger.debug(
+            "verify_paradigm_columns: failed to read %s", file_path, exc_info=True
+        )
         return None
 
     header_lower = [h.strip().lower() for h in header]

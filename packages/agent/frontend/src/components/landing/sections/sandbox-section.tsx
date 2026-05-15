@@ -27,7 +27,7 @@ export function SandboxSection({ className }: { className?: string }) {
           <Terminal className="h-[360px] w-full">
             {/* Scene 1: Build a Game */}
             <TypingAnimation>$ cat requirements.txt</TypingAnimation>
-            <AnimatedSpan delay={800} className="text-zinc-400">
+            <AnimatedSpan delay={800} className="text-muted-foreground">
               pygame==2.5.0
             </AnimatedSpan>
 
@@ -62,7 +62,7 @@ export function SandboxSection({ className }: { className?: string }) {
             <TypingAnimation delay={5400}>
               $ curl -O sales-2024.csv
             </TypingAnimation>
-            <AnimatedSpan delay={6200} className="text-zinc-400">
+            <AnimatedSpan delay={6200} className="text-muted-foreground">
               Downloaded 12.4 MB
             </AnimatedSpan>
           </Terminal>
@@ -71,7 +71,7 @@ export function SandboxSection({ className }: { className?: string }) {
         {/* Right: Description */}
         <div className="w-full flex-1 space-y-6">
           <div className="space-y-4">
-            <p className="text-sm font-medium tracking-wider text-purple-400 uppercase">
+            <p className="text-sm font-medium tracking-wider text-foreground uppercase">
               Open-source
             </p>
             <h2 className="text-4xl font-bold tracking-tight lg:text-5xl">
@@ -85,7 +85,7 @@ export function SandboxSection({ className }: { className?: string }) {
             </h2>
           </div>
 
-          <div className="space-y-4 text-lg text-zinc-400">
+          <div className="space-y-4 text-lg text-muted-foreground">
             <p>
               We recommend using{" "}
               <a
@@ -103,19 +103,19 @@ export function SandboxSection({ className }: { className?: string }) {
 
           {/* Feature Tags */}
           <div className="flex flex-wrap gap-3 pt-4">
-            <span className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
+            <span className="rounded-full border border-border bg-secondary px-4 py-2 text-sm text-foreground">
               Isolated
             </span>
-            <span className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
+            <span className="rounded-full border border-border bg-secondary px-4 py-2 text-sm text-foreground">
               Safe
             </span>
-            <span className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
+            <span className="rounded-full border border-border bg-secondary px-4 py-2 text-sm text-foreground">
               Persistent
             </span>
-            <span className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
+            <span className="rounded-full border border-border bg-secondary px-4 py-2 text-sm text-foreground">
               Mountable FS
             </span>
-            <span className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
+            <span className="rounded-full border border-border bg-secondary px-4 py-2 text-sm text-foreground">
               Long-running
             </span>
           </div>

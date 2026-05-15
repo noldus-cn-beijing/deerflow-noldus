@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE boost_serialization>
+<boost_serialization signature="serialization::archive" version="19">
+<TemplateMetaData class_id="0" tracking_level="0" version="0">
+	<m_strArenaTemplate>PhenoTyper, 4x</m_strArenaTemplate>
+	<m_strZoneTemplate>Feeding and shelter zones</m_strZoneTemplate>
+	<m_vecRodentSubTypes class_id="1" tracking_level="0" version="0">
+		<count>1</count>
+		<item_version>0</item_version>
+		<item>2</item>
+	</m_vecRodentSubTypes>
+	<m_vecFishSubTypes class_id="2" tracking_level="0" version="0">
+		<count>0</count>
+		<item_version>0</item_version>
+	</m_vecFishSubTypes>
+	<m_vecInsectSubTypes class_id="3" tracking_level="0" version="0">
+		<count>0</count>
+		<item_version>0</item_version>
+	</m_vecInsectSubTypes>
+	<m_bOtherTypes>0</m_bOtherTypes>
+	<m_vecDefaultForRodentSubTypes>
+		<count>0</count>
+		<item_version>0</item_version>
+	</m_vecDefaultForRodentSubTypes>
+	<m_vecDefaultForFishSubTypes>
+		<count>0</count>
+		<item_version>0</item_version>
+	</m_vecDefaultForFishSubTypes>
+	<m_vecDefaultForInsectSubTypes>
+		<count>0</count>
+		<item_version>0</item_version>
+	</m_vecDefaultForInsectSubTypes>
+	<m_bDefaultForOtherTypes>0</m_bDefaultForOtherTypes>
+	<m_bBypassArenaGrid>1</m_bBypassArenaGrid>
+	<m_bBypassSubjectCountAndRoles>1</m_bBypassSubjectCountAndRoles>
+	<m_bBypassSubjectFeatures>0</m_bBypassSubjectFeatures>
+	<m_bBypassSubjectContrast>0</m_bBypassSubjectContrast>
+	<m_bBypassSampleRate>0</m_bBypassSampleRate>
+	<m_vecUsedAddOns class_id="4" tracking_level="0" version="0">
+		<count>1</count>
+		<item_version>0</item_version>
+		<item>11003</item>
+	</m_vecUsedAddOns>
+</TemplateMetaData>
+</boost_serialization>

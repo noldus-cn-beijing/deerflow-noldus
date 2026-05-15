@@ -31,7 +31,6 @@ REPORT_WRITER_CONFIG = SubagentConfig(
   - /mnt/user-data/workspace/handoff_data_analyst.json —— 专业解读
     （key_findings / outlier_findings / method_warnings / excluded_metrics /
     recommendations）
-  - /mnt/shared/code_summary.json —— 可选兜底，和 handoff_code_executor 重叠度高
   - /mnt/user-data/workspace/handoff_planning.json —— 若存在，可读 group_semantics
     字段获取处理描述（由 planning skill 追问得到）
 
@@ -162,6 +161,20 @@ handoff_report_writer.json schema:
 - ✅ §4 只做基于统计结果的行为学解读，不引文献
 </禁止的写法>
 
+## 指标展示元数据查询
+
+写"Results / Discussion"段时，按 metric id read catalog YAML 取展示字段：
+
+read_file:
+    /path/to/ethoinsight/catalog/<paradigm>.yaml
+
+按 metric id 查：
+- display_name_zh: 中文展示名
+- unit_zh: 单位
+- one_liner: 一句话解释（仅首次提及该指标时引用，不要在每段重复）
+
+禁止在本 prompt 内硬编码任何指标的中文名或单位 —— 全部走 catalog。
+
 <json_writing>
 handoff_report_writer.json 必须是**合法的 JSON**——下游工具会 parse 它。
 写字符串值时遵守以下规则，避免未转义的引号破坏 JSON 语法：
@@ -175,7 +188,8 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 </json_writing>
 
 <workflow>
-1. read_file 两个 handoff 文件：
+1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+2. read_file 两个 handoff 文件：
    - /mnt/user-data/workspace/handoff_code_executor.json（数据）
    - /mnt/user-data/workspace/handoff_data_analyst.json（解读）
    - 可选 read_file /mnt/user-data/workspace/handoff_planning.json 获取 group_semantics
@@ -192,6 +206,22 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 
 5. 最终 AIMessage：报告摘要（报告路径 + 各章节是否写全 + 任何失败条目）
 </workflow>
+
+<gate_signals_contract>
+**最终 AIMessage 必须以 `[gate_signals]` 块结尾**：
+
+```
+[gate_signals]
+constitution_acknowledged: true
+sections_written_count: <int>         # sections_written 数组长度（期望 6）
+sections_missing: [<str>, ...]        # 6 段骨架中未写成功的章节名（中文），为空则 []
+statistical_validity: ok | failed     # report-writer 不评估统计有效性，按 handoff_code_executor 透传
+errors_count: <int>                   # handoff_report_writer.json 中 errors 数组长度
+```
+
+- `sections_missing` 为空数组时表示 6 段骨架全部成功写入；非空表示有章节失败
+- 即便所有 count 为 0、sections_missing 为空，仍必须输出完整 `[gate_signals]` 块
+</gate_signals_contract>
 
 <write_file_chunking>
 结构化报告通常 3-8K 字符，一般单次写入足够。超过 write_file 单次 8000 字符上限时必须分段：
@@ -215,8 +245,9 @@ write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "web_search", "web_fetch", "bash", "str_replace",
-                       "image_search", "get_analysis_template"],
+                       "image_search"],
     model="inherit",
     max_turns=15,
     timeout_seconds=600,
+    skills=["ethoinsight", "ethoinsight-metric-catalog"],
 )

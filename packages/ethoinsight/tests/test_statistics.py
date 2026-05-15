@@ -286,9 +286,30 @@ class TestPostHocSelection:
         """compare_groups should include post-hoc entries when omnibus is significant."""
         metrics_result = {
             "group_summary": {
-                "control": {"distance": {"mean": 10, "std": 2, "n": 5, "values": [9, 10, 11, 10, 10]}},
-                "low_dose": {"distance": {"mean": 15, "std": 2, "n": 5, "values": [14, 15, 16, 15, 15]}},
-                "high_dose": {"distance": {"mean": 25, "std": 2, "n": 5, "values": [24, 25, 26, 25, 25]}},
+                "control": {
+                    "distance": {
+                        "mean": 10,
+                        "std": 2,
+                        "n": 5,
+                        "values": [9, 10, 11, 10, 10],
+                    }
+                },
+                "low_dose": {
+                    "distance": {
+                        "mean": 15,
+                        "std": 2,
+                        "n": 5,
+                        "values": [14, 15, 16, 15, 15],
+                    }
+                },
+                "high_dose": {
+                    "distance": {
+                        "mean": 25,
+                        "std": 2,
+                        "n": 5,
+                        "values": [24, 25, 26, 25, 25],
+                    }
+                },
             }
         }
         result = statistics.compare_groups(metrics_result)
@@ -322,19 +343,22 @@ class TestCompareGroups:
 
     def test_bonferroni_correction(self, shoaling_metrics):
         result = statistics.compare_groups(
-            shoaling_metrics, correction="bonferroni",
+            shoaling_metrics,
+            correction="bonferroni",
         )
         assert result["correction"] == "bonferroni"
 
     def test_no_correction(self, shoaling_metrics):
         result = statistics.compare_groups(
-            shoaling_metrics, correction="none",
+            shoaling_metrics,
+            correction="none",
         )
         assert result["correction"] == "none"
 
     def test_single_group_returns_empty(self, shoaling_metrics):
         result = statistics.compare_groups(
-            shoaling_metrics, groups=["control"],
+            shoaling_metrics,
+            groups=["control"],
         )
         assert result["comparisons"] == {}
 
@@ -357,7 +381,9 @@ class TestAssessResults:
     def test_assess_with_metrics(self, shoaling_metrics):
         stat_results = statistics.compare_groups(shoaling_metrics)
         result = assess.assess_results(
-            stat_results, "shoaling", metrics_result=shoaling_metrics,
+            stat_results,
+            "shoaling",
+            metrics_result=shoaling_metrics,
         )
         assert isinstance(result["findings"], list)
 
@@ -368,3 +394,27 @@ class TestAssessResults:
         )
         assert result["overall_assessment"] is not None
         assert len(result["findings"]) == 0
+
+    def test_assess_does_not_emit_reference_range(self, shoaling_metrics):
+        """同事 5-13 反馈硬要求：不参考常模/基线/normal_range。"""
+        from ethoinsight import assess, statistics
+
+        stat_results = statistics.compare_groups(shoaling_metrics)
+        result = assess.assess_results(
+            stat_results,
+            "epm",
+            metrics_result=shoaling_metrics,
+        )
+        all_evidence = " ".join(
+            f.get("evidence", "") + " " + f.get("finding", "")
+            for f in result.get("findings", [])
+        )
+        for forbidden in (
+            "Reference range",
+            "normal_range",
+            "below threshold",
+            "above threshold",
+        ):
+            assert forbidden not in all_evidence, (
+                f"assess_results 仍引用绝对阈值语言: '{forbidden}'"
+            )

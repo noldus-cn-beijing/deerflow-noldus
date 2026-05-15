@@ -220,7 +220,7 @@ H. DPO 偏好标注         ~300 对 DPO    行为学专家        P2      [ ]
 ### C2. SKILL.md 决策树 → 样本
 
 - [ ] 解析 `ethoinsight/SKILL.md` 的决策树
-- [ ] 解析 `ethoinsight-analysis/SKILL.md` 的工作流
+- [ ] 解析 `ethoinsight-code/SKILL.md` 的工作流
 - [ ] 解析 `ethoinsight-charts/SKILL.md` 的图表选择树
 - [ ] 每条路径生成一个 Q&A 对
 

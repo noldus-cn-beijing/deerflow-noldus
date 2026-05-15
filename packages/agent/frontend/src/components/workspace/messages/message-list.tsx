@@ -16,7 +16,6 @@ import {
   hasReasoning,
   stripClarificationOptionsFromContent,
 } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import type { Subtask } from "@/core/tasks";
 import { useUpdateSubtask } from "@/core/tasks/context";
 import type { AgentThreadState } from "@/core/threads";
@@ -39,12 +38,14 @@ export function MessageList({
   className,
   threadId,
   thread,
+  messageRunIds,
   paddingBottom = MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
   onSelectClarificationOption,
 }: {
   className?: string;
   threadId: string;
   thread: BaseStream<AgentThreadState>;
+  messageRunIds?: Map<string, string>;
   paddingBottom?: number;
   /**
    * Optional callback fired when the user clicks one of the option buttons
@@ -54,7 +55,6 @@ export function MessageList({
   onSelectClarificationOption?: (optionText: string) => void;
 }) {
   const { t } = useI18n();
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
   const updateSubtask = useUpdateSubtask();
   const messages = thread.messages;
   if (thread.isThreadLoading && messages.length === 0) {
@@ -74,6 +74,7 @@ export function MessageList({
                   message={msg}
                   isLoading={thread.isLoading}
                   threadId={threadId}
+                  messageRunIds={messageRunIds}
                 />
               );
             });
@@ -113,7 +114,6 @@ export function MessageList({
                       options ?? [],
                     )}
                     isLoading={thread.isLoading}
-                    rehypePlugins={rehypePlugins}
                   />
                   {onSelectClarificationOption && (
                     <ClarificationOptions
@@ -140,7 +140,6 @@ export function MessageList({
                   <MarkdownContent
                     content={extractContentFromMessage(group.messages[0])}
                     isLoading={thread.isLoading}
-                    rehypePlugins={rehypePlugins}
                     className="mb-4"
                   />
                 )}
@@ -227,8 +226,8 @@ export function MessageList({
                   <SubtaskCard
                     key={"task-group-" + taskId}
                     taskId={taskId!}
-                    isLoading={thread.isLoading}
                     threadId={threadId}
+                    messageRunIds={messageRunIds}
                   />,
                 );
               }

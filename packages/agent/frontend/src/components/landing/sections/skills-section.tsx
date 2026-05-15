@@ -1,14 +1,20 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import { cn } from "@/lib/utils";
 
-import ProgressiveSkillsAnimation from "../progressive-skills-animation";
 import { Section } from "../section";
+
+const ProgressiveSkillsAnimation = dynamic(
+  () => import("../progressive-skills-animation"),
+  { ssr: false, loading: () => <div className="h-[400px] glass-card rounded-2xl" /> },
+);
 
 export function SkillsSection({ className }: { className?: string }) {
   return (
     <Section
-      className={cn("h-[calc(100vh-64px)] w-full bg-white/2", className)}
+      className={cn("h-[calc(100vh-64px)] w-full", className)}
       title="Agent Skills"
       subtitle={
         <div>

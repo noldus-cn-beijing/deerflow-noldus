@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE boost_serialization>
+<boost_serialization signature="serialization::archive" version="19">
+<HardwareSetup class_id="0" tracking_level="0" version="0">
+	<m_vecConfigDataNortioCore class_id="1" tracking_level="0" version="0">
+		<count>1</count>
+		<item_version>0</item_version>
+		<item class_id="2" tracking_level="0" version="0">
+			<m_strIpAdress></m_strIpAdress>
+			<m_strName></m_strName>
+			<m_strBoxLevelType></m_strBoxLevelType>
+			<m_iBoxLevelIndex>7274569</m_iBoxLevelIndex>
+			<m_iHubsConnected>7274594</m_iHubsConnected>
+			<m_vecConfigDataCoreHub class_id="3" tracking_level="0" version="0">
+				<count>1</count>
+				<item_version>0</item_version>
+				<item class_id="4" tracking_level="0" version="0">
+					<m_iHuBId>0</m_iHuBId>
+					<m_iType>0</m_iType>
+					<m_strName></m_strName>
+					<m_vecConfigDataDevicePorts class_id="5" tracking_level="0" version="0">
+						<count>0</count>
+						<item_version>0</item_version>
+					</m_vecConfigDataDevicePorts>
+				</item>
+			</m_vecConfigDataCoreHub>
+			<m_vecConfigDataHubs>
+				<count>0</count>
+				<item_version>0</item_version>
+			</m_vecConfigDataHubs>
+		</item>
+	</m_vecConfigDataNortioCore>
+</HardwareSetup>
+</boost_serialization>

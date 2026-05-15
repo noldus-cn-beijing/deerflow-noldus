@@ -200,6 +200,12 @@ export function useThreadStream({
     runMetadataStorageRef.current = getRunMetadataStorage();
   }
 
+  // Map<message_id, run_id> — 让 FeedbackButtons 知道反馈该挂到哪个 run。
+  // LangGraph SDK 的 Message 类型不带 run_id，从 onLangChainEvent 捕获。
+  const [messageRunIds, setMessageRunIds] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
     assistantId: "lead_agent",
@@ -218,6 +224,21 @@ export function useThreadStream({
           name: event.name,
           data: event.data,
         });
+      }
+      // 捕获 message → run_id 映射用于反馈按钮。
+      // on_chat_model_end 与 on_chain_end 携带 run_id 及输出 message。
+      const runId = (event as { run_id?: string }).run_id;
+      const output = (event as { data?: { output?: unknown } }).data?.output;
+      if (runId && output && typeof output === "object" && "id" in output) {
+        const msgId = (output as { id?: string }).id;
+        if (msgId) {
+          setMessageRunIds((prev) => {
+            if (prev.get(msgId) === runId) return prev;
+            const next = new Map(prev);
+            next.set(msgId, runId);
+            return next;
+          });
+        }
       }
     },
     onUpdateEvent(data) {
@@ -262,6 +283,44 @@ export function useThreadStream({
           message: AIMessage;
         };
         updateSubtask({ id: e.task_id, latestMessage: e.message });
+        return;
+      }
+
+      if (
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "task_completed"
+      ) {
+        const e = event as {
+          type: "task_completed";
+          task_id: string;
+          result?: string;
+        };
+        updateSubtask({
+          id: e.task_id,
+          status: "completed",
+          result: e.result,
+        });
+        return;
+      }
+
+      if (
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        (event.type === "task_failed" || event.type === "task_timed_out")
+      ) {
+        const e = event as {
+          type: "task_failed" | "task_timed_out";
+          task_id: string;
+          error?: string;
+        };
+        updateSubtask({
+          id: e.task_id,
+          status: "failed",
+          error: e.error,
+        });
         return;
       }
 
@@ -579,7 +638,7 @@ export function useThreadStream({
           messages: cachedMessages,
         } as typeof thread);
 
-  return [mergedThread, sendMessage, isUploading] as const;
+  return [mergedThread, sendMessage, isUploading, messageRunIds] as const;
 }
 
 export function useThreads(

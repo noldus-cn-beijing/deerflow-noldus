@@ -41,6 +41,33 @@ _DEFAULT_BILLING_HEADER = "x-anthropic-billing-header: cc_version=2.1.85.351; cc
 OAUTH_BILLING_HEADER = os.environ.get("ANTHROPIC_BILLING_HEADER", _DEFAULT_BILLING_HEADER)
 
 
+def _strip_malformed_thinking_blocks(messages: list[dict]) -> list[dict]:
+    """Remove thinking blocks that lack the 'thinking' key (signature_delta artifact).
+
+    langchain_anthropic's streaming handler creates a separate content block from
+    signature_delta events with type="thinking" but no "thinking" key.  When these
+    survive through the checkpointer and are sent back as conversation history,
+    the API rejects them with 400 "missing field thinking".
+
+    This function strips only the malformed blocks; valid thinking blocks that DO
+    have the "thinking" key are preserved.
+
+    Args:
+        messages: List of message dicts (as in the formatted payload).
+
+    Returns:
+        The same list (mutated in place), with malformed blocks removed.
+    """
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            msg["content"] = [
+                b for b in content
+                if not (isinstance(b, dict) and b.get("type") == "thinking" and "thinking" not in b)
+            ]
+    return messages
+
+
 class ClaudeChatModel(ChatAnthropic):
     """ChatAnthropic with OAuth Bearer auth, prompt caching, and smart thinking.
 
@@ -138,8 +165,18 @@ class ClaudeChatModel(ChatAnthropic):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> dict:
-        """Override to inject prompt caching, thinking budget, and OAuth billing."""
+        """Override to inject prompt caching, thinking budget, and OAuth billing.
+
+        Also strips malformed thinking blocks (type="thinking" without "thinking" key)
+        produced by langchain_anthropic's streaming handler when it creates a separate
+        content block from signature_delta events.  Those blocks survive through the
+        checkpointer and cause 400 "missing field thinking" errors from the API on
+        subsequent turns.
+        """
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        # Strip thinking blocks that lack the 'thinking' key (signature_delta artifact).
+        _strip_malformed_thinking_blocks(payload.get("messages", []))
 
         if self._is_oauth:
             self._apply_oauth_billing(payload)
@@ -190,23 +227,33 @@ class ClaudeChatModel(ChatAnthropic):
             )
 
     def _apply_prompt_caching(self, payload: dict) -> None:
-        """Apply ephemeral cache_control to system and recent messages."""
-        # Cache system messages
+        """Apply ephemeral cache_control to system, recent messages, and last tool definition.
+
+        Uses a budget of MAX_CACHE_BREAKPOINTS (4) breakpoints — the hard limit
+        enforced by both the Anthropic API and AWS Bedrock.  Breakpoints are
+        placed on the *last* eligible blocks because later breakpoints cover a
+        larger prefix and yield better cache hit rates.
+        """
+        MAX_CACHE_BREAKPOINTS = 4
+
+        # Collect candidate blocks in document order:
+        #   1. system text blocks
+        #   2. content blocks of the last prompt_cache_size messages
+        #   3. the last tool definition
+        candidates: list[dict] = []
+
+        # 1. System blocks
         system = payload.get("system")
         if system and isinstance(system, list):
             for block in system:
                 if isinstance(block, dict) and block.get("type") == "text":
-                    block["cache_control"] = {"type": "ephemeral"}
+                    candidates.append(block)
         elif system and isinstance(system, str):
-            payload["system"] = [
-                {
-                    "type": "text",
-                    "text": system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
+            new_block: dict = {"type": "text", "text": system}
+            payload["system"] = [new_block]
+            candidates.append(new_block)
 
-        # Cache recent messages
+        # 2. Recent message blocks
         messages = payload.get("messages", [])
         cache_start = max(0, len(messages) - self.prompt_cache_size)
         for i in range(cache_start, len(messages)):
@@ -217,20 +264,21 @@ class ClaudeChatModel(ChatAnthropic):
             if isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict):
-                        block["cache_control"] = {"type": "ephemeral"}
+                        candidates.append(block)
             elif isinstance(content, str) and content:
-                msg["content"] = [
-                    {
-                        "type": "text",
-                        "text": content,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ]
+                new_block = {"type": "text", "text": content}
+                msg["content"] = [new_block]
+                candidates.append(new_block)
 
-        # Cache the last tool definition
+        # 3. Last tool definition
         tools = payload.get("tools", [])
         if tools and isinstance(tools[-1], dict):
-            tools[-1]["cache_control"] = {"type": "ephemeral"}
+            candidates.append(tools[-1])
+
+        # Apply cache_control only to the last MAX_CACHE_BREAKPOINTS candidates
+        # to stay within the API limit.
+        for block in candidates[-MAX_CACHE_BREAKPOINTS:]:
+            block["cache_control"] = {"type": "ephemeral"}
 
     def _apply_thinking_budget(self, payload: dict) -> None:
         """Auto-allocate thinking budget (80% of max_tokens)."""

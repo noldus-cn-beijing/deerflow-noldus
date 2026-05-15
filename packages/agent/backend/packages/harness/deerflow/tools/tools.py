@@ -2,10 +2,10 @@ import logging
 
 from langchain.tools import BaseTool
 
+from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool
 from deerflow.config import get_app_config
 from deerflow.reflection import resolve_variable
 from deerflow.sandbox.security import is_host_bash_allowed
-from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool
 from deerflow.tools.builtins import ask_clarification_tool, present_file_tool, task_tool, view_image_tool
 from deerflow.tools.builtins.tool_search import reset_deferred_registry
 

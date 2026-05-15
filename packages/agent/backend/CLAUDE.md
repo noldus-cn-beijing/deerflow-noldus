@@ -217,6 +217,7 @@ FastAPI application on port 8001 with health check at `GET /health`.
 | **Threads** (`/api/threads/{id}`) | `DELETE /` - remove DeerFlow-managed local thread data after LangGraph thread deletion; unexpected failures are logged server-side and return a generic 500 detail |
 | **Artifacts** (`/api/threads/{id}/artifacts`) | `GET /{path}` - serve artifacts; active content types (`text/html`, `application/xhtml+xml`, `image/svg+xml`) are always forced as download attachments to reduce XSS risk; `?download=true` still forces download for other file types |
 | **Suggestions** (`/api/threads/{id}/suggestions`) | `POST /` - generate follow-up questions; rich list/block model content is normalized before JSON parsing |
+| **Feedback** (`/api/threads/{tid}/runs/{rid}/feedback`) | `POST /` - submit verdict-based feedback (correct/needs_fix/wrong + optional revised_text); `GET /` - list current user's feedback for a run. Backed by FeedbackRepository (SQLite). Requires `@require_permission("threads", "write"/"read")` |
 
 Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → Gateway.
 

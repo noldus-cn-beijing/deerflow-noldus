@@ -24,8 +24,6 @@ DATA_ANALYST_CONFIG = SubagentConfig(
   - /mnt/user-data/workspace/handoff_code_executor.json — code-executor 的
     结构化交接文件，包含 metrics_summary / per_subject / group_level_metrics /
     statistics / assessment / data_quality_warnings 等全部分析结果
-  - /mnt/shared/code_summary.json — code-executor 的精简数据快照
-    （和 handoff 重叠度高，可作为兜底）
 
 输出（三样都要，一个不能少）:
   1. **/mnt/user-data/workspace/handoff_data_analyst.json** —— 结构化交接文件，
@@ -72,7 +70,8 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 </json_writing>
 
 <workflow>
-1. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
+1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+2. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
    （一次读完，包含 per_subject / statistics / metrics_summary，不要零碎读多次）
 2. 一次性完成核心分析推理（单轮 LLM 思考，不拆分多个 turn）：
    a. **方法学把关**：检查 statistics.test_used 是否匹配实验设计
@@ -98,6 +97,24 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
    和最重要的 outlier_findings；不要复述 handoff JSON 的全部字段
 </workflow>
 
+<gate_signals_contract>
+**最终 AIMessage 必须以 `[gate_signals]` 块结尾**，给 lead 提供结构化决策信号。
+紧贴在 2-3 段自然语言摘要之后输出。格式：
+
+```
+[gate_signals]
+constitution_acknowledged: true
+method_warnings_count: <int>          # method_warnings 数组长度
+outlier_count: <int>                  # outlier_findings 数组长度
+excluded_metrics_count: <int>         # excluded_metrics 数组长度
+statistical_validity: ok | warning | failed
+errors_count: <int>
+```
+
+- `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读
+- 即便所有 count 为 0，仍必须输出完整 `[gate_signals]` 块
+</gate_signals_contract>
+
 <principles>
 - 行为学核心方法论是组间对比，不是绝对阈值
 - 检查混杂因素（运动量异常可能影响焦虑指标）
@@ -109,6 +126,19 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 - **handoff JSON 是交接第一标准**：每个结论都要落进对应字段，不要只在最终消息里说
 </principles>
 
+## 指标元数据查询
+
+判读某个指标时，read catalog YAML：
+
+read_file:
+    /path/to/ethoinsight/catalog/<paradigm>.yaml
+
+（catalog 物理路径由 lead 提供给你，或从 ethoinsight-metric-catalog skill 的 SKILL.md 顶部读取定位方法）
+
+关注字段：
+- direction_for_anxiety
+- statistical_default
+
 <failure>
 当 handoff_code_executor.json 读取失败或内容不可用时：
 - 仍然必须写出 handoff_data_analyst.json，status 设为 "failed"，errors 字段说明原因
@@ -119,9 +149,9 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "bash", "str_replace",
-                       "web_search", "web_fetch", "image_search",
-                       "get_analysis_template"],
+                       "web_search", "web_fetch", "image_search"],
     model="inherit",
     max_turns=12,
     timeout_seconds=600,
+    skills=["ethoinsight", "ethoinsight-metric-catalog"],
 )

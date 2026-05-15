@@ -16,6 +16,8 @@ from langgraph_sdk.errors import ConflictError
 from app.channels.commands import KNOWN_CHANNEL_COMMANDS
 from app.channels.message_bus import InboundMessage, InboundMessageType, MessageBus, OutboundMessage, ResolvedAttachment
 from app.channels.store import ChannelStore
+from app.gateway.csrf_middleware import CSRF_COOKIE_NAME, CSRF_HEADER_NAME, generate_csrf_token
+from app.gateway.internal_auth import create_internal_auth_headers
 
 logger = logging.getLogger(__name__)
 
@@ -388,7 +390,13 @@ async def _ingest_inbound_files(thread_id: str, msg: InboundMessage) -> list[dic
     if not msg.files:
         return []
 
-    from deerflow.uploads.manager import claim_unique_filename, ensure_uploads_dir, normalize_filename
+    from deerflow.uploads.manager import (
+        UnsafeUploadPathError,
+        claim_unique_filename,
+        ensure_uploads_dir,
+        normalize_filename,
+        write_upload_file_no_symlink,
+    )
 
     uploads_dir = ensure_uploads_dir(thread_id)
     seen_names = {entry.name for entry in uploads_dir.iterdir() if entry.is_file()}
@@ -439,7 +447,10 @@ async def _ingest_inbound_files(thread_id: str, msg: InboundMessage) -> list[dic
 
             dest = uploads_dir / safe_name
             try:
-                dest.write_bytes(data)
+                dest = write_upload_file_no_symlink(uploads_dir, safe_name, data)
+            except UnsafeUploadPathError:
+                logger.warning("[Manager] skipping inbound file with unsafe destination: %s", safe_name)
+                continue
             except Exception:
                 logger.exception("[Manager] failed to write inbound file: %s", dest)
                 continue
@@ -512,6 +523,7 @@ class ChannelManager:
         self._default_session = _as_dict(default_session)
         self._channel_sessions = dict(channel_sessions or {})
         self._client = None  # lazy init — langgraph_sdk async client
+        self._csrf_token = generate_csrf_token()
         self._semaphore: asyncio.Semaphore | None = None
         self._running = False
         self._task: asyncio.Task | None = None
@@ -564,7 +576,14 @@ class ChannelManager:
         if self._client is None:
             from langgraph_sdk import get_client
 
-            self._client = get_client(url=self._langgraph_url)
+            self._client = get_client(
+                url=self._langgraph_url,
+                headers={
+                    **create_internal_auth_headers(),
+                    CSRF_HEADER_NAME: self._csrf_token,
+                    "Cookie": f"{CSRF_COOKIE_NAME}={self._csrf_token}",
+                },
+            )
         return self._client
 
     # -- lifecycle ---------------------------------------------------------

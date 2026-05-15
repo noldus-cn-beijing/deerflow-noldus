@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { Section } from "../section";
 
-const COLOR = "#0a0a0a";
+const COLOR = "#F4F1EA";
 const features: BentoCardProps[] = [
   {
     color: COLOR,

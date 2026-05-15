@@ -138,3 +138,47 @@ git commit -m "sync deerflow upstream to [commit hash]: [简要描述]"
 
 ### Q: 多久同步一次？
 建议每 1-2 周同步一次。DeerFlow 官方更新频率较高（每周几个 commit），但大部分改动在你没碰过的文件里，自动合入即可。
+
+## 前端 streaming 吞字临时修复（2026-05-09 起）
+
+> **背景**：上游 `frontend/src/core/rehype/index.ts` 的 `rehypeSplitWordsIntoSpans` 在 streaming 时让已渲染英文词重 mount，造成"吞字"。我们在 `noldus-insight` 删除该插件链作为临时止血（commit `d4171eed`），同时给 bytedance/deer-flow 提了永久修复 PR（streamdown 1.4 → 2.5 + 官方 `animated` prop），分支 `fix-streaming-word-animation-remount` 在 `noldus-cn-beijing/deerflow-noldus` 上。详见 [docs/handoffs/2026-05-09-streaming-fade-in-fixed-handoff.md](../handoffs/2026-05-09-streaming-fade-in-fixed-handoff.md)。
+
+**Sync 时如果碰到下列前端文件冲突，按以下决策树处理**：
+
+```
+packages/agent/frontend/src/core/rehype/index.ts
+packages/agent/frontend/src/core/streamdown/plugins.ts
+packages/agent/frontend/src/components/workspace/messages/markdown-content.tsx
+packages/agent/frontend/src/components/workspace/messages/subtask-card.tsx
+packages/agent/frontend/src/components/workspace/messages/message-list.tsx
+packages/agent/frontend/src/components/workspace/messages/message-list-item.tsx
+packages/agent/frontend/src/components/workspace/messages/message-group.tsx
+packages/agent/frontend/src/styles/globals.css  (--animate-fade-in 段)
+```
+
+### 决策树
+
+1. **上游有没有合并我们 streamdown 升级 PR？**
+   ```bash
+   git -C <deerflow-checkout> log deerflow/main --oneline -- frontend/package.json | head -5
+   git -C <deerflow-checkout> show deerflow/main:frontend/package.json | grep streamdown
+   ```
+   - 看到 `streamdown: "^2.5.0"` 或更高 → **走 A**
+   - 还是 `streamdown: "1.4.0"` → **走 B**
+
+2. **A 路径（上游已 merge）**：
+   - **接受上游版本**覆盖这 8 个文件（删 noldus-insight 的临时改动）
+   - 在 noldus-insight 里 `git revert d4171eed` **或** 直接重新 checkout 这些文件到上游版本
+   - 业务恢复 word fade-in 视觉，吞字已由上游根治
+   - 验证：浏览器 streaming 一遍，看每个 word span 的 `data-sd-animate` 属性已存在（streamdown 2.x 标记）
+
+3. **B 路径（上游还没 merge）**：
+   - **跳过**这 8 个文件（保留 noldus-insight 临时修复）
+   - sync 脚本提示冲突时人工选 "ours"
+   - 注意：streamdown 仍是 1.4.0，没有 word fade，但没吞字
+
+### 监控 PR 状态
+
+我们提交的 PR 链接：[bytedance/deer-flow PR (待补编号)](https://github.com/bytedance/deer-flow/pulls)（搜索 "fix-streaming-word-animation-remount" 或 "streamdown's built-in animation"）。
+
+merged 之后**优先做 sync**，避免维护双重逻辑。

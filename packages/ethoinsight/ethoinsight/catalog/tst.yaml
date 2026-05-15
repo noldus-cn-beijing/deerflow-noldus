@@ -1,0 +1,50 @@
+paradigm: tst
+ev19_templates:
+  - Tail Suspension Test XT190
+
+default_metrics:
+  - id: immobility_time
+    script: ethoinsight.scripts.tst.compute_immobility_time
+    requires_columns:
+      - mobility_state*
+    output_unit: seconds
+    display_name_zh: 不动时间
+    unit_zh: 秒
+    one_liner: 动物在测试期间累计不动的时间，TST 抑郁样行为的核心指标
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: immobility_latency
+    script: ethoinsight.scripts.tst.compute_immobility_latency
+    requires_columns:
+      - mobility_state*
+    output_unit: seconds
+    display_name_zh: 首次不动潜伏期
+    unit_zh: 秒
+    one_liner: 从测试开始到首次出现不动的时间
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: immobility_bout_count
+    script: ethoinsight.scripts.tst.compute_immobility_bout_count
+    requires_columns:
+      - mobility_state*
+    output_unit: count
+    display_name_zh: 不动次数
+    unit_zh: 次
+    one_liner: 测试期间不动行为发生的累计次数
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+optional_metrics: []
+
+charts:
+  - id: box_immobility
+    script: ethoinsight.scripts.tst.plot_box_immobility
+    when: n_per_group >= 3
+
+statistics:
+  default:
+    id: groupwise_compare
+    script: ethoinsight.scripts.tst.run_groupwise_stats
+    when: n_per_group >= 2 and n_groups >= 2
