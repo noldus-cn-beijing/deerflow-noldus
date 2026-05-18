@@ -16,12 +16,13 @@ from typing import Any
 
 from langchain.agents import create_agent
 from langchain.tools import BaseTool
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from deerflow.agents.thread_state import SandboxState, ThreadDataState, ThreadState
 from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
+from deerflow.subagents.token_collector import SubagentTokenCollector
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,8 @@ class SubagentResult:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     ai_messages: list[dict[str, Any]] | None = None
+    token_usage_records: list[dict[str, int | str]] = field(default_factory=list)
+    usage_reported: bool = False
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
     def __post_init__(self):
@@ -274,6 +277,7 @@ class SubagentExecutor:
         thread_id: str | None = None,
         trace_id: str | None = None,
         authorized_handoff_paths: set[str] | None = None,
+        app_config=None,
     ):
         """Initialize the executor.
 
@@ -292,6 +296,8 @@ class SubagentExecutor:
                 cannot read peer handoff files). Consumed by
                 HandoffIsolationProvider attached to the subagent's middleware
                 chain (see Task 11).
+            app_config: Reserved for upstream parity (resolved AppConfig).
+                Ignored locally — config is fetched via the global cache.
         """
         self.config = config
         self.parent_model = parent_model
@@ -301,6 +307,7 @@ class SubagentExecutor:
         # Generate trace_id if not provided (for top-level calls)
         self.trace_id = trace_id or str(uuid.uuid4())[:8]
         self.authorized_handoff_paths = authorized_handoff_paths or set()
+        self.app_config = app_config
 
         # Filter tools based on config
         self.tools = _filter_tools(
@@ -310,8 +317,13 @@ class SubagentExecutor:
         )
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
-    def _create_agent(self):
-        """Create the agent instance."""
+    def _create_agent(self, tools: list[BaseTool] | None = None):
+        """Create the agent instance.
+
+        Args:
+            tools: Optional tool list to override ``self.tools`` (e.g., after
+                applying skill-allowed-tools filtering in ``_build_initial_state``).
+        """
         model_name = _get_model_name(self.config, self.parent_model)
         model = create_chat_model(name=model_name, thinking_enabled=False)
 
@@ -346,45 +358,50 @@ class SubagentExecutor:
             passport=f"subagent:{self.config.name}",
         ))
 
-        # Build system prompt with inline skill injection
-        system_prompt = self._build_system_prompt()
-
+        # A-10: system_prompt is injected as a SystemMessage in the initial
+        # state (see _build_initial_state), merged with any skill content into
+        # a single SystemMessage. Passing system_prompt=None here prevents
+        # create_agent from prepending a second SystemMessage — some LLM APIs
+        # reject multiple system messages with "System message must be at the
+        # beginning."
         return create_agent(
             model=model,
-            tools=self.tools,
+            tools=tools if tools is not None else self.tools,
             middleware=middlewares,
-            system_prompt=system_prompt,
+            system_prompt=None,
             state_schema=ThreadState,
         )
 
-    def _build_system_prompt(self) -> str:
-        """Build system prompt with inline skill content injection.
-
-        If the subagent config declares skill names, their SKILL.md content
-        is loaded and appended to the base system_prompt so the subagent
-        has full skill knowledge without spending turns on read_file.
-        """
-        base_prompt = self.config.system_prompt
-        if not self.config.skills:
-            return base_prompt
-
-        skill_sections = _load_skill_contents(self.config.skills)
-        if not skill_sections:
-            return base_prompt
-
-        return f"{base_prompt}\n\n{skill_sections}"
-
-    def _build_initial_state(self, task: str) -> dict[str, Any]:
+    def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool]]:
         """Build the initial state for agent execution.
+
+        Combines the subagent's system_prompt with any skill content into a
+        single SystemMessage to avoid the multi-SystemMessage rejection some
+        LLM APIs raise (vLLM, Xinference, Chinese providers).
 
         Args:
             task: The task description.
 
         Returns:
-            Initial state dictionary.
+            Tuple of (initial_state, filtered_tools) — filtered_tools mirrors
+            the upstream contract; locally we have no skill-allowed-tools
+            policy, so it always equals ``self.tools``.
         """
+        system_parts: list[str] = []
+        if self.config.system_prompt:
+            system_parts.append(self.config.system_prompt)
+        if self.config.skills:
+            skill_sections = _load_skill_contents(self.config.skills)
+            if skill_sections:
+                system_parts.append(skill_sections)
+
+        messages: list[Any] = []
+        if system_parts:
+            messages.append(SystemMessage(content="\n\n".join(system_parts)))
+        messages.append(HumanMessage(content=task))
+
         state: dict[str, Any] = {
-            "messages": [HumanMessage(content=task)],
+            "messages": messages,
         }
 
         # Pass through sandbox and thread data from parent
@@ -393,7 +410,7 @@ class SubagentExecutor:
         if self.thread_data is not None:
             state["thread_data"] = self.thread_data
 
-        return state
+        return state, self.tools
 
     async def _aexecute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
         """Execute a task asynchronously.
@@ -418,9 +435,16 @@ class SubagentExecutor:
                 started_at=datetime.now(),
             )
 
+        collector: SubagentTokenCollector | None = None
         try:
-            agent = self._create_agent()
-            state = self._build_initial_state(task)
+            state, filtered_tools = self._build_initial_state(task)
+            agent = self._create_agent(filtered_tools)
+
+            # Token collector for subagent LLM calls — records flow into
+            # SubagentResult.token_usage_records and are reported to the
+            # parent RunJournal by task_tool when the subagent terminates.
+            collector_caller = f"subagent:{self.config.name}"
+            collector = SubagentTokenCollector(caller=collector_caller)
 
             # Build config with thread_id for sandbox access and recursion limit
             # LangGraph counts node steps (model=1 + tools=1 per turn), so multiply
@@ -428,6 +452,8 @@ class SubagentExecutor:
             # The actual turn limit is enforced by AI message counting below.
             run_config: RunnableConfig = {
                 "recursion_limit": self.config.max_turns * 2 + 1,
+                "callbacks": [collector],
+                "tags": [collector_caller],
             }
             context = {}
             if self.thread_id:
@@ -448,6 +474,8 @@ class SubagentExecutor:
                         result.status = SubagentStatus.CANCELLED
                         result.error = "Cancelled by user"
                         result.completed_at = datetime.now()
+                if collector is not None:
+                    result.token_usage_records = collector.snapshot_records()
                 return result
 
             async for chunk in agent.astream(state, config=run_config, context=context, stream_mode="values"):  # type: ignore[arg-type]
@@ -462,6 +490,7 @@ class SubagentExecutor:
                             result.status = SubagentStatus.CANCELLED
                             result.error = "Cancelled by user"
                             result.completed_at = datetime.now()
+                    result.token_usage_records = collector.snapshot_records()
                     return result
 
                 final_state = chunk
@@ -493,6 +522,7 @@ class SubagentExecutor:
                                 break
 
             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} completed async execution")
+            result.token_usage_records = collector.snapshot_records()
 
             if final_state is None:
                 logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} no final state")
@@ -572,6 +602,8 @@ class SubagentExecutor:
             result.status = SubagentStatus.FAILED
             result.error = str(e)
             result.completed_at = datetime.now()
+            if collector is not None:
+                result.token_usage_records = collector.snapshot_records()
 
         return result
 
