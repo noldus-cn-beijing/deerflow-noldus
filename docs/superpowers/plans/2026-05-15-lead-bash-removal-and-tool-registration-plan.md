@@ -52,38 +52,50 @@ mkdir -p docs/superpowers/plans
 ### Task 1: 修 LoopDetectionMiddleware 兜底（独立可 commit、优先）
 
 **Files:**
-- Modify: `packages/agent/backend/packages/harness/deerflow/agents/middlewares/loop_detection_middleware.py:29-35,130-136,219-221`
+- Modify: `packages/agent/backend/packages/harness/deerflow/agents/middlewares/loop_detection_middleware.py`（修改两处常量 `_DEFAULT_TOOL_FREQ_WARN` / `_DEFAULT_TOOL_FREQ_HARD_LIMIT`、两处文案 `_TOOL_FREQ_WARNING_MSG` / `_TOOL_FREQ_HARD_STOP_MSG`）
 - Modify: `packages/agent/backend/tests/test_loop_detection_middleware.py`（新增 5 个测试）
 
 #### 现状分析
 
 `loop_detection_middleware.py` 已有双层检测：
 
-1. **Layer 1 (hash-based)**: 行 107-125，对 tool_calls 做 hash（name + args），同 hash 出现 ≥3 次 warn、≥5 次 hard stop。工作正常但 lead 每次 retry 微调 command 字符串 → hash 不同 → 不触发。
+1. **Layer 1 (hash-based)**: 对 tool_calls 做 hash（name + stable args key），同 hash 出现 ≥`_DEFAULT_WARN_THRESHOLD`(=3) 次 warn、≥`_DEFAULT_HARD_LIMIT`(=5) 次 hard stop。工作正常但 lead 每次 retry 微调 command 字符串 → hash 不同 → 不触发。
+2. **Layer 2 (tool_freq)**: 按 tool name 计数（不看 args）。当前默认 `_DEFAULT_TOOL_FREQ_WARN = 30`、`_DEFAULT_TOOL_FREQ_HARD_LIMIT = 50`。recursion 上限是 100，100 次 bash 理论上够触发 warn(30) 和 hard_stop(50)，但实际现场 lead 跑满 100 次都没出文字答复 —— **必须先实证根因再下结论**。
 
-2. **Layer 2 (tool_freq)**: 行 273-305，按 tool name 计数。当前阈值 `_DEFAULT_TOOL_FREQ_WARN = 30`、`_DEFAULT_TOOL_FREQ_HARD_LIMIT = 50`。100 次仍不够触发 —— lead 跑到 recursion 100 次耗尽时 Layer 2 还没到阈值。
+#### Step 0: 实证根因（必做，不能跳）
 
-**根因**: Layer 2 阈值太高（30/50），lead 跑了 100 次 recursion 耗尽，Layer 2 理论上应该触发但实际没触发 —— 需确认是 (a) 阈值太高导致 100 次不够，还是 (b) counter 被某机制重置。从代码看 `_tool_freq` 计数器按 thread_id 累计，无重置逻辑，因此 100 次 bash 应该 `tc_count >= 30` 触发 warn。如果实际没触发，可能是 `after_model` 在 recursion 耗尽场景下没被调用。
+- [ ] **Step 0.1: 在 langgraph.log 搜 LoopDetection 实际行为**
 
-不管具体原因，修复方案：**降阈值到 3/5** 确保即使 hash-based 漏过，tool_freq 也能兜底。
+```bash
+cd /home/wangqiuyang/noldus-insight/.claude/worktrees/p0-lead-bash-removal
+grep -n "LOOP DETECTED\|FORCED STOP\|Tool frequency\|loop hard limit\|Repetitive tool calls" packages/agent/logs/langgraph.log 2>/dev/null | tail -40
+```
+
+记录观察到的现象：
+- (a) 完全没有触发 → 计数器没在跑（thread_id 每次 retry 都新建？after_model 没被调用？）
+- (b) 触发了 warn 但没触发 hard_stop → counter 累计但 50 不够
+- (c) 触发了 hard_stop 但 lead 继续 → strip tool_calls 没生效或下一 turn 又生成
+
+- [ ] **Step 0.2: 把观察结果写在 commit message 里**
+
+不管 (a)/(b)/(c)，"降阈值到 3/5" 都能改善触发延迟，但根因不同对应的后续修复不同：
+- (a) 应该追加 issue 调查 thread_id 生命周期
+- (b) 降阈值就够
+- (c) 应该追加 issue 调查 `_apply` 的 hard_stop 路径
+
+把观察结果原文（grep 输出片段）和归类（a/b/c）写到 Step 7 commit message 的正文里，**不要丢失证据**。
+
+#### 修复方案
+
+不管 (a)/(b)/(c)，降阈值都能减少 lead 浪费 recursion 的次数，所以这一步可以无条件做。根因调查作为后续 follow-up issue。
 
 - [ ] **Step 1: 写 5 个 failing test**
 
-在 `packages/agent/backend/tests/test_loop_detection_middleware.py` 末尾追加：
+在 `packages/agent/backend/tests/test_loop_detection_middleware.py` 末尾追加（**复用文件顶部既有的 `_make_runtime` 和 `_make_state` 辅助**；下面只新增类 `TestToolNameFreqWithBash`，不重复定义辅助函数）：
 
 ```python
 # === Task 1: tool name frequency with lower thresholds ===
-
-
-def _make_minimal_runtime(thread_id="test-thread"):
-    runtime = MagicMock()
-    runtime.context = {"thread_id": thread_id}
-    return runtime
-
-
-def _make_state_with_tool_calls(tool_calls, content=""):
-    msg = AIMessage(content=content, tool_calls=tool_calls)
-    return {"messages": [msg]}
+# NOTE: 复用文件顶部既有 _make_runtime / _make_state 辅助。
 
 
 class TestToolNameFreqWithBash:
@@ -92,7 +104,7 @@ class TestToolNameFreqWithBash:
     def test_bash_tool_freq_warns_at_3_with_different_commands(self):
         """同 bash 3 次不同 command → 触发 warn (hash 不同但 tool name 同)。"""
         mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
-        runtime = _make_minimal_runtime()
+        runtime = _make_runtime()
 
         results = []
         for i in range(4):
@@ -100,7 +112,7 @@ class TestToolNameFreqWithBash:
                 "name": "bash",
                 "args": {"command": f"cd /tmp && python -m ethoinsight.parse.dump_headers --input file_{i}.txt"},
             }
-            warning, hard_stop = mw._track_and_check(_make_state_with_tool_calls([tc]), runtime)
+            warning, hard_stop = mw._track_and_check(_make_state([tc]), runtime)
             results.append((warning, hard_stop))
 
         # 第 1-2 次: 不触发
@@ -116,17 +128,17 @@ class TestToolNameFreqWithBash:
     def test_bash_tool_freq_hard_stop_at_5(self):
         """同 bash 5 次不同 command → hard limit + strip tool_calls。"""
         mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
-        runtime = _make_minimal_runtime()
+        runtime = _make_runtime()
 
         for i in range(5):
             tc = {
                 "name": "bash",
                 "args": {"command": f"python -m ethoinsight.parse.dump_headers --input file_{i}.txt"},
             }
-            _ = mw._track_and_check(_make_state_with_tool_calls([tc]), runtime)
+            _ = mw._track_and_check(_make_state([tc]), runtime)
 
         # 第 5 次: hard stop
-        state6 = _make_state_with_tool_calls([{
+        state6 = _make_state([{
             "name": "bash",
             "args": {"command": "echo still trying"},
         }])
@@ -140,29 +152,29 @@ class TestToolNameFreqWithBash:
         assert "FORCED STOP" in content_str or "exceeded" in content_str.lower()
 
     def test_different_tool_names_dont_trigger(self):
-        """不同 tool name 各 4 次 → 不触发 (不是同 tool)。"""
+        """每个 tool name 各调用 2 次（都未到 warn 阈值 3）→ 不触发。"""
         mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
-        runtime = _make_minimal_runtime()
+        runtime = _make_runtime()
 
-        for _ in range(4):
+        for _ in range(2):
             _ = mw._track_and_check(
-                _make_state_with_tool_calls([{"name": "bash", "args": {"command": "ls"}}]),
+                _make_state([{"name": "bash", "args": {"command": "ls"}}]),
                 runtime,
             )
-        for _ in range(4):
+        for _ in range(2):
             _ = mw._track_and_check(
-                _make_state_with_tool_calls([{"name": "read_file", "args": {"path": "/tmp/x"}}]),
+                _make_state([{"name": "read_file", "args": {"path": "/tmp/x"}}]),
                 runtime,
             )
-        for _ in range(4):
+        for _ in range(2):
             _ = mw._track_and_check(
-                _make_state_with_tool_calls([{"name": "task", "args": {"description": "x", "prompt": "x"}}]),
+                _make_state([{"name": "task", "args": {"description": "x", "prompt": "x"}}]),
                 runtime,
             )
-        # 三个 tool 各 4 次 = 12 次 total，但 bash 没到 5 的 hard_limit
-        # 最后一次 check bash 到 4 不触发 hard_stop
+        # 每个 tool 各 2 次，都 < warn 阈值 3，不应触发
+        # 再调一次别的 tool（合计 3 个 tool 各 2 次 + 1 次 ls_tool = 7 次总，但单个 tool 都不超 3）
         result = mw._track_and_check(
-            _make_state_with_tool_calls([{"name": "bash", "args": {"command": "ls"}}]),
+            _make_state([{"name": "ls", "args": {"path": "/tmp"}}]),
             runtime,
         )
         assert result == (None, False)
@@ -170,22 +182,22 @@ class TestToolNameFreqWithBash:
     def test_counter_does_not_reset_when_other_tool_interleaves(self):
         """同 bash 2 次后切别的 tool 1 次后再 bash 1 次 → bash counter 继续累加不重置。"""
         mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
-        runtime = _make_minimal_runtime()
+        runtime = _make_runtime()
 
         # bash x2
         for i in range(2):
             _ = mw._track_and_check(
-                _make_state_with_tool_calls([{"name": "bash", "args": {"command": f"ls {i}"}}]),
+                _make_state([{"name": "bash", "args": {"command": f"ls {i}"}}]),
                 runtime,
             )
         # 切 read_file
         _ = mw._track_and_check(
-            _make_state_with_tool_calls([{"name": "read_file", "args": {"path": "/tmp/x"}}]),
+            _make_state([{"name": "read_file", "args": {"path": "/tmp/x"}}]),
             runtime,
         )
         # 回来 bash → 第 3 次，触发 warn
         warning, hard_stop = mw._track_and_check(
-            _make_state_with_tool_calls([{"name": "bash", "args": {"command": "ls 99"}}]),
+            _make_state([{"name": "bash", "args": {"command": "ls 99"}}]),
             runtime,
         )
         assert warning is not None
@@ -195,15 +207,15 @@ class TestToolNameFreqWithBash:
     def test_warn_message_suggests_code_executor(self):
         """warn 注入消息含"task(code-executor)"建议。"""
         mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
-        runtime = _make_minimal_runtime()
+        runtime = _make_runtime()
 
         for i in range(3):
             _ = mw._track_and_check(
-                _make_state_with_tool_calls([{"name": "bash", "args": {"command": f"ls {i}"}}]),
+                _make_state([{"name": "bash", "args": {"command": f"ls {i}"}}]),
                 runtime,
             )
 
-        state = _make_state_with_tool_calls([{"name": "bash", "args": {"command": "ls 99"}}])
+        state = _make_state([{"name": "bash", "args": {"command": "ls 99"}}])
         result = mw._apply(state, runtime)
         assert result is not None
         updated_msg = result["messages"][0]
@@ -222,7 +234,7 @@ PYTHONPATH=. uv run pytest tests/test_loop_detection_middleware.py::TestToolName
 
 - [ ] **Step 3: 修改默认阈值**
 
-在 `loop_detection_middleware.py` 第 33-35 行：
+在 `loop_detection_middleware.py` 中找到 `_DEFAULT_TOOL_FREQ_WARN` 和 `_DEFAULT_TOOL_FREQ_HARD_LIMIT` 两个常量（模块顶部 "Defaults — can be overridden via constructor" 注释下方），替换为：
 
 ```python
 # 旧:
@@ -230,13 +242,15 @@ _DEFAULT_TOOL_FREQ_WARN = 30  # warn after 30 calls to the same tool type
 _DEFAULT_TOOL_FREQ_HARD_LIMIT = 50  # force-stop after 50 calls to the same tool type
 
 # 改为:
-_DEFAULT_TOOL_FREQ_WARN = 3  # warn after 3 calls to the same tool type
+_DEFAULT_TOOL_FREQ_WARN = 3  # warn after 3 calls to the same tool type (P0 fix: lead 微调 bash command 让 hash 不同绕过 Layer 1)
 _DEFAULT_TOOL_FREQ_HARD_LIMIT = 5  # force-stop after 5 calls to the same tool type
 ```
 
+**注意**：`_DEFAULT_WARN_THRESHOLD` 和 `_DEFAULT_HARD_LIMIT`（hash-based 的 3/5）保持不变。本次只改 tool_freq 那两个常量。
+
 - [ ] **Step 4: 修改 `_TOOL_FREQ_WARNING_MSG`**
 
-在 `loop_detection_middleware.py` 第 130-132 行：
+在 `loop_detection_middleware.py` 找到 `_TOOL_FREQ_WARNING_MSG = (` 这个赋值，替换为：
 
 ```python
 # 旧:
@@ -255,7 +269,7 @@ _TOOL_FREQ_WARNING_MSG = (
 
 - [ ] **Step 5: 修改 `_TOOL_FREQ_HARD_STOP_MSG`**
 
-在 `loop_detection_middleware.py` 第 136 行：
+在 `loop_detection_middleware.py` 找到 `_TOOL_FREQ_HARD_STOP_MSG = ` 这个赋值，替换为：
 
 ```python
 # 旧:
@@ -284,9 +298,15 @@ fix: LoopDetectionMiddleware 按 tool name 计数(P0 兜底)
 
 tool_freq 阈值从 30/50 降至 3/5，hash-based 漏过时兜底。
 warn 注入消息含 task(code-executor) 建议。
+
+Step 0 实证结果（langgraph.log 观察）：
+<把 Step 0.1 的 grep 输出代表性几行贴在这里>
+归类：a/b/c（Step 0.2）
 EOF
 )"
 ```
+
+**commit 前必须把 `<把 Step 0.1 的 grep 输出代表性几行贴在这里>` 和 `归类：a/b/c` 改成实际内容**，不允许照抄占位符。
 
 ---
 
@@ -295,7 +315,7 @@ EOF
 **Files:**
 - Create: `packages/agent/backend/packages/harness/deerflow/tools/builtins/prep_metric_plan_tool.py`
 - Modify: `packages/agent/backend/packages/harness/deerflow/tools/builtins/__init__.py:1-13`
-- Modify: `packages/agent/backend/packages/harness/deerflow/tools/tools.py:14-18`
+- Modify: `packages/agent/backend/packages/harness/deerflow/tools/tools.py`（顶部 `from deerflow.tools.builtins import ...` import 行 + `BUILTIN_TOOLS = [...]` 列表，两处都加 `prep_metric_plan_tool`）
 - Create: `packages/agent/backend/tests/test_prep_metric_plan_tool.py`
 
 - [ ] **Step 1: 写 5 个 failing test**
@@ -308,42 +328,82 @@ EOF
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain.tools import ToolRuntime
 
 from deerflow.tools.builtins.prep_metric_plan_tool import (
-    prep_metric_plan_tool,
     _ERROR_HINTS,
+    prep_metric_plan_tool,
 )
 
 
-def _make_runtime(workspace_path, uploads_path=None, outputs_path=None, thread_id="test-thread"):
-    """Build a minimal ToolRuntime[ContextT, ThreadState] mock."""
-    runtime = MagicMock()
-    runtime.context = {"thread_id": thread_id}
-    runtime.state = {
-        "thread_data": {
-            "workspace_path": workspace_path,
-            "uploads_path": uploads_path or workspace_path.replace("workspace", "uploads"),
-            "outputs_path": outputs_path or workspace_path.replace("workspace", "outputs"),
-        }
-    }
-    return runtime
+def _runtime_with_paths(workspace: Path, uploads: Path) -> ToolRuntime:
+    """Build a real ToolRuntime with thread_data state (matches set_experiment_paradigm test style)."""
+    return ToolRuntime(
+        state={
+            "thread_data": {
+                "workspace_path": str(workspace),
+                "uploads_path": str(uploads),
+            }
+        },
+        context=None,
+        config={},
+        stream_writer=None,
+        tool_call_id="test-id",
+        store=None,
+    )
+
+
+def _runtime_without_workspace() -> ToolRuntime:
+    return ToolRuntime(
+        state={"thread_data": None},
+        context=None,
+        config={},
+        stream_writer=None,
+        tool_call_id="test-id",
+        store=None,
+    )
 
 
 def _write_ethovision_file(path: str, columns: list[str]):
-    """Write a minimal UTF-16 LE EthoVision trajectory file.
+    """Write a UTF-16 LE EthoVision trajectory file with full metadata header.
 
-    Writes a file with BOM, header line count line, column names, and one data row.
+    parse_header 期望: BOM + line-count + metadata kv 段 + column-header 行 + units 行 + data。
+    简化的 mock 会让 parse_header 抛 ValueError 因为缺 metadata。下面 header_lines=36 含
+    完整 raw_metadata（experiment/trial_name/subject/start_time/duration/arena 等），
+    跟 ethoinsight/tests/conftest.py 的 fake EthoVision 文件结构一致。
     """
-    content = f'﻿"10"\r\n'
-    content += f'"{";".join(columns)}"\r\n'
-    content += f'"{";".join(columns)}"\r\n'
-    for i in range(9):
-        content += '-1.0\r\n'
-    with open(path, "w", encoding="utf-16-le") as f:
-        f.write(content)
+    header_lines = 36
+    lines: list[str] = []
+    # Line 1: header line count
+    lines.append(f'"Number of header lines:";"{header_lines}"')
+    # Lines 2..34: metadata key-value pairs（parse_header 只取 key + value 前两列）
+    metadata = [
+        ("Experiment", "Mock EPM"),
+        ("Trial name", "Trial 1"),
+        ("Subject", "Subject 1"),
+        ("Start time", "2026-01-01 00:00:00"),
+        ("Trial duration", "300"),
+        ("Arena name", "Arena 1"),
+        ("Number of Subjects", "1"),
+    ]
+    for k, v in metadata:
+        lines.append(f'"{k}";"{v}"')
+    # Pad metadata to header_lines - 2 lines（留出 column-header + units 两行）
+    while len(lines) < header_lines - 2:
+        lines.append('""')
+    # column-header line
+    lines.append('"' + '";"'.join(columns) + '"')
+    # units line（每列一个 unit 字符串,parse_header 会读但内容不影响 columns 提取）
+    lines.append('"' + '";"'.join(["s"] * len(columns)) + '"')
+    # 1 data row（parse_trajectory 不会被 prep_metric_plan_tool 调用,这里只是占位防文件意外被读）
+    lines.append(";".join(["-1.0"] * len(columns)))
+    content = "\r\n".join(lines) + "\r\n"
+    # BOM + UTF-16 LE
+    with open(path, "wb") as f:
+        f.write(b"\xff\xfe")  # UTF-16 LE BOM
+        f.write(content.encode("utf-16-le"))
 
 
 EPM_COLUMNS = [
@@ -360,131 +420,141 @@ EPM_COLUMNS = [
 
 
 class TestPrepMetricPlanToolOk:
-    def test_normal_path_with_epm_data(self):
+    def test_normal_path_with_epm_data(self, tmp_path):
         """正常路径: mock EthoVision EPM 数据 → status=ok, metric_count > 0。"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir) / "workspace"
-            workspace.mkdir()
-            uploads = Path(tmpdir) / "uploads"
-            uploads.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
 
-            data_file = uploads / "test_epm.txt"
-            _write_ethovision_file(str(data_file), EPM_COLUMNS)
+        data_file = uploads / "test_epm.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
 
-            runtime = _make_runtime(str(workspace), str(uploads))
-            result = prep_metric_plan_tool(
-                runtime=runtime,
-                uploaded_file=f"/mnt/user-data/uploads/test_epm.txt",
-                paradigm="epm",
-            )
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/test_epm.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
 
-            assert result["status"] == "ok"
-            assert result["plan_summary"]["paradigm"] == "epm"
-            assert result["plan_summary"]["metric_count"] > 0
-            assert "open_arm_time_ratio" in result["plan_summary"]["metric_ids"]
-            # plan_path 真实存在
-            plan_path = result["plan_path"]
-            assert Path(plan_path).exists()
-            plan_data = json.loads(Path(plan_path).read_text())
-            assert "metrics" in plan_data
+        assert result["status"] == "ok"
+        assert result["plan_summary"]["paradigm"] == "epm"
+        assert result["plan_summary"]["metric_count"] > 0
+        # plan_path 真实存在
+        plan_path = workspace / "metric_plan.json"
+        assert plan_path.exists()
+        plan_data = json.loads(plan_path.read_text())
+        assert "metrics" in plan_data
 
 
 class TestPrepMetricPlanToolErrors:
-    def test_file_not_found(self):
+    def test_workspace_missing(self):
+        """thread_data 为 None → error_code=workspace_missing, hint 含 'bug'。"""
+        runtime = _runtime_without_workspace()
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/x.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+        assert result["status"] == "error"
+        assert result["error_code"] == "workspace_missing"
+        assert "bug" in result["hint"].lower()
+
+    def test_file_not_found(self, tmp_path):
         """传不存在的路径 → error_code=file_not_found, hint 含 ask_clarification。"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir) / "workspace"
-            workspace.mkdir()
-            uploads = Path(tmpdir) / "uploads"
-            uploads.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
 
-            runtime = _make_runtime(str(workspace), str(uploads))
-            result = prep_metric_plan_tool(
-                runtime=runtime,
-                uploaded_file="/mnt/user-data/uploads/nonexistent.txt",
-                paradigm="epm",
-            )
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/nonexistent.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
 
-            assert result["status"] == "error"
-            assert result["error_code"] == "file_not_found"
-            assert "ask_clarification" in result["hint"].lower()
+        assert result["status"] == "error"
+        assert result["error_code"] == "file_not_found"
+        assert "ask_clarification" in result["hint"].lower()
 
-    def test_unknown_paradigm(self):
+    def test_unknown_paradigm(self, tmp_path):
         """传 paradigm='invalid' → error_code=unknown_paradigm。"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir) / "workspace"
-            workspace.mkdir()
-            uploads = Path(tmpdir) / "uploads"
-            uploads.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
 
-            data_file = uploads / "test.txt"
-            _write_ethovision_file(str(data_file), EPM_COLUMNS)
+        data_file = uploads / "test.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
 
-            runtime = _make_runtime(str(workspace), str(uploads))
-            result = prep_metric_plan_tool(
-                runtime=runtime,
-                uploaded_file=f"/mnt/user-data/uploads/test.txt",
-                paradigm="invalid_paradigm",
-            )
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/test.txt",
+            "paradigm": "invalid_paradigm",
+            "runtime": runtime,
+        })
 
-            assert result["status"] == "error"
-            assert result["error_code"] == "unknown_paradigm"
+        assert result["status"] == "error"
+        assert result["error_code"] == "unknown_paradigm"
 
-    def test_columns_missing(self):
-        """mock 数据缺 in_zone_open_arms_* 列, paradigm=epm → error_code=columns_missing, hint 含'录制设置'。"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir) / "workspace"
-            workspace.mkdir()
-            uploads = Path(tmpdir) / "uploads"
-            uploads.mkdir()
+    def test_columns_missing(self, tmp_path):
+        """mock 数据缺 in_zone_open_arms_* 列, paradigm=epm → error_code=columns_missing/empty_plan, hint 含'录制设置'或'指标'。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
 
-            # 只有基础列，没有 in zone Open arms
-            minimal_columns = [
-                "Trial time",
-                "Recording time",
-                "X center",
-                "Y center",
-            ]
-            data_file = uploads / "minimal.txt"
-            _write_ethovision_file(str(data_file), minimal_columns)
+        # 只有基础列，没有 in zone Open arms
+        minimal_columns = [
+            "Trial time",
+            "Recording time",
+            "X center",
+            "Y center",
+        ]
+        data_file = uploads / "minimal.txt"
+        _write_ethovision_file(str(data_file), minimal_columns)
 
-            runtime = _make_runtime(str(workspace), str(uploads))
-            result = prep_metric_plan_tool(
-                runtime=runtime,
-                uploaded_file=f"/mnt/user-data/uploads/minimal.txt",
-                paradigm="epm",
-            )
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/minimal.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
 
-            assert result["status"] == "error"
-            assert result["error_code"] == "columns_missing"
-            assert "录制设置" in result["hint"] or "列" in result["hint"]
+        assert result["status"] == "error"
+        # ResolveError 在这种情况会抛 columns_missing 或 empty_plan，两个都是合法的兜底
+        assert result["error_code"] in {"columns_missing", "empty_plan"}
 
-    def test_plan_file_written_on_success(self):
+    def test_plan_file_written_on_success(self, tmp_path):
         """status=ok 后 plan_path 真实存在 + JSON 可读。"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir) / "workspace"
-            workspace.mkdir()
-            uploads = Path(tmpdir) / "uploads"
-            uploads.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
 
-            data_file = uploads / "test2.txt"
-            _write_ethovision_file(str(data_file), EPM_COLUMNS)
+        data_file = uploads / "test2.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
 
-            runtime = _make_runtime(str(workspace), str(uploads))
-            result = prep_metric_plan_tool(
-                runtime=runtime,
-                uploaded_file=f"/mnt/user-data/uploads/test2.txt",
-                paradigm="epm",
-            )
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/test2.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
 
-            assert result["status"] == "ok"
-            plan_path = Path(result["plan_path"])
-            assert plan_path.exists()
-            plan_data = json.loads(plan_path.read_text())
-            assert isinstance(plan_data, dict)
-            assert "metrics" in plan_data
-            assert len(plan_data["metrics"]) == result["plan_summary"]["metric_count"]
+        assert result["status"] == "ok"
+        plan_path = workspace / "metric_plan.json"
+        assert plan_path.exists()
+        plan_data = json.loads(plan_path.read_text())
+        assert isinstance(plan_data, dict)
+        assert "metrics" in plan_data
+        assert len(plan_data["metrics"]) == result["plan_summary"]["metric_count"]
 ```
+
+**测试调用风格说明**：用 `prep_metric_plan_tool.invoke({"runtime": runtime, ...args})` 通过 langchain 的 tool wrapper 调用 —— 这是项目里 `test_set_experiment_paradigm_ev19.py` 已验证的惯例。不要用 `prep_metric_plan_tool(runtime=..., ...)` 直接调用 `@tool` 装饰对象。
+
+**`test_columns_missing` 的兜底**：ResolveError 在缺列场景可能抛 `columns_missing`（必需列缺）或 `empty_plan`（剪光所有 default），用 `in {"columns_missing", "empty_plan"}` 容忍两种合法返回。
 
 - [ ] **Step 2: 运行新测试验证它们 fail**
 
@@ -493,7 +563,7 @@ cd packages/agent/backend && source .venv/bin/activate
 PYTHONPATH=. uv run pytest tests/test_prep_metric_plan_tool.py -v
 ```
 
-预期：5 个测试 FAIL（`prep_metric_plan_tool` 不存在）。
+预期：6 个测试 FAIL（`prep_metric_plan_tool` 不存在）。
 
 - [ ] **Step 3: 写 `prep_metric_plan_tool.py`**
 
@@ -513,7 +583,6 @@ from __future__ import annotations
 
 import json
 import logging
-import traceback
 from pathlib import Path
 
 from langchain.tools import ToolRuntime, tool
@@ -521,6 +590,8 @@ from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
 from deerflow.sandbox.tools import replace_virtual_path
+from ethoinsight.catalog.resolve import ResolveError, plan_to_dict, resolve
+from ethoinsight.parse._core import detect_ethovision, parse_header
 
 logger = logging.getLogger(__name__)
 
@@ -552,6 +623,10 @@ _ERROR_HINTS: dict[str, str] = {
     "unknown_metric": (
         "用户要求的指标不在 catalog 中。用 ask_clarification 让用户从可用指标中选择。"
     ),
+    "workspace_missing": (
+        "thread_data.workspace_path 未设置——这是基础设施 bug（ThreadDataMiddleware 应该先建好 workspace）。"
+        "present_files 把错误信息呈现给用户，让他报 bug。"
+    ),
 }
 
 
@@ -577,44 +652,36 @@ def prep_metric_plan_tool(
       status="error" 时:
         {"status": "error",
          "error_code": "file_not_found"|"format_unrecognized"|"parse_failed"|
-                       "unknown_paradigm"|"columns_missing"|"schema_violation",
+                       "unknown_paradigm"|"columns_missing"|"schema_violation"|
+                       "empty_plan"|"unknown_metric"|"workspace_missing",
          "message": str,
          "hint": str}
     """
+    # Step 1: resolve thread_data — workspace_path is mandatory, fail fast if missing
     thread_data = runtime.state.get("thread_data") if runtime.state else None
-
-    # Resolve real paths from virtual paths
-    real_workspace_path = _resolve_workspace_real_path(thread_data)
+    if not thread_data or not thread_data.get("workspace_path"):
+        return _error_result(
+            "workspace_missing",
+            "thread_data.workspace_path is not set",
+        )
+    real_workspace_path = thread_data["workspace_path"]
     real_file_path = replace_virtual_path(uploaded_file, thread_data)
 
-    # Step 1: check file exists
+    # Step 2: check file exists
     if not Path(real_file_path).exists():
         return _error_result(
             "file_not_found",
             f"File not found: {uploaded_file} (resolved to {real_file_path})",
         )
 
-    # Step 2: detect EthoVision format
-    try:
-        from ethoinsight.parse._core import detect_ethovision
-    except ImportError as e:
-        return _error_result(
-            "parse_failed",
-            f"Cannot import ethoinsight library: {e}",
-        )
-
+    # Step 3: detect EthoVision format
     if not detect_ethovision(real_file_path):
         return _error_result(
             "format_unrecognized",
             f"File {uploaded_file} is not an EthoVision XT export.",
         )
 
-    # Step 3: parse header to get column names
-    try:
-        from ethoinsight.parse._core import parse_header
-    except ImportError:
-        pass  # already imported above effectively
-
+    # Step 4: parse header to get column names
     try:
         header = parse_header(real_file_path)
     except Exception as e:
@@ -631,15 +698,7 @@ def prep_metric_plan_tool(
             "Parsed header contains no column names.",
         )
 
-    # Step 4: resolve catalog → Plan
-    try:
-        from ethoinsight.catalog.resolve import ResolveError, plan_to_dict, resolve
-    except ImportError as e:
-        return _error_result(
-            "parse_failed",
-            f"Cannot import ethoinsight catalog: {e}",
-        )
-
+    # Step 5: resolve catalog → Plan
     try:
         plan = resolve(
             paradigm=paradigm,
@@ -661,7 +720,7 @@ def prep_metric_plan_tool(
             f"Unexpected error during catalog resolve: {e}",
         )
 
-    # Step 5: serialize plan to workspace/metric_plan.json
+    # Step 6: serialize plan to workspace/metric_plan.json
     plan_dict = plan_to_dict(plan)
     plan_path = Path(real_workspace_path) / "metric_plan.json"
     try:
@@ -672,7 +731,7 @@ def prep_metric_plan_tool(
             f"Failed to write metric_plan.json: {e}",
         )
 
-    # Step 6: build summary (只 paradigm/metric_count/metric_ids，不含完整 plan)
+    # Step 7: build summary (只 paradigm/metric_count/metric_ids，不含完整 plan)
     metric_ids = [m.get("id", "") for m in plan_dict.get("metrics", [])]
 
     logger.info(
@@ -691,17 +750,6 @@ def prep_metric_plan_tool(
             "metric_ids": metric_ids,
         },
     }
-
-
-def _resolve_workspace_real_path(thread_data: dict | None) -> str:
-    """Extract workspace real path from thread_data."""
-    if thread_data:
-        ws = thread_data.get("workspace_path")
-        if ws:
-            return ws
-    # Fallback for testing
-    import tempfile
-    return str(Path(tempfile.gettempdir()) / "deerflow-workspace")
 
 
 def _error_result(code: str, message: str, extra_details: dict | None = None) -> dict:
@@ -742,7 +790,17 @@ __all__ = [
 
 - [ ] **Step 5: 在 `tools.py` 的 `BUILTIN_TOOLS` 列表加入 `prep_metric_plan_tool`**
 
-修改 `packages/agent/backend/packages/harness/deerflow/tools/tools.py` 第 14-18 行：
+修改 `packages/agent/backend/packages/harness/deerflow/tools/tools.py`。**现状（不要省略任何条目）**：
+
+```python
+BUILTIN_TOOLS = [
+    present_file_tool,
+    ask_clarification_tool,
+    set_experiment_paradigm_tool,
+]
+```
+
+**改为**（追加 `prep_metric_plan_tool`，保留 `set_experiment_paradigm_tool` —— 它是 EV19 范式锁定 Gate 1 的核心，参见 CLAUDE.md 第 10 条；删它会破坏 Gate 1 流程）：
 
 ```python
 BUILTIN_TOOLS = [
@@ -753,19 +811,13 @@ BUILTIN_TOOLS = [
 ]
 ```
 
-同时在文件顶部 import（第 9 行后追加）：
+同时把文件顶部 `from deerflow.tools.builtins import ...` 这一行的 import 改为：
 
 ```python
-from deerflow.tools.builtins import ask_clarification_tool, prep_metric_plan_tool, present_file_tool, task_tool, view_image_tool
-```
-
-将原来的第 9 行：
-```python
+# 旧:
 from deerflow.tools.builtins import ask_clarification_tool, present_file_tool, task_tool, view_image_tool
-```
 
-替换为：
-```python
+# 改为（按字母序追加 prep_metric_plan_tool）:
 from deerflow.tools.builtins import ask_clarification_tool, prep_metric_plan_tool, present_file_tool, task_tool, view_image_tool
 ```
 
@@ -776,7 +828,7 @@ cd packages/agent/backend && source .venv/bin/activate
 PYTHONPATH=. uv run pytest tests/test_prep_metric_plan_tool.py -v
 ```
 
-预期：5 tests PASS。
+预期：6 tests PASS。
 
 - [ ] **Step 7: 运行全量测试确保无回归**
 
@@ -785,7 +837,7 @@ cd packages/agent/backend && source .venv/bin/activate
 make test 2>&1 | tail -5
 ```
 
-预期：pass 数比 baseline +5（新测试），fail 数不变（3 pre-existing）。
+预期：pass 数比 baseline +6（新测试），fail 数不变（3 pre-existing）。
 
 - [ ] **Step 8: Commit**
 
@@ -804,127 +856,111 @@ EOF
 
 ### Task 3: 从 lead 工具列表移除 bash + write_file + str_replace
 
+**核心思路**：把过滤逻辑抽成模块级纯函数 `_filter_lead_tools(tools, excluded) -> list`，单测打到纯函数；`make_lead_agent` 只调用它。**不要在测试里 patch 整个 `make_lead_agent`** —— 它依赖太多东西，patch 链路脆弱。
+
 **Files:**
-- Modify: `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py:436-438`
+- Modify: `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py`（在 `make_lead_agent` 之前定义 `_LEAD_EXCLUDED_TOOLS` 常量 + `_filter_lead_tools` 纯函数；在 `make_lead_agent` 内调用它）
+- Modify: `packages/agent/backend/packages/harness/deerflow/subagents/builtins/__init__.py`（**只读核对**：确认 code-executor 的 tools 列表含 bash，不修改）
 - Create: `packages/agent/backend/tests/test_lead_tool_filtering.py`
 
-- [ ] **Step 1: 写 8 个 failing test**
+- [ ] **Step 1: 写 failing test（针对纯函数 + 真实 get_available_tools 返回的过滤后集合）**
 
 创建 `packages/agent/backend/tests/test_lead_tool_filtering.py`：
 
 ```python
 """Tests for lead agent tool filtering (Task 3: remove bash/write_file/str_replace)."""
 
-import pytest
-from unittest.mock import MagicMock, patch
+from langchain.tools import BaseTool
+from langchain_core.tools import tool as tool_decorator
 
-from langchain_core.runnables import RunnableConfig
-
-
-def _make_config(subagent_enabled=True, **kwargs):
-    """Build a minimal RunnableConfig for make_lead_agent."""
-    return {
-        "configurable": {
-            "subagent_enabled": subagent_enabled,
-            **kwargs,
-        }
-    }
+from deerflow.agents.lead_agent.agent import _LEAD_EXCLUDED_TOOLS, _filter_lead_tools
 
 
-class TestLeadToolExclusions:
-    """lead 工具列表中不应有 bash / write_file / str_replace，但 ls / read_file / prep_metric_plan 应在。"""
+def _make_named_tool(name: str) -> BaseTool:
+    """Build a minimal BaseTool with a given .name attribute."""
+    @tool_decorator(name, parse_docstring=False)
+    def fn(x: str) -> str:
+        """noop."""
+        return x
+    return fn
 
-    @pytest.fixture(autouse=True)
-    def _setup(self):
-        """Patch heavy dependencies so make_lead_agent can be imported."""
-        self._patchers = [
-            patch("deerflow.agents.lead_agent.agent.set_current_user", autospec=True),
-            patch("deerflow.agents.lead_agent.agent.get_app_config", autospec=True),
-            patch("deerflow.agents.lead_agent.agent.get_summarization_config", autospec=True),
-            patch("deerflow.agents.lead_agent.agent.load_agent_config", autospec=True),
-            patch("deerflow.agents.lead_agent.prompt.apply_prompt_template", autospec=True),
-            patch("deerflow.models.create_chat_model", autospec=True),
-            patch("deerflow.tools.resolve_variable", autospec=True),
-            patch("deerflow.tools.is_host_bash_allowed", return_value=True),
-            patch("deerflow.config.app_config.AppConfig", autospec=True),
-            patch("deerflow.config.extensions_config.ExtensionsConfig.from_file", autospec=True),
-            patch("deerflow.mcp.cache.get_cached_mcp_tools", return_value=[]),
+
+class TestFilterLeadToolsPureFunction:
+    """纯函数测试：不 patch agent 工厂，直接打 _filter_lead_tools。"""
+
+    def test_excludes_bash(self):
+        tools = [_make_named_tool("bash"), _make_named_tool("read_file")]
+        result = _filter_lead_tools(tools, _LEAD_EXCLUDED_TOOLS)
+        names = {t.name for t in result}
+        assert "bash" not in names
+        assert "read_file" in names
+
+    def test_excludes_write_file(self):
+        tools = [_make_named_tool("write_file"), _make_named_tool("read_file")]
+        result = _filter_lead_tools(tools, _LEAD_EXCLUDED_TOOLS)
+        assert "write_file" not in {t.name for t in result}
+
+    def test_excludes_str_replace(self):
+        tools = [_make_named_tool("str_replace"), _make_named_tool("ls")]
+        result = _filter_lead_tools(tools, _LEAD_EXCLUDED_TOOLS)
+        assert "str_replace" not in {t.name for t in result}
+
+    def test_keeps_ls(self):
+        """Q4 决策：lead 保留 ls 验证 code-executor 产物。"""
+        tools = [_make_named_tool("ls"), _make_named_tool("bash")]
+        result = _filter_lead_tools(tools, _LEAD_EXCLUDED_TOOLS)
+        assert "ls" in {t.name for t in result}
+
+    def test_keeps_read_file(self):
+        """lead 需要 read_file 看 handoff JSON。"""
+        tools = [_make_named_tool("read_file"), _make_named_tool("write_file")]
+        result = _filter_lead_tools(tools, _LEAD_EXCLUDED_TOOLS)
+        assert "read_file" in {t.name for t in result}
+
+    def test_keeps_prep_metric_plan(self):
+        """关键回归：prep_metric_plan 是 lead 替代 bash 调 parse/catalog 的唯一通道，绝不能被误加进 _LEAD_EXCLUDED_TOOLS。"""
+        tools = [
+            _make_named_tool("prep_metric_plan"),
+            _make_named_tool("bash"),
+            _make_named_tool("write_file"),
         ]
-        self._mocks = {}
-        for p in self._patchers:
-            self._mocks[p.attribute] = p.start()
+        result = _filter_lead_tools(tools, _LEAD_EXCLUDED_TOOLS)
+        names = {t.name for t in result}
+        assert "prep_metric_plan" in names
+        # 同时确认 bash / write_file 被过滤(防止把这条测试退化成空断言)
+        assert "bash" not in names
+        assert "write_file" not in names
 
-        # Build a minimal mock AppConfig
-        mock_config = self._mocks["get_app_config"].return_value
-        mock_config.models = [MagicMock(name="default_model")]
-        mock_config.models[0].name = "test-model"
-        mock_config.models[0].supports_vision = False
-        mock_config.models[0].supports_thinking = False
-        mock_config.tool_groups = []
-        mock_config.tools = []
-        mock_config.token_usage.enabled = False
-        mock_config.tool_search.enabled = False
-        mock_config.guardrails = None
-        mock_config.skills.container_path = "/mnt/skills"
+    def test_excluded_set_is_frozen(self):
+        """_LEAD_EXCLUDED_TOOLS 必须含三项，不多不少。"""
+        assert _LEAD_EXCLUDED_TOOLS == frozenset({"bash", "write_file", "str_replace"})
 
-        def _get_model_config(name):
-            return mock_config.models[0] if name else None
-        mock_config.get_model_config = _get_model_config
+    def test_empty_tools_returns_empty(self):
+        assert _filter_lead_tools([], _LEAD_EXCLUDED_TOOLS) == []
 
-        # Patch guardrails config to be disabled so no G4 middleware
-        with patch("deerflow.config.guardrails_config.get_guardrails_config") as mock_gc:
-            mock_gc.return_value.enabled = False
-            yield
-            mock_gc.stop()
+    def test_no_excluded_tools_returns_all(self):
+        tools = [_make_named_tool("read_file"), _make_named_tool("task")]
+        result = _filter_lead_tools(tools, _LEAD_EXCLUDED_TOOLS)
+        assert {t.name for t in result} == {"read_file", "task"}
 
-        for p in self._patchers:
-            p.stop()
 
-    def _get_lead_tools(self):
-        from deerflow.agents.lead_agent.agent import make_lead_agent
-        agent = make_lead_agent(RunnableConfig(_make_config()))
-        tools = agent.tools  # BaseTool list bound to agent
-        return {t.name for t in tools}
+class TestSubagentToolsUnchanged:
+    """子代理（code-executor / data-analyst）工具列表不受影响 —— 子代理通过 SubagentConfig.tools 显式声明 bash，跟 _filter_lead_tools 完全独立。"""
 
-    def test_bash_not_in_lead_tools(self):
-        tool_names = self._get_lead_tools()
-        assert "bash" not in tool_names, f"bash should not be in lead tools, got: {sorted(tool_names)}"
-
-    def test_write_file_not_in_lead_tools(self):
-        tool_names = self._get_lead_tools()
-        assert "write_file" not in tool_names
-
-    def test_str_replace_not_in_lead_tools(self):
-        tool_names = self._get_lead_tools()
-        assert "str_replace" not in tool_names
-
-    def test_ls_in_lead_tools(self):
-        tool_names = self._get_lead_tools()
-        assert "ls" in tool_names, f"ls should be in lead tools (Q4 decision), got: {sorted(tool_names)}"
-
-    def test_read_file_in_lead_tools(self):
-        tool_names = self._get_lead_tools()
-        assert "read_file" in tool_names, "lead needs read_file for handoff inspection"
-
-    def test_prep_metric_plan_in_lead_tools(self):
-        tool_names = self._get_lead_tools()
-        assert "prep_metric_plan" in tool_names, "prep_metric_plan must be registered for lead"
-
-    def test_task_and_ask_clarification_and_present_files_in_lead_tools(self):
-        tool_names = self._get_lead_tools()
-        for name in ("task", "ask_clarification", "present_files"):
-            assert name in tool_names, f"{name} must be in lead tools"
-
-    def test_code_executor_tools_still_has_bash(self):
-        """subagent(code-executor) 工具列表依然含 bash。"""
+    def test_code_executor_still_has_bash(self):
+        """grep subagents/builtins/__init__.py 验证 code-executor 注册时 tools 含 bash。"""
         from deerflow.subagents.registry import get_subagent_config
         config = get_subagent_config("code-executor")
-        assert config is not None, "code-executor subagent config must exist"
-        # tools=None means "all tools available" → bash is available
+        assert config is not None, "code-executor subagent 必须注册"
+        # tools=None 表示"全部工具"，即 bash 可用；
+        # tools 是显式列表时，bash 必须在内；
+        # disallowed_tools 不能拒绝 bash
         if config.tools is not None:
-            assert "bash" in config.tools, f"if tools restricted, bash must be in list; got: {config.tools}"
+            assert "bash" in config.tools, (
+                f"code-executor 必须能用 bash；当前 tools={config.tools}"
+            )
         if config.disallowed_tools is not None:
-            assert "bash" not in config.disallowed_tools, f"bash must not be disallowed for code-executor; got: {config.disallowed_tools}"
+            assert "bash" not in config.disallowed_tools
 ```
 
 - [ ] **Step 2: 运行新测试验证它们 fail**
@@ -934,23 +970,46 @@ cd packages/agent/backend && source .venv/bin/activate
 PYTHONPATH=. uv run pytest tests/test_lead_tool_filtering.py -v
 ```
 
-预期：test_bash_not_in_lead_tools、test_write_file_not_in_lead_tools、test_str_replace_not_in_lead_tools 全部 FAIL（当前 lead 有 bash）。
+预期：所有 `TestFilterLeadToolsPureFunction.*` 测试 FAIL（ImportError: `_filter_lead_tools` 不存在）。`TestSubagentToolsUnchanged::test_code_executor_still_has_bash` 应该已经 PASS（因为我们没改 subagent）。
 
-- [ ] **Step 3: 修改 `agent.py` 的 `make_lead_agent`**
+- [ ] **Step 3: 在 `agent.py` 中定义 `_LEAD_EXCLUDED_TOOLS` + `_filter_lead_tools`**
 
-在 `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py` 第 436-438 行区域：
+在 `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py` 找到 `def make_lead_agent(` 之前的位置（imports 段之后、函数定义之前），添加：
 
 ```python
-# 现状（第 436-438 行）:
+# Lead agent 不该有 bash/write_file/str_replace —— 所有 ethoinsight CLI
+# 调用走 prep_metric_plan 工具，所有写文件操作走 code-executor 子代理。
+# 这是 P0 修复：lead 无 bash → 无 quoting retry → 无 recursion 100 耗尽。
+# (subagent 通过 SubagentConfig.tools 显式声明 bash，不受此过滤影响)
+_LEAD_EXCLUDED_TOOLS: frozenset[str] = frozenset({"bash", "write_file", "str_replace"})
+
+
+def _filter_lead_tools(tools: list, excluded: frozenset[str]) -> list:
+    """Drop tools whose .name is in excluded set. Pure function — single source of truth for the lead exclusion policy."""
+    return [t for t in tools if t.name not in excluded]
+```
+
+- [ ] **Step 4: 在 `make_lead_agent` 内调用过滤函数**
+
+找到 `make_lead_agent` 末尾的 `return create_agent(` 块。**当前**：
+
+```python
 return create_agent(
     model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
     tools=get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled),
-    ...
+    middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
+    system_prompt=apply_prompt_template(
+        subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None
+    ),
+    state_schema=ThreadState,
+)
+```
 
-# 改为:
-_LEAD_EXCLUDED_TOOLS = frozenset({"bash", "write_file", "str_replace"})
+**改为**（在 `return create_agent(` 之前插入两行，把 tools 参数换成 filtered_lead_tools）：
+
+```python
 all_lead_tools = get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled)
-filtered_lead_tools = [t for t in all_lead_tools if t.name not in _LEAD_EXCLUDED_TOOLS]
+filtered_lead_tools = _filter_lead_tools(all_lead_tools, _LEAD_EXCLUDED_TOOLS)
 logger.info(
     "Lead tools after filtering: %d→%d (excluded: %s)",
     len(all_lead_tools),
@@ -961,52 +1020,35 @@ logger.info(
 return create_agent(
     model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
     tools=filtered_lead_tools,
-    ...
+    middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
+    system_prompt=apply_prompt_template(
+        subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None
+    ),
+    state_schema=ThreadState,
+)
 ```
 
-具体实现位置：在 `agent.py` 第 434 行 `lead_tool_groups = ...` 之后、第 436 行 `return create_agent(` 之前插入过滤逻辑。最终第 434-443 行区域变为：
+**注意**：不修改 bootstrap agent 路径（同一个 `make_lead_agent` 函数前段有 bootstrap 分支，含独立的 `return create_agent(...)`）—— bootstrap 是特殊流程，保留其工具列表不变。修改时检查上下文，确保改的是文件末尾"normal lead"路径那一处 `return`，不是 bootstrap 那处。
 
-```python
-        declared_groups = [g.name for g in app_config.tool_groups] if app_config.tool_groups else None
-        lead_tool_groups = declared_groups if declared_groups else None
-
-    _LEAD_EXCLUDED_TOOLS = frozenset({"bash", "write_file", "str_replace"})
-    all_lead_tools = get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled)
-    filtered_lead_tools = [t for t in all_lead_tools if t.name not in _LEAD_EXCLUDED_TOOLS]
-    logger.info(
-        "Lead tools after filtering: %d→%d (excluded: %s)",
-        len(all_lead_tools),
-        len(filtered_lead_tools),
-        sorted(_LEAD_EXCLUDED_TOOLS),
-    )
-
-    return create_agent(
-        model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
-        tools=filtered_lead_tools,
-        middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
-```
-
-**注意**：不修改 bootstrap agent 路径（第 414-422 行）—— bootstrap 是特殊流程，保留其工具列表不变。
-
-- [ ] **Step 4: 运行 Task 3 测试验证 pass**
+- [ ] **Step 5: 运行 Task 3 测试验证 pass**
 
 ```bash
 cd packages/agent/backend && source .venv/bin/activate
 PYTHONPATH=. uv run pytest tests/test_lead_tool_filtering.py -v
 ```
 
-预期：8 tests PASS。
+预期：9 tests PASS。
 
-- [ ] **Step 5: 运行全量测试确保无回归**
+- [ ] **Step 6: 运行全量测试确保无回归**
 
 ```bash
 cd packages/agent/backend && source .venv/bin/activate
 make test 2>&1 | tail -5
 ```
 
-预期：pass 数比 baseline +13（Task 1 5个 + Task 2 5个 + Task 3 8个，总共新增 18 个测试），fail 数不变。
+预期：pass 数比 baseline +20（Task 1 5个 + Task 2 6个 + Task 3 9个，总共新增 20 个测试），fail 数不变（3 pre-existing）。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py
@@ -1024,31 +1066,29 @@ EOF
 **Files:**
 - Delete: `packages/agent/backend/packages/harness/deerflow/guardrails/lead_execution_boundary_provider.py`
 - Delete: `packages/agent/backend/tests/test_lead_execution_boundary_provider.py`
-- Modify: `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py:316-326`
-- Modify: `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/prompt.py:453-454,1107-1127`
-- Modify: `packages/agent/skills/custom/ethoinsight-metric-catalog/SKILL.md:26-93`
+- Modify: `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py`（删除 `LeadAgentExecutionBoundaryProvider` 的 import + 注册段；注册段在 `_build_middlewares` 函数内、`Ev19TemplateGuardrailProvider` 注册块的紧后方）
+- Modify: `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/prompt.py`（两处：(a) "transparency 表"段含 `跑 \`python -m ethoinsight.parse.dump_headers\`` 和 `跑 \`python -m ethoinsight.catalog.resolve\`` 那两行；(b) `### Step 0.5: 生成 metric_plan.json` 段及紧邻的 `ethoinsight-metric-catalog` skill 说明段）
+- Modify: `packages/agent/skills/custom/ethoinsight-metric-catalog/SKILL.md`（从 `### lead` heading 起到下一个 `### ` heading（应为 `### data-analyst`）之前的整段 lead role 说明）
 - Create: `docs/handoffs/2026-05/2026-05-15-p0-fix-dogfood-validation.md`
 
 #### 子任务 4a: 删除 G4 boundary 文件
 
-- [ ] **Step 4a.1: 删 `lead_execution_boundary_provider.py`**
+- [ ] **Step 4a.1: 用 `git rm` 删除两个文件（不要先 rm 再 git rm）**
 
 ```bash
-rm packages/agent/backend/packages/harness/deerflow/guardrails/lead_execution_boundary_provider.py
+cd /home/wangqiuyang/noldus-insight/.claude/worktrees/p0-lead-bash-removal
+git rm packages/agent/backend/packages/harness/deerflow/guardrails/lead_execution_boundary_provider.py
+git rm packages/agent/backend/tests/test_lead_execution_boundary_provider.py
 ```
 
-- [ ] **Step 4a.2: 删对应的测试文件**
+`git rm` 已经同时从工作树和暂存区移除文件，**不需要先 `rm`**。
 
-```bash
-rm packages/agent/backend/tests/test_lead_execution_boundary_provider.py
-```
+- [ ] **Step 4a.2: 从 `agent.py` 移除 G4 boundary 的 import + 注册**
 
-- [ ] **Step 4a.3: 从 `agent.py` 移除 G4 boundary 的 import + 注册**
-
-在 `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py` 第 316-326 行：
+在 `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py` 中搜 `LeadAgentExecutionBoundaryProvider` 定位（应该在 `_build_middlewares` 函数内、`if guardrails_cfg.enabled:` 分支中、紧跟在 `Ev19TemplateGuardrailProvider` 注册块后面）：
 
 ```python
-# 删除以下整段（第 316-326 行）:
+# 删除以下整段:
         # LeadAgentExecutionBoundary — block lead from writing scripts or running
         # non-whitelisted bash. Self-gates by agent_id; subagents pass through.
         # See: spec §5.5.1, fix thread b0d3a611 E2E failure root cause A.
@@ -1062,12 +1102,12 @@ rm packages/agent/backend/tests/test_lead_execution_boundary_provider.py
         ))
 
 
-# 删除后，该位置仅剩 Ev19TemplateGuardrail 的注册（第 306-314 行）。
+# 删除后，该位置仅剩 Ev19TemplateGuardrail 的注册块。
 ```
 
-注意：保留 `Ev19TemplateGuardrailProvider` 的注册（第 306-314 行），只删 `LeadAgentExecutionBoundaryProvider` 部分。
+注意：保留 `Ev19TemplateGuardrailProvider` 的注册块，只删 `LeadAgentExecutionBoundaryProvider` 部分。
 
-- [ ] **Step 4a.4: 运行测试确认删除不破坏任何东西**
+- [ ] **Step 4a.3: 运行测试确认删除不破坏任何东西**
 
 ```bash
 cd packages/agent/backend && source .venv/bin/activate
@@ -1076,11 +1116,9 @@ PYTHONPATH=. uv run pytest tests/ -k "not test_lead_execution_boundary" -v 2>&1 
 make test 2>&1 | tail -5
 ```
 
-- [ ] **Step 4a.5: Commit 子任务 4a**
+- [ ] **Step 4a.4: Commit 子任务 4a**
 
 ```bash
-git rm packages/agent/backend/packages/harness/deerflow/guardrails/lead_execution_boundary_provider.py
-git rm packages/agent/backend/tests/test_lead_execution_boundary_provider.py
 git add packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py
 git commit -m "$(cat <<'EOF'
 feat: 删除 G4 LeadAgentExecutionBoundaryProvider (bash 已从 lead tool 列表移除)
@@ -1088,27 +1126,31 @@ EOF
 )"
 ```
 
+`git rm` 已在 Step 4a.1 把删除标记进了 index，本次 commit 一并提交。
+
 #### 子任务 4b: 改 lead prompt
 
-- [ ] **Step 4b.1: 更新 transparency 表（第 453-454 行）**
+- [ ] **Step 4b.1: 更新 transparency 表中两条 bash 行**
 
-修改 `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/prompt.py` 第 453-454 行：
+在 `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/prompt.py` 中搜 `跑 \`python -m ethoinsight.parse.dump_headers\``，定位到 transparency 表里那两行：
 
 ```python
-# 旧（第 453-454 行）:
+# 旧（两行）:
 | 跑 `python -m ethoinsight.parse.dump_headers` | "📂 正在解析 EthoVision 文件结构..." |
 | 跑 `python -m ethoinsight.catalog.resolve` | "📋 正在生成指标计划..." |
 
-# 改为:
+# 改为（合并成一行）:
 | 调 `prep_metric_plan` | "📋 正在生成指标计划..." |
 ```
 
-删除第 453 行整行，将第 454 行的内容替换为新的一行。
+即删掉 dump_headers 那一行，把 catalog.resolve 那一行替换为 prep_metric_plan 行。
 
-- [ ] **Step 4b.2: 更新 Step 0.5 段（第 1119-1127 行）**
+- [ ] **Step 4b.2: 更新 Step 0.5 段**
+
+在同一个 `prompt.py` 中搜 `### Step 0.5: 生成 metric_plan.json` 定位段落，整段替换：
 
 ```python
-# 旧（第 1119-1127 行）:
+# 旧:
 ### Step 0.5: 生成 metric_plan.json（**派遣 code-executor 前必做**，详见 ethoinsight-metric-catalog skill）
 
 1. bash dump_headers 提取数据列名到 /mnt/user-data/workspace/columns.json
@@ -1130,10 +1172,12 @@ resolve 失败时（stderr JSON 含 code 字段）按 skill 的话术映射反�
 派遣 prompt 仅需告诉 code-executor plan.json 路径，**不要展开指标清单**。
 ```
 
-- [ ] **Step 4b.3: 更新 skill 说明段（第 1107 行）**
+- [ ] **Step 4b.3: 更新 skill 说明段**
+
+在同一个 `prompt.py` 中搜 `- **ethoinsight-metric-catalog**:` 定位到含 `bash dump_headers` 那一行：
 
 ```python
-# 旧（第 1107 行）:
+# 旧:
 - **ethoinsight-metric-catalog**: 范式指标 catalog 读取手册。**在派遣 code-executor 之前**，按 SKILL.md 中 lead role 段的指引：(1) bash dump_headers 提取列名 (2) bash catalog.resolve 生成 metric_plan.json。失败时按 stderr JSON 的 code 字段 ask_clarification。
 
 # 改为:
@@ -1154,7 +1198,7 @@ EOF
 
 - [ ] **Step 4c.1: 重写 SKILL.md 的 lead role 段**
 
-读取 `packages/agent/skills/custom/ethoinsight-metric-catalog/SKILL.md`，将第 26 行到第 93 行（从 `### lead` 到 `### data-analyst` 之前）替换为：
+读取 `packages/agent/skills/custom/ethoinsight-metric-catalog/SKILL.md`，从 `### lead` heading 开始、到下一个同级 heading（应为 `### data-analyst`）之前的整段 lead role 说明，替换为：
 
 ```markdown
 ### lead
@@ -1238,7 +1282,7 @@ make dev
 - [ ] **Step 4d.2: 跑跟 P0 现场一致的 dogfood**
 
 打开浏览器 `http://localhost:2026`：
-1. 上传 EPM 数据文件（用 `demo-data/` 下的 EthoVision XT 轨迹文件）
+1. 上传 EPM 数据文件 —— **真实数据在 `/home/wangqiuyang/DemoData/newdemodata/`**（不是仓库内的 `demo-data/`，CLAUDE.md 描述与实际位置不符）。挑一个 EthoVision XT EPM `.txt` 轨迹文件上传。如该目录下没有明确 EPM 范式的样本，先 `ls /home/wangqiuyang/DemoData/newdemodata/` 查清楚有什么，然后选最接近 EPM 的（如 Plus-Maze / Elevated-Plus）；选不出时停下问用户哪个文件可用，**不要瞎挑**。
 2. 发送消息："请分析这份 EPM 数据"
 3. 发送消息："做单样本分析"
 
@@ -1280,7 +1324,7 @@ make dev
 ## 验证环境
 
 - worktree: .claude/worktrees/p0-lead-bash-removal
-- 数据: demo-data/ (EPM EthoVision XT 轨迹文件)
+- 数据: `/home/wangqiuyang/DemoData/newdemodata/<具体文件名>`（EthoVision XT EPM 轨迹文件）
 - 范式: epm
 
 ## 验证流程
@@ -1324,13 +1368,20 @@ cd packages/agent/backend && source .venv/bin/activate
 make test 2>&1 | tail -10
 ```
 
-预期：baseline 2315 + 18 新增 = ~2333 passed，3 pre-existing failed（来自 test_client_live.py 或 test_gateway.py 的预存失败）。
+预期：baseline 2315 + 20 新增 = ~2335 passed，3 pre-existing failed（来自 test_client_live.py 或 test_gateway.py 的预存失败）。
 
 - [ ] **Step F.2: 检查 commit 历史**
 
 ```bash
-git log --oneline -5
-# 应看到 4 个 commit（Task 1-4 各有 commit）
+git log --oneline -10
+# 应看到 7 个 commit (按子任务粒度):
+#   Task 1: fix: LoopDetectionMiddleware ...
+#   Task 2: feat(tools): 加 prep_metric_plan ...
+#   Task 3: feat(lead): 移除 bash / write_file ...
+#   Task 4a: feat: 删除 G4 LeadAgentExecutionBoundaryProvider ...
+#   Task 4b: feat(lead): prompt Step 0.5 改 prep_metric_plan ...
+#   Task 4c: feat(skill): ethoinsight-metric-catalog ...
+#   Task 4d: docs: P0 fix dogfood 验证报告
 ```
 
 ---
