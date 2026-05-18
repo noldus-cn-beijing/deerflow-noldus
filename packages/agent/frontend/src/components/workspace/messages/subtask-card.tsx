@@ -8,7 +8,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Streamdown } from "streamdown";
+import { type Components, Streamdown } from "streamdown";
 
 import {
   ChainOfThought,
@@ -134,7 +134,7 @@ export function SubtaskCard({
               <div className="pt-1">
                 <Streamdown
                   {...streamdownPlugins}
-                  components={{ a: CitationLink }}
+                  components={{ a: CitationLink } as Components}
                 >
                   {task.prompt}
                 </Streamdown>
