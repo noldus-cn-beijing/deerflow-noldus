@@ -930,6 +930,21 @@ wheels = [
 ]
 
 [[package]]
+name = "dashscope"
+version = "1.25.18"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "certifi" },
+    { name = "cryptography" },
+    { name = "requests" },
+    { name = "websocket-client" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/06/97d1a25319433b10e88ed4b8d0c84adcfac46f2edefc7ff80703c59890bb/dashscope-1.25.18-py3-none-any.whl", hash = "sha256:a9854280650f19c9f9eacf4de727adc3e498bf0289d9c18e3a7cd4238ea69c2e", size = 1346258, upload-time = "2026-05-13T02:41:49.983Z" },
+]
+
+[[package]]
 name = "ddgs"
 version = "9.10.0"
 source = { registry = "https://pypi.org/simple" }
@@ -951,6 +966,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "bcrypt" },
+    { name = "dashscope" },
     { name = "deerflow-harness" },
     { name = "email-validator" },
     { name = "ethoinsight" },
@@ -983,6 +999,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bcrypt", specifier = ">=4.0.0" },
+    { name = "dashscope", specifier = ">=1.25.18" },
     { name = "deerflow-harness", editable = "packages/harness" },
     { name = "deerflow-harness", extras = ["postgres"], marker = "extra == 'postgres'", editable = "packages/harness" },
     { name = "email-validator", specifier = ">=2.0.0" },
