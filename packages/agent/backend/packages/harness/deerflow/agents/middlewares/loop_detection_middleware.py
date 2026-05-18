@@ -31,8 +31,8 @@ _DEFAULT_WARN_THRESHOLD = 3  # inject warning after 3 identical calls
 _DEFAULT_HARD_LIMIT = 5  # force-stop after 5 identical calls
 _DEFAULT_WINDOW_SIZE = 20  # track last N tool calls
 _DEFAULT_MAX_TRACKED_THREADS = 100  # LRU eviction limit
-_DEFAULT_TOOL_FREQ_WARN = 30  # warn after 30 calls to the same tool type
-_DEFAULT_TOOL_FREQ_HARD_LIMIT = 50  # force-stop after 50 calls to the same tool type
+_DEFAULT_TOOL_FREQ_WARN = 3  # warn after 3 calls to the same tool type (P0 fix: lead 微调 bash command 让 hash 不同绕过 Layer 1)
+_DEFAULT_TOOL_FREQ_HARD_LIMIT = 5  # force-stop after 5 calls to the same tool type
 
 
 def _normalize_tool_call_args(raw_args: object) -> tuple[dict, str | None]:
@@ -128,12 +128,15 @@ def _hash_tool_calls(tool_calls: list[dict]) -> str:
 _WARNING_MSG = "[LOOP DETECTED] You are repeating the same tool calls. Stop calling tools and produce your final answer now. If you cannot complete the task, summarize what you accomplished so far."
 
 _TOOL_FREQ_WARNING_MSG = (
-    "[LOOP DETECTED] You have called {tool_name} {count} times without producing a final answer. Stop calling tools and produce your final answer now. If you cannot complete the task, summarize what you accomplished so far."
+    "[LOOP DETECTED] You have called {tool_name} {count} times without success."
+    " If you are trying to run analysis commands (parse.*, catalog.*), use task(code-executor) instead of bash."
+    " If you need to generate metric_plan.json, use the prep_metric_plan tool."
+    " Stop using {tool_name} and produce a decision now."
 )
 
 _HARD_STOP_MSG = "[FORCED STOP] Repeated tool calls exceeded the safety limit. Producing final answer with results collected so far."
 
-_TOOL_FREQ_HARD_STOP_MSG = "[FORCED STOP] Tool {tool_name} called {count} times — exceeded the per-tool safety limit. Producing final answer with results collected so far."
+_TOOL_FREQ_HARD_STOP_MSG = "[FORCED STOP] Tool {tool_name} called {count} times — exceeded the per-tool safety limit. All tool_calls stripped. Produce a final text answer now summarizing what to do next (e.g., dispatch task(code-executor) or ask_clarification)."
 
 
 class LoopDetectionMiddleware(AgentMiddleware[AgentState]):

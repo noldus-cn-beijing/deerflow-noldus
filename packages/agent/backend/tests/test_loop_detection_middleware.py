@@ -184,7 +184,7 @@ class TestLoopDetection:
 
     def test_warn_only_injected_once(self):
         """Warning for the same hash should only be injected once per thread."""
-        mw = LoopDetectionMiddleware(warn_threshold=3, hard_limit=10)
+        mw = LoopDetectionMiddleware(warn_threshold=3, hard_limit=10, tool_freq_warn=100, tool_freq_hard_limit=200)
         runtime = _make_runtime()
         call = [_bash_call("ls")]
 
@@ -220,7 +220,7 @@ class TestLoopDetection:
         assert _HARD_STOP_MSG in msgs[0].content
 
     def test_different_calls_dont_trigger(self):
-        mw = LoopDetectionMiddleware(warn_threshold=2)
+        mw = LoopDetectionMiddleware(warn_threshold=2, tool_freq_warn=100, tool_freq_hard_limit=200)
         runtime = _make_runtime()
 
         # Each call is different
@@ -229,7 +229,7 @@ class TestLoopDetection:
             assert result is None
 
     def test_window_sliding(self):
-        mw = LoopDetectionMiddleware(warn_threshold=3, window_size=5)
+        mw = LoopDetectionMiddleware(warn_threshold=3, window_size=5, tool_freq_warn=100, tool_freq_hard_limit=200)
         runtime = _make_runtime()
         call = [_bash_call("ls")]
 
@@ -668,3 +668,137 @@ class TestToolFrequencyDetection:
         msg = result["messages"][0]
         assert isinstance(msg, AIMessage)
         assert _HARD_STOP_MSG in msg.content
+
+
+# === Task 1: tool name frequency with lower thresholds ===
+# NOTE: 复用文件顶部既有 _make_runtime / _make_state 辅助。
+
+
+class TestToolNameFreqWithBash:
+    """P0 fix: tool name frequency catches repeated bash calls with varying args."""
+
+    def test_bash_tool_freq_warns_at_3_with_different_commands(self):
+        """同 bash 3 次不同 command → 触发 warn (hash 不同但 tool name 同)。"""
+        mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
+        runtime = _make_runtime()
+
+        results = []
+        for i in range(4):
+            tc = {
+                "name": "bash",
+                "id": f"call_{i}",
+                "args": {"command": f"cd /tmp && python -m ethoinsight.parse.dump_headers --input file_{i}.txt"},
+            }
+            warning, hard_stop = mw._track_and_check(_make_state([tc]), runtime)
+            results.append((warning, hard_stop))
+
+        # 第 1-2 次: 不触发
+        assert results[0] == (None, False)
+        assert results[1] == (None, False)
+        # 第 3 次: 触发 warn
+        assert results[2][0] is not None
+        assert "bash" in results[2][0]
+        assert results[2][1] is False
+        # 第 4 次: 不再重复 warn (已 warned)
+        assert results[3][0] is None
+
+    def test_bash_tool_freq_hard_stop_at_5(self):
+        """同 bash 5 次不同 command → hard limit + strip tool_calls。"""
+        mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
+        runtime = _make_runtime()
+
+        for i in range(5):
+            tc = {
+                "name": "bash",
+                "id": f"call_{i}",
+                "args": {"command": f"python -m ethoinsight.parse.dump_headers --input file_{i}.txt"},
+            }
+            _ = mw._track_and_check(_make_state([tc]), runtime)
+
+        # 第 5 次: hard stop
+        state6 = _make_state([{
+            "name": "bash",
+            "id": "call_hard",
+            "args": {"command": "echo still trying"},
+        }])
+        result = mw._apply(state6, runtime)
+        assert result is not None
+        assert "messages" in result
+        updated_msg = result["messages"][0]
+        assert updated_msg.tool_calls == []
+        # content 必须含 hard stop 消息
+        content_str = updated_msg.content if isinstance(updated_msg.content, str) else str(updated_msg.content)
+        assert "FORCED STOP" in content_str or "exceeded" in content_str.lower()
+
+    def test_different_tool_names_dont_trigger(self):
+        """每个 tool name 各调用 2 次（都未到 warn 阈值 3）→ 不触发。"""
+        mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
+        runtime = _make_runtime()
+
+        for _ in range(2):
+            _ = mw._track_and_check(
+                _make_state([{"name": "bash", "id": "c1", "args": {"command": "ls"}}]),
+                runtime,
+            )
+        for _ in range(2):
+            _ = mw._track_and_check(
+                _make_state([{"name": "read_file", "id": "c2", "args": {"path": "/tmp/x"}}]),
+                runtime,
+            )
+        for _ in range(2):
+            _ = mw._track_and_check(
+                _make_state([{"name": "task", "id": "c3", "args": {"description": "x", "prompt": "x"}}]),
+                runtime,
+            )
+        # 每个 tool 各 2 次，都 < warn 阈值 3，不应触发
+        # 再调一次别的 tool（合计 3 个 tool 各 2 次 + 1 次 ls_tool = 7 次总，但单个 tool 都不超 3）
+        result = mw._track_and_check(
+            _make_state([{"name": "ls", "id": "c4", "args": {"path": "/tmp"}}]),
+            runtime,
+        )
+        assert result == (None, False)
+
+    def test_counter_does_not_reset_when_other_tool_interleaves(self):
+        """同 bash 2 次后切别的 tool 1 次后再 bash 1 次 → bash counter 继续累加不重置。"""
+        mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
+        runtime = _make_runtime()
+
+        # bash x2
+        for i in range(2):
+            _ = mw._track_and_check(
+                _make_state([{"name": "bash", "id": f"c{i}", "args": {"command": f"ls {i}"}}]),
+                runtime,
+            )
+        # 切 read_file
+        _ = mw._track_and_check(
+            _make_state([{"name": "read_file", "id": "cr", "args": {"path": "/tmp/x"}}]),
+            runtime,
+        )
+        # 回来 bash → 第 3 次，触发 warn
+        warning, hard_stop = mw._track_and_check(
+            _make_state([{"name": "bash", "id": "c99", "args": {"command": "ls 99"}}]),
+            runtime,
+        )
+        assert warning is not None
+        assert "bash" in warning
+        assert hard_stop is False
+
+    def test_warn_message_suggests_code_executor(self):
+        """warn 注入消息含"task(code-executor)"建议。"""
+        mw = LoopDetectionMiddleware(tool_freq_warn=3, tool_freq_hard_limit=5)
+        runtime = _make_runtime()
+
+        # 前 2 次不触发
+        for i in range(2):
+            _ = mw._track_and_check(
+                _make_state([{"name": "bash", "id": f"c{i}", "args": {"command": f"ls {i}"}}]),
+                runtime,
+            )
+
+        # 第 3 次通过 _apply → 触发 warn，消息注入到 AIMessage content
+        state3 = _make_state([{"name": "bash", "id": "c99", "args": {"command": "ls 99"}}])
+        result = mw._apply(state3, runtime)
+        assert result is not None
+        updated_msg = result["messages"][0]
+        content = updated_msg.content if isinstance(updated_msg.content, str) else str(updated_msg.content)
+        assert "code-executor" in content.lower()
