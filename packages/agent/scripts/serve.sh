@@ -290,7 +290,7 @@ fi
 # 2. Gateway API
 run_service "Gateway" \
     "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port $GATEWAY_PORT $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
-    $GATEWAY_PORT 30
+    $GATEWAY_PORT 90
 
 # 3. Frontend
 run_service "Frontend" \
