@@ -25,59 +25,45 @@ python -c "import ethoinsight.catalog as c; print(c.__file__)"
 
 ### lead
 
-在派遣 code-executor **之前** 走以下两步 bash：
+在派遣 code-executor **之前**，调 `prep_metric_plan` 工具一步完成列名解析 + catalog resolve。
 
-**Step 1: 列名预检**
-
-```bash
-python -m ethoinsight.parse.dump_headers \
-    --input /mnt/user-data/uploads/<raw_file>.txt \
-    --output /mnt/user-data/workspace/columns.json
+```
+prep_metric_plan(uploaded_file="/mnt/user-data/uploads/<raw_file>.txt", paradigm="<epm|oft|fst|...>")
 ```
 
-失败时 stderr 最后一行是 JSON，含 `code` 字段：
+**参数**：
+- `uploaded_file`：用户上传的数据文件虚拟路径（如 `/mnt/user-data/uploads/轨迹.txt`）
+- `paradigm`：范式 ID（`epm` / `oft` / `fst` / `ldb` / `tst` / `zero_maze` / `shoaling`）
 
-| code | 含义 | 怎么反问 |
-|------|------|----------|
-| `file.not_found` | 文件路径错 | 让用户重新提供路径或确认上传成功 |
-| `format.unrecognized` | 文件不是 EthoVision 导出 | "这个文件看起来不像 EthoVision XT 导出，能确认下吗？" |
-| `header.parse_failed` | header 损坏 | 让用户检查文件完整性 |
-
-**Step 2: 生成执行计划**
-
-```bash
-python -m ethoinsight.catalog.resolve \
-    --paradigm <epm|oft|fst|...> \
-    --columns-file /mnt/user-data/workspace/columns.json \
-    --raw-files-json /mnt/user-data/workspace/raw_files.json \
-    --workspace-dir /mnt/user-data/workspace \
-    --groups-file /mnt/user-data/workspace/groups.json \
-    --output /mnt/user-data/workspace/metric_plan.json \
-    [--include METRIC_ID]* \
-    [--exclude METRIC_ID]* \
-    [--n-per-group N] \
-    [--n-groups N] \
-    [--ev19-template TEMPLATE_ID]
+**成功返回** (`status="ok"`)：
+```json
+{
+  "status": "ok",
+  "plan_path": "/mnt/user-data/workspace/metric_plan.json",
+  "plan_summary": {
+    "paradigm": "epm",
+    "metric_count": 5,
+    "metric_ids": ["open_arm_time_ratio", "open_arm_entries_ratio", ...]
+  }
+}
 ```
 
-> 注：早期版本要求显式传 `--virtual-workspace-dir /mnt/user-data/workspace`。
-> 现已改用 sandbox 注入的 env var（`DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE`）作为兜底，
-> lead 无需再传该参数——sandbox 会自动确保 plan.json output 字段是虚拟路径。
-> 该参数仍保留以兼容直接命令行调试（无 sandbox env var 的场景）。
+**失败返回** (`status="error"`)：
 
-完整参数文档见 [`references/resolve-cli.md`](references/resolve-cli.md)。
+| error_code | 含义 | 怎么反问（hint） |
+|------------|------|------------------|
+| `file_not_found` | 数据文件不存在，可能用户上传失败 | ask_clarification 让用户重新上传 |
+| `format_unrecognized` | 文件不是 EthoVision XT 导出格式 | ask_clarification 让用户确认导出方式 |
+| `parse_failed` | 数据文件损坏 | ask_clarification 让用户重新导出 |
+| `unknown_paradigm` | 范式不在 catalog 内 | ask_clarification 让用户确认范式或检查 set_experiment_paradigm 调用 |
+| `columns_missing` | 数据缺关键列（可能录制设置漏了 Open/Closed arms 进入次数） | ask_clarification 让用户确认实验录制设置 |
+| `schema_violation` | catalog YAML 损坏——项目内部 bug | present_files 把错误信息呈现给用户，让他报 bug |
+| `empty_plan` | 按当前参数一项指标都跑不了 | ask_clarification 确认用户需求 |
+| `unknown_metric` | 用户要求的指标不在 catalog 中 | ask_clarification 让用户从可用指标中选择 |
 
-失败时按 stderr JSON 的 `code` 字段反问用户：
+工具返回的 `hint` 字段已包含上述反问话术，可直接用于 ask_clarification。
 
-| code | 反问话术（中文） |
-|------|------------------|
-| `unknown_paradigm` | （内部错误，不应发生 —— Gate 1 已识别） |
-| `unknown_metric` | "您要的指标 `<id>` 我们目前没有预制脚本，要不咱们换 `<details.available>` 中的一个？" |
-| `columns_missing` | "您的数据里缺 `<details.missing_patterns>` 这些列，没法跑 `<details.metric>` 指标。能确认下数据是否完整、或者咱们跳过这个指标？" |
-| `empty_plan` | "按这个组合一项指标都跑不了，咱们是不是哪里搞错了？" |
-| `schema_violation` | （内部错误，向用户致歉、把 details 报给开发者） |
-
-**Step 3: 派遣 code-executor**
+**派遣 code-executor**
 
 派遣 prompt 中只需要：
 
@@ -86,7 +72,7 @@ python -m ethoinsight.catalog.resolve \
 plan 路径：/mnt/user-data/workspace/metric_plan.json
 分组：/mnt/user-data/workspace/groups.json
 
-请按 plan.metrics[]、plan.statistics、plan.charts[] 逐条 bash 执行
+请按 plan.metrics[]、plan.statistics、plan.charts[] 逐条执行
 ```
 
 不要把指标清单展开在 prompt 里。
