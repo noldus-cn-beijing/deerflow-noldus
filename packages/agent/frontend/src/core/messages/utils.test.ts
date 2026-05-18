@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
 import type { Message } from "@langchain/langgraph-sdk";
+import { describe, expect, it } from "vitest";
+
 import { groupMessages } from "./utils";
 
 function makeAIMsg(

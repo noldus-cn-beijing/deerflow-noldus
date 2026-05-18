@@ -1,0 +1,37 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e266]
+  - generic [ref=e267]:
+    - generic [ref=e270]:
+      - generic [ref=e271]:
+        - generic [ref=e273]:
+          - generic [ref=e274]: Noldus
+          - button "Toggle Sidebar" [ref=e275] [cursor=pointer]:
+            - img
+            - generic [ref=e276]: Toggle Sidebar
+        - list [ref=e277]:
+          - listitem [ref=e278]:
+            - link "新对话" [ref=e279] [cursor=pointer]:
+              - /url: /workspace/chats/new
+              - img [ref=e280]
+              - generic [ref=e282]: 新对话
+      - list [ref=e285]:
+        - listitem [ref=e286]:
+          - link "对话" [ref=e287] [cursor=pointer]:
+            - /url: /workspace/chats
+            - img [ref=e288]
+            - generic [ref=e291]: 对话
+        - listitem [ref=e292]:
+          - link "智能体" [ref=e293] [cursor=pointer]:
+            - /url: /workspace/agents
+            - img [ref=e294]
+            - generic [ref=e297]: 智能体
+      - list [ref=e299]:
+        - listitem [ref=e300]:
+          - button "设置和更多" [ref=e301]:
+            - generic [ref=e302]:
+              - img [ref=e303]
+              - generic [ref=e306]: 设置和更多
+              - img [ref=e307]
+      - button "Toggle Sidebar" [ref=e310]
+    - main [ref=e311]
+  - region "Notifications alt+T"

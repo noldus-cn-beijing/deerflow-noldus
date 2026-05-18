@@ -1,0 +1,114 @@
+- generic [ref=e1]:
+  - alert [ref=e266]: 新对话 - DeerFlow
+  - generic [ref=e267]:
+    - generic [ref=e270]:
+      - generic [ref=e271]:
+        - generic [ref=e273]:
+          - generic [ref=e274]: Noldus
+          - button "Toggle Sidebar" [ref=e275] [cursor=pointer]:
+            - img
+            - generic [ref=e276]: Toggle Sidebar
+        - list [ref=e277]:
+          - listitem [ref=e278]:
+            - link "新对话" [ref=e279] [cursor=pointer]:
+              - /url: /workspace/chats/new
+              - img [ref=e280]
+              - generic [ref=e282]: 新对话
+      - list [ref=e285]:
+        - listitem [ref=e286]:
+          - link "对话" [ref=e287] [cursor=pointer]:
+            - /url: /workspace/chats
+            - img [ref=e288]
+            - generic [ref=e291]: 对话
+        - listitem [ref=e292]:
+          - link "智能体" [ref=e293] [cursor=pointer]:
+            - /url: /workspace/agents
+            - img [ref=e294]
+            - generic [ref=e297]: 智能体
+      - list [ref=e299]:
+        - listitem [ref=e300]:
+          - button "设置和更多" [ref=e301]:
+            - generic [ref=e302]:
+              - img [ref=e303]
+              - generic [ref=e306]: 设置和更多
+              - img [ref=e307]
+      - button "Toggle Sidebar" [ref=e310]
+    - main [ref=e311]:
+      - generic [ref=e312]:
+        - main [ref=e317]:
+          - log [ref=e319]
+          - generic [ref=e324]:
+            - generic [ref=e325]:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - img
+                      - generic: To-dos
+                  - generic:
+                    - img
+                - main:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - list
+            - generic [ref=e326]:
+              - group [ref=e328]:
+                - generic [ref=e330]:
+                  - generic [ref=e332]:
+                    - generic [ref=e333]: 👋
+                    - generic [ref=e334]:
+                      - generic [ref=e335]: 你好，欢迎回来！
+                      - text: 你好，欢迎回来！
+                  - generic [ref=e337]: 欢迎使用 🦌 DeerFlow，一个完全开源的超级智能体。通过内置和自定义的 Skills， DeerFlow 可以帮你搜索网络、分析数据，还能为你生成幻灯片、 图片、视频、播客及网页等，几乎可以做任何事情。
+                - generic [ref=e375] [cursor=pointer]:
+                  - generic [ref=e376]:
+                    - img [ref=e379]
+                    - button "Remove attachment" [ref=e381]:
+                      - img
+                      - generic [ref=e382]: Remove
+                  - generic [ref=e383]: epm-test-data.txt
+                - textbox "今天我能为你做些什么？" [ref=e339]
+                - group [ref=e340]:
+                  - generic [ref=e341]:
+                    - button [active] [ref=e342] [cursor=pointer]:
+                      - img
+                    - button "全自动" [ref=e343] [cursor=pointer]:
+                      - generic [ref=e344]:
+                        - img
+                      - generic [ref=e345]: 全自动
+                  - generic [ref=e346]:
+                    - button "deepseek" [ref=e347] [cursor=pointer]:
+                      - generic [ref=e349]: deepseek
+                    - button "Submit" [ref=e350] [cursor=pointer]:
+                      - img
+              - generic [ref=e355]:
+                - button "小惊喜" [ref=e357] [cursor=pointer]:
+                  - img
+                  - text: 小惊喜
+                - button "写作" [ref=e359] [cursor=pointer]:
+                  - img
+                  - text: 写作
+                - button "研究" [ref=e361] [cursor=pointer]:
+                  - img
+                  - text: 研究
+                - button "收集" [ref=e363] [cursor=pointer]:
+                  - img
+                  - text: 收集
+                - button "学习" [ref=e365] [cursor=pointer]:
+                  - img
+                  - text: 学习
+                - button "创建" [ref=e367] [cursor=pointer]:
+                  - img
+                  - text: 创建
+        - separator
+        - generic [ref=e368]:
+          - generic:
+            - button [ref=e370] [cursor=pointer]:
+              - img
+            - generic [ref=e371]:
+              - generic:
+                - heading "Artifacts" [level=2]
+              - main
+  - region "Notifications alt+T"
