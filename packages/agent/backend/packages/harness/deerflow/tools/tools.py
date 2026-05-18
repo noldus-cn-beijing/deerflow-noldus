@@ -40,6 +40,7 @@ def get_available_tools(
     include_mcp: bool = True,
     model_name: str | None = None,
     subagent_enabled: bool = False,
+    app_config=None,
 ) -> list[BaseTool]:
     """Get all available tools from config.
 
@@ -51,6 +52,8 @@ def get_available_tools(
         include_mcp: Whether to include tools from MCP servers (default: True).
         model_name: Optional model name to determine if vision tools should be included.
         subagent_enabled: Whether to include subagent tools (task, task_status).
+        app_config: Reserved for upstream parity (resolved AppConfig). Ignored
+            locally — config is fetched via the global ``get_app_config`` cache.
 
     Returns:
         List of available tools.
