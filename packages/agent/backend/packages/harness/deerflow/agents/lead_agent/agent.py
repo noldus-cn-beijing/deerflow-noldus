@@ -227,6 +227,18 @@ Being proactive with task management demonstrates thoroughness and ensures all r
 # ViewImageMiddleware should be before ClarificationMiddleware to inject image details before LLM
 # ToolErrorHandlingMiddleware should be before ClarificationMiddleware to convert tool exceptions to ToolMessages
 # ClarificationMiddleware should be last to intercept clarification requests after model calls
+# Lead agent 不该有 bash/write_file/str_replace —— 所有 ethoinsight CLI
+# 调用走 prep_metric_plan 工具，所有写文件操作走 code-executor 子代理。
+# 这是 P0 修复：lead 无 bash → 无 quoting retry → 无 recursion 100 耗尽。
+# (subagent 通过 SubagentConfig.tools 显式声明 bash，不受此过滤影响)
+_LEAD_EXCLUDED_TOOLS: frozenset[str] = frozenset({"bash", "write_file", "str_replace"})
+
+
+def _filter_lead_tools(tools: list, excluded: frozenset[str]) -> list:
+    """Drop tools whose .name is in excluded set. Pure function — single source of truth for the lead exclusion policy."""
+    return [t for t in tools if t.name not in excluded]
+
+
 def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None):
     """Build middleware chain based on runtime configuration.
 
@@ -433,9 +445,18 @@ def make_lead_agent(config: RunnableConfig):
         declared_groups = [g.name for g in app_config.tool_groups] if app_config.tool_groups else None
         lead_tool_groups = declared_groups if declared_groups else None
 
+    all_lead_tools = get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled)
+    filtered_lead_tools = _filter_lead_tools(all_lead_tools, _LEAD_EXCLUDED_TOOLS)
+    logger.info(
+        "Lead tools after filtering: %d→%d (excluded: %s)",
+        len(all_lead_tools),
+        len(filtered_lead_tools),
+        sorted(_LEAD_EXCLUDED_TOOLS),
+    )
+
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
-        tools=get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled),
+        tools=filtered_lead_tools,
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None
