@@ -450,8 +450,7 @@ task(subagent_type="data-analyst", description="解读数据",
 | 派 code-executor | "🧮 正在计算 N 个 <范式> 指标，预计 30-60 秒..." |
 | 派 data-analyst | "🔬 指标已完成，正在请专家解读，预计 1-2 分钟..." |
 | 派 report-writer | "📝 解读已完成，正在生成中文研究报告..." |
-| 跑 `python -m ethoinsight.parse.dump_headers` | "📂 正在解析 EthoVision 文件结构..." |
-| 跑 `python -m ethoinsight.catalog.resolve` | "📋 正在生成指标计划..." |
+| 调 `prep_metric_plan` | "📋 正在生成指标计划..." |
 | ask_clarification 反问 | "⚠️ 我需要先确认一件事..." |
 | subagent 完成后下一动作前 | "✅ <subagent> 已完成。<下一步>..." |
 
@@ -1104,7 +1103,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
 - **ethoinsight-planning**: 实验规划与意图分类手册。分析流水线起点，范式识别与分组推断。
 - **ethovision-paradigm-knowledge**: EV19 模板识别体系（20 大类 / 62 变体）与实验设计知识库。
-- **ethoinsight-metric-catalog**: 范式指标 catalog 读取手册。**在派遣 code-executor 之前**，按 SKILL.md 中 lead role 段的指引：(1) bash dump_headers 提取列名 (2) bash catalog.resolve 生成 metric_plan.json。失败时按 stderr JSON 的 code 字段 ask_clarification。
+- **ethoinsight-metric-catalog**: 范式指标 catalog 读取手册。**在派遣 code-executor 之前**，调 `prep_metric_plan` 工具生成 metric_plan.json。失败时按返回的 error_code + hint 字段 ask_clarification。
 
 ## EthoVision 数据分析派遣流程
 
@@ -1118,12 +1117,13 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
 ### Step 0.5: 生成 metric_plan.json（**派遣 code-executor 前必做**，详见 ethoinsight-metric-catalog skill）
 
-1. bash dump_headers 提取数据列名到 /mnt/user-data/workspace/columns.json
-2. write_file /mnt/user-data/workspace/raw_files.json（JSON 数组含 raw 文件路径）
-3. bash catalog.resolve 生成 /mnt/user-data/workspace/metric_plan.json
-4. 派遣 prompt 仅需告诉 code-executor plan.json 路径，**不要展开指标清单**
+调 `prep_metric_plan(uploaded_file=<path>, paradigm=<id>)` 一步完成。
+工具内部直接解析列名 + 用 catalog 生成 plan，无需 bash。
 
-resolve 失败时（stderr JSON 含 code 字段）按 skill 的话术映射反问用户。
+返回 `status="ok"` 时，`plan_summary` 含 `metric_count` + `metric_ids`，继续派 code-executor。
+返回 `status="error"` 时，按 `hint` 字段建议处理（通常是 ask_clarification）。
+
+派遣 prompt 仅需告诉 code-executor plan.json 路径，**不要展开指标清单**。
 
 ### Step 1: 派遣 code-executor
 把文件路径、范式、分组、用户需求传给 code-executor，让它自己处理。
