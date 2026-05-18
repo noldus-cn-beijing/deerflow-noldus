@@ -120,7 +120,7 @@ export function InputBox({
     },
   ) => void;
   onFollowupsVisibilityChange?: (visible: boolean) => void;
-  onSubmit?: (message: PromptInputMessage) => void;
+  onSubmit?: (message: PromptInputMessage) => void | Promise<void>;
   onStop?: () => void;
 }) {
   const { t } = useI18n();
@@ -232,7 +232,7 @@ export function InputBox({
         return;
       }
 
-      onSubmit?.(message);
+      return onSubmit?.(message);
     },
     [
       context,
