@@ -24,3 +24,15 @@ BUILTIN_SUBAGENTS = {
     "report-writer": REPORT_WRITER_CONFIG,
     "knowledge-assistant": KNOWLEDGE_ASSISTANT_CONFIG,
 }
+
+# Fail-fast import-time validation: every required_upstream_handoffs entry must be
+# a known key in HANDOFF_FILE_REGISTRY. Catches typos immediately on module import.
+# Imports from handoff_registry (a zero-dependency thin module) to avoid the
+# circular import chain that goes through task_tool -> deerflow.subagents.
+from deerflow.subagents.config import validate_subagent_handoff_refs
+from deerflow.subagents.handoff_registry import HANDOFF_FILE_REGISTRY
+
+validate_subagent_handoff_refs(BUILTIN_SUBAGENTS, HANDOFF_FILE_REGISTRY)
+
+
+

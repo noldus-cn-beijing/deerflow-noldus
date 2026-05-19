@@ -33,6 +33,44 @@ class SubagentConfig:
     model: str = "inherit"
     max_turns: int = 50
     timeout_seconds: int = 900
+    # ---- W1 capability metadata 新增 ----
+    when_to_use: str | None = None
+    input_contract: str | None = None
+    output_contract: str | None = None
+    required_upstream_handoffs: list[str] = field(default_factory=list)
+
+
+def format_subagent_capability(config: "SubagentConfig") -> str:
+    """Render name/description/when_to_use/input_contract/output_contract as Markdown.
+
+    required_upstream_handoffs and system_prompt are intentionally excluded —
+    they are harness-internal and must not appear in the lead prompt (spec §3.2).
+    """
+
+    def _or_placeholder(v: str | None) -> str:
+        return v.strip() if v else "(未声明)"
+
+    return (
+        f"### {config.name}\n"
+        f"- description: {_or_placeholder(config.description)}\n"
+        f"- when_to_use: {_or_placeholder(config.when_to_use)}\n"
+        f"- input_contract: {_or_placeholder(config.input_contract)}\n"
+        f"- output_contract: {_or_placeholder(config.output_contract)}\n"
+    )
+
+
+def validate_subagent_handoff_refs(
+    configs: dict[str, "SubagentConfig"],
+    registry: dict[str, str],
+) -> None:
+    """Fail-fast: every required_upstream_handoffs entry must be a key in HANDOFF_FILE_REGISTRY."""
+    for sub_name, cfg in configs.items():
+        for upstream in cfg.required_upstream_handoffs:
+            if upstream not in registry:
+                raise ValueError(
+                    f"Subagent '{sub_name}' references unknown upstream handoff '{upstream}'. "
+                    f"Known: {sorted(registry)}"
+                )
 
 
 def _default_model_name(app_config: "AppConfig") -> str:

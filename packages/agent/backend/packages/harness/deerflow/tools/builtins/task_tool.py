@@ -51,12 +51,9 @@ def _resolve_placeholders(prompt: str) -> str:
 #
 # Pointing to a path via this placeholder IS the authorization. No placeholder =
 # no authorization (subagent cannot read peer handoff files).
-HANDOFF_FILE_REGISTRY: dict[str, str] = {
-    "code_executor": "handoff_code_executor.json",
-    "data_analyst": "handoff_data_analyst.json",
-    "report_writer": "handoff_report_writer.json",
-    "planning": "handoff_planning.json",
-}
+# Imported from handoff_registry to keep a zero-circular-dep module as the
+# authoritative source (deerflow.subagents.builtins imports it at init time).
+from deerflow.subagents.handoff_registry import HANDOFF_FILE_REGISTRY  # noqa: E402
 
 _HANDOFF_PLACEHOLDER_RE = re.compile(r"\{\{handoff://([^}]+)\}\}")
 
