@@ -99,7 +99,7 @@ export function WorkspaceNavMenu() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <a
-                    href="https://deerflow.tech/"
+                    href="https://www.noldus.com.cn/"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -109,7 +109,7 @@ export function WorkspaceNavMenu() {
                     </DropdownMenuItem>
                   </a>
                   <a
-                    href="https://github.com/bytedance/deer-flow"
+                    href="https://www.noldus.com.cn/"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -119,17 +119,13 @@ export function WorkspaceNavMenu() {
                     </DropdownMenuItem>
                   </a>
                   <DropdownMenuSeparator />
-                  <a
-                    href="https://github.com/bytedance/deer-flow/issues"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a href="mailto:support@noldus.com.cn">
                     <DropdownMenuItem>
                       <BugIcon />
                       {t.workspace.reportIssue}
                     </DropdownMenuItem>
                   </a>
-                  <a href="mailto:support@deerflow.tech">
+                  <a href="mailto:support@noldus.com.cn">
                     <DropdownMenuItem>
                       <MailIcon />
                       {t.workspace.contactUs}
