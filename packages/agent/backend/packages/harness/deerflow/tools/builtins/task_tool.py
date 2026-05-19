@@ -387,7 +387,11 @@ async def task_tool(
     # Noldus: resolve {{shared://...}} placeholders to /mnt/shared/... paths.
     prompt = _resolve_placeholders(prompt)
 
-    # W19: 自动注入 required_upstream_handoffs 对应的 {{handoff://X}} 占位符
+    # W19 (relocated): handoff placeholder auto-injection happens earlier in
+    # HandoffPlaceholderInjectionMiddleware so the W18 guardrail evaluates the
+    # already-injected prompt. We still call the same idempotent helper here
+    # as a defence-in-depth safety net (covers task_tool callers that bypass
+    # the lead-agent middleware chain, e.g. direct programmatic invocation).
     prompt = _auto_inject_handoff_placeholders(prompt, subagent_type)
 
     # Noldus: resolve {{handoff://...}} placeholders and capture authorized paths.

@@ -337,6 +337,18 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
             fail_closed=guardrails_cfg.fail_closed,
         ))
 
+        # W19 (relocated): Inject {{handoff://X}} placeholders into task() prompts
+        # BEFORE the W18 guardrail evaluates them. Without this middleware, lead
+        # tasks that omit the placeholder are unconditionally denied by the W18
+        # guardrail because task_tool's own injection runs strictly after the
+        # guardrail (root cause of 2026-05-19 dogfood thread 51b00ac8).
+        # Must be appended BEFORE W18 (first-appended = outermost in wrap_tool_call).
+        from deerflow.agents.middlewares.handoff_placeholder_injection_middleware import (
+            HandoffPlaceholderInjectionMiddleware,
+        )
+
+        middlewares.append(HandoffPlaceholderInjectionMiddleware())
+
         # W18: Task handoff authorization — 校验 task(subagent_type=X) prompt 含必需 {{handoff://X}} 占位符
         from deerflow.guardrails.task_handoff_authorization_provider import (
             TaskHandoffAuthorizationProvider,
