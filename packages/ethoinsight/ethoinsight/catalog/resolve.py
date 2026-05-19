@@ -293,21 +293,24 @@ def _stats_to_plan(
 
 
 def _evaluate_when(
-    condition: str, *, n_per_group: int | None, n_groups: int | None
+    condition: str, *, n_per_group: int | None, n_groups: int | None,
+    total_subjects: int | None = None,
 ) -> bool:
     cond = condition.strip()
     if cond == "always":
         return True
-
     parts = [p.strip() for p in cond.split(" and ")]
     for part in parts:
-        if not _evaluate_atomic_when(part, n_per_group=n_per_group, n_groups=n_groups):
+        if not _evaluate_atomic_when(
+            part, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects,
+        ):
             return False
     return True
 
 
 def _evaluate_atomic_when(
-    part: str, *, n_per_group: int | None, n_groups: int | None
+    part: str, *, n_per_group: int | None, n_groups: int | None,
+    total_subjects: int | None = None,
 ) -> bool:
     tokens = part.split()
     if len(tokens) != 3:
@@ -323,6 +326,8 @@ def _evaluate_atomic_when(
         return n_per_group is not None and n_per_group >= val
     if var == "n_groups":
         return n_groups is not None and n_groups >= val
+    if var == "total_subjects":
+        return total_subjects is not None and total_subjects >= val
     return False
 
 
