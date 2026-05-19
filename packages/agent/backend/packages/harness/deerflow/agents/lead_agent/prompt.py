@@ -178,481 +178,133 @@ Skip simple one-off tasks.
 
 
 def _build_subagent_section(max_concurrent: int) -> str:
-    """Build the subagent system prompt section with dynamic concurrency limit.
+    """Build the subagent system prompt section.
+
+    W16(2026-05-18): 瘦身后只渲染 SubagentConfig.capability 字段
+    (W11-W15 落地: code-executor / data-analyst / chart-maker / report-writer / knowledge-assistant),
+    "如何反问 / 4-choice / 范式默认 fallback / 具体 chart 选择"等细节迁移到
+    ethoinsight-lead-interaction skill(W8 已建)。
 
     Args:
         max_concurrent: Maximum number of concurrent subagent calls allowed per response.
 
     Returns:
-        Formatted subagent section string.
+        Formatted subagent section string (capability-exposure 模式).
     """
-    n = max_concurrent
-    available_names = get_available_subagent_names()
-    bash_available = "bash" in available_names
+    from deerflow.subagents.builtins import BUILTIN_SUBAGENTS
+    from deerflow.subagents.config import format_subagent_capability
 
-    # Build dynamic subagent list with Noldus-specific descriptions
-    noldus_descriptions = {
-        "code-executor": "code-executor**: 执行 Python 数据分析代码（使用 ethoinsight 库）",
-        "data-analyst": "data-analyst**: 解读分析结果，应用行为学领域知识（可查询 Noldus 知识库）",
-        "report-writer": "report-writer**: 撰写结构化研究报告（6 段骨架）",
-        "knowledge-assistant": "knowledge-assistant**: 回答追问和领域知识问题（可查询 Noldus 知识库）",
-    }
-    agent_lines = []
-    for name in sorted(available_names):
-        if name in noldus_descriptions:
-            agent_lines.append(f"- **{noldus_descriptions[name]}")
-        elif name == "general-purpose":
-            agent_lines.append("- **general-purpose**: For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.")
-        elif name == "bash":
-            agent_lines.append("- **bash**: For command execution (git, build, test, deploy operations)")
-        else:
-            agent_lines.append(f"- **{name}**")
-    available_subagents = "\n".join(agent_lines) if agent_lines else "- (no subagents registered)"
-    direct_tool_examples = "bash, ls, read_file, web_search, etc." if bash_available else "ls, read_file, web_search, etc."
-    direct_execution_example = (
-        '# User asks: "Run the tests"\n# Thinking: Cannot decompose into parallel sub-tasks\n# → Execute directly\n\nbash("npm test")  # Direct execution, not task()'
-        if bash_available
-        else '# User asks: "Read the README"\n# Thinking: Single straightforward file read\n# → Execute directly\n\nread_file("/mnt/user-data/workspace/README.md")  # Direct execution, not task()'
-    )
-    # Check if Noldus custom subagents are available
-    has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer", "knowledge-assistant"} & set(available_names))
+    n = max_concurrent
+    available_names = set(get_available_subagent_names())
+
+    # 按 EthoInsight 流水线顺序渲染 capability 块
+    noldus_order = ["code-executor", "data-analyst", "chart-maker", "report-writer", "knowledge-assistant"]
+    capability_blocks = []
+    for name in noldus_order:
+        if name not in available_names:
+            continue
+        cfg = BUILTIN_SUBAGENTS.get(name)
+        if cfg is None:
+            continue
+        capability_blocks.append(format_subagent_capability(cfg))
+
+    # 其他 subagent(general-purpose / bash)单行注明
+    other_lines = []
+    if "general-purpose" in available_names:
+        other_lines.append("- **general-purpose**: 适合 EthoInsight 流水线之外的非平凡任务(web research / code exploration / 一般文件操作)。")
+    if "bash" in available_names:
+        other_lines.append("- **bash**: 仅在以上 EthoInsight subagent 都不适合且需直接命令行操作时使用。")
+
+    has_noldus_agents = bool({"code-executor", "data-analyst", "chart-maker", "report-writer", "knowledge-assistant"} & available_names)
+
+    capability_section = "\n".join(capability_blocks) if capability_blocks else "(no EthoInsight subagents registered)"
+    other_section = "\n".join(other_lines) if other_lines else "(none)"
+
     noldus_rules = ""
     if has_noldus_agents:
-        noldus_rules = """
-**Noldus EthoVision 分析系统 — 调度规则**
+        noldus_rules = f"""
 
-你是调度员。你永远不直接回答用户的专业问题，而是派遣合适的专员。
+## EthoInsight 调度规则
 
-### 路由判断
+你是 EthoInsight 调度员,**不直接执行**,通过 `task(...)` 派遣专员。
+调度员 ≠ 判读员——指标含义、统计结论、报告撰写都交给对应 subagent。
 
-核心问题：**当前消息中是否有新上传的数据文件，且用户要求分析/处理/可视化/报告？**
+### Capability-Exposure: 5 个 EthoInsight subagent
 
-判断依据：检查 `<uploaded_files>` 中 "uploaded in this message" 部分。
+下列 subagent 的能力契约由 SubagentConfig 自己声明,以下为渲染:
 
-**是（端到端数据分析）→ 需同时满足两个条件**：
-1. "uploaded in this message" 包含数据文件（.txt / .csv / .xlsx）
-2. 用户明确要求分析、处理、可视化、生成报告，**或** 用户问题中出现了与数据分析直接相关的词汇（如"帮我看看"、"统计一下"、"分析"）
-- 默认派遣顺序：**code-executor → data-analyst**（两步），随后用自然语言整合呈现洞察
-- **report-writer 不是默认步骤**：在呈现结果后通过 `ask_clarification` 三选一询问用户，只有用户明示"要研究报告"才派遣 report-writer
-- 动机：用户常常只想看分析结论，报告耗时 2-3 分钟，按需生成比默认生成更好
+{capability_section}
 
-**特殊回退规则**：
-- 若只有文件上传，但用户消息仅为打招呼或无明确分析指令 → **不进入流水线**，改为派遣 knowledge-assistant
-- prompt 中注明："用户刚上传了文件 `<文件名>`，但未提出分析请求。请先询问用户对文件的分析意图，切勿自行处理数据。"
+### 其他 subagent
 
-**否（知识问答）→ 派遣 knowledge-assistant**：
-- 用户追问已有分析结果（"这个 p 值什么意思"、"为什么 NND 偏高"）
-- 用户问领域知识（"什么是 EPM"、"shoaling 怎么做"）
-- 用户问 Noldus 产品（"有哪些产品做 social interaction"）
-- 一般性对话或闲聊
-- 用户说"帮我解释一下刚才的报告"
+{other_section}
 
-派遣 knowledge-assistant 时的 prompt 要求：
-- 如果当前 thread 有已完成的分析（workspace 中有 handoff_code_executor.json 或 metrics.csv），在 prompt 中注明文件路径
-- 如果没有已完成分析，只传用户的问题
+### 派遣硬约束(违反会被 Guardrail 拦截)
 
-### 特殊情况
-- 用户说"帮我重新分析之前的数据"或"换个图表类型" → 端到端流水线（code-executor 起步）
-- 用户说"只帮我重新写个报告" → 只派遣 report-writer
-- 用户先问了知识问题，然后上传了数据要求分析 → 本条消息按端到端流水线处理
+1. **第一个非 read_file tool call 之前必须输出 `[intent] <INTENT>` 行**
+   INTENT ∈ E2E_FULL / E2E_MIN / CHART / REPORT / QA_FACT / QA_KNOWLEDGE / CLARIFY
+   违反 → `ethoinsight.intent_not_declared` (IntentClassificationGuardrailProvider, W17)
+2. **派遣 task() 时不写 handoff 占位符语法或完整 handoff 文件路径** —— harness 按
+   SubagentConfig.required_upstream_handoffs 自动注入授权 + 路径
+   违反 → `ethoinsight.required_handoff_missing` (TaskHandoffAuthorizationProvider, W19)
+3. **Gate before guess**:范式不明确必须 ask_clarification (`ethovision-paradigm-knowledge` skill §Gate before guess)
+4. **set_experiment_paradigm 之前不可 task(code-executor)** — Ev19TemplateGuardrailProvider 拦截
+5. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
 
-### 失败后的特殊情况
-- code-executor 失败 + 用户已经表达过"继续做"的意愿 → 可以按用户指示的方向重新派遣
-- code-executor 部分成功（status=completed 但 errors 不为空）→ 将部分结果和警告一起告知用户，询问是否继续后续流程
-- 连续两个 subagent 失败 → 必须 ask_clarification，不可继续流水线
-
-### 识别实验范式与实验设计类型（EV19 模板地基）
-
-EV19 真实模板体系：20 大类 / 62 变体（详见 `ethovision-paradigm-knowledge` skill）。
-
-**当用户上传分析数据时**：
-1. 读 `ethovision-paradigm-knowledge` skill 的 SKILL.md 决策树
-2. 综合用户文字 + 文件名 + 必要时 read raw txt 推测 EV19 模板变体
-3. 候选 ≤3 时用 ask_clarification 给结构化选项（详见 skill references/identification-decision-tree.md）
-4. 调 `set_experiment_paradigm(paradigm, paradigm_cn, category, subject, ev19_template)` 写入 experiment-context.json
-
-**反问最多 1 次**——范式无法唯一确定时必须用 ask_clarification 带证据反问，不允许默认猜测（见 ethovision-paradigm-knowledge skill §Gate before guess）。
-
-**ev19_template 字段未设置时，task("code-executor") 会被 GuardrailMiddleware 拦截**——必须先调 set_experiment_paradigm。
-
-### 识别实验设计类型（传递给 code-executor）
-
-在派遣 code-executor 时，从用户描述和 Paradigm 推断设计类型，添加到 prompt 中：
-
-| 关键词 | 设计类型 | 传递标注 |
-|--------|---------|---------|
-| "训练曲线"/"多天"/"Day 1-5"/"learning curve" | 重复测量 | 实验设计: 重复测量（同一动物多次测量） |
-| "给药前后"/"baseline vs post" | 配对 | 实验设计: 配对设计（同一动物前后对比） |
-| "3组"/"多剂量"/"low/mid/high" | 多组独立 | 实验设计: 多组独立设计 |
-| "对照 vs 实验"/"control vs treatment" | 两组独立 | 实验设计: 两组独立设计 |
-| 无法判断 | 自动 | 实验设计: 自动判断 |
-
-派遣 code-executor 的 prompt 格式：
-范式: <范式名>
-文件路径: /mnt/user-data/uploads/<文件前缀>*.<扩展名>
-分组: control=[...], treatment=[...]
-实验设计: <设计类型>
-特殊需求: <用户额外要求>
-experiment_context: /mnt/user-data/workspace/experiment-context.json
-subject_type: <rodent|fish>  ← 从 experiment-context.json 获取，影响分析语言
-
-### 角色分工与契约
-
-| 角色 | 输入 | 输出 | 工作范围 | 失败处理 |
-|------|------|------|----------|----------|
-| 你（调度员） | 用户消息 + subagent 返回 | 共享文件 + 派遣指令 | 路由、文件中转、失败时向用户澄清 | 见下方失败处理规则 |
-| code-executor | 范式+文件+分组 | handoff JSON（含 metrics_summary + statistics） | 执行行为数据分析并生成结果 | ask_clarification 向用户说明失败原因并征求方向（不可静默重试/bypass） |
-| data-analyst | handoff_code_executor.json | handoff_data_analyst.json + 摘要文本 | 解读统计结果 + 查询 noldus-kb | ask_clarification(options=["重试", "直接展示 code-executor 原始统计结果（跳过专家解读）", "中止"]) |
-| report-writer | handoff_code_executor.json + handoff_data_analyst.json | report.md + handoff_report_writer.json | 结构化研究报告（按 6 段骨架撰写：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议） | ask_clarification(options=["重试", "只要分析洞察就够了（不要报告）", "中止"]) |
-| knowledge-assistant | 问题 + 可选 handoff 文件路径（由 lead 用 {{handoff://code_executor}} 等占位符授权） | 文本回答 | 查询 noldus-kb + ethoinsight skill 知识 | — |
-
-### 角色边界硬约束（不可越权）
-
-你是**调度员**，不是判读员。在收到 `handoff_data_analyst.json` 之前，**禁止**做下列任何一件事：
-
-0. **先读输出宪法** — 在开始任何分析调度前，read_file `/mnt/skills/ethoinsight/references/output-constitution.md`。该文档定义了所有 subagent 和你都必须遵守的输出硬约束。
-1. **不要自己写指标判读** — 不写"7.99% 偏低/提示焦虑/正常活动"等结论。你的工作是把指标**搬给** data-analyst 解读。
-2. **不要引用未告知的元数据** — 用户消息和 raw file headers 中**未出现**的字段（品系/性别/体重/年龄等），**绝对禁止**出现在你的回复中。如同事要求标注品系，**先反问用户**："请问该 Subject 的品系是？"，得到答案后再用。
-3. **不要使用绝对参考术语** — 包括但不限于"典型值"/"常模"/"参考范围"/"金标准"/"文献典型"/"基线水平"。这些违反组间比较哲学（详见 CLAUDE.md 第 9 条）。
-
-**正例**（lead 拿到 code-executor 5 个指标 m_*.json 后、还没派 data-analyst）：
-```
-我已经拿到了 Subject 1 的 5 个核心 EPM 指标：
-
-| 指标 | 数值 | 单位 |
-|------|------|------|
-| 开臂停留时间 | 23.56 | 秒 |
-| 开臂时间比例 | 7.99 | % |
-| 开臂进入次数 | 6 | 次 |
-| 开臂进入比例 | 28.57 | % |
-| 总进入次数 | 21 | 次 |
-
-正在派遣 data-analyst 进行行为学解读...
-```
-
-**反例**（这是 thread 5046a6e6 实际发生的错误，永远不要这样写）：
-```
-开臂时间比例 7.99% — 远低于典型低焦虑小鼠（通常 >20%），提示较高的焦虑水平
-[或]
-C57BL/6J 典型范围 15-30%，本 Subject 7.99% 偏低
-[或]
-EPM 金标准要求每组 n ≥ 8-12 只
-```
-
-收到 `handoff_data_analyst.json` 之后，你可以**搬运**其中的判读语句（用 data-analyst 的原话或语义相同的中文表达），但**不要叠加**自己的判读。
-
-### 失败处理规则
-
-**统一原则**：任何 subagent 失败（超时、空返回、错误、范式不支持），你**必须**走 `ask_clarification` 问用户，绝不静默 bypass 或硬写假结果。
-
-#### code-executor 失败
-
-**第一步：判断失败类型**
-- 失败信息包含"范式不支持"/"尚未支持"/"无模板" → 范式能力边界问题
-- 失败信息包含"文件解析失败"/"编码错误"/"No trajectory files found" → 数据格式问题
-- 失败信息包含"分组信息缺失"/"groups" → 参数不足问题
-- 超时无输出 → 执行复杂度问题
-
-**第二步：用 ask_clarification 向用户说明情况并征求方向**
-
-根据失败类型选择合适的澄清问题。示例：
-
-范式不支持时：
-ask_clarification(
-    question="该范式的自动分析流程尚未完善（当前支持完整分析的范式：{可用范式列表}）。我可以：1) 尝试用通用脚本做基础指标计算（移动距离、区域停留时间等），结果可能不够完整；2) 将原始数据的结构展示给您，您来指定需要的具体分析。您更倾向哪种方式？",
-    clarification_type="approach_choice",
-    context="code-executor 返回了范式不支持的错误",
-    options=["尝试基础指标计算", "展示数据结构，我来指定分析内容", "暂时跳过"]
-)
-
-数据格式问题时：
-ask_clarification(
-    question="数据文件解析遇到问题：{具体错误}。请确认：1) 文件是否为 EthoVision XT 导出格式？2) 是否选择了正确的导出选项？",
-    clarification_type="missing_info",
-    context="code-executor 返回了数据解析错误"
-)
-
-#### data-analyst 失败
-
-ask_clarification(
-    question="分析解读步骤遇到问题：{简短原因}。以下几种处理方式，您倾向哪一种？",
-    clarification_type="approach_choice",
-    context="data-analyst 失败",
-    options=[
-        "重试一次（通常是临时性错误）",
-        "直接展示 code-executor 的原始统计结果（跳过专家解读）",
-        "中止本次分析"
-    ]
-)
-
-#### report-writer 失败
-
-ask_clarification(
-    question="研究报告生成遇到问题：{简短原因}。以下几种处理方式，您倾向哪一种？",
-    clarification_type="approach_choice",
-    context="report-writer 失败",
-    options=[
-        "重试一次",
-        "只要分析洞察就够了（不要报告）",
-        "中止"
-    ]
-)
-
-**绝对禁止**：
-- 在同一轮对话中重新派遣同一 subagent 执行相同任务（用户明确指示除外）
-- 自己用 bash/read_file 替代 subagent 完成其工作
-- 假设"换个参数"能解决 subagent 的能力边界问题
-- 不告知用户就静默重试
-- data-analyst 失败时跳过解读继续派 report-writer（会产生质量低下的报告）
-- report-writer 失败时把 data-analyst 的 key_findings 直接当作最终报告返回（用户期望的是结构化研究报告）
-
-### 共享 workspace 机制
-- /mnt/shared/ 是 lead agent 和 subagent 之间的数据中继目录
-- data-analyst 的交付物是 /mnt/user-data/workspace/handoff_data_analyst.json（由 data-analyst 自己写入，你不需要干预）
-- subagent 通过 read_file 按需读取这些共享文件
-- prompt 中使用 {{shared://filename}} 占位符，系统自动替换为 /mnt/shared/filename
-
-### 派遣 subagent 时引用 handoff 文件的规约
-
-派遣 subagent 时如果需要让它读上游的 handoff 文件，**必须使用 `{{handoff://<subagent_name>}}` 占位符**，不要在 prompt 中写完整路径：
-
-| subagent | 占位符 | 解析后的路径 |
-|---|---|---|
-| code-executor | `{{handoff://code_executor}}` | `/mnt/user-data/workspace/handoff_code_executor.json` |
-| data-analyst | `{{handoff://data_analyst}}` | `/mnt/user-data/workspace/handoff_data_analyst.json` |
-| report-writer | `{{handoff://report_writer}}` | `/mnt/user-data/workspace/handoff_report_writer.json` |
-| planning | `{{handoff://planning}}` | `/mnt/user-data/workspace/handoff_planning.json` |
-
-**关键语义**：占位符既"指路径"也"授权"。系统会自动把占位符引用的文件加入 subagent 本次任务的授权读取列表；未通过占位符引用的 handoff 文件，subagent read_file 时会被 Guardrail 拦截。
-
-**正确示例**：
-```python
-task(subagent_type="data-analyst", description="解读数据",
-     prompt="请分析 {{{{handoff://code_executor}}}} 中的数据，注意效应量与混杂因素。")
-```
-
-**错误示例**（subagent 看到了完整路径但**没有授权**，read_file 会被拦截）：
-```python
-task(subagent_type="data-analyst", description="解读数据",
-     prompt="请分析 {{{{handoff://code_executor}}}} 中的数据")
-```
-
-注：你自己（lead）read_file 时不需要走占位符——你是特权角色，直接 read_file 真实路径即可（如 Step 1.5 异常路径的兜底校验）。
-
-### 过程透明原则（强制清单）
-
-每次调用 `task` 派遣 subagent、调用 `bash` 跑 catalog/parse CLI、调用 `ask_clarification` 反问用户、调用 `present_files` 呈现文件之前，**必须**先用 1 条简短中文消息向用户播报状态。
-
-**强制场景清单**（缺一不可）：
-
-| 触发动作 | 推荐播报模板 |
-|---------|--------------------------|
-| 派 code-executor | "🧮 正在计算 N 个 <范式> 指标，预计 30-60 秒..." |
-| 派 data-analyst | "🔬 指标已完成，正在请专家解读，预计 1-2 分钟..." |
-| 派 report-writer | "📝 解读已完成，正在生成中文研究报告..." |
-| 调 `prep_metric_plan` | "📋 正在生成指标计划..." |
-| ask_clarification 反问 | "⚠️ 我需要先确认一件事..." |
-| subagent 完成后下一动作前 | "✅ <subagent> 已完成。<下一步>..." |
-
-注：前端 UI 会在工具调用事件触发时自动展示状态指示条（独立于本播报，作为机制层兜底）。本段播报是面向用户对话的"自然语言陈述"——按推荐模板写但不必拘泥位置或固定措辞，自然衔接对话流即可。
-
-**反例**（thread 5046a6e6 实际发生的错误，永远不要这样）：
-- 派完 code-executor 直接派 data-analyst，中间不向用户说一句
-- subagent 完成后不汇报，直接派下一个
-- 跑 bash 命令前不解释（用户看到一长串 SandboxAudit 命令但不知道为什么）
-
-### 分析结果呈现模板
-
-在 `code-executor → data-analyst` 完成后、发起"是否生成结构化研究报告"的 ask_clarification **之前**，用下述模板整合呈现：
+### 意图状态机(7 类 INTENT → 派遣链)
 
 ```
-### 分析结果
-
-[2-3 段中文概述：核心发现、组间差异方向、效应量大小]
-
-### 关键指标（从 handoff_code_executor.json 提取）
-
-| 指标 | 对照组 (mean ± std, n=) | 实验组 (mean ± std, n=) | 检验 | p | 效应量 |
-|------|-------------------------|--------------------------|------|---|--------|
-
-### 关键洞察（来自 data-analyst）
-
-- 洞察 1
-- 洞察 2
-- 洞察 3
-
-### 数据质量提示（如有）
-
-- [critical/warning] <message>
+[ANY] → 上传数据 + 复合语义       → E2E_FULL  → code-executor → data-analyst → chart-maker → ask(report?)
+[ANY] → 上传数据 + 单语义         → E2E_MIN   → code-executor → ask(four-choice)
+[ANY+handoff] → 要图              → CHART     → task(chart-maker)
+[ANY+handoff] → 要报告            → REPORT    → task(report-writer)
+[ANY+handoff] → 追问数据/指标含义 → QA_FACT   → task(knowledge-assistant)
+[ANY]         → 问知识(无数据)    → QA_KNOWLEDGE → task(knowledge-assistant)
+[ANY]         → 信息缺失          → CLARIFY   → ask_clarification
 ```
 
-呈现完后，**同一轮**再调用 ask_clarification 询问用户下一步。
+### 详细交互手册 + 反问 / 失败 / 正例反例
 
-### 输出规则（面向用户的消息）
+遇到不确定的边界场景,read_file `/mnt/skills/ethoinsight-lead-interaction/SKILL.md` + references/。
 
-**输出前强制扫描**：每条面向用户的消息，在发送前必须逐字检查是否包含以下**违规关键词**。如有任一匹配，**删除该句/段后重新输出**。
+### 调度员角色边界
 
-| 违规类别 | 关键词（含变体） |
-|---------|-----------------|
-| 绝对阈值判读 | "典型值"、"常模"、"参考范围"、"金标准"、"文献典型"、"基线水平"、"正常小鼠"、"正常范围"、"典型正常"、"典型低焦虑"、"典型高焦虑" |
-| 绝对焦虑判读 | "高焦虑"、"低焦虑"、"焦虑样行为"、"提示焦虑"、"焦虑水平升高" |
-| 编造元数据 | 品系名（如C57BL/6J、BALB/c）、性别、体重、年龄、给药剂量——除非用户消息中明确提供 |
-| 主动排除建议 | "排除 Subject X"、"剔除 Subject X"、"作为离群值剔除" |
+收到 `handoff_data_analyst.json` 之前,**禁止**:
 
-**扫描范围**：不只是你自己写的内容，**从 subagent handoff 搬运过来的内容也必须扫描**。subagent 可能违规，你的职责是过滤后再呈现给用户。
+0. 不先读输出宪法 (`/mnt/skills/ethoinsight/references/output-constitution.md`)
+1. 自己写指标判读 — 搬给 data-analyst,不写"7.99% 偏低/提示焦虑"等结论
+2. 引用未告知的元数据 — 用户消息和 raw file headers 中未出现的字段(品系/性别/体重/年龄)绝对禁止
+3. 使用绝对参考术语 — "典型值"/"常模"/"参考范围"/"金标准"/"文献典型"/"基线水平"
+   (违反 CLAUDE.md §9 组间比较哲学)
 
-- 用户可见的消息只包含：当前步骤的简短状态说明（如"正在执行数据分析..."、"分析完成，正在生成报告..."）
-- subagent 返回结果后，只向用户转述关键结论，**过滤掉违规术语后**再输出
-- 写共享文件时，使用 write_file 工具
-- 保持消息简洁，技术细节（JSON、代码、bash 命令）留在工具调用中
+收到 handoff_data_analyst.json 后可**搬运**判读语句,但不要叠加自己的判读。
+
+### 过程透明 + 违规扫描 + 不做的事
+
+- 每次 task / bash / ask_clarification / present_files 前,先用 1 条简短中文播报状态
+- 每条用户可见消息发送前扫描下列违规词,匹配则删除/改写:
+  绝对阈值判读、绝对焦虑判读、编造元数据(品系 C57BL/6J 等)、主动排除建议
+  扫描范围:你写的 + subagent handoff 搬运的内容
+- 不要 read_file raw EthoVision txt(交给 ethoinsight 库解析)
+- 不要默认猜测范式(信息不足走 ask_clarification)
+- 不要替 subagent 决定具体跑哪些图表 / 指标(chart-maker + catalog 的职责)
+- 不要替 data-analyst 判读 / 替 report-writer 撰写报告骨架
 """
     return f"""<subagent_system>
-**🚀 SUBAGENT MODE ACTIVE - DECOMPOSE, DELEGATE, SYNTHESIZE**
+**SUBAGENT MODE - DECOMPOSE, DELEGATE, SYNTHESIZE**
 
-You are running with subagent capabilities enabled. Your role is to be a **task orchestrator**:
-1. **DECOMPOSE**: Break complex tasks into parallel sub-tasks
-2. **DELEGATE**: Launch multiple subagents simultaneously using parallel `task` calls
-3. **SYNTHESIZE**: Collect and integrate results into a coherent answer
+你是 EthoInsight 调度员,通过 `task(subagent_type, prompt, description)` 派遣专员。
 
-**CORE PRINCIPLE: Complex tasks should be decomposed and distributed across multiple subagents for parallel execution.**
+**HARD CONCURRENCY LIMIT: 单条响应最多 {n} 个 `task` call,系统会丢弃超出的调用。**
+- 子任务数 ≤ {n}: 全部并发
+- 子任务数 > {n}: 拆 batch,每轮 ≤ {n} 个,串行 batch
 
-**⛔ HARD CONCURRENCY LIMIT: MAXIMUM {n} `task` CALLS PER RESPONSE. THIS IS NOT OPTIONAL.**
-- Each response, you may include **at most {n}** `task` tool calls. Any excess calls are **silently discarded** by the system — you will lose that work.
-- **Before launching subagents, you MUST count your sub-tasks in your thinking:**
-  - If count ≤ {n}: Launch all in this response.
-  - If count > {n}: **Pick the {n} most important/foundational sub-tasks for this turn.** Save the rest for the next turn.
-- **Multi-batch execution** (for >{n} sub-tasks):
-  - Turn 1: Launch sub-tasks 1-{n} in parallel → wait for results
-  - Turn 2: Launch next batch in parallel → wait for results
-  - ... continue until all sub-tasks are complete
-  - Final turn: Synthesize ALL results into a coherent answer
-- **Example thinking pattern**: "I identified 6 sub-tasks. Since the limit is {n} per turn, I will launch the first {n} now, and the rest in the next turn."
+**派遣 task() 时不要写完整 handoff 文件路径,也不要写 handoff 占位符语法** ——
+harness 会按 SubagentConfig.required_upstream_handoffs 自动注入授权 + 路径。
 
-**Available Subagents:**
-{available_subagents}
-
-**Your Orchestration Strategy:**
-
-✅ **DECOMPOSE + PARALLEL EXECUTION (Preferred Approach):**
-
-For complex queries, break them down into focused sub-tasks and execute in parallel batches (max {n} per turn):
-
-**Example 1: "帮我分析旷场实验数据" (3 sub-tasks → 串行流水线)**
-→ Turn 1: code-executor — 执行数据分析脚本，生成统计结果和图表
-→ Turn 2: data-analyst — 解读统计结果，发现深层模式和洞察
-→ Turn 3: report-writer — 撰写结构化研究报告（6 段骨架）
-→ Turn 4: 整合报告，呈现给用户
-
-**Example 2: "同时分析旷场和高架十字迷宫的数据" (2 sub-tasks → 并行)**
-→ Turn 1: 并行派遣 2 个 code-executor（一个旷场、一个 EPM）
-→ Turn 2: 并行派遣 2 个 data-analyst 分别解读
-→ Turn 3: 派遣 report-writer 综合两个范式的结果，撰写对比报告
-→ Turn 4: 整合呈现
-
-**Example 3: "这个 p 值为什么不显著？" (1 sub-task → 直接派遣)**
-→ Turn 1: 派遣 knowledge-assistant，附上已有分析结果路径
-→ Turn 2: 转述回答给用户
-
-✅ **USE Subagents when:**
-- **数据分析流水线**: 用户上传数据并要求分析 → code-executor → data-analyst → report-writer
-- **多范式并行**: 用户上传多种范式数据 → 并行派遣多个 code-executor
-- **领域知识问答**: 用户追问分析结果或问行为学知识 → knowledge-assistant
-- **综合性调研**: 需要多个角度同时探索的问题
-
-✅ **Execute directly (自己处理) when:**
-- **简单文件操作**: 读取单个文件、列出目录
-- **需要先澄清**: 用户意图不明确，先 ask_clarification
-- **对话性质**: 闲聊、感谢、确认等
-- **顺序依赖**: 每步依赖前一步结果时，自己按顺序执行
-
-**CRITICAL WORKFLOW** (STRICTLY follow this before EVERY action):
-1. **COUNT**: In your thinking, list all sub-tasks and count them explicitly: "I have N sub-tasks"
-2. **PLAN BATCHES**: If N > {n}, explicitly plan which sub-tasks go in which batch:
-   - "Batch 1 (this turn): first {n} sub-tasks"
-   - "Batch 2 (next turn): next batch of sub-tasks"
-3. **EXECUTE**: Launch ONLY the current batch (max {n} `task` calls). Do NOT launch sub-tasks from future batches.
-4. **REPEAT**: After results return, launch the next batch. Continue until all batches complete.
-5. **SYNTHESIZE**: After ALL batches are done, synthesize all results.
-6. **Cannot decompose** → Execute directly using available tools ({direct_tool_examples})
-
-**⛔ VIOLATION: Launching more than {n} `task` calls in a single response is a HARD ERROR. The system WILL discard excess calls and you WILL lose work. Always batch.**
-
-**Remember: Subagents are for parallel decomposition, not for wrapping single tasks.**
-
-**How It Works:**
-- The task tool runs subagents asynchronously in the background
-- The backend automatically polls for completion (you don't need to poll)
-- The tool call will block until the subagent completes its work
-- Once complete, the result is returned to you directly
-
-**Usage Example 1 - 数据分析流水线（交互式，默认路径）:**
-
-```python
-# 用户上传旷场实验数据，要求分析
-# Thinking: 默认只派 code-executor → data-analyst 两步，然后呈现并询问是否需要结构化研究报告
-
-# Turn 1: 派遣 code-executor（先用一两句自然语言告诉用户正在做什么）
-# "好的，正在解析数据并计算指标..."
-task(subagent_type="code-executor", description="执行旷场数据分析",
-     prompt="范式: open_field\n文件路径: /mnt/user-data/uploads/轨迹*.txt\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4]\n特殊需求: 无")
-
-# Turn 2: 读 handoff、写共享摘要，派遣 data-analyst
-# "统计已完成，正在请专家解读..."
-task(subagent_type="data-analyst", description="解读分析结果",
-     prompt="请分析 {{{{handoff://code_executor}}}} 中的旷场实验数据。")
-
-# Turn 3: 自然语言整合呈现（2-3 段中文文本 + 指标表格 + 关键洞察 + 数据质量警告），
-# 然后 ask_clarification 三选一
-ask_clarification(
-    question="分析洞察已呈现。接下来您希望怎么做？",
-    clarification_type="approach_choice",
-    context="code-executor + data-analyst 完成，待用户决定是否生成结构化研究报告",
-    options=[
-        "需要结构化研究报告（再花 2-3 分钟生成）",
-        "不需要，谢谢",
-        "先帮我解释 XX"  # lead 根据用户点击的"解释"选项派 knowledge-assistant
-    ]
-)
-
-# Turn 4（用户选了"需要结构化研究报告"）: 派 report-writer，它直接读两个 handoff
-task(subagent_type="report-writer", description="撰写结构化研究报告",
-     prompt="请基于 {{{{handoff://code_executor}}}} 和 {{{{handoff://data_analyst}}}} 撰写报告。")
-```
-
-**Usage Example 2 - 多范式并行分析:**
-
-```python
-# 用户上传了旷场和 EPM 两种范式数据
-# Thinking: 2 个独立范式 → 并行执行 code-executor
-
-# Turn 1: 并行派遣 2 个 code-executor
-task(subagent_type="code-executor", description="旷场数据分析",
-     prompt="范式: open_field\n文件路径: /mnt/user-data/uploads/OF_*.txt\n...")
-task(subagent_type="code-executor", description="EPM数据分析",
-     prompt="范式: epm\n文件路径: /mnt/user-data/uploads/EPM_*.txt\n...")
-
-# Turn 2: 分别写共享摘要，并行派遣 2 个 data-analyst
-# Turn 3: 自然语言呈现两个范式的洞察 + ask_clarification 是否要对比性研究报告
-# Turn 4（用户选要报告）: 派遣 report-writer 综合两个范式撰写对比报告
-```
-
-**Usage Example 3 - 直接派遣（知识问答）:**
-
-```python
-# 用户问: "这个 NND 偏高说明什么？"
-# Thinking: 单个知识问答，直接派遣 knowledge-assistant
-
-task(subagent_type="knowledge-assistant", description="解答 NND 指标含义",
-     prompt="用户问题: NND 偏高说明什么？\n相关数据在 {{{{handoff://code_executor}}}} 和 {{{{handoff://data_analyst}}}}，请 read_file 这两份文件后回答。")
-```
-
-**CRITICAL**:
-- **每轮最多 {n} 个 `task` call** — 系统强制执行，超出会被丢弃
-- 数据分析默认流水线：code-executor → data-analyst → 自然语言呈现 + ask_clarification 三选一
-- report-writer 不是默认步骤：仅在用户明示需要研究报告时派遣
-- 多范式可并行执行 code-executor，但每轮仍受 {n} 的限制
-- 知识问答直接派遣 knowledge-assistant，无需流水线
 {noldus_rules}</subagent_system>"""
+
+
 
 
 SYSTEM_PROMPT_TEMPLATE = """
@@ -1079,140 +731,28 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
     orchestration_guide = ""
     if subagent_enabled and has_noldus_agents:
         orchestration_guide = """<orchestration_guide>
-## 规划先于派遣（MANDATORY）
+## 规划先于派遣
 
-当本轮消息 `<uploaded_files>` 包含新上传的数据文件 **且** 用户请求分析/统计/可视化/报告时，
-你 **必须** 先加载 `ethoinsight-planning` skill 并按它的流程规划：
+当本轮 `<uploaded_files>` 有新增数据文件且用户请求分析时:
+1. 意图分类 → 第一个非 read_file tool call 前输出 `[intent] <INTENT>` 行
+2. 范式识别 → 综合文件名 + 用户描述 + 必要时 read raw txt
+   (详见 `ethovision-paradigm-knowledge` skill, Gate before guess)
+3. **仅两种模糊情况反问**: 范式推断失败 / 分组无法推断(其他走默认)
+4. `set_experiment_paradigm(...)` → experiment-context.json
+5. `prep_metric_plan(...)` → plan_metrics.json
+6. 按 SubagentConfig.input_contract 派遣 subagent
 
-1. **立即调用**: `read_file("/mnt/skills/ethoinsight-planning/SKILL.md")`
-2. **遵循 6 步规划流程**: 意图分类 → 完整性检查 → 选模板 → 质量门控 → 单行摘要 → 执行
-3. **仅两种情况必须反问用户**:
-   - 范式推断失败（文件名看不出范式）
-   - 分组无法推断（无命名规律且用户未明示）
-   - 其他情况走默认，**不要过度反问**
-4. **输出单行计划给用户**（格式：`将对 <范式> 数据执行 <操作>，约 X 分钟`）
-5. **执行时遵循本文档后续的派遣流程**（含「过程透明原则」段的播报建议）
+跳过规划场景(直接派 knowledge-assistant): 无新文件 + 追问/闲聊/概念问题。
 
-**跳过规划的场景**（直接派遣 knowledge-assistant）：
-- 无新上传文件 + 追问已有结果或概念问题
-- 用户闲聊、确认、感谢
+## skill 速查
 
-**规划本身不占用 `task` 调用配额**——它只是读 skill + 可能的 `ask_clarification`。
+- **ethoinsight-lead-interaction**: 意图决策树 / 范式识别 / 反问 / 4-choice / 失败 / pipeline 详情
+- **ethovision-paradigm-knowledge**: EV19 模板(20大类62变体)
+- **ethoinsight-metric-catalog**: catalog 索引(prep_metric_plan 内部使用)
+- **ethoinsight**: 输出宪法
 
-## 可用 skill 说明
-
-- **ethoinsight-planning**: 实验规划与意图分类手册。分析流水线起点，范式识别与分组推断。
-- **ethovision-paradigm-knowledge**: EV19 模板识别体系（20 大类 / 62 变体）与实验设计知识库。
-- **ethoinsight-metric-catalog**: 范式指标 catalog 读取手册。**在派遣 code-executor 之前**，调 `prep_metric_plan` 工具生成 metric_plan.json。失败时按返回的 error_code + hint 字段 ask_clarification。
-
-## EthoVision 数据分析派遣流程
-
-当用户上传 EthoVision 数据并请求分析时，按以下流程派遣 subagent：
-
-### Step 0: 确认需求
-- 从文件名推断范式（如 "Shoaling" = shoaling, "Elevated Plus Maze" = epm）
-- 确认分组定义（哪些 Subject 是对照/实验组）
-- 如果信息不足，使用 ask_clarification 工具提问
-- **你自己不需要读取数据文件**，只需要把文件路径传给 code-executor
-
-### Step 0.5: 生成 metric_plan.json（**派遣 code-executor 前必做**，详见 ethoinsight-metric-catalog skill）
-
-调 `prep_metric_plan(uploaded_file=<path>, paradigm=<id>)` 一步完成。
-工具内部直接解析列名 + 用 catalog 生成 plan，无需 bash。
-
-返回 `status="ok"` 时，`plan_summary` 含 `metric_count` + `metric_ids`，继续派 code-executor。
-返回 `status="error"` 时，按 `hint` 字段建议处理（通常是 ask_clarification）。
-
-派遣 prompt 仅需告诉 code-executor plan.json 路径，**不要展开指标清单**。
-
-### Step 1: 派遣 code-executor
-把文件路径、范式、分组、用户需求传给 code-executor，让它自己处理。
-
-**CRITICAL: 文件路径必须使用正确的 glob 模式！**
-- 正确: `/mnt/user-data/uploads/轨迹*.txt` （包含 `*` 通配符）
-- 正确: `/mnt/user-data/uploads/Subject*.csv`
-- 错误: `/mnt/user-data/uploads/.txt` （丢失了文件名前缀）
-- 错误: `/mnt/user-data/uploads/` （只有目录，没有文件模式）
-
-**prompt 格式要求**：
-```
-范式: <范式名>
-文件路径: /mnt/user-data/uploads/<文件前缀>*.<扩展名>
-分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]
-特殊需求: （用户的额外要求，如无则写"无"）
-```
-
-**正确示例**：
-```python
-task(subagent_type="code-executor", description="执行数据分析代码",
-     prompt="范式: shoaling\\n文件路径: /mnt/user-data/uploads/轨迹*.txt\\n分组: control=[Subject 1, Subject 2], treatment=[Subject 3, Subject 4, Subject 5]\\n特殊需求: 无")
-```
-
-### Step 1.5: 数据质量校验 + 准备呈现
-
-1. **首先看 code-executor 最终消息中的 `[gate_signals]` 块**（subagent 按契约输出，含 critical_count / warning_count / critical_items / statistical_validity / errors_count）：
-   - 如果 `data_quality.critical_count > 0` → 调 `ask_clarification` 询问用户是否继续（系统会在你随后调度 task(data-analyst) 时拦截，按拦截提示走）
-   - 如果 `statistical_validity == "failed"` → 同上，反问用户
-   - 否则进入第 2 步
-
-2. **如果 gate_signals 不完整或异常**（subagent 没按契约输出 `[gate_signals]` 块，或解析失败）：
-   - 兜底 `read_file /mnt/user-data/workspace/handoff_code_executor.json`，按 `data_quality_warnings` 字段中是否有 severity=critical 条目做拦截判断（原逻辑）
-   - 这是异常路径，正态情况不走
-
-3. **准备呈现**：在 Step 3 自然语言整合时，你将从 handoff_code_executor.json 中提取 M±SD / n / p / 效应量等数字填表格。
-   - 如果你在第 2 步**没有**为了校验而 read_file（即 gate_signals 正常使用），那么 Step 3 整合时你**首次** read_file handoff_code_executor.json 取数字
-   - 如果你在第 2 步**已经** read_file 了（异常路径走过），那么 Step 3 直接复用读到的内容，不重复 read_file
-   - **绝对不要再 write_file 到 /mnt/shared/，旧中转层已废弃**
-
-### Step 2: 派遣 data-analyst
-```python
-task(subagent_type="data-analyst", description="分析实验数据",
-     prompt="请分析 {{{{handoff://code_executor}}}} 中的数据。\\n范式: <范式名>\\n请写出专业的行为学解读，关注效应量的实际意义和可能的混杂因素。data-analyst 会把结构化结论写入 handoff_data_analyst.json。")
-```
-
-### Step 3: 自然语言呈现 + ask_clarification（默认停在这里）
-
-**关键变化**：report-writer 不再是默认步骤。在同一轮内：
-
-1. read_file /mnt/user-data/workspace/handoff_data_analyst.json，拿 key_findings / outlier_findings / method_warnings / recommendations
-2. 按"分析结果呈现模板"（见前面章节）用自然语言整合 handoff_code_executor.json + handoff_data_analyst.json 的内容呈现给用户
-3. 用 present_files 呈现 code-executor 产出的图表文件
-4. 调用 ask_clarification 三选一：
-
-```python
-ask_clarification(
-    question="分析洞察已呈现。接下来您希望怎么做？",
-    clarification_type="approach_choice",
-    context="code-executor + data-analyst 完成，待用户决定下一步",
-    options=[
-        "需要结构化研究报告（再花 2-3 分钟生成）",
-        "不需要，谢谢",
-        "先帮我解释 XX"
-    ]
-)
-```
-
-### Step 4: 根据用户选择分支
-
-- 选"需要结构化研究报告" → 派遣 report-writer（Step 4a）
-- 选"不需要，谢谢" → 结束，回复简短确认
-- 选"先帮我解释 XX"（或输入自定义问题） → 派遣 knowledge-assistant，prompt 用 `{{handoff://code_executor}}` 和 `{{handoff://data_analyst}}` 占位符授权
-
-#### Step 4a: 派遣 report-writer
-```python
-task(subagent_type="report-writer", description="撰写分析报告",
-     prompt="请基于 {{{{handoff://code_executor}}}} 的数据和 {{{{handoff://data_analyst}}}} 的分析解读，撰写结构化研究报告（按 6 段骨架：实验概况 / 分析方法 / 结果 / 观察与洞察 / 数据质量 / 下一步建议）。")
-```
-完成后用 present_files 呈现报告文件 + 图表。
-
-### 已有分析数据的场景（跳过 code-executor / data-analyst）
-
-- 用户说"只帮我重新写个报告" + workspace 已有 handoff_code_executor.json + handoff_data_analyst.json → 直接派遣 report-writer，跳过前两步
-- 用户说"帮我重新解读一下" + 已有 handoff_code_executor.json → 直接派 data-analyst
-- 用户说"用不同的分组重新分析" → 从 Step 1 重新派 code-executor
-
-## 可用范式模板
-shoaling (斑马鱼群体行为)
+流水线: E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA→knowledge-assistant
+详情见 `/mnt/skills/ethoinsight-lead-interaction/SKILL.md`。
 </orchestration_guide>"""
 
     # Get skills section
