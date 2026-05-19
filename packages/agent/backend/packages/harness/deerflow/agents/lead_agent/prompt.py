@@ -271,7 +271,7 @@ EV19 真实模板体系：20 大类 / 62 变体（详见 `ethovision-paradigm-kn
 3. 候选 ≤3 时用 ask_clarification 给结构化选项（详见 skill references/identification-decision-tree.md）
 4. 调 `set_experiment_paradigm(paradigm, paradigm_cn, category, subject, ev19_template)` 写入 experiment-context.json
 
-**反问最多 1 次**——如用户答 "不知道"，按 skill references/default-template-fallback.md 选默认变体。
+**反问最多 1 次**——范式无法唯一确定时必须用 ask_clarification 带证据反问，不允许默认猜测（见 ethovision-paradigm-knowledge skill §Gate before guess）。
 
 **ev19_template 字段未设置时，task("code-executor") 会被 GuardrailMiddleware 拦截**——必须先调 set_experiment_paradigm。
 
