@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EthoInsight 反馈提交</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f0 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .container {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    max-width: 540px;
+    width: 100%;
+    padding: 40px 36px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a2332;
+    margin-bottom: 6px;
+  }
+  .header p {
+    font-size: 14px;
+    color: #6b7280;
+  }
+  .form-group {
+    margin-bottom: 20px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 6px;
+  }
+  .form-group label .required {
+    color: #ef4444;
+    margin-left: 2px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #1f2937;
+    background: #fafbfc;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    font-family: inherit;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #4f7dff;
+    box-shadow: 0 0 0 3px rgba(79,125,255,0.12);
+    background: #fff;
+  }
+  .form-group textarea {
+    resize: vertical;
+    min-height: 120px;
+  }
+  .form-group select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 480px) {
+    .form-row { grid-template-columns: 1fr; }
+    .container { padding: 28px 20px; }
+  }
+  .btn {
+    width: 100%;
+    padding: 12px;
+    background: #4f7dff;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 8px;
+  }
+  .btn:hover { background: #3b6aee; }
+  .btn:disabled { background: #9bb0f0; cursor: not-allowed; }
+  .toast {
+    display: none;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  .toast.success { display: block; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+  .toast.error { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>EthoInsight 反馈</h1>
+    <p>您的意见帮助我们改进产品</p>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <form id="feedbackForm" onsubmit="submitFeedback(event)">
+    <div class="form-group">
+      <label for="title">标题 <span class="required">*</span></label>
+      <input type="text" id="title" name="title" maxlength="200" required
+             placeholder="一句话描述您遇到的问题或建议">
+    </div>
+
+    <div class="form-group">
+      <label for="category">反馈类型 <span class="required">*</span></label>
+      <select id="category" name="category" required>
+        <option value="">请选择类型</option>
+        <option value="bug">问题反馈（Bug）</option>
+        <option value="enhancement">功能建议</option>
+        <option value="experience">使用体验</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="description">详细描述 <span class="required">*</span></label>
+      <textarea id="description" name="description" maxlength="5000" required
+                placeholder="请详细描述：您做了什么操作、期望什么结果、实际发生了什么"></textarea>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="name">您的姓名</label>
+        <input type="text" id="name" name="name" maxlength="100"
+               placeholder="方便我们跟进沟通">
+      </div>
+
+      <div class="form-group">
+        <label for="contact">联系方式</label>
+        <input type="text" id="contact" name="contact" maxlength="200"
+               placeholder="邮箱或企业微信">
+      </div>
+    </div>
+
+    <button type="submit" class="btn" id="submitBtn">提交反馈</button>
+  </form>
+</div>
+
+<script>
+async function submitFeedback(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  const toast = document.getElementById('toast');
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+  toast.className = 'toast';
+  toast.style.display = 'none';
+
+  const payload = {
+    title: document.getElementById('title').value.trim(),
+    category: document.getElementById('category').value,
+    description: document.getElementById('description').value.trim(),
+    name: document.getElementById('name').value.trim() || null,
+    contact: document.getElementById('contact').value.trim() || null,
+  };
+
+  try {
+    const resp = await fetch('/api/feedback-issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      toast.className = 'toast success';
+      toast.textContent = '反馈提交成功！感谢您的宝贵意见。';
+      toast.style.display = 'block';
+      document.getElementById('feedbackForm').reset();
+    } else {
+      throw new Error(data.detail || '提交失败');
+    }
+  } catch (err) {
+    toast.className = 'toast error';
+    toast.textContent = '提交失败: ' + err.message + '。请重试或联系管理员。';
+    toast.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '提交反馈';
+  }
+}
+</script>
+</body>
+</html>

@@ -18,6 +18,7 @@ from app.gateway.routers import (
     auth,
     channels,
     feedback,
+    feedback_issue,
     mcp,
     memory,
     models,
@@ -368,6 +369,9 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
     # 走 FeedbackRepository (SQLite)；require_permission 闭 auth bypass；
     # verdict 三分类 + 可选 revised_text（SFT 训练种子）。
     app.include_router(feedback.router)
+
+    # Public feedback-issue form at /api/feedback (GET page) and /api/feedback-issue (POST)
+    app.include_router(feedback_issue.router)
 
     # Thread Runs API (LangGraph Platform-compatible runs lifecycle)
     app.include_router(thread_runs.router)
