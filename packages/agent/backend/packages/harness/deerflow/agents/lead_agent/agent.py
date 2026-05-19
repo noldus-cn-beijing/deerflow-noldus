@@ -359,6 +359,18 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
             fail_closed=guardrails_cfg.fail_closed,
         ))
 
+    # StepwiseGateMiddleware — in manual / data-flywheel mode, pause the
+    # graph after each subagent completion so the user can leave feedback
+    # before the lead dispatches the next subagent. Uses LangGraph's native
+    # Command(goto=END) — same mechanism as ClarificationMiddleware. Only
+    # attaches when workflow_mode == "manual" (the "数据飞轮" UI mode); auto
+    # mode behavior is unchanged.
+    workflow_mode_value = config.get("configurable", {}).get("workflow_mode", "auto")
+    if workflow_mode_value == "manual":
+        from deerflow.agents.middlewares.stepwise_gate_middleware import StepwiseGateMiddleware
+
+        middlewares.append(StepwiseGateMiddleware(enabled=True))
+
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
