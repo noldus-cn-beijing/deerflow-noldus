@@ -9,7 +9,7 @@ report-writer 多方共读、被 dispatcher / 单测 / golden-case 共消费。
 
 from __future__ import annotations
 
-from ethoinsight.catalog.loader import CatalogError, load_catalog
+from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.resolve import ResolveError, plan_to_dict, resolve
 from ethoinsight.catalog.schema import (
     Catalog,
@@ -30,6 +30,7 @@ __all__ = [
     "Catalog",
     "CatalogError",
     "ChartEntry",
+    "CommonCatalog",
     "MetricEntry",
     "Plan",
     "PlanChart",
@@ -42,6 +43,7 @@ __all__ = [
     "ResolveError",
     "StatisticsEntry",
     "load_catalog",
+    "load_common_catalog",
     "plan_to_dict",
     "resolve",
 ]
