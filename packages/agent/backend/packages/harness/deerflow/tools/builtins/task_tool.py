@@ -191,16 +191,23 @@ def _schedule_deferred_subagent_cleanup(task_id: str, trace_id: str, max_polls: 
 
 
 def _find_usage_recorder(runtime: Any) -> Any | None:
-    """Find a callback handler with ``record_external_llm_usage_records`` in the runtime config."""
+    """Find a callback handler with ``record_external_llm_usage_records`` in the runtime config.
+
+    LangGraph's runtime ``config["callbacks"]`` may be either a ``list`` of handlers OR a
+    ``BaseCallbackManager`` instance (e.g. ``AsyncCallbackManager`` on async paths). The
+    manager class has no ``__iter__``; iterating it directly raises ``TypeError``. Normalize
+    both shapes by reading ``.handlers`` when given a manager.
+    """
     if runtime is None:
         return None
     config = getattr(runtime, "config", None)
     if not isinstance(config, dict):
         return None
     callbacks = config.get("callbacks", [])
-    if not callbacks:
+    handlers = getattr(callbacks, "handlers", callbacks) if not isinstance(callbacks, list) else callbacks
+    if not handlers:
         return None
-    for cb in callbacks:
+    for cb in handlers:
         if hasattr(cb, "record_external_llm_usage_records"):
             return cb
     return None
