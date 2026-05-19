@@ -218,35 +218,21 @@ def _filter_tools(
 def _load_skill_contents(skill_names: list[str]) -> str:
     """Load and inline skill file contents for subagent prompt injection.
 
-    Reads SKILL.md files for the requested skill names, strips YAML frontmatter,
-    and wraps each in a <skill> XML tag for clean prompt injection.
+    Delegates to ``deerflow.skills.render.render_skill_sections`` which is
+    independently unit-tested (see ``tests/test_subagent_skill_path_rewrite.py``).
+    Kept here as a thin wrapper so existing call sites stay untouched.
 
     Returns:
         Concatenated skill content string, or empty string if no skills loaded.
     """
-    from deerflow.skills.storage import get_or_new_skill_storage
+    from deerflow.config import get_app_config
+    from deerflow.skills.render import render_skill_sections
 
-    all_skills = get_or_new_skill_storage().load_skills(enabled_only=True)
-    skill_map = {s.name: s for s in all_skills}
-
-    sections = []
-    for name in skill_names:
-        skill = skill_map.get(name)
-        if not skill:
-            logger.warning("Skill '%s' not found or not enabled, skipping injection for subagent", name)
-            continue
-        try:
-            content = skill.skill_file.read_text(encoding="utf-8")
-            # Strip YAML frontmatter (--- ... ---)
-            if content.startswith("---"):
-                end = content.find("---", 3)
-                if end != -1:
-                    content = content[end + 3 :].strip()
-            sections.append(f'<skill name="{name}">\n{content}\n</skill>')
-        except Exception:
-            logger.warning("Failed to read skill file for '%s'", name, exc_info=True)
-
-    return "\n\n".join(sections)
+    try:
+        container_base_path = get_app_config().skills.container_path
+    except Exception:
+        container_base_path = "/mnt/skills"
+    return render_skill_sections(skill_names, container_base_path)
 
 
 def _get_model_name(config: SubagentConfig, parent_model: str | None) -> str | None:
