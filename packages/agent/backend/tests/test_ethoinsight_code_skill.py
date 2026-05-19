@@ -33,7 +33,7 @@ def test_old_data_quality_checks_removed():
 def test_skill_references_all_tools():
     skill_md = (SKILLS_DIR / "SKILL.md").read_text(encoding="utf-8")
     # New SOTA architecture: script-orchestration workflow, not old glue scripts
-    for keyword in ["metric_plan.json", "handoff_code_executor.json", "error-recovery.md"]:
+    for keyword in ["plan_metrics.json", "handoff_code_executor.json", "error-recovery.md"]:
         assert keyword in skill_md, f"SKILL.md missing reference to {keyword}"
     # Old langchain tools must not be referenced as active workflow steps
     for tool in ["parse_trajectories", "compute_metrics", "run_statistics",
@@ -62,5 +62,5 @@ def test_code_executor_declares_matching_tools():
                  "generate_charts", "assess_and_handoff", "get_analysis_template"}
     present_old = old_tools & declared
     assert not present_old, f"code_executor still has deprecated tools: {present_old}"
-    assert c.max_turns == 12, f"max_turns should be 12, got {c.max_turns}"
+    assert c.max_turns == 20, f"max_turns should be 20, got {c.max_turns}"
     assert "ethoinsight-code" in (c.skills or [])
