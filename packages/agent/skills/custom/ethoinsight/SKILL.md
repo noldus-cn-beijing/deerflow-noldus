@@ -49,3 +49,7 @@ author: noldus-insight
 - `get_paradigm`: 查询范式详情（setup、指标、相关产品）
 - `get_terminology`: 查询行为学术语定义和计算方法
 - `list_products` / `list_paradigms`: 浏览可用范式和产品
+
+## 操作约束
+
+执行类 subagent (code-executor / chart-maker) **必读** `references/execution-conventions.md`(bash 形式、handoff 写入、error recovery、gate_signals 格式)。
