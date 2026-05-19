@@ -10,9 +10,6 @@ function getInternalServiceURL(envKey, fallbackURL) {
     ? configured.replace(/\/+$/, "")
     : fallbackURL;
 }
-import nextra from "nextra";
-
-const withNextra = nextra({});
 
 /** @type {import("next").NextConfig} */
 const config = {
@@ -58,4 +55,4 @@ const config = {
   },
 };
 
-export default withNextra(config);
+export default config;
