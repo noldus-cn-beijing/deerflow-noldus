@@ -76,6 +76,20 @@ export function MessageGroup({
       return filteredSteps[filteredSteps.length - 1];
     }
   }, [lastToolCallStep, steps]);
+  // Guard: if there is nothing renderable inside (no tool calls, no reasoning,
+  // no "above" history), the ChainOfThought wrapper would still emit an empty
+  // `<div class="not-prose w-full gap-2 rounded-lg border p-0.5">` — visually a
+  // 4-6px tall horizontal bar with a border. Skip the wrapper entirely in that
+  // case. This happens during streaming when an AIMessage chunk arrives with
+  // only a task tool_call (filtered out by convertToSteps for the SubtaskCard
+  // path) before any reasoning content lands.
+  const hasAnythingToRender =
+    aboveLastToolCallSteps.length > 0 ||
+    lastToolCallStep !== undefined ||
+    lastReasoningStep !== undefined;
+  if (!hasAnythingToRender) {
+    return null;
+  }
   return (
     <ChainOfThought
       className={cn("w-full gap-2 rounded-lg border p-0.5", className)}
