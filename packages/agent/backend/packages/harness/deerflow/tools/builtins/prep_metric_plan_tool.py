@@ -1,7 +1,7 @@
-"""prep_metric_plan — 一步生成 metric_plan.json，无需 bash。
+"""prep_metric_plan — 一步生成 plan_metrics.json，无需 bash。
 
 lead agent 专用：直接调 ethoinsight Python 函数解析 EthoVision 文件 +
-catalog resolve，结果写入 workspace/metric_plan.json。
+catalog resolve，结果写入 workspace/plan_metrics.json。
 
 这是 P0 fix 的核心：lead 不再有 bash tool，所有 ethoinsight CLI 调用
 强制走此 Python 工具。
@@ -17,7 +17,7 @@ from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
-from ethoinsight.catalog.resolve import ResolveError, plan_to_dict, resolve
+from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
 from ethoinsight.parse._core import detect_ethovision, parse_header
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def prep_metric_plan_tool(
     uploaded_file: str,
     paradigm: str,
 ) -> dict:
-    """一步生成 metric_plan.json，无需 bash。
+    """一步生成 plan_metrics.json，无需 bash。
 
     Args:
       uploaded_file: 虚拟路径如 /mnt/user-data/uploads/xxx.txt
@@ -73,7 +73,7 @@ def prep_metric_plan_tool(
     Returns:
       status="ok" 时:
         {"status": "ok",
-         "plan_path": "/mnt/user-data/workspace/metric_plan.json",
+         "plan_path": "/mnt/user-data/workspace/plan_metrics.json",
          "plan_summary": {"paradigm": "epm", "metric_count": 5,
                           "metric_ids": ["open_arm_time_ratio", ...]}}
       status="error" 时:
@@ -128,9 +128,9 @@ def prep_metric_plan_tool(
             "Parsed header contains no column names.",
         )
 
-    # Step 5: resolve catalog → Plan
+    # Step 5: resolve catalog → PlanMetrics
     try:
-        plan = resolve(
+        plan = resolve_metrics(
             paradigm=paradigm,
             columns=columns,
             raw_files=[real_file_path],
@@ -150,15 +150,15 @@ def prep_metric_plan_tool(
             f"Unexpected error during catalog resolve: {e}",
         )
 
-    # Step 6: serialize plan to workspace/metric_plan.json
-    plan_dict = plan_to_dict(plan)
-    plan_path = Path(real_workspace_path) / "metric_plan.json"
+    # Step 6: serialize plan to workspace/plan_metrics.json
+    plan_dict = plan_metrics_to_dict(plan)
+    plan_path = Path(real_workspace_path) / "plan_metrics.json"
     try:
         plan_path.write_text(json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError as e:
         return _error_result(
             "parse_failed",
-            f"Failed to write metric_plan.json: {e}",
+            f"Failed to write plan_metrics.json: {e}",
         )
 
     # Step 7: build summary (只 paradigm/metric_count/metric_ids，不含完整 plan)
@@ -173,7 +173,7 @@ def prep_metric_plan_tool(
 
     return {
         "status": "ok",
-        "plan_path": "/mnt/user-data/workspace/metric_plan.json",
+        "plan_path": "/mnt/user-data/workspace/plan_metrics.json",
         "plan_summary": {
             "paradigm": paradigm,
             "metric_count": len(metric_ids),
