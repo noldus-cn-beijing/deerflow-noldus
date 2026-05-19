@@ -80,15 +80,33 @@ export function MessageGroup({
   // no "above" history), the ChainOfThought wrapper would still emit an empty
   // `<div class="not-prose w-full gap-2 rounded-lg border p-0.5">` — visually a
   // 4-6px tall horizontal bar with a border. Skip the wrapper entirely in that
-  // case. This happens during streaming when an AIMessage chunk arrives with
-  // only a task tool_call (filtered out by convertToSteps for the SubtaskCard
-  // path) before any reasoning content lands.
+  // case.
+  //
+  // Exception — while a run is streaming (`isLoading`), NEVER collapse the
+  // group to null. A frame with no renderable steps is a transient state
+  // between two LLM turns (tool result just landed; next AIMessage chunk
+  // hasn't arrived yet). If we return null here the entire group disappears
+  // and reappears, giving the user the impression that the response vanished.
+  // Render a lightweight "thinking" placeholder instead.
   const hasAnythingToRender =
     aboveLastToolCallSteps.length > 0 ||
     lastToolCallStep !== undefined ||
     lastReasoningStep !== undefined;
   if (!hasAnythingToRender) {
-    return null;
+    if (!isLoading) {
+      return null;
+    }
+    return (
+      <div
+        className={cn(
+          "text-muted-foreground flex items-center gap-2 px-2 py-1 text-sm",
+          className,
+        )}
+      >
+        <LightbulbIcon className="size-4 animate-pulse" />
+        <span>{t.common.thinking}</span>
+      </div>
+    );
   }
   return (
     <ChainOfThought
@@ -456,31 +474,17 @@ export interface CoTTextStep extends GenericCoTStep<"text"> {
 export type CoTStep = CoTReasoningStep | CoTToolCallStep | CoTTextStep;
 
 /**
- * Lead-agent timeline: hide low-level I/O plumbing AND ethoinsight
- * fine-grained tools. Lead shouldn't be calling the latter directly; if it
- * does, it's internal shuffling of handoff files and the high-level outcome
- * is already visible via subagent progress + present_files.
+ * Lead-agent timeline: only hide tools whose calls genuinely carry zero
+ * signal for the user. Showing everything else (file探索、bash 诊断、领域
+ * 工具) is the visible evidence that the agent is doing real work — without
+ * it, users see only thinking dots and assume the run has hung.
  *
- * Semantic tools users DO care about (`task`, `ask_clarification`,
- * `present_files`, `write_todos`) are NOT listed here and continue to render.
+ * `str_replace` / `write_file` stay hidden because lead uses them purely to
+ * shuffle handoff JSON between subagents — opaque internal plumbing.
  */
 export const LEAD_HIDDEN_TOOL_CALL_NAMES = new Set<string>([
-  // Low-level I/O — pure plumbing, never interesting to the user.
-  "read_file",
-  "write_file",
   "str_replace",
-  "bash",
-  "ls",
-  "glob",
-  "grep",
-  // ethoinsight fine-grained analysis pipeline — each run emits all five.
-  // The high-level outcome is visible via subagent progress + present_files.
-  "get_analysis_template",
-  "parse_trajectories",
-  "compute_metrics",
-  "run_statistics",
-  "generate_charts",
-  "assess_and_handoff",
+  "write_file",
 ]);
 
 /**
