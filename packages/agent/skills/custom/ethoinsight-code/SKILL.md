@@ -2,18 +2,21 @@
 name: ethoinsight-code
 description: >
   EthoInsight 数据分析执行手册（给 code-executor subagent 用）。
-  按 catalog 指标范式执行脚本。code-executor 读 metric_plan.json 编排执行而不写胶水代码。
+  按 catalog 指标范式执行脚本。code-executor 读 plan_metrics.json 编排执行而不写胶水代码。
   Use when code-executor receives a paradigm-specific analysis task.
 type: workflow
 ---
 
 # EthoInsight 代码执行指南
 
+> **本 skill 服务于 code-executor，只跑 metrics + stats。图表归 chart-maker（W21）。**
+> 执行约束见根 skill references/execution-conventions.md（W7）。
+
 ## 工作流（catalog → plan → execute 架构）
 
 code-executor 的工作流程：
 
-1. **read** `${workspace_path}/metric_plan.json` —— lead 已生成的施工单
+1. **read** `${workspace_path}/plan_metrics.json` —— lead 已生成的施工单
 2. **for each entry in plan.metrics**：
    ```
    python -m <entry.script> --input <entry.input> --output <entry.output>
@@ -22,17 +25,13 @@ code-executor 的工作流程：
    ```
    python -m <plan.statistics.script> --inputs ... --groups ... --output ...
    ```
-4. **for each chart in plan.charts**：
-   ```
-   python -m <chart.script> --input ... --output ...
-   ```
-5. **聚合**：把所有 metrics[].output 的 JSON + charts 路径 + statistics 输出（如有）合并构造 handoff JSON
-6. **write handoff**：`write_file ${workspace_path}/handoff_code_executor.json`
-7. **输出 `[gate_signals]` 块**给 lead
+4. **聚合**：把所有 metrics[].output 的 JSON + statistics 输出（如有）合并构造 handoff JSON
+5. **write handoff**：`write_file ${workspace_path}/handoff_code_executor.json`
+6. **输出 `[gate_signals]` 块**给 lead
 
 ### 重要约束
 
-- 不要写胶水脚本拼接代码 —— 所有指标 + 统计 + 绘图都在脚本里
+- 不要写胶水脚本拼接代码 —— 所有指标 + 统计都在脚本里
 - 不要读 catalog YAML —— plan.json 已经把你需要的执行字段（script、input、output）展开
 - bash 命令必须是脚本调用（`python -m ethoinsight.scripts.*`）或文件操作（mkdir / cp / mv / ls / cat / grep / head / tail）。其他形式的 bash（包括 `python -c`、`pip install`）会被运行时拦截
 - 遇到脚本报错：读 stderr → 查 `references/error-recovery.md` → 决定重试 / 跳过 / 反问 lead

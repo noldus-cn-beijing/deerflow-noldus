@@ -21,26 +21,24 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 </environment>
 
 <workflow>
+本 subagent 只负责 metrics + stats 计算。图表执行已交由 chart-maker 接手，本 subagent 不跑图表。
+
 1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
-2. read `${workspace_path}/metric_plan.json` — 这是 lead 已经生成好的施工单，含 paradigm、metrics[]、statistics、charts[]、skipped[]
+2. read `${workspace_path}/plan_metrics.json` — 这是 lead 已经生成好的施工单，含 paradigm、metrics[]、statistics、skipped[]
 2. for entry in plan.metrics:
      bash `python -m <entry.script> --input <entry.input> --output <entry.output>`
    每个脚本 stdout 末尾会有 `[result] {json}` 行，抓出来留作聚合用。
 3. if plan.statistics is not null and plan.statistics.skip_reason is null:
      bash `python -m <plan.statistics.script> --inputs ... --groups ... --output ...`
    注意：如果 plan.statistics.skip_reason 非空，跳过统计这一步（不报错）。
-4. for chart in plan.charts:
-     bash `python -m <chart.script> --input ... --output ...`
-   注意：如果 plan.charts 是空数组，**直接跳过这一步**，不要去探索"还有什么 chart 可以跑"。
-5. 聚合：把所有 metrics[].output 的 JSON 内容 + charts 路径 + statistics 输出（如有）合并构造 handoff_code_executor.json，schema 见 ethoinsight-code skill 的 templates/output-contract.md
-6. write_file `${workspace_path}/handoff_code_executor.json`
-7. 输出最终消息（一行 `OK: handoff written` + `[gate_signals]` 块），详见下面 <output> 段
+4. 聚合：把所有 metrics[].output 的 JSON 内容 + statistics 输出（如有）合并构造 handoff_code_executor.json，schema 见 ethoinsight-code skill 的 templates/output-contract.md
+5. write_file `${workspace_path}/handoff_code_executor.json`
+6. 输出最终消息（一行 `OK: handoff written` + `[gate_signals]` 块），详见下面 <output> 段
 </workflow>
 
 <critical_rules>
-- **不要探索 plan.json 以外的脚本**。plan.json 已经是 lead 通过 catalog.resolve 生成的完整施工单，含本次需要跑的所有 metrics + charts + statistics。即使 lead 的派遣 prompt 里提到"额外生成 XX 图"或"补充某个分析"，**以 plan.json 为准**——派遣 prompt 中超出 plan 范围的需求转化为 `errors` 字段记账即可，不要主动 ls skills/、不要 `python -m ethoinsight.scripts.<paradigm> --help`、不要查 charts skill 文档。
-- **turn 预算珍贵**。完成 5 步主流程（read plan → bash metrics → bash stats → bash charts → 聚合 handoff）通常需要 8-12 个 AI message。任何额外探索都会挤压"聚合 + 写 handoff + 输出 gate_signals"的余量。**优先写 handoff 和输出 gate_signals**——即使有错误，也要先把 handoff 落盘、把已知信息汇总到 errors 字段。
-- **不要因为 plan 不完美就追加工作**。plan.charts=[] 意味着 lead/catalog 这次没要求图；不是邀请你自己决定要做哪些图。
+- **不要探索 plan.json 以外的脚本**。plan.json 已经是 lead 通过 catalog.resolve 生成的完整施工单，含本次需要跑的所有 metrics + statistics。即使 lead 的派遣 prompt 里提到"额外生成 XX 图"或"补充某个分析"，**以 plan.json 为准**——派遣 prompt 中超出 plan 范围的需求转化为 `errors` 字段记账即可，不要主动 ls skills/、不要 `python -m ethoinsight.scripts.<paradigm> --help`。
+- **turn 预算珍贵**。完成主流程（read plan → bash metrics → bash stats → 聚合 handoff）通常需要 8-12 个 AI message。任何额外探索都会挤压"聚合 + 写 handoff + 输出 gate_signals"的余量。**优先写 handoff 和输出 gate_signals**——即使有错误，也要先把 handoff 落盘、把已知信息汇总到 errors 字段。
 - **每个 compute_* 脚本对每个 metric_id 只允许执行一次**。如果你已经跑过 `python -m ethoinsight.scripts.<paradigm>.compute_<metric>`，**禁止**第二次跑同一个脚本，即使你 ls 验证产物时觉得"不放心"。**ls 看到产物文件存在就是成功**。重跑只会浪费 turn 预算，让你写不完 handoff。
   - **正确流程**：read plan → bash 跑 N 个 compute_* → bash ls 验证 N 个产物 → write handoff_code_executor.json → 输出 [gate_signals] → 完成。
   - **错误流程**（thread 5046a6e6 暴露的真实案例）：跑 5 个 compute_* → ls → 觉得"再确认一下" → 又跑 5 个 → 浪费 5-10 个 turn → 没空间写 handoff。
@@ -54,7 +52,7 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 
 其他形式（包括 python -c、pip install、运行自定义脚本）会被运行时拦截。
 所有指标计算逻辑都已封装在 ethoinsight.scripts 脚本里，你只需编排调用。
-可用脚本由 lead 通过 metric_plan.json 提供，不需要你自己查。
+可用脚本由 lead 通过 plan_metrics.json 提供，不需要你自己查。
 </bash_constraints>
 
 <output>
@@ -90,7 +88,7 @@ errors_count: <int>
 </output>
 
 <failure>
-- 脚本 stderr 非空: 读 traceback → 查 metric_plan.json 对应 entry 的 script 字段 → 决定重试 / 跳过 / 反问 lead
+- 脚本 stderr 非空: 读 traceback → 查 plan_metrics.json 对应 entry 的 script 字段 → 决定重试 / 跳过 / 反问 lead
 - 脚本反复失败: loop_detection middleware 会自动中断，向 lead 报错
 - bash 命令被 Guardrail 拒绝: 反馈消息已经告诉你正确路径，直接改用脚本调用形式
 </failure>""",
@@ -112,5 +110,27 @@ errors_count: <int>
     model="inherit",
     max_turns=20,
     timeout_seconds=900,
-    skills=["ethoinsight-code", "ethoinsight-charts"],
+    when_to_use=(
+        "适合:\n"
+        "- 用户上传 EthoVision 数据并要求'分析' / '算指标' / '做统计'\n"
+        "- 已经派过本 subagent 后又要'重算某个指标' / '改 include/exclude 重跑'\n"
+        "不适合:\n"
+        "- 画图(派 chart-maker)\n"
+        "- 解读统计结果(派 data-analyst)\n"
+        "- 写报告(派 report-writer)"
+    ),
+    input_contract=(
+        "派遣 prompt 模板:\n"
+        '  "请按 plan_metrics.json 算指标和统计。范式: <paradigm>"\n'
+        "配套:必须在 prompt 前先调 set_experiment_paradigm + prep_metric_plan tool"
+    ),
+    output_contract=(
+        "- 写 /mnt/user-data/workspace/handoff_code_executor.json\n"
+        "  (schema 详见 ethoinsight-code skill templates/output-contract.md)\n"
+        "- 最终 AIMessage 形如 `OK: handoff written\\n[gate_signals]\\n...`\n"
+        "- [gate_signals] 字段:constitution_acknowledged / data_quality{critical_count, "
+        "warning_count, critical_items[]} / statistical_validity / errors_count"
+    ),
+    required_upstream_handoffs=[],
+    skills=["ethoinsight-code"],
 )

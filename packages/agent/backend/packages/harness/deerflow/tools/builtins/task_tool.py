@@ -51,12 +51,9 @@ def _resolve_placeholders(prompt: str) -> str:
 #
 # Pointing to a path via this placeholder IS the authorization. No placeholder =
 # no authorization (subagent cannot read peer handoff files).
-HANDOFF_FILE_REGISTRY: dict[str, str] = {
-    "code_executor": "handoff_code_executor.json",
-    "data_analyst": "handoff_data_analyst.json",
-    "report_writer": "handoff_report_writer.json",
-    "planning": "handoff_planning.json",
-}
+# Imported from handoff_registry to keep a zero-circular-dep module as the
+# authoritative source (deerflow.subagents.builtins imports it at init time).
+from deerflow.subagents.handoff_registry import HANDOFF_FILE_REGISTRY  # noqa: E402
 
 _HANDOFF_PLACEHOLDER_RE = re.compile(r"\{\{handoff://([^}]+)\}\}")
 
@@ -89,6 +86,32 @@ def _resolve_handoff_placeholders(prompt: str) -> tuple[str, set[str]]:
 
     replaced = _HANDOFF_PLACEHOLDER_RE.sub(_replace, prompt)
     return replaced, authorized
+
+
+def _auto_inject_handoff_placeholders(prompt: str, subagent_type: str) -> str:
+    """W19: 按 SubagentConfig.required_upstream_handoffs 自动注入 {{handoff://X}}
+    占位符,跳过已存在的(避免双注入)。
+    """
+    from deerflow.subagents.builtins import BUILTIN_SUBAGENTS
+
+    config = BUILTIN_SUBAGENTS.get(subagent_type)
+    if config is None or not config.required_upstream_handoffs:
+        return prompt
+
+    existing = set(_HANDOFF_PLACEHOLDER_RE.findall(prompt))
+    additions = []
+    for name in config.required_upstream_handoffs:
+        if name not in existing:
+            additions.append(f"{{{{handoff://{name}}}}}")
+
+    if not additions:
+        return prompt
+
+    return (
+        f"{prompt}\n\n"
+        f"[Upstream handoff (auto-injected by harness)]\n"
+        + "\n".join(f"- {p}" for p in additions)
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -356,6 +379,9 @@ async def task_tool(
 
     # Noldus: resolve {{shared://...}} placeholders to /mnt/shared/... paths.
     prompt = _resolve_placeholders(prompt)
+
+    # W19: 自动注入 required_upstream_handoffs 对应的 {{handoff://X}} 占位符
+    prompt = _auto_inject_handoff_placeholders(prompt, subagent_type)
 
     # Noldus: resolve {{handoff://...}} placeholders and capture authorized paths.
     # The authorized set is consumed by HandoffIsolationProvider so the subagent

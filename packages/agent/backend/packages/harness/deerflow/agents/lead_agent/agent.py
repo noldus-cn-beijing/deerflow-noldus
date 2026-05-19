@@ -325,6 +325,28 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         middlewares.append(Ev19WorkspaceBridgeMiddleware())
         middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
 
+        # W17: Intent classification — block non-read_file calls before lead declares [intent]
+        from deerflow.guardrails.intent_classification_provider import (
+            IntentBridgeMiddleware,
+            IntentClassificationGuardrailProvider,
+        )
+
+        middlewares.append(IntentBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(
+            provider=IntentClassificationGuardrailProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
+        # W18: Task handoff authorization — 校验 task(subagent_type=X) prompt 含必需 {{handoff://X}} 占位符
+        from deerflow.guardrails.task_handoff_authorization_provider import (
+            TaskHandoffAuthorizationProvider,
+        )
+
+        middlewares.append(GuardrailMiddleware(
+            provider=TaskHandoffAuthorizationProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)

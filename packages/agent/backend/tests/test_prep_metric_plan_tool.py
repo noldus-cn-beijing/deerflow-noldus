@@ -111,7 +111,7 @@ class TestPrepMetricPlanToolOk:
         assert result["plan_summary"]["paradigm"] == "epm"
         assert result["plan_summary"]["metric_count"] > 0
         # plan_path 真实存在
-        plan_path = workspace / "metric_plan.json"
+        plan_path = workspace / "plan_metrics.json"
         assert plan_path.exists()
         plan_data = json.loads(plan_path.read_text())
         assert "metrics" in plan_data
@@ -213,9 +213,86 @@ class TestPrepMetricPlanToolErrors:
         })
 
         assert result["status"] == "ok"
-        plan_path = workspace / "metric_plan.json"
+        plan_path = workspace / "plan_metrics.json"
         assert plan_path.exists()
         plan_data = json.loads(plan_path.read_text())
         assert isinstance(plan_data, dict)
         assert "metrics" in plan_data
         assert len(plan_data["metrics"]) == result["plan_summary"]["metric_count"]
+
+
+class TestPrepMetricPlanToolW20:
+    """W20: 输出文件名 metric_plan.json → plan_metrics.json，import resolve_metrics + plan_metrics_to_dict。"""
+
+    def test_writes_plan_metrics_json_not_metric_plan_json(self, tmp_path):
+        """W20: 输出文件名从 metric_plan.json 改为 plan_metrics.json。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        data_file = uploads / "w20_epm.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/w20_epm.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        # plan_path 返回值中包含新文件名
+        assert result["plan_path"] == "/mnt/user-data/workspace/plan_metrics.json"
+        # 新文件存在
+        assert (workspace / "plan_metrics.json").exists()
+        # 旧文件不存在
+        assert not (workspace / "metric_plan.json").exists()
+
+    def test_plan_metrics_json_has_no_charts_field(self, tmp_path):
+        """W20: plan_metrics 输出 JSON 不含 charts 字段。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        data_file = uploads / "w20_epm2.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/w20_epm2.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        plan_file = workspace / "plan_metrics.json"
+        assert plan_file.exists()
+        payload = json.loads(plan_file.read_text())
+        assert "metrics" in payload
+        assert "charts" not in payload
+
+    def test_plan_metrics_json_has_metrics_field(self, tmp_path):
+        """W20: plan_metrics.json 含 metrics 字段且 metric_count > 0。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        data_file = uploads / "w20_epm3.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/w20_epm3.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        plan_file = workspace / "plan_metrics.json"
+        payload = json.loads(plan_file.read_text())
+        assert isinstance(payload["metrics"], list)
+        assert len(payload["metrics"]) == result["plan_summary"]["metric_count"]
+        assert len(payload["metrics"]) > 0

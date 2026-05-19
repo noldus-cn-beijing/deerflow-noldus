@@ -153,5 +153,24 @@ read_file:
     model="inherit",
     max_turns=12,
     timeout_seconds=600,
+    when_to_use=(
+        "适合:\n"
+        "- code-executor 刚完成、有 handoff_code_executor.json,要对统计结果做专业解读 / 方法学把关 / 离群诊断\n"
+        "不适合:\n"
+        "- 用户问纯领域知识(派 knowledge-assistant)\n"
+        "- 画图(派 chart-maker)"
+    ),
+    input_contract=(
+        "派遣 prompt 模板(用户语言原话 + 简短引导):\n"
+        '  "请基于 code-executor 的结果做专业解读,关注效应量和混杂因素。"'
+    ),
+    output_contract=(
+        "- 写 /mnt/user-data/workspace/handoff_data_analyst.json\n"
+        "  (schema 详见 data_analyst system_prompt)\n"
+        "- 最终 AIMessage:2-3 段自然语言摘要 + [gate_signals] 块\n"
+        "- [gate_signals] 字段:constitution_acknowledged / method_warnings_count / "
+        "outlier_count / excluded_metrics_count / statistical_validity / errors_count"
+    ),
+    required_upstream_handoffs=["code_executor"],
     skills=["ethoinsight", "ethoinsight-metric-catalog"],
 )

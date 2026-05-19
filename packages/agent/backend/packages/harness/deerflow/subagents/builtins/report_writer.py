@@ -194,6 +194,13 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
    - /mnt/user-data/workspace/handoff_data_analyst.json（解读）
    - 可选 read_file /mnt/user-data/workspace/handoff_planning.json 获取 group_semantics
 
+<optional_chart_handoff>
+如果 lead 在 task prompt 中包含 handoff_chart_maker.json 路径
+(注意这是可选输入),你可以 read_file 拿 chart_paths
+然后在 report.md "Figures" section 用 ![](path) 引用。
+若该文件不存在,Figures section 写"(无可视化输出)"即可,不报错。
+</optional_chart_handoff>
+
 2. 按 <structure> 段的 6 段骨架撰写报告：
    - 每段必须有，内容从对应 handoff 字段提取
    - §3 只写事实，§4 才做解读
@@ -250,4 +257,23 @@ write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里
     max_turns=15,
     timeout_seconds=600,
     skills=["ethoinsight", "ethoinsight-metric-catalog"],
+    when_to_use=(
+        "适合:\n"
+        "- 已有 code-executor + data-analyst handoff,用户要'出报告' / '写 Discussion'\n"
+        "不适合:\n"
+        "- 没有 data-analyst 解读(先派 data-analyst)\n"
+        "- 只要图(派 chart-maker)"
+    ),
+    input_contract=(
+        "派遣 prompt 模板:\n"
+        '  "请基于 code-executor 数据 + data-analyst 解读撰写 6 段骨架报告。"'
+    ),
+    output_contract=(
+        "- 写 /mnt/user-data/outputs/report.md(6 段骨架)\n"
+        "- 写 /mnt/user-data/workspace/handoff_report_writer.json\n"
+        "- 最终 AIMessage:报告路径 + 章节摘要 + [gate_signals]\n"
+        "- [gate_signals] 字段:constitution_acknowledged / sections_written_count / "
+        "sections_missing[] / statistical_validity / errors_count"
+    ),
+    required_upstream_handoffs=["code_executor", "data_analyst"],
 )

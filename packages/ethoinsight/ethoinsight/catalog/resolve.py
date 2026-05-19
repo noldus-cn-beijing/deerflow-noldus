@@ -18,14 +18,16 @@ import datetime as dt
 import fnmatch
 from pathlib import Path
 
-from ethoinsight.catalog.loader import CatalogError, load_catalog
+from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.schema import (
     ChartEntry,
     MetricEntry,
     Plan,
     PlanChart,
+    PlanCharts,
     PlanInputs,
     PlanMetric,
+    PlanMetrics,
     PlanSkipped,
     PlanStatistics,
     StatisticsEntry,
@@ -67,6 +69,58 @@ def resolve(
     virtual_workspace_dir: str | None = None,
 ) -> Plan:
     """生成 Plan dataclass。失败抛 ResolveError。
+
+    workspace_dir: 真实物理路径（用于脚本实际执行时的 input 引用等）。
+    virtual_workspace_dir: plan.json output 字段使用的虚拟路径（面向 downstream subagent）。
+                           未提供时兜底使用 workspace_dir（兼容旧调用方）。
+
+    Note: 旧 backward-compat wrapper — 内部调 resolve_metrics() + 保留 charts=[]。
+    W22 dogfood 完成后删。
+    """
+    pm = resolve_metrics(
+        paradigm=paradigm,
+        columns=columns,
+        raw_files=raw_files,
+        workspace_dir=workspace_dir,
+        include=include,
+        exclude=exclude,
+        n_per_group=n_per_group,
+        n_groups=n_groups,
+        groups_file=groups_file,
+        columns_file=columns_file,
+        ev19_template=ev19_template,
+        virtual_workspace_dir=virtual_workspace_dir,
+    )
+    return Plan(
+        schema_version=pm.schema_version,
+        paradigm=pm.paradigm,
+        ev19_template=pm.ev19_template,
+        generated_at=pm.generated_at,
+        inputs=pm.inputs,
+        metrics=pm.metrics,
+        statistics=pm.statistics,
+        charts=[],
+        skipped=pm.skipped,
+        notes=pm.notes,
+    )
+
+
+def resolve_metrics(
+    paradigm: str,
+    columns: list[str],
+    raw_files: list[str],
+    workspace_dir: str,
+    *,
+    include: list[str] | tuple[str, ...] = (),
+    exclude: list[str] | tuple[str, ...] = (),
+    n_per_group: int | None = None,
+    n_groups: int | None = None,
+    groups_file: str | None = None,
+    columns_file: str | None = None,
+    ev19_template: str | None = None,
+    virtual_workspace_dir: str | None = None,
+) -> PlanMetrics:
+    """生成 PlanMetrics dataclass（不含 charts）。失败抛 ResolveError。
 
     workspace_dir: 真实物理路径（用于脚本实际执行时的 input 引用等）。
     virtual_workspace_dir: plan.json output 字段使用的虚拟路径（面向 downstream subagent）。
@@ -178,13 +232,7 @@ def resolve(
             details={"paradigm": paradigm},
         )
 
-    # Step 4: charts
-    plan_charts: list[PlanChart] = []
-    for ch in cat.charts:
-        if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups):
-            plan_charts.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
-
-    # Step 5: statistics
+    # Step 3: statistics
     plan_stats: PlanStatistics | None = None
     if cat.statistics_default is not None:
         if _evaluate_when(
@@ -211,7 +259,7 @@ def resolve(
         f"Data columns: {len(columns)}; metrics planned: {len(plan_metrics)}; skipped: {len(skipped)}"
     )
 
-    return Plan(
+    return PlanMetrics(
         schema_version=SCHEMA_VERSION,
         paradigm=cat.paradigm,
         ev19_template=ev19_template,
@@ -223,8 +271,81 @@ def resolve(
         ),
         metrics=plan_metrics,
         statistics=plan_stats,
-        charts=plan_charts,
         skipped=skipped,
+        notes=notes,
+    )
+
+
+def resolve_charts(
+    paradigm: str,
+    columns: list[str],
+    raw_files: list[str],
+    workspace_dir: str,
+    *,
+    user_intent: str | None = None,
+    total_subjects: int | None = None,
+    n_per_group: int | None = None,
+    n_groups: int | None = None,
+    groups_file: str | None = None,
+    columns_file: str | None = None,
+    ev19_template: str | None = None,
+    virtual_workspace_dir: str | None = None,
+) -> PlanCharts:
+    """生成 PlanCharts dataclass。失败抛 ResolveError。
+
+    主路径：for ch in cat.charts: if _evaluate_when → charts.append
+    Fallback 触发：if len(charts)==0 → load_common_catalog() → for ch in common_charts: if _evaluate_when → fallback.append
+    """
+    try:
+        cat = load_catalog(paradigm)
+    except CatalogError as e:
+        if (
+            "file not found" in str(e).lower()
+            or "not found for paradigm" in str(e).lower()
+        ):
+            raise ResolveError(
+                code="unknown_paradigm",
+                message=f"Unknown paradigm '{paradigm}'.",
+                details={"requested": paradigm},
+            ) from e
+        raise ResolveError(
+            code="schema_violation",
+            message=f"Catalog YAML for '{paradigm}' is malformed: {e}",
+            details={"paradigm": paradigm},
+        ) from e
+
+    charts: list[PlanChart] = []
+    for ch in cat.charts:
+        if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
+            charts.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+
+    fallback: list[PlanChart] = []
+    if not charts:
+        try:
+            common = load_common_catalog()
+        except CatalogError:
+            common = CommonCatalog(common_charts=[])
+        for ch in common.common_charts:
+            if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
+                fallback.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+
+    notes: list[str] = []
+    if charts:
+        notes.append(f"Generated {len(charts)} catalog charts")
+    elif fallback:
+        notes.append(f"Fallback path: {len(fallback)} common charts available")
+    else:
+        notes.append("No charts matched; chart-maker should ask user")
+
+    return PlanCharts(
+        paradigm=cat.paradigm,
+        ev19_template=ev19_template,
+        generated_at=_utcnow_iso(),
+        inputs=PlanInputs(raw_files=list(raw_files), groups_file=groups_file, columns_file=columns_file),
+        charts=charts,
+        charts_fallback_available=fallback,
+        skipped=[],
+        user_intent=user_intent,
         notes=notes,
     )
 
@@ -293,21 +414,24 @@ def _stats_to_plan(
 
 
 def _evaluate_when(
-    condition: str, *, n_per_group: int | None, n_groups: int | None
+    condition: str, *, n_per_group: int | None, n_groups: int | None,
+    total_subjects: int | None = None,
 ) -> bool:
     cond = condition.strip()
     if cond == "always":
         return True
-
     parts = [p.strip() for p in cond.split(" and ")]
     for part in parts:
-        if not _evaluate_atomic_when(part, n_per_group=n_per_group, n_groups=n_groups):
+        if not _evaluate_atomic_when(
+            part, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects,
+        ):
             return False
     return True
 
 
 def _evaluate_atomic_when(
-    part: str, *, n_per_group: int | None, n_groups: int | None
+    part: str, *, n_per_group: int | None, n_groups: int | None,
+    total_subjects: int | None = None,
 ) -> bool:
     tokens = part.split()
     if len(tokens) != 3:
@@ -323,6 +447,8 @@ def _evaluate_atomic_when(
         return n_per_group is not None and n_per_group >= val
     if var == "n_groups":
         return n_groups is not None and n_groups >= val
+    if var == "total_subjects":
+        return total_subjects is not None and total_subjects >= val
     return False
 
 
@@ -377,6 +503,75 @@ def plan_to_dict(plan: Plan) -> dict:
             {"id": s.id, "reason": s.reason, "detail": s.detail} for s in plan.skipped
         ],
         "notes": plan.notes,
+    }
+
+
+def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
+    """PlanMetrics dataclass → JSON-serializable dict."""
+    return {
+        "schema_version": pm.schema_version,
+        "paradigm": pm.paradigm,
+        "ev19_template": pm.ev19_template,
+        "generated_at": pm.generated_at,
+        "inputs": {
+            "raw_files": pm.inputs.raw_files,
+            "groups_file": pm.inputs.groups_file,
+            "columns_file": pm.inputs.columns_file,
+        },
+        "metrics": [
+            {
+                "id": m.id,
+                "script": m.script,
+                "input": m.input,
+                "output": m.output,
+                "required": m.required,
+                "reason": m.reason,
+            }
+            for m in pm.metrics
+        ],
+        "statistics": (
+            None
+            if pm.statistics is None
+            else {
+                "id": pm.statistics.id,
+                "script": pm.statistics.script,
+                "input": pm.statistics.input,
+                "output": pm.statistics.output,
+                "skip_reason": pm.statistics.skip_reason,
+            }
+        ),
+        "skipped": [
+            {"id": s.id, "reason": s.reason, "detail": s.detail} for s in pm.skipped
+        ],
+        "notes": pm.notes,
+    }
+
+
+def plan_charts_to_dict(pc: PlanCharts) -> dict:
+    """PlanCharts dataclass → JSON-serializable dict."""
+    return {
+        "schema_version": pc.schema_version,
+        "paradigm": pc.paradigm,
+        "ev19_template": pc.ev19_template,
+        "generated_at": pc.generated_at,
+        "inputs": {
+            "raw_files": pc.inputs.raw_files,
+            "groups_file": pc.inputs.groups_file,
+            "columns_file": pc.inputs.columns_file,
+        },
+        "charts": [
+            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            for c in pc.charts
+        ],
+        "charts_fallback_available": [
+            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            for c in pc.charts_fallback_available
+        ],
+        "skipped": [
+            {"id": s.id, "reason": s.reason, "detail": s.detail} for s in pc.skipped
+        ],
+        "user_intent": pc.user_intent,
+        "notes": pc.notes,
     }
 
 

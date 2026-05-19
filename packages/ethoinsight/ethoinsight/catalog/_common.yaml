@@ -1,0 +1,14 @@
+# 通用 charts — 范式无关,作为单被试 / 组间不可对比场景的 fallback 候选。
+# C7 要求:加新 chart 时同步在 ethoinsight/scripts/_common/ 下添加 CLI 脚本,
+# YAML 注册与脚本必须在同一 PR 落地。
+
+common_charts:
+  - id: trajectory_plot
+    script: ethoinsight.scripts._common.plot_trajectory
+    when: total_subjects >= 1
+    rationale: 单被试或组间数据不全时的轨迹可视化
+
+  - id: timeseries_plot
+    script: ethoinsight.scripts._common.plot_timeseries
+    when: total_subjects >= 1
+    rationale: 单被试或组间数据不全时的时间动态

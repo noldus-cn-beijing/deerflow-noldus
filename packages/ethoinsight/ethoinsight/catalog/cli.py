@@ -38,7 +38,7 @@ import os
 import sys
 from pathlib import Path
 
-from ethoinsight.catalog.resolve import ResolveError, plan_to_dict, resolve
+from ethoinsight.catalog.resolve import ResolveError, plan_charts_to_dict, plan_metrics_to_dict, plan_to_dict, resolve, resolve_charts, resolve_metrics
 
 
 # 与 deerflow.sandbox.tools._build_path_env 完全一致的命名规则：
@@ -75,6 +75,8 @@ def _resolve_virtual_workspace_dir(arg_value: str | None, workspace_dir: str) ->
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m ethoinsight.catalog.resolve")
+    p.add_argument("--mode", choices=["metrics", "charts"], default="metrics",
+                   help="Output mode: 'metrics' (default, backward-compat) or 'charts'")
     p.add_argument("--paradigm", required=True)
     p.add_argument("--columns-file", required=True)
     p.add_argument("--raw-files-json", required=True)
@@ -85,6 +87,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--exclude", action="append", default=[])
     p.add_argument("--n-per-group", type=int, default=None)
     p.add_argument("--n-groups", type=int, default=None)
+    p.add_argument("--total-subjects", type=int, default=None,
+                   help="Total number of subjects; used in charts mode when conditions")
+    p.add_argument("--user-intent", default=None,
+                   help="User's intent string; stored in plan_charts.json (charts mode only)")
     p.add_argument("--ev19-template", default=None)
     p.add_argument("--output", required=True)
     return p
@@ -139,42 +145,75 @@ def main(argv: list[str] | None = None) -> int:
         args.virtual_workspace_dir, args.workspace_dir
     )
 
-    try:
-        plan = resolve(
-            paradigm=args.paradigm,
-            columns=columns,
-            raw_files=raw_files,
-            workspace_dir=args.workspace_dir,
-            include=args.include,
-            exclude=args.exclude,
-            n_per_group=args.n_per_group,
-            n_groups=args.n_groups,
-            groups_file=args.groups_file,
-            columns_file=args.columns_file,
-            ev19_template=args.ev19_template,
-            virtual_workspace_dir=virtual_workspace_dir,
-        )
-    except ResolveError as e:
-        return _emit_error(e.code, str(e), e.details)
-    except Exception as e:
-        return _emit_error("schema_violation", f"Unexpected resolver failure: {e}", {})
-
-    # Write plan.json
-    plan_dict = plan_to_dict(plan)
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(
-        json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
 
-    summary = (
-        f"Plan written to {args.output}: paradigm={plan.paradigm}, "
-        f"metrics={len(plan.metrics)}, charts={len(plan.charts)}, "
-        f"skipped={len(plan.skipped)}, statistics="
-        f"{'skip' if (plan.statistics and plan.statistics.skip_reason) else 'run' if plan.statistics else 'none'}"
-    )
-    print(summary)
-    return 0
+    if args.mode == "charts":
+        # charts mode: resolve_charts → plan_charts.json
+        try:
+            pc = resolve_charts(
+                paradigm=args.paradigm,
+                columns=columns,
+                raw_files=raw_files,
+                workspace_dir=args.workspace_dir,
+                user_intent=args.user_intent,
+                total_subjects=args.total_subjects,
+                n_per_group=args.n_per_group,
+                n_groups=args.n_groups,
+                groups_file=args.groups_file,
+                columns_file=args.columns_file,
+                ev19_template=args.ev19_template,
+                virtual_workspace_dir=virtual_workspace_dir,
+            )
+        except ResolveError as e:
+            return _emit_error(e.code, str(e), e.details)
+        except Exception as e:
+            return _emit_error("schema_violation", f"Unexpected resolver failure: {e}", {})
+
+        plan_dict = plan_charts_to_dict(pc)
+        out_path.write_text(
+            json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        summary = (
+            f"PlanCharts written to {args.output}: paradigm={pc.paradigm}, "
+            f"charts={len(pc.charts)}, fallback={len(pc.charts_fallback_available)}"
+        )
+        print(summary)
+        return 0
+
+    else:
+        # metrics mode (default, backward-compat): resolve_metrics → plan_metrics.json
+        try:
+            pm = resolve_metrics(
+                paradigm=args.paradigm,
+                columns=columns,
+                raw_files=raw_files,
+                workspace_dir=args.workspace_dir,
+                include=args.include,
+                exclude=args.exclude,
+                n_per_group=args.n_per_group,
+                n_groups=args.n_groups,
+                groups_file=args.groups_file,
+                columns_file=args.columns_file,
+                ev19_template=args.ev19_template,
+                virtual_workspace_dir=virtual_workspace_dir,
+            )
+        except ResolveError as e:
+            return _emit_error(e.code, str(e), e.details)
+        except Exception as e:
+            return _emit_error("schema_violation", f"Unexpected resolver failure: {e}", {})
+
+        plan_dict = plan_metrics_to_dict(pm)
+        out_path.write_text(
+            json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        summary = (
+            f"PlanMetrics written to {args.output}: paradigm={pm.paradigm}, "
+            f"metrics={len(pm.metrics)}, skipped={len(pm.skipped)}, statistics="
+            f"{'skip' if (pm.statistics and pm.statistics.skip_reason) else 'run' if pm.statistics else 'none'}"
+        )
+        print(summary)
+        return 0
 
 
 if __name__ == "__main__":

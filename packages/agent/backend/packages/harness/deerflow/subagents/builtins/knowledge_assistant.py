@@ -70,4 +70,22 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
     model="inherit",
     max_turns=6,
     timeout_seconds=300,
+    when_to_use=(
+        "适合:\n"
+        "- 用户问范式 / 术语 / 方法论概念问题(QA_KNOWLEDGE)\n"
+        "- 已有分析结果,用户追问'为什么 p 不显著' / 'NND 偏高说明什么'(QA_FACT)\n"
+        "不适合:\n"
+        "- 用户要重新算指标 / 出新报告(派对应 subagent)"
+    ),
+    input_contract=(
+        "派遣 prompt 模板:\n"
+        "  QA_KNOWLEDGE: '用户问题: <原话>'\n"
+        "  QA_FACT: '用户问题: <原话>。相关数据见 upstream handoff 文件。'"
+    ),
+    output_contract=(
+        "- 简单问题:直接在最终 AIMessage 回答\n"
+        "- 深度问题:write_file /mnt/user-data/workspace/knowledge_response.md + 摘要\n"
+        "- 不强制 [gate_signals] 块(QA 不进入 gate 决策路径)"
+    ),
+    required_upstream_handoffs=[],
 )

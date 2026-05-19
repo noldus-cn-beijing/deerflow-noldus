@@ -48,8 +48,8 @@ class TestCodeExecutorPromptClarity:
     def test_describes_workflow_steps(self):
         """Prompt must describe the script-orchestration workflow steps."""
         assert "inputs.json" in self.prompt or "scripts" in self.prompt
-        # New catalog architecture: code-executor reads metric_plan.json, not by-paradigm md
-        assert "metric_plan.json" in self.prompt
+        # New catalog architecture: code-executor reads plan_metrics.json, not by-paradigm md
+        assert "plan_metrics.json" in self.prompt
 
     def test_has_failure_section(self):
         assert "<failure>" in self.prompt
