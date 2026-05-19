@@ -2,12 +2,12 @@ import logging
 
 from langchain.tools import BaseTool
 
+from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool
 from deerflow.config import get_app_config
 from deerflow.reflection import resolve_variable
 from deerflow.sandbox.security import is_host_bash_allowed
-from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool
-from deerflow.tools.builtins import ask_clarification_tool, present_file_tool, task_tool, view_image_tool
-from deerflow.tools.builtins.tool_search import reset_deferred_registry
+from deerflow.tools.builtins import ask_clarification_tool, prep_metric_plan_tool, present_file_tool, task_tool, view_image_tool
+from deerflow.tools.builtins.tool_search import get_deferred_registry
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ BUILTIN_TOOLS = [
     present_file_tool,
     ask_clarification_tool,
     set_experiment_paradigm_tool,
+    prep_metric_plan_tool,
 ]
 
 SUBAGENT_TOOLS = [
@@ -39,6 +40,7 @@ def get_available_tools(
     include_mcp: bool = True,
     model_name: str | None = None,
     subagent_enabled: bool = False,
+    app_config=None,
 ) -> list[BaseTool]:
     """Get all available tools from config.
 
@@ -50,6 +52,8 @@ def get_available_tools(
         include_mcp: Whether to include tools from MCP servers (default: True).
         model_name: Optional model name to determine if vision tools should be included.
         subagent_enabled: Whether to include subagent tools (task, task_status).
+        app_config: Reserved for upstream parity (resolved AppConfig). Ignored
+            locally — config is fetched via the global ``get_app_config`` cache.
 
     Returns:
         List of available tools.
@@ -107,8 +111,6 @@ def get_available_tools(
     # made through the Gateway API (which runs in a separate process) are immediately
     # reflected when loading MCP tools.
     mcp_tools = []
-    # Reset deferred registry upfront to prevent stale state from previous calls
-    reset_deferred_registry()
     if include_mcp:
         try:
             from deerflow.config.extensions_config import ExtensionsConfig
@@ -126,12 +128,51 @@ def get_available_tools(
                         from deerflow.tools.builtins.tool_search import DeferredToolRegistry, set_deferred_registry
                         from deerflow.tools.builtins.tool_search import tool_search as tool_search_tool
 
-                        registry = DeferredToolRegistry()
-                        for t in mcp_tools:
-                            registry.register(t)
-                        set_deferred_registry(registry)
+                        # Reuse the existing registry if one is already set for
+                        # this async context. ``get_available_tools`` is
+                        # re-entered whenever a subagent is spawned
+                        # (``task_tool`` calls it to build the child agent's
+                        # toolset), and previously we used to unconditionally
+                        # rebuild the registry — wiping out the parent agent's
+                        # tool_search promotions. The
+                        # ``DeferredToolFilterMiddleware`` then re-hid those
+                        # tools from subsequent model calls, leaving the agent
+                        # able to see a tool's name but unable to invoke it
+                        # (issue #2884). ``contextvars`` already gives us the
+                        # lifetime semantics we want: a fresh request / graph
+                        # run starts in a new asyncio task with the
+                        # ContextVar at its default of ``None``, so reuse is
+                        # only triggered for re-entrant calls inside one run.
+                        #
+                        # Intentionally NOT reconciling against the current
+                        # ``mcp_tools`` snapshot. The MCP cache only refreshes
+                        # on ``extensions_config.json`` mtime changes, which
+                        # in practice happens between graph runs — not inside
+                        # one. And even if a refresh did happen mid-run, the
+                        # already-built lead agent's ``ToolNode`` still holds
+                        # the *previous* tool set (LangGraph binds tools at
+                        # graph construction time), so a brand-new MCP tool
+                        # couldn't actually be invoked anyway. The
+                        # ``DeferredToolRegistry`` doesn't retain the names
+                        # of previously-promoted tools (``promote()`` drops
+                        # the entry entirely), so re-syncing the registry
+                        # against a fresh ``mcp_tools`` list would
+                        # mis-classify those promotions as new tools and
+                        # re-register them as deferred — exactly the bug
+                        # this fix exists to prevent.
+                        existing_registry = get_deferred_registry()
+                        if existing_registry is None:
+                            registry = DeferredToolRegistry()
+                            for t in mcp_tools:
+                                registry.register(t)
+                            set_deferred_registry(registry)
+                            logger.info(f"Tool search active: {len(mcp_tools)} tools deferred")
+                        else:
+                            mcp_tool_names = {t.name for t in mcp_tools}
+                            still_deferred = len(existing_registry)
+                            promoted_count = max(0, len(mcp_tool_names) - still_deferred)
+                            logger.info(f"Tool search active (preserved promotions): {still_deferred} tools deferred, {promoted_count} already promoted")
                         builtin_tools.append(tool_search_tool)
-                        logger.info(f"Tool search active: {len(mcp_tools)} tools deferred")
         except ImportError:
             logger.warning("MCP module not available. Install 'langchain-mcp-adapters' package to enable MCP tools.")
         except Exception as e:

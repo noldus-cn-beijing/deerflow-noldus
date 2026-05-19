@@ -121,7 +121,7 @@ def test_middleware_and_features_conflict():
 @patch("deerflow.agents.factory.create_agent")
 def test_vision_injects_view_image_tool(mock_create_agent):
     mock_create_agent.return_value = MagicMock()
-    feat = RuntimeFeatures(vision=True, sandbox=False)
+    feat = RuntimeFeatures(vision=True, sandbox=True)
 
     create_deerflow_agent(_make_mock_model(), features=feat)
 
@@ -313,7 +313,7 @@ def test_vision_custom_middleware_still_injects_tool(mock_create_agent):
     class MyVision(AgentMiddleware):
         pass
 
-    feat = RuntimeFeatures(sandbox=False, vision=MyVision())
+    feat = RuntimeFeatures(sandbox=True, vision=MyVision())
 
     create_deerflow_agent(_make_mock_model(), features=feat)
 

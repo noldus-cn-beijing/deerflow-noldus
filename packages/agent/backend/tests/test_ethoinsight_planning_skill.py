@@ -3,11 +3,11 @@
 import json
 from pathlib import Path
 
-from deerflow.skills import load_skills
+from deerflow.skills.storage import get_or_new_skill_storage
 
 
 def _find_skill(name: str):
-    for skill in load_skills(enabled_only=False):
+    for skill in get_or_new_skill_storage().load_skills(enabled_only=False):
         if skill.name == name:
             return skill
     return None

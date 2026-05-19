@@ -21,7 +21,7 @@ export async function Header({ className, homeURL, locale }: HeaderProps) {
   return (
     <header
       className={cn(
-        "container-md fixed top-0 right-0 left-0 z-20 mx-auto flex h-16 items-center justify-between backdrop-blur-xs",
+        "container-md fixed top-0 right-0 left-0 z-20 mx-auto flex h-16 items-center justify-between bg-background/85 backdrop-blur-sm",
         className,
       )}
     >
@@ -51,9 +51,9 @@ export async function Header({ className, homeURL, locale }: HeaderProps) {
       </nav>
       <div className="relative">
         <div
-          className="pointer-events-none absolute inset-0 z-0 h-full w-full rounded-full opacity-30 blur-2xl"
+          className="pointer-events-none absolute inset-0 z-0 h-full w-full rounded-full opacity-20 blur-2xl"
           style={{
-            background: "linear-gradient(90deg, #ff80b5 0%, #9089fc 100%)",
+            background: "linear-gradient(90deg, #10DD8B 0%, #20564E 100%)",
             filter: "blur(16px)",
           }}
         />

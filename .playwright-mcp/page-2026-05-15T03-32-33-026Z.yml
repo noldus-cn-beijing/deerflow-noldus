@@ -1,0 +1,166 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e266]: 新对话 - DeerFlow
+  - generic [ref=e267]:
+    - generic [ref=e270]:
+      - generic [ref=e271]:
+        - generic [ref=e273]:
+          - generic [ref=e274]: Noldus
+          - button "Toggle Sidebar" [ref=e275] [cursor=pointer]:
+            - img
+            - generic [ref=e276]: Toggle Sidebar
+        - list [ref=e277]:
+          - listitem [ref=e278]:
+            - link "新对话" [ref=e279] [cursor=pointer]:
+              - /url: /workspace/chats/new
+              - img [ref=e280]
+              - generic [ref=e282]: 新对话
+      - generic [ref=e283]:
+        - list [ref=e285]:
+          - listitem [ref=e286]:
+            - link "对话" [ref=e287] [cursor=pointer]:
+              - /url: /workspace/chats
+              - img [ref=e288]
+              - generic [ref=e291]: 对话
+          - listitem [ref=e292]:
+            - link "智能体" [ref=e293] [cursor=pointer]:
+              - /url: /workspace/agents
+              - img [ref=e294]
+              - generic [ref=e297]: 智能体
+        - generic [ref=e384]:
+          - generic [ref=e385]: 最近的对话
+          - list [ref=e387]:
+            - listitem [ref=e389]:
+              - generic [ref=e390]:
+                - link "EPM Test Data Analysis" [ref=e462] [cursor=pointer]:
+                  - /url: /workspace/chats/bcec74e2-921b-42d4-8edc-02897549000f
+                - button "更多" [ref=e392]:
+                  - img [ref=e393]
+                  - generic [ref=e397]: 更多
+      - list [ref=e299]:
+        - listitem [ref=e300]:
+          - button "设置和更多" [ref=e301]:
+            - generic [ref=e302]:
+              - img [ref=e303]
+              - generic [ref=e306]: 设置和更多
+              - img [ref=e307]
+      - button "Toggle Sidebar" [ref=e310]
+    - main [ref=e311]:
+      - generic [ref=e312]:
+        - generic [ref=e315]:
+          - generic [ref=e316]:
+            - generic [ref=e465]: EPM Test Data Analysis
+            - generic [ref=e398]:
+              - button "105.2K" [ref=e523]:
+                - img [ref=e400]
+                - generic [ref=e405]: 105.2K
+              - button "导出" [ref=e406] [cursor=pointer]:
+                - img
+                - text: 导出
+          - main [ref=e317]:
+            - log [ref=e319]:
+              - generic [ref=e321]:
+                - generic [ref=e407]:
+                  - generic [ref=e408]:
+                    - generic [ref=e410]:
+                      - generic [ref=e411]:
+                        - img [ref=e412]
+                        - generic "epm-test-data.txt" [ref=e415]
+                      - generic [ref=e416]:
+                        - generic [ref=e417]: TXT
+                        - generic [ref=e418]: 1.6 MB
+                    - paragraph [ref=e421]: 请分析这个 EPM 单只数据
+                  - button [ref=e526] [cursor=pointer]:
+                    - img
+                - button "思考" [ref=e423] [cursor=pointer]:
+                  - generic [ref=e424]:
+                    - generic [ref=e425]:
+                      - generic [ref=e426]:
+                        - img
+                      - generic [ref=e428]: 思考
+                    - generic [ref=e429]:
+                      - img
+                - generic [ref=e467]:
+                  - paragraph [ref=e470]: EPM Test Data Analysis
+                  - generic [ref=e528]:
+                    - button "正确" [ref=e529]: ✅ 正确
+                    - button "需修正" [ref=e530]: ⚠️ 需修正
+                    - button "错误" [ref=e531]: ❌ 错误
+                  - button [ref=e534] [cursor=pointer]:
+                    - img
+                - generic [ref=e471]:
+                  - button "查看其他 4 个步骤" [ref=e535] [cursor=pointer]:
+                    - generic [ref=e536]:
+                      - generic [ref=e537]:
+                        - img
+                      - generic [ref=e539]: 查看其他 4 个步骤
+                  - generic [ref=e544]:
+                    - img [ref=e546]
+                    - generic [ref=e550]: ⚠️ 我需要先确认一件事...
+                - generic [ref=e551]:
+                  - generic [ref=e552]:
+                    - paragraph [ref=e553]: 🔀 单只动物数据，无对照组无法做统计推断
+                    - paragraph [ref=e554]: 目前只有 1 只受试对象（Subject 1, Drug 处理），没有对照组数据可以进行统计比较。请问您希望如何处理？
+                    - list [ref=e555]:
+                      - listitem [ref=e556]: 对该单只数据做描述性分析和可视化（计算各项指标 + 轨迹图 + 时间序列图）
+                      - listitem [ref=e557]: 您还有其他对照动物的数据需要一起上传分析
+                      - listitem [ref=e558]: 只生成轨迹热力图即可
+                  - group "选择一个选项" [ref=e559]:
+                    - button "1. 做描述性分析+可视化（指标+图表）" [ref=e560] [cursor=pointer]:
+                      - generic [ref=e561]: "1."
+                      - generic [ref=e562]: 做描述性分析+可视化（指标+图表）
+                    - button "2. 我还有对照组数据需要一起上传" [ref=e563] [cursor=pointer]:
+                      - generic [ref=e564]: "2."
+                      - generic [ref=e565]: 我还有对照组数据需要一起上传
+                    - button "3. 只生成轨迹热力图即可" [ref=e566] [cursor=pointer]:
+                      - generic [ref=e567]: "3."
+                      - generic [ref=e568]: 只生成轨迹热力图即可
+                    - paragraph [ref=e569]: 或在下方输入框自定义回复
+            - generic [ref=e324]:
+              - generic [ref=e325]:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - generic: To-dos
+                    - generic:
+                      - img
+                  - main:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - list
+              - generic [ref=e326]:
+                - generic [ref=e575]:
+                  - button "可以帮我计算开臂停留时间占比和进入次数吗？" [ref=e577] [cursor=pointer]
+                  - button "能生成这只动物的运动轨迹热力图吗？" [ref=e579] [cursor=pointer]
+                  - button "需要我补充对照组数据才能做统计检验吗？" [ref=e581] [cursor=pointer]
+                  - button "关闭" [ref=e583] [cursor=pointer]:
+                    - img
+                - group [ref=e328]:
+                  - textbox "今天我能为你做些什么？" [ref=e339]
+                  - group [ref=e340]:
+                    - generic [ref=e341]:
+                      - button [ref=e342] [cursor=pointer]:
+                        - img
+                      - button "全自动" [ref=e343] [cursor=pointer]:
+                        - generic [ref=e344]:
+                          - img
+                        - generic [ref=e345]: 全自动
+                    - generic [ref=e346]:
+                      - button "deepseek" [ref=e347] [cursor=pointer]:
+                        - generic [ref=e349]: deepseek
+                      - button "Submit" [ref=e350] [cursor=pointer]:
+                        - img
+        - separator
+        - generic [ref=e368]:
+          - generic:
+            - button [ref=e370] [cursor=pointer]:
+              - img
+            - generic [ref=e453]:
+              - img [ref=e455]
+              - generic [ref=e459]:
+                - heading "No artifact selected" [level=3] [ref=e460]
+                - paragraph [ref=e461]: Select an artifact to view its details
+  - region "Notifications alt+T"

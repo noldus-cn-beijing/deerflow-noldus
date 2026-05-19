@@ -1,0 +1,207 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - link "Noldus Insight" [ref=e5] [cursor=pointer]:
+      - /url: https://github.com/bytedance/deer-flow
+      - heading "Noldus Insight" [level=1] [ref=e6]
+    - navigation [ref=e7]:
+      - link "Docs" [ref=e8] [cursor=pointer]:
+        - /url: /en/docs
+      - link "Blog" [ref=e9] [cursor=pointer]:
+        - /url: /en/blog
+    - link "Star on GitHub" [ref=e11] [cursor=pointer]:
+      - /url: https://github.com/bytedance/deer-flow
+      - img
+      - text: Star on GitHub
+    - separator [ref=e12]
+  - main [ref=e13]:
+    - generic [ref=e18]:
+      - heading "Deep Research with Noldus Insight" [level=1] [ref=e19]:
+        - heading "Deep Research" [level=1] [ref=e21]:
+          - generic [ref=e22]:
+            - generic [ref=e23]: Deep Research
+            - text: Deep Research
+        - generic [ref=e24]: with Noldus Insight
+      - paragraph [ref=e25]:
+        - text: An open-source SuperAgent harness that researches, codes, and creates. With
+        - text: the help of sandboxes, memories, tools, skills and subagents, it handles
+        - text: different levels of tasks that could take minutes to hours.
+      - link "Get Started with 2.0" [ref=e26] [cursor=pointer]:
+        - /url: /workspace
+        - button "Get Started with 2.0" [ref=e27]:
+          - generic [ref=e28]: Get Started with 2.0
+          - img
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]: Case Studies
+        - generic [ref=e32]: See how DeerFlow is used in the wild
+      - main [ref=e33]:
+        - generic [ref=e34]:
+          - link "Forecast 2026 Agent Trends and Opportunities Create a webpage with a Deep Research report forecasting the agent technology trends and opportunities in 2026." [ref=e35] [cursor=pointer]:
+            - /url: /workspace/chats/7cfa5f8f-a2f8-47ad-acbd-da7137baf990?mock=true
+            - generic [ref=e40]:
+              - heading "Forecast 2026 Agent Trends and Opportunities" [level=3] [ref=e41]
+              - paragraph [ref=e42]: Create a webpage with a Deep Research report forecasting the agent technology trends and opportunities in 2026.
+          - link "Generate a Video Based On the Novel \"Pride and Prejudice\" Search the specific scene from the novel \"Pride and Prejudice\", then generate a video as well as a reference image based on the scenes." [ref=e43] [cursor=pointer]:
+            - /url: /workspace/chats/4f3e55ee-f853-43db-bfb3-7d1a411f03cb?mock=true
+            - generic [ref=e48]:
+              - heading "Generate a Video Based On the Novel \"Pride and Prejudice\"" [level=3] [ref=e49]
+              - paragraph [ref=e50]: Search the specific scene from the novel "Pride and Prejudice", then generate a video as well as a reference image based on the scenes.
+          - link "Doraemon Explains the MOE Architecture Generate a Doraemon comic strip explaining the MOE architecture to the teenagers who are interested in AI." [ref=e51] [cursor=pointer]:
+            - /url: /workspace/chats/21cfea46-34bd-4aa6-9e1f-3009452fbeb9?mock=true
+            - generic [ref=e56]:
+              - heading "Doraemon Explains the MOE Architecture" [level=3] [ref=e57]
+              - paragraph [ref=e58]: Generate a Doraemon comic strip explaining the MOE architecture to the teenagers who are interested in AI.
+          - link "An Exploratory Data Analysis of the Titanic Dataset Explore the Titanic dataset and identify the key factors that influenced survival rates with visualizations and insights." [ref=e59] [cursor=pointer]:
+            - /url: /workspace/chats/ad76c455-5bf9-4335-8517-fc03834ab828?mock=true
+            - generic [ref=e64]:
+              - heading "An Exploratory Data Analysis of the Titanic Dataset" [level=3] [ref=e65]
+              - paragraph [ref=e66]: Explore the Titanic dataset and identify the key factors that influenced survival rates with visualizations and insights.
+          - link "Watch Y Combinator's Video then Conduct a Deep Research Watch the given Y Combinator's YouTube video and conduct a deep research on the YC's tips for technical startup founders." [ref=e67] [cursor=pointer]:
+            - /url: /workspace/chats/d3e5adaf-084c-4dd5-9d29-94f1d6bccd98?mock=true
+            - generic [ref=e72]:
+              - heading "Watch Y Combinator's Video then Conduct a Deep Research" [level=3] [ref=e73]
+              - paragraph [ref=e74]: Watch the given Y Combinator's YouTube video and conduct a deep research on the YC's tips for technical startup founders.
+          - link "Collect and Summarize Dr. Fei Fei Li's Podcasts Collect all the podcast appearances of Dr. Fei Fei Li in the last 6 months, then summarize them into a comprehensive report." [ref=e75] [cursor=pointer]:
+            - /url: /workspace/chats/3823e443-4e2b-4679-b496-a9506eae462b?mock=true
+            - generic [ref=e80]:
+              - heading "Collect and Summarize Dr. Fei Fei Li's Podcasts" [level=3] [ref=e81]
+              - paragraph [ref=e82]: Collect all the podcast appearances of Dr. Fei Fei Li in the last 6 months, then summarize them into a comprehensive report.
+    - generic [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e85]: Agent Skills
+        - generic [ref=e87]:
+          - text: Agent Skills are loaded progressively — only what's needed, when it's needed.
+          - text: Extend DeerFlow with your own skill files, or use our built-in library.
+      - main [ref=e88]:
+        - generic [ref=e90]:
+          - button "Click to play" [ref=e92]:
+            - img [ref=e94]
+            - generic [ref=e96]: Click to play
+          - generic [ref=e97]:
+            - button [ref=e98]:
+              - img [ref=e99]
+            - generic [ref=e101]: Click to play
+          - generic [ref=e102]:
+            - generic [ref=e103]:
+              - generic [ref=e104]: /mnt/skills/
+              - generic [ref=e105]:
+                - generic [ref=e106]:
+                  - img [ref=e107]
+                  - generic [ref=e109]: deep-search
+                - generic [ref=e110]:
+                  - img [ref=e111]
+                  - generic [ref=e114]: SKILL.md
+                - generic [ref=e115]:
+                  - img [ref=e116]
+                  - generic [ref=e119]: biotech.md
+                - generic [ref=e120]:
+                  - img [ref=e121]
+                  - generic [ref=e124]: computer-science.md
+                - generic [ref=e125]:
+                  - img [ref=e126]
+                  - generic [ref=e129]: physics.md
+                - generic [ref=e130]:
+                  - img [ref=e131]
+                  - generic [ref=e133]: frontend-design
+                - generic [ref=e134]:
+                  - img [ref=e135]
+                  - generic [ref=e138]: SKILL.md
+                - generic [ref=e139]:
+                  - img [ref=e140]
+                  - generic [ref=e142]: deploy
+                - generic [ref=e143]:
+                  - img [ref=e144]
+                  - generic [ref=e147]: SKILL.md
+                - generic [ref=e148]:
+                  - img [ref=e149]
+                  - generic [ref=e151]: scripts
+                - generic [ref=e152]:
+                  - img [ref=e153]
+                  - generic [ref=e156]: deploy.sh
+            - generic [ref=e157]:
+              - generic [ref=e161]: DeerFlow Agent
+              - generic [ref=e164]: Ask DeerFlow anything...
+    - generic [ref=e165]:
+      - generic [ref=e166]:
+        - generic [ref=e167]: Agent Runtime Environment
+        - paragraph [ref=e169]: We give DeerFlow a "computer", which can execute commands, manage files, and run long tasks — all in a secure Docker-based sandbox
+      - main [ref=e170]:
+        - generic [ref=e171]:
+          - code [ref=e180]:
+            - generic [ref=e181]: pygame==2.5.0
+            - generic [ref=e182]: ✔ Installed pygame
+            - generic [ref=e183]: ✔ Written 156 lines
+            - generic [ref=e184]: ✔ All sprites loaded
+            - generic [ref=e185]: ✔ Physics engine OK
+            - generic [ref=e186]: ✔ 60 FPS stable
+            - generic [ref=e187]: Downloaded 12.4 MB
+          - generic [ref=e188]:
+            - generic [ref=e189]:
+              - paragraph [ref=e190]: Open-source
+              - heading "AIO Sandbox" [level=2] [ref=e191]:
+                - link "AIO Sandbox" [ref=e192] [cursor=pointer]:
+                  - /url: https://github.com/agent-infra/sandbox
+            - paragraph [ref=e194]:
+              - text: We recommend using
+              - link "All-in-One Sandbox" [ref=e195] [cursor=pointer]:
+                - /url: https://github.com/agent-infra/sandbox
+              - text: that combines Browser, Shell, File, MCP and VSCode Server in a single Docker container.
+            - generic [ref=e196]:
+              - generic [ref=e197]: Isolated
+              - generic [ref=e198]: Safe
+              - generic [ref=e199]: Persistent
+              - generic [ref=e200]: Mountable FS
+              - generic [ref=e201]: Long-running
+    - generic [ref=e202]:
+      - generic [ref=e203]:
+        - generic [ref=e204]: Whats New in DeerFlow 2.0
+        - generic [ref=e205]: DeerFlow is now evolving from a Deep Research agent into a full-stack Super Agent
+      - main [ref=e206]:
+        - generic [ref=e208]:
+          - generic [ref=e209]:
+            - generic [ref=e211]: Context Engineering
+            - generic [ref=e212]:
+              - heading "Long/Short-term Memory" [level=2] [ref=e213]
+              - generic [ref=e214]: Now the agent can better understand you
+          - generic [ref=e215]:
+            - generic [ref=e217]: Long Task Running
+            - generic [ref=e218]:
+              - heading "Planning and Sub-tasking" [level=2] [ref=e219]
+              - generic [ref=e220]: Plans ahead, reasons through complexity, then executes sequentially or in parallel
+          - generic [ref=e221]:
+            - generic [ref=e223]: Extensible
+            - generic [ref=e224]:
+              - heading "Skills and Tools" [level=2] [ref=e225]
+              - generic [ref=e226]: Plug, play, or even swap built-in tools. Build the agent you want.
+          - generic [ref=e227]:
+            - generic [ref=e229]: Persistent
+            - generic [ref=e230]:
+              - heading "Sandbox with File System" [level=2] [ref=e231]
+              - generic [ref=e232]: Read, write, run — like a real computer
+          - generic [ref=e233]:
+            - generic [ref=e235]: Flexible
+            - generic [ref=e236]:
+              - heading "Multi-Model Support" [level=2] [ref=e237]
+              - generic [ref=e238]: Doubao, DeepSeek, OpenAI, Gemini, etc.
+          - generic [ref=e239]:
+            - generic [ref=e241]: Free
+            - generic [ref=e242]:
+              - heading "Open Source" [level=2] [ref=e243]
+              - generic [ref=e244]: MIT License, self-hosted, full control
+    - generic [ref=e245]:
+      - generic [ref=e246]:
+        - generic [ref=e248]:
+          - generic [ref=e249]: Join the Community
+          - text: Join the Community
+        - generic [ref=e250]: Contribute brilliant ideas to shape the future of DeerFlow. Collaborate, innovate, and make impacts.
+      - main [ref=e251]:
+        - link "Contribute Now" [ref=e253] [cursor=pointer]:
+          - /url: https://github.com/bytedance/deer-flow
+          - img
+          - text: Contribute Now
+  - contentinfo [ref=e254]:
+    - separator [ref=e255]
+    - paragraph [ref=e257]: "\"Originated from Open Source, give back to Open Source.\""
+    - generic [ref=e258]:
+      - paragraph [ref=e259]: Licensed under MIT License
+      - paragraph [ref=e260]: © 2026 Noldus

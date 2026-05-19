@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   threadId: string;
+  runId: string;
   messageId: string;
   existingVerdict?: FeedbackVerdict;
   className?: string;
@@ -23,6 +24,7 @@ function labelOf(v: FeedbackVerdict): string {
 
 export function FeedbackButtons({
   threadId,
+  runId,
   messageId,
   existingVerdict,
   className,
@@ -34,6 +36,7 @@ export function FeedbackButtons({
     useState<FeedbackVerdict | null>(null);
   const [revisedText, setRevisedText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (verdict) {
     return (
@@ -45,13 +48,23 @@ export function FeedbackButtons({
     );
   }
 
+  const showError = (msg: string) => {
+    setError(msg);
+    setTimeout(() => setError(null), 3000);
+  };
+
   const handleCorrect = async () => {
     setSubmitting(true);
+    setError(null);
     try {
-      await submitFeedback(threadId, { message_id: messageId, verdict: "correct" });
+      await submitFeedback(threadId, runId, {
+        message_id: messageId,
+        verdict: "correct",
+      });
       setVerdict("correct");
-    } catch {
-      // silently ignore — feedback failure must not block the expert
+    } catch (e) {
+      console.error("Feedback submission failed:", e);
+      showError("提交失败，请重试");
     } finally {
       setSubmitting(false);
     }
@@ -65,16 +78,18 @@ export function FeedbackButtons({
   const handleSubmitRevision = async () => {
     if (!expandedVerdict || !revisedText.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
-      await submitFeedback(threadId, {
+      await submitFeedback(threadId, runId, {
         message_id: messageId,
         verdict: expandedVerdict,
         revised_text: revisedText.trim(),
       });
       setVerdict(expandedVerdict);
       setExpandedVerdict(null);
-    } catch {
-      // silently ignore
+    } catch (e) {
+      console.error("Feedback submission failed:", e);
+      showError("提交失败，请重试");
     } finally {
       setSubmitting(false);
     }
@@ -141,6 +156,9 @@ export function FeedbackButtons({
             </button>
           </div>
         </div>
+      )}
+      {error && (
+        <div className="text-xs text-destructive">{error}</div>
       )}
     </div>
   );

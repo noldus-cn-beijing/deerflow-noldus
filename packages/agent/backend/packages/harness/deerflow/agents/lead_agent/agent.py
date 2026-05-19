@@ -18,12 +18,26 @@ from deerflow.agents.middlewares.tool_error_handling_middleware import build_lea
 from deerflow.agents.middlewares.training_data_middleware import TrainingDataMiddleware
 from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from deerflow.agents.thread_state import ThreadState
-from deerflow.config.agents_config import load_agent_config
+from deerflow.config.agents_config import load_agent_config, validate_agent_name
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
+from deerflow.runtime.user_context import set_current_user
 
 logger = logging.getLogger(__name__)
+
+
+class _AuthUser:
+    """Minimal duck-typed user satisfying the CurrentUser Protocol.
+
+    Used to bridge LangGraph's `langgraph_auth_user_id` (a plain str) into
+    deerflow's user_context, which expects an object with an `.id` attribute.
+    """
+
+    __slots__ = ("id",)
+
+    def __init__(self, user_id: str) -> None:
+        self.id = user_id
 
 
 def _resolve_model_name(requested_model_name: str | None = None) -> str:
@@ -79,6 +93,11 @@ def _create_summarization_middleware() -> ArchivingSummarizationMiddleware | Non
 
     if config.summary_prompt is not None:
         kwargs["summary_prompt"] = config.summary_prompt
+
+    kwargs["preserve_recent_skill_count"] = config.preserve_recent_skill_count
+    kwargs["preserve_recent_skill_tokens"] = config.preserve_recent_skill_tokens
+    kwargs["preserve_recent_skill_tokens_per_skill"] = config.preserve_recent_skill_tokens_per_skill
+    kwargs["skills_container_path"] = get_app_config().skills.container_path
 
     return ArchivingSummarizationMiddleware(**kwargs)
 
@@ -208,6 +227,18 @@ Being proactive with task management demonstrates thoroughness and ensures all r
 # ViewImageMiddleware should be before ClarificationMiddleware to inject image details before LLM
 # ToolErrorHandlingMiddleware should be before ClarificationMiddleware to convert tool exceptions to ToolMessages
 # ClarificationMiddleware should be last to intercept clarification requests after model calls
+# Lead agent 不该有 bash/write_file/str_replace —— 所有 ethoinsight CLI
+# 调用走 prep_metric_plan 工具，所有写文件操作走 code-executor 子代理。
+# 这是 P0 修复：lead 无 bash → 无 quoting retry → 无 recursion 100 耗尽。
+# (subagent 通过 SubagentConfig.tools 显式声明 bash，不受此过滤影响)
+_LEAD_EXCLUDED_TOOLS: frozenset[str] = frozenset({"bash", "write_file", "str_replace"})
+
+
+def _filter_lead_tools(tools: list, excluded: frozenset[str]) -> list:
+    """Drop tools whose .name is in excluded set. Pure function — single source of truth for the lead exclusion policy."""
+    return [t for t in tools if t.name not in excluded]
+
+
 def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None):
     """Build middleware chain based on runtime configuration.
 
@@ -279,6 +310,67 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     # renders it in a collapsible Reasoning block rather than the main bubble.
     middlewares.append(ThinkTagMiddleware())
 
+    # Ev19TemplateGuardrail — block task(code-executor) when ev19_template is unset
+    from deerflow.config.guardrails_config import get_guardrails_config
+
+    guardrails_cfg = get_guardrails_config()
+    if guardrails_cfg.enabled:
+        from deerflow.guardrails.ev19_template_provider import (
+            Ev19TemplateGuardrailProvider,
+            Ev19WorkspaceBridgeMiddleware,
+        )
+        from deerflow.guardrails.middleware import GuardrailMiddleware
+
+        provider = Ev19TemplateGuardrailProvider()
+        middlewares.append(Ev19WorkspaceBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
+
+        # W17: Intent classification — block non-read_file calls before lead declares [intent]
+        from deerflow.guardrails.intent_classification_provider import (
+            IntentBridgeMiddleware,
+            IntentClassificationGuardrailProvider,
+        )
+
+        middlewares.append(IntentBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(
+            provider=IntentClassificationGuardrailProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
+        # W19 (relocated): Inject {{handoff://X}} placeholders into task() prompts
+        # BEFORE the W18 guardrail evaluates them. Without this middleware, lead
+        # tasks that omit the placeholder are unconditionally denied by the W18
+        # guardrail because task_tool's own injection runs strictly after the
+        # guardrail (root cause of 2026-05-19 dogfood thread 51b00ac8).
+        # Must be appended BEFORE W18 (first-appended = outermost in wrap_tool_call).
+        from deerflow.agents.middlewares.handoff_placeholder_injection_middleware import (
+            HandoffPlaceholderInjectionMiddleware,
+        )
+
+        middlewares.append(HandoffPlaceholderInjectionMiddleware())
+
+        # W18: Task handoff authorization — 校验 task(subagent_type=X) prompt 含必需 {{handoff://X}} 占位符
+        from deerflow.guardrails.task_handoff_authorization_provider import (
+            TaskHandoffAuthorizationProvider,
+        )
+
+        middlewares.append(GuardrailMiddleware(
+            provider=TaskHandoffAuthorizationProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
+    # StepwiseGateMiddleware — in manual / data-flywheel mode, pause the
+    # graph after each subagent completion so the user can leave feedback
+    # before the lead dispatches the next subagent. Uses LangGraph's native
+    # Command(goto=END) — same mechanism as ClarificationMiddleware. Only
+    # attaches when workflow_mode == "manual" (the "数据飞轮" UI mode); auto
+    # mode behavior is unchanged.
+    workflow_mode_value = config.get("configurable", {}).get("workflow_mode", "auto")
+    if workflow_mode_value == "manual":
+        from deerflow.agents.middlewares.stepwise_gate_middleware import StepwiseGateMiddleware
+
+        middlewares.append(StepwiseGateMiddleware(enabled=True))
+
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
@@ -302,6 +394,17 @@ def make_lead_agent(config: RunnableConfig):
 
     cfg = config.get("configurable", {})
 
+    # Copy LangGraph's auth user_id into the deerflow ContextVar.
+    # `make_lead_agent` runs on the bg-loop worker task that subsequently
+    # invokes the middlewares (UploadsMiddleware, ThreadDataMiddleware, …),
+    # so a ContextVar set here is task-local and visible to every middleware
+    # in this run. It cannot be set in `authenticate()` / `@auth.on` because
+    # those run in the request-handling thread, where ContextVars do not
+    # propagate to the bg-loop asyncio task.
+    auth_user_id = cfg.get("langgraph_auth_user_id")
+    if auth_user_id:
+        set_current_user(_AuthUser(str(auth_user_id)))
+
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
@@ -310,7 +413,7 @@ def make_lead_agent(config: RunnableConfig):
     subagent_enabled = cfg.get("subagent_enabled", True)
     max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
     is_bootstrap = cfg.get("is_bootstrap", False)
-    agent_name = cfg.get("agent_name")
+    agent_name = validate_agent_name(cfg.get("agent_name"))
 
     agent_config = load_agent_config(agent_name) if not is_bootstrap else None
     # Custom agent model from agent config (if any), or None to let _resolve_model_name pick the default
@@ -376,9 +479,18 @@ def make_lead_agent(config: RunnableConfig):
         declared_groups = [g.name for g in app_config.tool_groups] if app_config.tool_groups else None
         lead_tool_groups = declared_groups if declared_groups else None
 
+    all_lead_tools = get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled)
+    filtered_lead_tools = _filter_lead_tools(all_lead_tools, _LEAD_EXCLUDED_TOOLS)
+    logger.info(
+        "Lead tools after filtering: %d→%d (excluded: %s)",
+        len(all_lead_tools),
+        len(filtered_lead_tools),
+        sorted(_LEAD_EXCLUDED_TOOLS),
+    )
+
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
-        tools=get_available_tools(model_name=model_name, groups=lead_tool_groups, subagent_enabled=subagent_enabled),
+        tools=filtered_lead_tools,
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None

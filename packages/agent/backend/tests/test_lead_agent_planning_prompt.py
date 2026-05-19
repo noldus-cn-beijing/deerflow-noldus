@@ -12,13 +12,14 @@ def _has_noldus_agents() -> bool:
 
 
 def test_prompt_contains_planning_directive_when_noldus_agents_present():
-    """Prompt should mention ethoinsight-planning skill when Noldus subagents are registered."""
+    """Prompt should mention ethoinsight-lead-interaction skill when Noldus subagents are registered.
+    W16(2026-05-18): planning 职责已合并到 ethoinsight-lead-interaction skill。"""
     if not _has_noldus_agents():
         pytest.skip("Noldus subagents not registered in this environment")
 
     prompt = apply_prompt_template(subagent_enabled=True)
 
-    assert "ethoinsight-planning" in prompt, "Prompt must reference the planning skill"
+    assert "ethoinsight-lead-interaction" in prompt, "Prompt must reference the lead-interaction skill"
     assert "规划先于派遣" in prompt, "Prompt must enforce planning before delegation"
 
 

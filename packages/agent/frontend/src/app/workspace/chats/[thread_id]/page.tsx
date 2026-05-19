@@ -43,7 +43,7 @@ export default function ChatPage() {
 
   const { showNotification } = useNotification();
 
-  const [thread, sendMessage, isUploading] = useThreadStream({
+  const [thread, sendMessage, isUploading, messageRunIds] = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: settings.context,
     isMock,
@@ -72,7 +72,11 @@ export default function ChatPage() {
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
-      void sendMessage(threadId, message);
+      const sendPromise = sendMessage(threadId, message);
+      if (message.files.length > 0) {
+        return sendPromise;
+      }
+      void sendPromise;
     },
     [sendMessage, threadId],
   );
@@ -91,7 +95,7 @@ export default function ChatPage() {
         <div className="relative flex size-full min-h-0 justify-between">
           <header
             className={cn(
-              "absolute top-0 right-0 left-0 z-30 flex h-12 shrink-0 items-center px-4",
+              "absolute top-0 right-0 left-0 z-30 flex h-14 shrink-0 items-center px-4",
               isNewThread
                 ? "bg-background/0 backdrop-blur-none"
                 : "bg-background/80 shadow-xs backdrop-blur",
@@ -112,13 +116,14 @@ export default function ChatPage() {
                 className={cn("size-full", !isNewThread && "pt-10")}
                 threadId={threadId}
                 thread={thread}
+                messageRunIds={messageRunIds}
                 paddingBottom={messageListPaddingBottom}
                 onSelectClarificationOption={(optionText) => {
                   void sendMessage(threadId, { text: optionText, files: [] });
                 }}
               />
             </div>
-            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">
+            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4 pb-4">
               <div
                 className={cn(
                   "relative w-full",
@@ -141,7 +146,7 @@ export default function ChatPage() {
                 </div>
                 {mounted ? (
                   <InputBox
-                    className={cn("bg-background/5 w-full -translate-y-4")}
+                    className={cn("w-full")}
                     isNewThread={isNewThread}
                     threadId={threadId}
                     autoFocus={isNewThread}
@@ -171,7 +176,7 @@ export default function ChatPage() {
                   <div
                     aria-hidden="true"
                     className={cn(
-                      "bg-background/5 h-32 w-full -translate-y-4 rounded-2xl border",
+                      "bg-card/90 glass-card shadow-float h-32 w-full rounded-3xl",
                     )}
                   />
                 )}

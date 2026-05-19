@@ -1,14 +1,24 @@
 ---
 name: ethoinsight-charts
 description: >
-  Chart selection guide for behavioral data analysis. Lists all available
-  ethoinsight chart types with usage scenarios, data requirements, and
-  selection rules. Use when deciding which chart to generate for behavioral data.
-version: 1.0.0
+  服务对象:**chart-maker subagent**。图种 → 适用场景对照表,chart-maker
+  决策选哪些图时的查询源。Lead 不读本 skill — capability-exposure 后
+  "用户语义 → 图种" 归 chart-maker,lead 不持图选择 know-how。
+version: 2.0.0
 author: noldus-insight
 ---
 
-# EthoInsight 图表选择指南
+# EthoInsight 图表指南（chart-maker 用）
+
+**变更说明 (2026-05-18 W9)**:
+- 服务对象从"lead agent"变为"chart-maker subagent"
+- lead 不再读本 skill 决策图种
+- "用户语义 → 图种" 决策树移到 `ethoinsight-chart-maker` skill (W21)
+- 本 skill 保留作为图种适用性查询源 (chart-maker 在 W21 skill 决策时 reference 这里)
+
+## 图种 → 适用场景对照表
+
+(保留现有内容)
 
 ethoinsight 库提供 8 种图表，通过 `charts.<函数名>()` 调用，输出 300 DPI PNG。
 

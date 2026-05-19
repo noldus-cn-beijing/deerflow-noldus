@@ -8,8 +8,8 @@ import { I18nProvider } from "@/core/i18n/context";
 import { detectLocaleServer } from "@/core/i18n/server";
 
 export const metadata: Metadata = {
-  title: "Noldus",
-  description: "Noldus insight agent based on DeerFlow2.0.",
+  title: "EthoInsight",
+  description: "EthoInsight — 面向行为学研究员的 AI 分析助手",
 };
 
 export default async function RootLayout({

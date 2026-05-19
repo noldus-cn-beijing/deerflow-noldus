@@ -12,7 +12,9 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
 
 <contract>
 输入:
-  - 场景 A（追问）: lead agent 提供问题 + {{shared://code_summary.json}} 引用（如有分析结果）
+  - 场景 A（追问）: lead agent 提供问题 + 占位符授权的 handoff 文件
+    （lead 派遣时通过 {{handoff://code_executor}} 等占位符传递；
+    subagent 看到的是已解析的真实路径 /mnt/user-data/workspace/handoff_*.json）
   - 场景 B（纯知识）: lead agent 只提供问题
 
 输出:
@@ -29,8 +31,9 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
 
 ### 场景 A：基于已有分析结果的追问
 用户之前已经完成了数据分析，现在对结果有疑问。
-- read_file prompt 中引用的 /mnt/shared/code_summary.json
-- 结合领域知识解释结果
+- read_file lead 在 prompt 中授权的 handoff JSON 文件（路径已由占位符解析），
+  结合 handoff 中的具体数据 + 领域知识回答
+- 不要尝试 read_file 其他 handoff 文件——未经占位符授权的读取会被 Guardrail 拦截
 - 例如："这个 p 值为什么不显著"、"NND 偏高说明什么"
 
 ### 场景 B：纯领域知识问题
@@ -63,9 +66,26 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
         "present_files",         # subagent standard
         "bash",                  # code execution not in scope
         "str_replace",           # file editing not in scope
-        "get_analysis_template", # analysis not in scope
     ],
     model="inherit",
     max_turns=6,
     timeout_seconds=300,
+    when_to_use=(
+        "适合:\n"
+        "- 用户问范式 / 术语 / 方法论概念问题(QA_KNOWLEDGE)\n"
+        "- 已有分析结果,用户追问'为什么 p 不显著' / 'NND 偏高说明什么'(QA_FACT)\n"
+        "不适合:\n"
+        "- 用户要重新算指标 / 出新报告(派对应 subagent)"
+    ),
+    input_contract=(
+        "派遣 prompt 模板:\n"
+        "  QA_KNOWLEDGE: '用户问题: <原话>'\n"
+        "  QA_FACT: '用户问题: <原话>。相关数据见 upstream handoff 文件。'"
+    ),
+    output_contract=(
+        "- 简单问题:直接在最终 AIMessage 回答\n"
+        "- 深度问题:write_file /mnt/user-data/workspace/knowledge_response.md + 摘要\n"
+        "- 不强制 [gate_signals] 块(QA 不进入 gate 决策路径)"
+    ),
+    required_upstream_handoffs=[],
 )

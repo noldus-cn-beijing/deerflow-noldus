@@ -1,6 +1,5 @@
 """Tests for ethoinsight.parse using real EthoVision demo data."""
 
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -17,11 +16,13 @@ O_MAZE_DIR = DEMO_BASE / "O迷宫"
 NOVEL_OBJECT_DIR = DEMO_BASE / "新物体识别"
 Y_MAZE_DIR = DEMO_BASE / "Y迷宫"
 
+
 # Find trajectory files (start with "轨迹-")
 def _find_trajectory_files(directory: Path) -> list[str]:
     if not directory.exists():
         return []
     return sorted(str(f) for f in directory.glob("轨迹-*.txt"))
+
 
 def _find_any_txt(directory: Path) -> list[str]:
     if not directory.exists():
@@ -32,6 +33,7 @@ def _find_any_txt(directory: Path) -> list[str]:
 # ============================================================================
 # detect_ethovision
 # ============================================================================
+
 
 class TestDetectEthovision:
     def test_valid_trajectory_file(self):
@@ -60,6 +62,7 @@ class TestDetectEthovision:
 # parse_header
 # ============================================================================
 
+
 class TestParseHeader:
     def test_zebrafish_header(self):
         files = _find_trajectory_files(ZEBRAFISH_DIR)
@@ -67,7 +70,10 @@ class TestParseHeader:
         header = parse.parse_header(files[0])
 
         assert header["header_lines"] > 0
-        assert "shoaling" in header["experiment"].lower() or header["paradigm"] == "shoaling"
+        assert (
+            "shoaling" in header["experiment"].lower()
+            or header["paradigm"] == "shoaling"
+        )
         assert header["paradigm"] == "shoaling"
         assert header["subject"] != ""
         assert len(header["columns"]) > 0
@@ -113,12 +119,15 @@ class TestParseHeader:
     def test_raw_metadata(self):
         files = _find_trajectory_files(ZEBRAFISH_DIR)
         header = parse.parse_header(files[0])
-        assert "实验" in header["raw_metadata"] or "Experiment" in header["raw_metadata"]
+        assert (
+            "实验" in header["raw_metadata"] or "Experiment" in header["raw_metadata"]
+        )
 
 
 # ============================================================================
 # parse_trajectory
 # ============================================================================
+
 
 class TestParseTrajectory:
     def test_zebrafish_trajectory(self):
@@ -140,8 +149,9 @@ class TestParseTrajectory:
         for col in df.columns:
             if df[col].dtype == object:
                 continue
-            assert not df[col].astype(str).str.contains("^-$").any(), \
+            assert not df[col].astype(str).str.contains("^-$").any(), (
                 f"Column {col} still has '-' values"
+            )
 
         # Metadata in attrs
         assert "subject" in df.attrs
@@ -182,6 +192,7 @@ class TestParseTrajectory:
 # ============================================================================
 # parse_batch
 # ============================================================================
+
 
 class TestParseBatch:
     def test_zebrafish_batch(self):
@@ -228,6 +239,7 @@ class TestParseBatch:
 # get_summary
 # ============================================================================
 
+
 class TestGetSummary:
     def test_summary_content(self):
         files = _find_trajectory_files(ZEBRAFISH_DIR)[:5]  # Use subset for speed
@@ -255,6 +267,7 @@ class TestGetSummary:
 # ============================================================================
 # utils: normalize_column_name & detect_paradigm
 # ============================================================================
+
 
 class TestNormalizeColumnName:
     def test_exact_match(self):
@@ -307,7 +320,10 @@ class TestDetectParadigm:
         assert detect_paradigm("ethoInsightDemo-oMaze") == "o_maze"
 
     def test_novel_object(self):
-        assert detect_paradigm("Novel Object Recognition test with Deep Learning XT180") == "novel_object"
+        assert (
+            detect_paradigm("Novel Object Recognition test with Deep Learning XT180")
+            == "novel_object"
+        )
 
     def test_y_maze(self):
         assert detect_paradigm("安琥医大Y迷宫") == "y_maze"
@@ -320,3 +336,39 @@ class TestDetectParadigm:
 
     def test_empty(self):
         assert detect_paradigm("") is None
+
+
+# ============================================================================
+# infer_groups_from_result_block — 2026-05-13 同事反馈 Q3: 自动分组重写
+# ============================================================================
+
+
+def test_parse_groups_from_result_block_name():
+    from ethoinsight.parse._core import infer_groups_from_result_block
+
+    result = infer_groups_from_result_block(
+        subjects=[
+            {"name": "A1", "result_block_name": "Drug"},
+            {"name": "A2", "result_block_name": "Drug"},
+            {"name": "A3", "result_block_name": "Saline"},
+            {"name": "A4", "result_block_name": "Saline"},
+        ]
+    )
+    assert result == {"Drug": ["A1", "A2"], "Saline": ["A3", "A4"]}
+
+    result_default = infer_groups_from_result_block(
+        subjects=[
+            {"name": "A1", "result_block_name": "Result 1"},
+            {"name": "A2", "result_block_name": "Result 1"},
+        ]
+    )
+    assert result_default is None
+
+
+def test_parse_groups_handles_missing_field():
+    from ethoinsight.parse._core import infer_groups_from_result_block
+
+    result = infer_groups_from_result_block(
+        subjects=[{"name": "A1"}, {"name": "A2"}],
+    )
+    assert result is None

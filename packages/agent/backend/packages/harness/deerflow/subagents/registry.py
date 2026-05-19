@@ -39,7 +39,7 @@ def _build_custom_subagent_config(name: str) -> SubagentConfig | None:
     )
 
 
-def get_subagent_config(name: str) -> SubagentConfig | None:
+def get_subagent_config(name: str, *, app_config=None) -> SubagentConfig | None:
     """Get a subagent configuration by name, with config.yaml overrides applied.
 
     Resolution order (mirrors Codex's config layering):
@@ -49,6 +49,9 @@ def get_subagent_config(name: str) -> SubagentConfig | None:
 
     Args:
         name: The name of the subagent.
+        app_config: Reserved for upstream parity (callers may pass a resolved
+            AppConfig). Ignored locally — config.yaml is loaded via the
+            existing ``get_subagents_app_config()`` global cache.
 
     Returns:
         SubagentConfig if found (with any config.yaml overrides applied), None otherwise.
@@ -143,8 +146,12 @@ def get_subagent_names() -> list[str]:
     return names
 
 
-def get_available_subagent_names() -> list[str]:
+def get_available_subagent_names(*, app_config=None) -> list[str]:
     """Get subagent names that should be exposed to the active runtime.
+
+    Args:
+        app_config: Reserved for upstream parity. Ignored locally — host bash
+            availability and config.yaml are resolved through the global cache.
 
     Returns:
         List of subagent names visible to the current sandbox configuration.

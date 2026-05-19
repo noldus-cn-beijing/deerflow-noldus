@@ -74,17 +74,13 @@ export function CaseStudySection({ className }: { className?: string }) {
                 )}
               >
                 <div
-                  className="flex w-full flex-col p-4"
-                  style={{
-                    background:
-                      "linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 1) 100%)",
-                  }}
+                  className="flex w-full flex-col p-4 bg-background/90"
                 >
                   <div className="flex flex-col gap-2">
-                    <h3 className="flex h-14 items-center text-xl font-bold text-shadow-black">
+                    <h3 className="flex h-14 items-center text-xl font-bold text-foreground">
                       {caseStudy.title}
                     </h3>
-                    <p className="box-shadow-black overflow-hidden text-sm text-white/85 text-shadow-black">
+                    <p className="overflow-hidden text-sm text-muted-foreground">
                       {caseStudy.description}
                     </p>
                   </div>

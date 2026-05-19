@@ -1,5 +1,10 @@
 # EthoInsight — 行为学洞察的 AI Agent 架构
 
+> ⚠️ **2026-04-29 注意**：本文档下方"数据流水线详解"中范式表示为单字段 `paradigm=shoaling`。
+> 实际正在迁移到 EV19 模板 + 学术范式双字段（`ev19_template` + `paradigm`）。
+> 详见 [docs/plans/2026-04-29-ev19-template-paradigm-design.md](plans/2026-04-29-ev19-template-paradigm-design.md)。
+> 流水线本身不变，只是 Gate 1（任务规划之前）的范式确认机制改造。
+
 ## 上层：价值视角（给非技术人员看）
 
 > **一句话**：研究员上传 EthoVision XT 导出的轨迹数据，AI 自动完成统计分析、专业解读、科学报告撰写。从数据到论文级报告，全程无需写代码。
@@ -68,7 +73,7 @@ graph TB
     end
 
     subgraph Subagents["专业子代理"]
-        CE["code-executor<br/>━━━━━━━━━━━━<br/>ethoinsight 库<br/>run_paradigm_analysis<br/>统计检验 + 图表生成<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight-analysis"]
+        CE["code-executor<br/>━━━━━━━━━━━━<br/>ethoinsight 库<br/>run_paradigm_analysis<br/>统计检验 + 图表生成<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight-code"]
         DA["data-analyst<br/>━━━━━━━━━━━━<br/>解读统计结果<br/>应用领域知识<br/>发现数据洞察<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight"]
         RW["report-writer<br/>━━━━━━━━━━━━<br/>APA 格式报告<br/>Results + Discussion<br/>文献引用<br/>━━━━━━━━━━━━<br/>Skill: ethoinsight"]
         KA["knowledge-assistant<br/>━━━━━━━━━━━━<br/>范式/术语问答<br/>追问已有结果<br/>━━━━━━━━━━━━<br/>noldus-kb MCP"]
@@ -80,7 +85,7 @@ graph TB
     end
 
     subgraph Knowledge["知识层"]
-        Skills["Skills (YAML)<br/>ethoinsight<br/>ethoinsight-analysis<br/>ethoinsight-charts"]
+        Skills["Skills (YAML)<br/>ethoinsight<br/>ethoinsight-code<br/>ethoinsight-charts"]
         KB["noldus-kb (MCP)<br/>范式指南 / 术语库<br/>方法论参考"]
     end
 

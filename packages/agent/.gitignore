@@ -56,3 +56,6 @@ config.yaml.bak
 .playwright-mcp
 .gstack/
 .worktrees
+
+# EthoVision template data
+demodata/

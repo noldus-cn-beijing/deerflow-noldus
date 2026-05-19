@@ -25,6 +25,7 @@ Thumbs.db
 
 # Data
 demo-data/
+demodata/
 *.parquet
 
 # DeerFlow runtime
@@ -38,3 +39,13 @@ packages/agent/config.yaml
 docs/e2e/*
 !docs/e2e/README.md
 !docs/e2e/.gitkeep
+.gstack/
+
+# Backup thread data (training data snapshots, not source)
+.deer-flow.bak*
+
+# Generated temp files
+packages/agent/temp/
+
+# Git worktrees (temporary, should never be committed)
+.claude/worktrees/

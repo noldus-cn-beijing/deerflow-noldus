@@ -1,4 +1,4 @@
-﻿import {
+import {
   CompassIcon,
   GraduationCapIcon,
   ImageIcon,
@@ -242,6 +242,7 @@ export const zhCN: Translations = {
     untitled: "未命名",
   },
 
+
   // Tool calls
   toolCalls: {
     moreSteps: (count: number) => `查看其他 ${count} 个步骤`,
@@ -249,12 +250,12 @@ export const zhCN: Translations = {
     executeCommand: "执行命令",
     presentFiles: "展示文件",
     needYourHelp: "需要你的协助",
-    useTool: (toolName: string) => `使用 “${toolName}” 工具`,
-    searchFor: (query: string) => `搜索 “${query}”`,
+    useTool: (toolName: string) => `使用 "${toolName}" 工具`,
+    searchFor: (query: string) => `搜索 "${query}"`,
     searchForRelatedInfo: "搜索相关信息",
     searchForRelatedImages: "搜索相关图片",
-    searchForRelatedImagesFor: (query: string) => `搜索相关图片 “${query}”`,
-    searchOnWebFor: (query: string) => `在网络上搜索 “${query}”`,
+    searchForRelatedImagesFor: (query: string) => `搜索相关图片 "${query}"`,
+    searchOnWebFor: (query: string) => `在网络上搜索 "${query}"`,
     viewWebPage: "查看网页",
     listFolder: "列出文件夹",
     readFile: "读取文件",
@@ -262,6 +263,22 @@ export const zhCN: Translations = {
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
     skillInstallTooltip: "安装技能并使其可在 DeerFlow 中使用",
+    stageBroadcast: {
+      dispatchSubagent: (subagentType: string) => {
+        const labels: Record<string, string> = {
+          "code-executor": "🧮 正在计算指标，预计 30-60 秒...",
+          "data-analyst": "🔬 指标已完成，正在请专家解读，预计 1-2 分钟...",
+          "report-writer": "📝 解读已完成，正在生成中文研究报告...",
+          "knowledge-assistant": "📚 正在查阅领域知识...",
+        };
+        return labels[subagentType] ?? `🛠 正在派遣 ${subagentType}...`;
+      },
+      parseHeaders: "📂 正在解析 EthoVision 文件结构...",
+      resolveCatalog: "📋 正在生成指标计划...",
+      askClarification: "⚠️ 我需要先确认一件事...",
+      runScript: (scriptName: string) => `⚙️ 正在运行 ${scriptName}...`,
+      genericBash: "💻 正在执行命令...",
+    },
   },
 
   uploads: {
@@ -310,6 +327,7 @@ export const zhCN: Translations = {
     title: "设置",
     description: "根据你的偏好调整 DeerFlow 的界面和行为。",
     sections: {
+      account: "账户",
       appearance: "外观",
       memory: "记忆",
       tools: "工具",
@@ -393,6 +411,23 @@ export const zhCN: Translations = {
           view: "查看",
         },
       },
+    },
+    account: {
+      profileTitle: "个人资料",
+      email: "邮箱",
+      role: "角色",
+      changePasswordTitle: "修改密码",
+      changePasswordDescription: "更新你的账户密码。",
+      currentPassword: "当前密码",
+      newPassword: "新密码",
+      confirmNewPassword: "确认新密码",
+      passwordMismatch: "两次输入的新密码不一致",
+      passwordTooShort: "密码至少需要 8 位字符",
+      passwordChangedSuccess: "密码修改成功",
+      networkError: "网络错误，请重试。",
+      updating: "更新中...",
+      updatePassword: "更新密码",
+      signOut: "退出登录",
     },
     appearance: {
       themeTitle: "主题",

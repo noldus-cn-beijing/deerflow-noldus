@@ -9,7 +9,6 @@ import glob
 import os
 import tempfile
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -19,14 +18,36 @@ from ethoinsight import charts, metrics, parse
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 # Resolve project root by finding noldus-insight in the path
 def _find_project_root() -> str:
     """Find the noldus-insight project root."""
     # Try common locations
     candidates = [
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "demo-data", "DemoData"),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "demo-data", "DemoData"),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "demo-data", "DemoData"),
+        os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "..", "demo-data", "DemoData"
+        ),
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "demo-data",
+            "DemoData",
+        ),
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "demo-data",
+            "DemoData",
+        ),
     ]
     for c in candidates:
         norm = os.path.normpath(c)
@@ -142,11 +163,13 @@ class TestComputeIID:
         assert iid["mean_iid"].mean() > 0
 
     def test_needs_at_least_2_subjects(self):
-        df = pd.DataFrame({
-            "trial_time": [0, 1, 2],
-            "x_center": [1.0, 2.0, 3.0],
-            "y_center": [1.0, 2.0, 3.0],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": [0, 1, 2],
+                "x_center": [1.0, 2.0, 3.0],
+                "y_center": [1.0, 2.0, 3.0],
+            }
+        )
         result = metrics.compute_inter_individual_distance({"s1": df})
         assert result is None
 
@@ -225,7 +248,9 @@ class TestComputeParadigmMetrics:
             "treatment": ["Subject 3", "Subject 4", "Subject 5"],
         }
         m = metrics.compute_paradigm_metrics(
-            shoaling_parsed, "shoaling", groups=groups,
+            shoaling_parsed,
+            "shoaling",
+            groups=groups,
         )
         assert m["paradigm"] == "shoaling"
         assert "per_subject" in m
@@ -309,7 +334,8 @@ class TestCharts:
             path = f.name
         try:
             result = charts.trajectory_plot(
-                shoaling_parsed["all_data"], output_path=path,
+                shoaling_parsed["all_data"],
+                output_path=path,
             )
             assert os.path.exists(path)
             assert os.path.getsize(path) > 0
@@ -359,8 +385,7 @@ class TestShoalingGroupMetricsNotFakedPerSubject:
         m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling")
         for subject, sdict in m["per_subject"].items():
             assert "mean_iid" not in sdict, (
-                f"{subject} has fake per-subject mean_iid; "
-                "IID is a group-level metric."
+                f"{subject} has fake per-subject mean_iid; IID is a group-level metric."
             )
 
     def test_mean_polarity_not_in_per_subject(self, shoaling_parsed):
@@ -396,13 +421,15 @@ class TestShoalingSingleSubjectBoundary:
     """When only 1 subject is tracked, group metrics must be flagged inapplicable."""
 
     def test_single_subject_marks_iid_inapplicable(self):
-        df = pd.DataFrame({
-            "trial_time": [0.0, 0.1, 0.2],
-            "x_center": [1.0, 2.0, 3.0],
-            "y_center": [1.0, 2.0, 3.0],
-            "distance_moved": [0.0, 1.4, 1.4],
-            "velocity": [0.0, 14.0, 14.0],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": [0.0, 0.1, 0.2],
+                "x_center": [1.0, 2.0, 3.0],
+                "y_center": [1.0, 2.0, 3.0],
+                "distance_moved": [0.0, 1.4, 1.4],
+                "velocity": [0.0, 14.0, 14.0],
+            }
+        )
         parsed = {
             "subjects": {"only_fish": df},
             "summary": {"total_files": 1, "duration_seconds": 0.2},
@@ -416,13 +443,15 @@ class TestShoalingSingleSubjectBoundary:
         assert glm["mean_polarity"].get("applicable") is False
 
     def test_single_subject_emits_quality_warning(self):
-        df = pd.DataFrame({
-            "trial_time": [0.0, 0.1, 0.2],
-            "x_center": [1.0, 2.0, 3.0],
-            "y_center": [1.0, 2.0, 3.0],
-            "distance_moved": [0.0, 1.4, 1.4],
-            "velocity": [0.0, 14.0, 14.0],
-        })
+        df = pd.DataFrame(
+            {
+                "trial_time": [0.0, 0.1, 0.2],
+                "x_center": [1.0, 2.0, 3.0],
+                "y_center": [1.0, 2.0, 3.0],
+                "distance_moved": [0.0, 1.4, 1.4],
+                "velocity": [0.0, 14.0, 14.0],
+            }
+        )
         parsed = {
             "subjects": {"only_fish": df},
             "summary": {"total_files": 1, "duration_seconds": 0.2},
@@ -446,7 +475,9 @@ class TestSmallSampleWarning:
         m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling", groups=groups)
         warnings = m.get("data_quality_warnings", [])
         critical = [w for w in warnings if w.get("severity") == "critical"]
-        assert critical, f"Expected at least one critical warning for n=2 group, got {warnings}"
+        assert critical, (
+            f"Expected at least one critical warning for n=2 group, got {warnings}"
+        )
         assert any(
             "control" in w.get("message", "") and "n=2" in w.get("message", "")
             for w in critical
@@ -455,7 +486,10 @@ class TestSmallSampleWarning:
     def test_all_groups_n_ge_3_no_critical_warning(self, shoaling_parsed):
         groups = {
             "control": ["Subject 1", "Subject 2", "Subject 3"],
-            "treatment": ["Subject 4", "Subject 5"],  # n=2 — still critical for this group
+            "treatment": [
+                "Subject 4",
+                "Subject 5",
+            ],  # n=2 — still critical for this group
         }
         m = metrics.compute_paradigm_metrics(shoaling_parsed, "shoaling", groups=groups)
         # Sanity: treatment has n=2 so there IS a critical warning
@@ -470,4 +504,3 @@ class TestSmallSampleWarning:
         assert "small" in m["group_summary"]
         assert "distance_moved" in m["group_summary"]["small"]
         assert m["group_summary"]["small"]["distance_moved"]["n"] == 2
-

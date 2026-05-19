@@ -108,6 +108,10 @@ def _slugify(text: str) -> str:
         "平均值": "mean",
         "标准偏差": "std",
         "身体填充": "body_fill",
+        "狂躁": "highly_mobile",
+        "活跃": "mobile",
+        "静止": "immobile",
+        "到墙壁距离": "distance_to_wall",
     }
     for cn, en in subs.items():
         text = text.replace(cn, en)

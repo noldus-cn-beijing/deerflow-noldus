@@ -1,19 +1,35 @@
 # 质量门控点
 
+> ✅ **2026-05-08 更新**：Gate 0 已实施 EV19 模板识别地基。旧「7 大类 18 范式」分类已删除，替换为 ethovision-paradigm-knowledge skill 体系。
+>
+> **新体系**：lead agent 通过 skill 渐进披露识别 EV19 模板 → 调 `set_experiment_paradigm(..., ev19_template)` 写入 experiment-context.json。
+> `ev19_template` 必须在 62 变体白名单内（见 `ethovision-paradigm-knowledge` skill `references/_facts.md`）。
+>
+> **多层鲁棒性**：
+> - L2 工具签名：`set_experiment_paradigm` 加 `ev19_template` 必填 + 白名单校验
+> - L4 GuardrailMiddleware：拒绝 `ev19_template=null` 时的 `task("code-executor")` 派遣
+> - L4 锁定：已设置后拒绝二次修改 `set_experiment_paradigm`（除非 `confirm_template_change=True`）
+> - L6 默认值降级：反问失败时按 `default-template-fallback.md` 选默认变体
+>
+> GateEnforcementMiddleware 继续管 `paradigm` 字段，与 GuardrailMiddleware 职责正交。
+
+---
+
 在规划和执行的关键节点触发检查，必要时 `ask_clarification`。
 
-## Gate 0: 实验范式确认（仅 manual 模式）
+## Gate 0: EV19 模板识别（必须）
 
-**触发时机**: 用户选择"端到端数据分析"后，派遣任何 subagent 之前
+**触发时机**: 用户上传数据并请求分析时，派遣任何 subagent 之前
 
-**检查**: 用户是否已通过两级 ask_clarification 明确选择了实验范式
+**检查**: `experiment-context.json` 中 `ev19_template` 字段是否已设置
 
-| 状态 | 行动 |
-|------|------|
-| 用户已选择范式 | 调用 `set_experiment_paradigm` tool 写入 experiment-context.json，进入 Gate 1 |
-| 用户未选择 | **两级 `ask_clarification`**：先选 7 大类（旷场及物体识别 / 焦虑迷宫 / 空间学习记忆迷宫 / 社会交互与偏好 / 抑郁绝望 / 恐惧条件化 / 斑马鱼行为），再选该大类下的细分范式（1-6 个） |
+**流程**（详见 `ethovision-paradigm-knowledge` skill）:
+1. agent 读 SKILL.md 决策树，综合用户文字 + 文件名推测候选
+2. 候选 = 1 → 直接 `set_experiment_paradigm(paradigm, ..., ev19_template)`
+3. 候选 2-3 → `ask_clarification` 给结构化选项（推荐项放第一位 + 默认值兜底）
+4. 反问失败 → 查 `default-template-fallback.md` 选默认变体
 
-**选项来源**: ethoinsight.templates.list_categories() + list_paradigms(category=...)
+**强制执行**: GuardrailMiddleware 在 `task("code-executor")` 时拦截 `ev19_template=null`
 
 ## Gate 1.5: 数据-范式一致性检查（Gate 0 完成后）
 
@@ -51,6 +67,8 @@
 |------|------|
 | 空数组 | 继续流水线 |
 | 非空 | **`ask_clarification`**：列出警告项，询问：(a) 排除异常个体并重算 (b) 保留并继续 (c) 查看详情 |
+
+**强制执行**: 由 GateEnforcementMiddleware 在 task(data-analyst) 调度时检查 handoff_code_executor.json，存在 critical 且未在 experiment-context.json 中 acknowledge 则拦截。
 
 **常见 warnings**:
 - 轨迹中断（missing data > 10%）

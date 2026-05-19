@@ -5,19 +5,32 @@ import logging
 import re
 import uuid
 from dataclasses import replace
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
-from langchain.tools import InjectedToolCallId, ToolRuntime, tool
+from langchain.tools import InjectedToolCallId, tool
 from langgraph.config import get_stream_writer
-from langgraph.typing import ContextT
 
-from deerflow.agents.lead_agent.prompt import get_skills_prompt_section
-from deerflow.agents.thread_state import ThreadState
+from deerflow.config import get_app_config
 from deerflow.sandbox.security import LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE, is_host_bash_allowed
 from deerflow.subagents import SubagentExecutor, get_available_subagent_names, get_subagent_config
-from deerflow.subagents.executor import SubagentStatus, cleanup_background_task, get_background_task_result, request_cancel_background_task
+from deerflow.subagents.config import resolve_subagent_model_name
+from deerflow.subagents.executor import (
+    SubagentStatus,
+    cleanup_background_task,
+    get_background_task_result,
+    request_cancel_background_task,
+)
+from deerflow.tools.types import Runtime
+
+if TYPE_CHECKING:
+    from deerflow.config.app_config import AppConfig
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Noldus customizations: workspace handoff + shared file placeholders          #
+# --------------------------------------------------------------------------- #
 
 _SHARED_PLACEHOLDER_RE = re.compile(r"\{\{shared://([^}]+)\}\}")
 
@@ -31,9 +44,230 @@ def _resolve_placeholders(prompt: str) -> str:
     return _SHARED_PLACEHOLDER_RE.sub(lambda m: f"/mnt/shared/{m.group(1)}", prompt)
 
 
+# Handoff-file placeholder registry: subagent name → handoff filename.
+# Lead uses {{handoff://<name>}} in task prompt; task_tool resolves it to the
+# full workspace path AND adds the path to the per-task authorized_handoff_paths
+# set that flows into HandoffIsolationProvider.
+#
+# Pointing to a path via this placeholder IS the authorization. No placeholder =
+# no authorization (subagent cannot read peer handoff files).
+# Imported from handoff_registry to keep a zero-circular-dep module as the
+# authoritative source (deerflow.subagents.builtins imports it at init time).
+from deerflow.subagents.handoff_registry import HANDOFF_FILE_REGISTRY  # noqa: E402
+
+_HANDOFF_PLACEHOLDER_RE = re.compile(r"\{\{handoff://([^}]+)\}\}")
+
+
+def _resolve_handoff_placeholders(prompt: str) -> tuple[str, set[str]]:
+    """Replace ``{{handoff://<subagent_name>}}`` with the full workspace path.
+
+    Returns:
+        (replaced_prompt, authorized_absolute_paths) — the set is what
+        HandoffIsolationProvider uses as its allowlist for the subagent.
+
+    Raises:
+        ValueError: if any placeholder references an unknown subagent name
+            (fail-fast on typo so lead immediately learns about the error
+            rather than silently dispatching a subagent with a broken prompt).
+    """
+    authorized: set[str] = set()
+
+    def _replace(match: re.Match[str]) -> str:
+        name = match.group(1).strip()
+        if name not in HANDOFF_FILE_REGISTRY:
+            raise ValueError(
+                f"Unknown handoff subagent '{name}' in placeholder. "
+                f"Known: {sorted(HANDOFF_FILE_REGISTRY)}"
+            )
+        filename = HANDOFF_FILE_REGISTRY[name]
+        full_path = f"/mnt/user-data/workspace/{filename}"
+        authorized.add(full_path)
+        return full_path
+
+    replaced = _HANDOFF_PLACEHOLDER_RE.sub(_replace, prompt)
+    return replaced, authorized
+
+
+def _auto_inject_handoff_placeholders(prompt: str, subagent_type: str) -> str:
+    """W19: 按 SubagentConfig.required_upstream_handoffs 自动注入 {{handoff://X}}
+    占位符,跳过已存在的(避免双注入)。
+    """
+    from deerflow.subagents.builtins import BUILTIN_SUBAGENTS
+
+    config = BUILTIN_SUBAGENTS.get(subagent_type)
+    if config is None or not config.required_upstream_handoffs:
+        return prompt
+
+    existing = set(_HANDOFF_PLACEHOLDER_RE.findall(prompt))
+    additions = []
+    for name in config.required_upstream_handoffs:
+        if name not in existing:
+            additions.append(f"{{{{handoff://{name}}}}}")
+
+    if not additions:
+        return prompt
+
+    return (
+        f"{prompt}\n\n"
+        f"[Upstream handoff (auto-injected by harness)]\n"
+        + "\n".join(f"- {p}" for p in additions)
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Upstream: subagent token-usage cache + journal recorder helpers             #
+# --------------------------------------------------------------------------- #
+
+# Cache subagent token usage by tool_call_id so TokenUsageMiddleware can
+# write it back to the triggering AIMessage's usage_metadata.
+_subagent_usage_cache: dict[str, dict[str, int]] = {}
+
+
+def _token_usage_cache_enabled(app_config: "AppConfig | None") -> bool:
+    if app_config is None:
+        try:
+            app_config = get_app_config()
+        except FileNotFoundError:
+            return False
+    return bool(getattr(getattr(app_config, "token_usage", None), "enabled", False))
+
+
+def _cache_subagent_usage(tool_call_id: str, usage: dict | None, *, enabled: bool = True) -> None:
+    if enabled and usage:
+        _subagent_usage_cache[tool_call_id] = usage
+
+
+def pop_cached_subagent_usage(tool_call_id: str) -> dict | None:
+    return _subagent_usage_cache.pop(tool_call_id, None)
+
+
+def _is_subagent_terminal(result: Any) -> bool:
+    """Return whether a background subagent result is safe to clean up."""
+    return result.status in {SubagentStatus.COMPLETED, SubagentStatus.FAILED, SubagentStatus.CANCELLED, SubagentStatus.TIMED_OUT} or getattr(result, "completed_at", None) is not None
+
+
+async def _await_subagent_terminal(task_id: str, max_polls: int) -> Any | None:
+    """Poll until the background subagent reaches a terminal status or we run out of polls."""
+    for _ in range(max_polls):
+        result = get_background_task_result(task_id)
+        if result is None:
+            return None
+        if _is_subagent_terminal(result):
+            return result
+        await asyncio.sleep(5)
+    return None
+
+
+async def _deferred_cleanup_subagent_task(task_id: str, trace_id: str, max_polls: int) -> None:
+    """Keep polling a cancelled subagent until it can be safely removed."""
+    cleanup_poll_count = 0
+    while True:
+        result = get_background_task_result(task_id)
+        if result is None:
+            return
+        if _is_subagent_terminal(result):
+            cleanup_background_task(task_id)
+            return
+        if cleanup_poll_count >= max_polls:
+            logger.warning(f"[trace={trace_id}] Deferred cleanup for task {task_id} timed out after {cleanup_poll_count} polls")
+            return
+        await asyncio.sleep(5)
+        cleanup_poll_count += 1
+
+
+def _log_cleanup_failure(cleanup_task: asyncio.Task[None], *, trace_id: str, task_id: str) -> None:
+    if cleanup_task.cancelled():
+        return
+
+    exc = cleanup_task.exception()
+    if exc is not None:
+        logger.error(f"[trace={trace_id}] Deferred cleanup failed for task {task_id}: {exc}")
+
+
+def _schedule_deferred_subagent_cleanup(task_id: str, trace_id: str, max_polls: int) -> None:
+    logger.debug(f"[trace={trace_id}] Scheduling deferred cleanup for cancelled task {task_id}")
+    cleanup_task = asyncio.create_task(_deferred_cleanup_subagent_task(task_id, trace_id, max_polls))
+    cleanup_task.add_done_callback(lambda task: _log_cleanup_failure(task, trace_id=trace_id, task_id=task_id))
+
+
+def _find_usage_recorder(runtime: Any) -> Any | None:
+    """Find a callback handler with ``record_external_llm_usage_records`` in the runtime config.
+
+    LangGraph's runtime ``config["callbacks"]`` may be either a ``list`` of handlers OR a
+    ``BaseCallbackManager`` instance (e.g. ``AsyncCallbackManager`` on async paths). The
+    manager class has no ``__iter__``; iterating it directly raises ``TypeError``. Normalize
+    both shapes by reading ``.handlers`` when given a manager.
+    """
+    if runtime is None:
+        return None
+    config = getattr(runtime, "config", None)
+    if not isinstance(config, dict):
+        return None
+    callbacks = config.get("callbacks", [])
+    handlers = getattr(callbacks, "handlers", callbacks) if not isinstance(callbacks, list) else callbacks
+    if not handlers:
+        return None
+    for cb in handlers:
+        if hasattr(cb, "record_external_llm_usage_records"):
+            return cb
+    return None
+
+
+def _summarize_usage(records: list[dict] | None) -> dict | None:
+    """Summarize token usage records into a compact dict for SSE events."""
+    if not records:
+        return None
+    return {
+        "input_tokens": sum(r.get("input_tokens", 0) or 0 for r in records),
+        "output_tokens": sum(r.get("output_tokens", 0) or 0 for r in records),
+        "total_tokens": sum(r.get("total_tokens", 0) or 0 for r in records),
+    }
+
+
+def _report_subagent_usage(runtime: Any, result: Any) -> None:
+    """Report subagent token usage to the parent RunJournal, if available.
+
+    Each subagent task must be reported only once (guarded by usage_reported).
+    """
+    if getattr(result, "usage_reported", True):
+        return
+    records = getattr(result, "token_usage_records", None) or []
+    if not records:
+        return
+    journal = _find_usage_recorder(runtime)
+    if journal is None:
+        logger.debug("No usage recorder found in runtime callbacks — subagent token usage not recorded")
+        return
+    try:
+        journal.record_external_llm_usage_records(records)
+        result.usage_reported = True
+    except Exception:
+        logger.warning("Failed to report subagent token usage", exc_info=True)
+
+
+def _get_runtime_app_config(runtime: Any) -> "AppConfig | None":
+    context = getattr(runtime, "context", None)
+    if isinstance(context, dict):
+        app_config = context.get("app_config")
+        if app_config is not None:
+            return cast("AppConfig", app_config)
+    return None
+
+
+def _merge_skill_allowlists(parent: list[str] | None, child: list[str] | None) -> list[str] | None:
+    """Return the effective subagent skill allowlist under the parent policy."""
+    if parent is None:
+        return child
+    if child is None:
+        return list(parent)
+
+    parent_set = set(parent)
+    return [skill for skill in child if skill in parent_set]
+
+
 @tool("task", parse_docstring=True)
 async def task_tool(
-    runtime: ToolRuntime[ContextT, ThreadState],
+    runtime: Runtime,
     description: str,
     prompt: str,
     subagent_type: str,
@@ -47,13 +281,18 @@ async def task_tool(
     - Handle complex multi-step tasks autonomously
     - Execute commands or operations in isolated contexts
 
-    Available subagent types depend on the active sandbox configuration:
+    Built-in subagent types:
     - **general-purpose**: A capable agent for complex, multi-step tasks that require
       both exploration and action. Use when the task requires complex reasoning,
       multiple dependent steps, or would benefit from isolated context.
     - **bash**: Command execution specialist for running bash commands. This is only
       available when host bash is explicitly allowed or when using an isolated shell
       sandbox such as `AioSandboxProvider`.
+
+    Additional custom subagent types may be defined in config.yaml under
+    `subagents.custom_agents`. Each custom type can have its own system prompt,
+    tools, skills, model, and timeout configuration. If an unknown subagent_type
+    is provided, the error message will list all available types.
 
     When to use this tool:
     - Complex tasks requiring multiple steps or tools
@@ -71,28 +310,29 @@ async def task_tool(
         subagent_type: The type of subagent to use. ALWAYS PROVIDE THIS PARAMETER THIRD.
         max_turns: Optional maximum number of agent turns. Defaults to subagent's configured max.
     """
-    available_subagent_names = get_available_subagent_names()
+    runtime_app_config = _get_runtime_app_config(runtime)
+    cache_token_usage = _token_usage_cache_enabled(runtime_app_config)
+    available_subagent_names = get_available_subagent_names(app_config=runtime_app_config) if runtime_app_config is not None else get_available_subagent_names()
 
     # Get subagent configuration
-    config = get_subagent_config(subagent_type)
+    config = get_subagent_config(subagent_type, app_config=runtime_app_config) if runtime_app_config is not None else get_subagent_config(subagent_type)
     if config is None:
         available = ", ".join(available_subagent_names)
         return f"Error: Unknown subagent type '{subagent_type}'. Available: {available}"
-    if subagent_type == "bash" and not is_host_bash_allowed():
-        return f"Error: {LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE}"
+    if subagent_type == "bash":
+        host_bash_allowed = is_host_bash_allowed(runtime_app_config) if runtime_app_config is not None else is_host_bash_allowed()
+        if not host_bash_allowed:
+            return f"Error: {LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE}"
 
     # Build config overrides
     overrides: dict = {}
 
-    skills_section = get_skills_prompt_section()
-    if skills_section:
-        overrides["system_prompt"] = config.system_prompt + "\n\n" + skills_section
+    # Skills are loaded by SubagentExecutor per-session (aligned with Codex's pattern:
+    # each subagent loads its own skills based on config, injected as conversation items).
+    # No longer appended to system_prompt here.
 
     if max_turns is not None:
         overrides["max_turns"] = max_turns
-
-    if overrides:
-        config = replace(config, **overrides)
 
     # Extract parent context from runtime
     sandbox_state = None
@@ -100,6 +340,7 @@ async def task_tool(
     thread_id = None
     parent_model = None
     trace_id = None
+    metadata: dict = {}
 
     if runtime is not None:
         sandbox_state = runtime.state.get("sandbox")
@@ -115,26 +356,63 @@ async def task_tool(
         # Get or generate trace_id for distributed tracing
         trace_id = metadata.get("trace_id") or str(uuid.uuid4())[:8]
 
+    parent_available_skills = metadata.get("available_skills")
+    if parent_available_skills is not None:
+        overrides["skills"] = _merge_skill_allowlists(list(parent_available_skills), config.skills)
+
+    if overrides:
+        config = replace(config, **overrides)
+
     # Get available tools (excluding task tool to prevent nesting)
     # Lazy import to avoid circular dependency
     from deerflow.tools import get_available_tools
 
+    # Inherit parent agent's tool_groups so subagents respect the same restrictions
+    parent_tool_groups = metadata.get("tool_groups")
+    resolved_app_config = runtime_app_config
+    if config.model == "inherit" and parent_model is None and resolved_app_config is None:
+        resolved_app_config = get_app_config()
+    effective_model = resolve_subagent_model_name(config, parent_model, app_config=resolved_app_config)
+
     # Subagents should not have subagent tools enabled (prevent recursive nesting)
-    tools = get_available_tools(model_name=parent_model, subagent_enabled=False)
+    available_tools_kwargs = {
+        "model_name": effective_model,
+        "groups": parent_tool_groups,
+        "subagent_enabled": False,
+    }
+    if resolved_app_config is not None:
+        available_tools_kwargs["app_config"] = resolved_app_config
+    tools = get_available_tools(**available_tools_kwargs)
+
+    # Noldus: resolve {{shared://...}} placeholders to /mnt/shared/... paths.
+    prompt = _resolve_placeholders(prompt)
+
+    # W19 (relocated): handoff placeholder auto-injection happens earlier in
+    # HandoffPlaceholderInjectionMiddleware so the W18 guardrail evaluates the
+    # already-injected prompt. We still call the same idempotent helper here
+    # as a defence-in-depth safety net (covers task_tool callers that bypass
+    # the lead-agent middleware chain, e.g. direct programmatic invocation).
+    prompt = _auto_inject_handoff_placeholders(prompt, subagent_type)
+
+    # Noldus: resolve {{handoff://...}} placeholders and capture authorized paths.
+    # The authorized set is consumed by HandoffIsolationProvider so the subagent
+    # can read_file only the handoff JSONs the lead explicitly granted.
+    prompt, authorized_handoff_paths = _resolve_handoff_placeholders(prompt)
 
     # Create executor
-    executor = SubagentExecutor(
-        config=config,
-        tools=tools,
-        parent_model=parent_model,
-        sandbox_state=sandbox_state,
-        thread_data=thread_data,
-        thread_id=thread_id,
-        trace_id=trace_id,
-    )
-
-    # Resolve {{shared://...}} placeholders to /mnt/shared/... paths
-    prompt = _resolve_placeholders(prompt)
+    executor_kwargs = {
+        "config": config,
+        "tools": tools,
+        "parent_model": parent_model,
+        "sandbox_state": sandbox_state,
+        "thread_data": thread_data,
+        "thread_id": thread_id,
+        "trace_id": trace_id,
+        "authorized_handoff_paths": authorized_handoff_paths,
+    }
+    if resolved_app_config is not None:
+        executor_kwargs["app_config"] = resolved_app_config
+    executor = SubagentExecutor(**executor_kwargs)
 
     # Start background execution (always async to prevent blocking)
     # Use tool_call_id as task_id for better traceability
@@ -169,11 +447,12 @@ async def task_tool(
                 last_status = result.status
 
             # Check for new AI messages and send task_running events
-            current_message_count = len(result.ai_messages)
+            ai_messages = result.ai_messages or []
+            current_message_count = len(ai_messages)
             if current_message_count > last_message_count:
                 # Send task_running event for each new message
                 for i in range(last_message_count, current_message_count):
-                    message = result.ai_messages[i]
+                    message = ai_messages[i]
                     writer(
                         {
                             "type": "task_running",
@@ -187,23 +466,32 @@ async def task_tool(
                 last_message_count = current_message_count
 
             # Check if task completed, failed, or timed out
+            usage = _summarize_usage(getattr(result, "token_usage_records", None))
             if result.status == SubagentStatus.COMPLETED:
-                writer({"type": "task_completed", "task_id": task_id, "result": result.result})
+                _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
+                _report_subagent_usage(runtime, result)
+                writer({"type": "task_completed", "task_id": task_id, "result": result.result, "usage": usage})
                 logger.info(f"[trace={trace_id}] Task {task_id} completed after {poll_count} polls")
                 cleanup_background_task(task_id)
                 return f"Task Succeeded. Result: {result.result}"
             elif result.status == SubagentStatus.FAILED:
-                writer({"type": "task_failed", "task_id": task_id, "error": result.error})
+                _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
+                _report_subagent_usage(runtime, result)
+                writer({"type": "task_failed", "task_id": task_id, "error": result.error, "usage": usage})
                 logger.error(f"[trace={trace_id}] Task {task_id} failed: {result.error}")
                 cleanup_background_task(task_id)
                 return f"Task failed. Error: {result.error}"
             elif result.status == SubagentStatus.CANCELLED:
-                writer({"type": "task_cancelled", "task_id": task_id, "error": result.error})
+                _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
+                _report_subagent_usage(runtime, result)
+                writer({"type": "task_cancelled", "task_id": task_id, "error": result.error, "usage": usage})
                 logger.info(f"[trace={trace_id}] Task {task_id} cancelled: {result.error}")
                 cleanup_background_task(task_id)
                 return "Task cancelled by user."
             elif result.status == SubagentStatus.TIMED_OUT:
-                writer({"type": "task_timed_out", "task_id": task_id, "error": result.error})
+                _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
+                _report_subagent_usage(runtime, result)
+                writer({"type": "task_timed_out", "task_id": task_id, "error": result.error, "usage": usage})
                 logger.warning(f"[trace={trace_id}] Task {task_id} timed out: {result.error}")
                 cleanup_background_task(task_id)
                 return f"Task timed out. Error: {result.error}"
@@ -221,43 +509,34 @@ async def task_tool(
             if poll_count > max_poll_count:
                 timeout_minutes = config.timeout_seconds // 60
                 logger.error(f"[trace={trace_id}] Task {task_id} polling timed out after {poll_count} polls (should have been caught by thread pool timeout)")
-                writer({"type": "task_timed_out", "task_id": task_id})
+                _report_subagent_usage(runtime, result)
+                usage = _summarize_usage(getattr(result, "token_usage_records", None))
+                _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
+                writer({"type": "task_timed_out", "task_id": task_id, "usage": usage})
                 return f"Task polling timed out after {timeout_minutes} minutes. This may indicate the background task is stuck. Status: {result.status.value}"
     except asyncio.CancelledError:
         # Signal the background subagent thread to stop cooperatively.
-        # Without this, the thread (running in ThreadPoolExecutor with its
-        # own event loop via asyncio.run) would continue executing even
-        # after the parent task is cancelled.
         request_cancel_background_task(task_id)
 
-        async def cleanup_when_done() -> None:
-            max_cleanup_polls = max_poll_count
-            cleanup_poll_count = 0
+        # Wait (shielded) for the subagent to reach a terminal state so the
+        # final token usage snapshot is reported to the parent RunJournal
+        # before the parent worker persists get_completion_data().
+        terminal_result = None
+        try:
+            terminal_result = await asyncio.shield(_await_subagent_terminal(task_id, max_poll_count))
+        except asyncio.CancelledError:
+            pass
 
-            while True:
-                result = get_background_task_result(task_id)
-                if result is None:
-                    return
-
-                if result.status in {SubagentStatus.COMPLETED, SubagentStatus.FAILED, SubagentStatus.CANCELLED, SubagentStatus.TIMED_OUT} or getattr(result, "completed_at", None) is not None:
-                    cleanup_background_task(task_id)
-                    return
-
-                if cleanup_poll_count > max_cleanup_polls:
-                    logger.warning(f"[trace={trace_id}] Deferred cleanup for task {task_id} timed out after {cleanup_poll_count} polls")
-                    return
-
-                await asyncio.sleep(5)
-                cleanup_poll_count += 1
-
-        def log_cleanup_failure(cleanup_task: asyncio.Task[None]) -> None:
-            if cleanup_task.cancelled():
-                return
-
-            exc = cleanup_task.exception()
-            if exc is not None:
-                logger.error(f"[trace={trace_id}] Deferred cleanup failed for task {task_id}: {exc}")
-
-        logger.debug(f"[trace={trace_id}] Scheduling deferred cleanup for cancelled task {task_id}")
-        asyncio.create_task(cleanup_when_done()).add_done_callback(log_cleanup_failure)
+        # Report whatever the subagent collected (even if we timed out).
+        final_result = terminal_result or get_background_task_result(task_id)
+        if final_result is not None:
+            _report_subagent_usage(runtime, final_result)
+        if final_result is not None and _is_subagent_terminal(final_result):
+            cleanup_background_task(task_id)
+        else:
+            _schedule_deferred_subagent_cleanup(task_id, trace_id, max_poll_count)
+        _subagent_usage_cache.pop(tool_call_id, None)
+        raise
+    except Exception:
+        _subagent_usage_cache.pop(tool_call_id, None)
         raise

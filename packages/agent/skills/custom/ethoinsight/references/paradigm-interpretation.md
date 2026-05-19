@@ -1,77 +1,18 @@
-# 范式解读指南
+# 范式判读方法论入口
 
-## 判读原则（所有范式通用）
+本文件已迁移。范式专属判读知识（焦虑度阈值、混杂因素、组比较规则等）由独立 skill 维护:
 
-- **组间对比为唯一判据**：以统计检验（Mann-Whitney / t-test 视分布）+ 效应量（Cohen's d）为结论基础
-- **不使用绝对阈值或常模范围**——行为学数据受品系/日龄/温度/光照等多因素影响，无跨实验通用 baseline
-- **Result 段仅含统计量**；行为学解读放 Discussion 段
-- **离群判据依范式专属指标**，不统一使用 total distance_moved
+→ **`ethovision-paradigm-knowledge`** skill (5 月 9 日补完)
+  - SKILL.md 总览
+  - `references/by-experiment/<范式>.md` 每范式详细判读
+  - `references/by-template/<EV19 大类>.md` EV19 → 学术范式映射
 
-## 高架十字迷宫 (EPM)
+本 skill (`ethoinsight`) 现在专注于:
+- **统计方法论** (`statistics-decision-tree.md`)
+- **效应量判读** (`effect-size-guide.md`)
+- **混杂因素清单** (`confound-checklist.md`)
+- **报告写作** (`report.md`)
 
-### 核心指标
-- **开臂时间比**: 焦虑水平的经典读出；treatment 组显著低于 control → 焦虑样行为
-- **开臂进入比**: 开臂进入次数 / 总进入次数，补充开臂时间比
-- **总臂进入次数**: 总活动量，用于排除运动量混杂（不作为焦虑读出）
-
-## 旷场实验 (Open Field)
-
-### 核心指标
-- **中心区时间比**: 焦虑水平的读出；treatment 组显著低于 control → 焦虑样行为
-- **总移动距离**: 总活动量，用于排除运动量混杂（不作为焦虑读出）
-- **平均速度**: 补充活动量指标
-
-## O 迷宫 (Zero Maze)
-
-### 核心指标
-- **开放区时间比**: 焦虑水平的读出
-- **方向偏好指数**: 行为侧化指标，组间对比看是否有差异
-
-## 明暗箱 (Light-Dark Box)
-
-### 核心指标
-- **明箱时间比**: 焦虑水平的读出
-- **明暗穿梭次数**: 活动量/探索性指标
-- **首次进入明箱潜伏期**: 探索动机指标
-
-## 新物体识别 (Novel Object)
-
-### 核心指标
-- **辨别指数** = (新物体探索时间 - 熟悉物体探索时间) / 总探索时间
-- 组间对比：treatment vs control 的 DI 差异；单样本 t 检验 vs 0 判断是否有记忆
-
-## Y 迷宫 (Y-Maze)
-
-### 核心指标
-- **自发交替率** = 实际交替 / (总进臂次数 - 2) × 100%
-- 与随机水平 22.2% 比较（单样本 t 检验）
-- 组间对比：treatment vs control 的自发交替率差异
-
-## 斑马鱼群体行为 (Shoaling)
-
-### 核心指标
-- **IID (Inter-Individual Distance)**: 所有鱼两两距离的平均值，反映群体紧密度
-- **NND (Nearest Neighbor Distance)**: 每条鱼到最近同伴的距离，对离群个体敏感
-- **群体极性 (Polarity)**: R ∈ [0,1]，越高越同向
-- **象限分布**: 四象限内的鱼数分布及聚集时间
-
-### 离群判据（shoaling 专属）
-按优先级：
-1. **主判据**：mean_nnd 远高于群体均值 → 远离群体
-2. **主判据**：象限分布（长期停留单一象限且远离其他 subject）
-3. **辅助判据**：mean_iid（需确认数据来源，见下文）
-4. **禁用判据**：单独使用 total distance_moved 或 velocity_mean 判定离群
-   - 运动量低可能只是探索策略差异，不等于离群
-   - 若 distance_moved 与同组差异大，可在 Discussion 段作为"混杂因素候选"提及，但不独立成立离群结论
-
-### 数据来源说明
-- IID / NND / 象限分布在 EthoVision XT 中通常是 **JS Continuous / State 自定义变量**，需研究员在项目里启用对应脚本（完整 JS 脚本示例见 `golden-cases/case-001-shoaling-baseline/notes.md` 第 55-320 行）
-- 导出 raw data **不一定包含这些列**——ethoinsight.metrics 会从 X/Y 坐标自行计算作为兜底
-- 两种来源的数值可能不同（脚本版可含研究员的领域参数，坐标计算版是通用几何）
-- handoff 应标注数据来源；Discussion 段解读时注明来源以避免误解
-- metrics.py 在只有 1 个 subject 时 IID/Polarity 返回 `{"applicable": false, "reason": "..."}`，不编造假数值——agent 识别到 applicable=false 时应如实告知用户群体指标不适用
-
-### 离群个体处理原则
-- **不主动建议"排除"个体**。排除个体是生物学判断（造模失败 / 任务学习失败 / 设备故障），不是统计判断（数值偏离多少 σ）
-- 若发现可能离群个体，措辞为"建议单独标注该个体，并检查是否有生物学排除依据，最终是否剔除由研究员判断"
-- 论文中排除个体必须报告原因和数量
+→ data-analyst / report-writer 收到 code-executor handoff 后:
+  1. read 本 skill 的 `confound-checklist.md` / `statistics-decision-tree.md`
+  2. 如需特定范式深度判读，read `ethovision-paradigm-knowledge/references/by-experiment/<范式>.md`

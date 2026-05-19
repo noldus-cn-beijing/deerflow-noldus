@@ -86,7 +86,7 @@ async def _async_store(config) -> AsyncIterator[BaseStore]:
 
 
 @contextlib.asynccontextmanager
-async def make_store() -> AsyncIterator[BaseStore]:
+async def make_store(app_config=None) -> AsyncIterator[BaseStore]:
     """Async context manager that yields a Store whose backend matches the
     configured checkpointer.
 
@@ -97,10 +97,14 @@ async def make_store() -> AsyncIterator[BaseStore]:
         async with make_store() as store:
             app.state.store = store
 
+    ``app_config`` is accepted for API symmetry with ``make_checkpointer`` and
+    ``make_stream_bridge`` (轮 3 deps.py wiring); when ``None`` falls back to
+    the global :func:`get_app_config`.
+
     Yields an :class:`~langgraph.store.memory.InMemoryStore` when no
     ``checkpointer`` section is configured (emits a WARNING in that case).
     """
-    config = get_app_config()
+    config = app_config if app_config is not None else get_app_config()
 
     if config.checkpointer is None:
         from langgraph.store.memory import InMemoryStore

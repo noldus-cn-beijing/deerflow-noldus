@@ -760,3 +760,16 @@ checkpointer:
 #     use: my_package:MyGuardrailProvider
 #     config:
 #       key: value
+
+# ============================================================================
+# Database (轮 3 better-auth 引入) - sqlite 用户/线程元数据存储
+# ============================================================================
+# 本地默认 sqlite, 数据落 .deer-flow/data/deerflow.db
+# 生产部署改为 postgres + DATABASE_URL env (详见 docs/sop/multi-user-deployment-sop.md)
+database:
+  backend: sqlite  # memory | sqlite | postgres
+  sqlite_dir: .deer-flow/data
+  # postgres_url: $DATABASE_URL  # 生产环境通过 env 注入
+
+run_events:
+  backend: memory  # memory | db | jsonl

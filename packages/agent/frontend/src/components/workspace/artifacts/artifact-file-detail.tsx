@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Streamdown } from "streamdown";
+import { type Components, Streamdown } from "streamdown";
 
 import {
   Artifact,
@@ -289,7 +289,7 @@ export function ArtifactFilePreview({
         <Streamdown
           className="size-full"
           {...streamdownPlugins}
-          components={{ a: ArtifactLink }}
+          components={{ a: ArtifactLink } as Components}
         >
           {content ?? ""}
         </Streamdown>

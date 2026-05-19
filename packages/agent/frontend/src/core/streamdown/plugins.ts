@@ -3,8 +3,6 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { StreamdownProps } from "streamdown";
 
-import { rehypeSplitWordsIntoSpans } from "../rehype";
-
 // `rehypeRaw` intentionally omitted: LLMs can emit HTML-looking tokens
 // (e.g. `<dt>`, `<ee>`) that, if promoted to DOM, violate nesting rules
 // (block elements inside `<p>`) and cause React hydration errors.
@@ -15,17 +13,6 @@ export const streamdownPlugins = {
   ] as StreamdownProps["remarkPlugins"],
   rehypePlugins: [
     [rehypeKatex, { output: "html" }],
-  ] as StreamdownProps["rehypePlugins"],
-};
-
-export const streamdownPluginsWithWordAnimation = {
-  remarkPlugins: [
-    remarkGfm,
-    [remarkMath, { singleDollarTextMath: true }],
-  ] as StreamdownProps["remarkPlugins"],
-  rehypePlugins: [
-    [rehypeKatex, { output: "html" }],
-    rehypeSplitWordsIntoSpans,
   ] as StreamdownProps["rehypePlugins"],
 };
 

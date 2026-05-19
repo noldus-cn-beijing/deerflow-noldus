@@ -26,6 +26,13 @@ type MessageGroup =
   | AssistantClarificationGroup
   | AssistantSubagentGroup;
 
+const HIDDEN_CONTROL_MESSAGE_NAMES = new Set([
+  "summary",
+  "loop_warning",
+  "todo_reminder",
+  "todo_completion_reminder",
+]);
+
 export function groupMessages<T>(
   messages: Message[],
   mapper: (group: MessageGroup) => T,
@@ -53,10 +60,6 @@ export function groupMessages<T>(
 
   for (const message of messages) {
     if (isHiddenFromUIMessage(message)) {
-      continue;
-    }
-
-    if (message.name === "todo_reminder") {
       continue;
     }
 
@@ -99,9 +102,21 @@ export function groupMessages<T>(
           type: "assistant:subagent",
           messages: [message],
         });
+      } else if (
+        hasReasoning(message) &&
+        hasContent(message) &&
+        !hasToolCalls(message)
+      ) {
+        // Final answer with reasoning + content (no tool calls).
+        // Must NOT also enter the processing group below — one message, one group.
+        groups.push({
+          id: message.id,
+          type: "assistant",
+          messages: [message],
+        });
       } else if (hasReasoning(message) || hasToolCalls(message)) {
+        // Intermediate step: reasoning-only, tool_calls-only, or reasoning+tool_calls.
         const lastGroup = groups[groups.length - 1];
-        // Accumulate consecutive intermediate AI messages into one processing group.
         if (lastGroup?.type !== "assistant:processing") {
           groups.push({
             id: message.id,
@@ -111,12 +126,13 @@ export function groupMessages<T>(
         } else {
           lastGroup.messages.push(message);
         }
-      }
-
-      // Not an else-if: a message with reasoning + content (but no tool calls) goes
-      // into the processing group above AND gets its own assistant bubble here.
-      if (hasContent(message) && !hasToolCalls(message)) {
-        groups.push({ id: message.id, type: "assistant", messages: [message] });
+      } else if (hasContent(message)) {
+        // Content-only final answer (no reasoning, no tool calls).
+        groups.push({
+          id: message.id,
+          type: "assistant",
+          messages: [message],
+        });
       }
     }
   }
@@ -210,7 +226,7 @@ export function extractReasoningContentFromMessage(message: Message) {
   }
   if (Array.isArray(message.content)) {
     const part = message.content[0];
-    if (part && "thinking" in part) {
+    if (part && typeof part === "object" && "thinking" in part) {
       return part.thinking as string;
     }
   }
@@ -386,7 +402,11 @@ export function findToolCallArgs(
 }
 
 export function isHiddenFromUIMessage(message: Message) {
-  return message.additional_kwargs?.hide_from_ui === true;
+  return (
+    message.additional_kwargs?.hide_from_ui === true ||
+    (typeof message.name === "string" &&
+      HIDDEN_CONTROL_MESSAGE_NAMES.has(message.name))
+  );
 }
 
 /**

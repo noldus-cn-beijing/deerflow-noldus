@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE boost_serialization>
+<boost_serialization signature="serialization::archive" version="19">
+<settings class_id="0" tracking_level="0" version="1">
+	<m_ptrComPortType class_id="1" tracking_level="0" version="1">
+		<px class_id="2" tracking_level="1" version="0" object_id="_0">
+			<m_idDeviceType>0</m_idDeviceType>
+			<m_strName>COM Port Type</m_strName>
+			<m_vecCommands class_id="3" tracking_level="0" version="0">
+				<count>1</count>
+				<item_version>1</item_version>
+				<item class_id="4" tracking_level="0" version="1">
+					<px class_id="5" tracking_level="1" version="1" object_id="_1">
+						<m_idCommand>0</m_idCommand>
+						<m_strName>Send Argument</m_strName>
+					</px>
+				</item>
+			</m_vecCommands>
+			<m_vecSignals class_id="6" tracking_level="0" version="0">
+				<count>1</count>
+				<item_version>1</item_version>
+				<item class_id="7" tracking_level="0" version="1">
+					<px class_id="8" tracking_level="1" version="0" object_id="_2">
+						<m_idSignal>0</m_idSignal>
+						<m_strName>Receive Signal</m_strName>
+						<m_eValueType>1</m_eValueType>
+					</px>
+				</item>
+			</m_vecSignals>
+		</px>
+	</m_ptrComPortType>
+	<m_vecComPorts class_id="9" tracking_level="0" version="0">
+		<count>0</count>
+		<item_version>1</item_version>
+	</m_vecComPorts>
+	<m_bTranslateEndl>1</m_bTranslateEndl>
+</settings>
+</boost_serialization>

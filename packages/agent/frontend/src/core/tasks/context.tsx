@@ -49,6 +49,7 @@ export function useUpdateSubtask() {
       // SSE path: a new AIMessage arrived via task_running. Append to the
       // accumulated messages array (dedup on id) and commit via setTasks —
       // SubtaskCard needs to re-render to show streaming progress.
+      // setTasks is safe here: the SSE handler runs outside render.
       if (incoming) {
         const prevMessages = existing?.messages ?? [];
         const existingIndex =
@@ -75,11 +76,20 @@ export function useUpdateSubtask() {
         return;
       }
 
-      // Render-time path: MessageList walks thread.messages during render and
-      // calls updateSubtask to reflect task_init / task_completed metadata
-      // derived from lead-side tool_calls. Mutating in place (without
-      // setTasks) avoids a render-loop; the next SSE event will propagate
-      // the merged state to subscribers.
+      // All other paths — render-time metadata sync from MessageList walking
+      // thread.messages, AND SSE task_completed/task_failed events that don't
+      // carry a latestMessage — are committed in-place WITHOUT setTasks.
+      //
+      // Why no setTasks for terminal status events? Because the matching
+      // ToolMessage ("Task Succeeded. Result: …") has either already arrived
+      // in thread.messages or is about to. When MessageList re-renders for
+      // that message change, this same code path runs with status:"completed"
+      // and the in-place mutation makes the card render its terminal state.
+      //
+      // setTasks here would warn "Cannot update SubtasksProvider while
+      // rendering MessageList" because MessageList calls updateSubtask
+      // synchronously during render to mirror tool_call metadata into the
+      // subtask store. (See upstream deerflow useUpdateSubtask — same shape.)
       tasks[update.id] = {
         ...(existing ?? ({ messages: [] } as unknown as Subtask)),
         ...update,

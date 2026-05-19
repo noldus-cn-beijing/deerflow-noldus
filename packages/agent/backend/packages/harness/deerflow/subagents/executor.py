@@ -1,11 +1,14 @@
 """Subagent execution engine."""
 
 import asyncio
+import atexit
 import logging
 import threading
 import uuid
+from collections.abc import Callable, Coroutine
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from contextvars import Context, copy_context
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -13,12 +16,13 @@ from typing import Any
 
 from langchain.agents import create_agent
 from langchain.tools import BaseTool
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from deerflow.agents.thread_state import SandboxState, ThreadDataState, ThreadState
 from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
+from deerflow.subagents.token_collector import SubagentTokenCollector
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +61,8 @@ class SubagentResult:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     ai_messages: list[dict[str, Any]] | None = None
+    token_usage_records: list[dict[str, int | str]] = field(default_factory=list)
+    usage_reported: bool = False
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
     def __post_init__(self):
@@ -76,8 +82,107 @@ _scheduler_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent
 # Larger pool to avoid blocking when scheduler submits execution tasks
 _execution_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-exec-")
 
-# Dedicated pool for sync execute() calls made from an already-running event loop.
-_isolated_loop_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-isolated-")
+# Persistent event loop for isolated subagent executions triggered from an
+# already-running parent loop. Reusing one long-lived loop avoids creating a
+# fresh loop per execution and then closing async resources bound to it.
+_isolated_subagent_loop: asyncio.AbstractEventLoop | None = None
+_isolated_subagent_loop_thread: threading.Thread | None = None
+_isolated_subagent_loop_started: threading.Event | None = None
+_isolated_subagent_loop_lock = threading.Lock()
+
+
+def _run_isolated_subagent_loop(
+    loop: asyncio.AbstractEventLoop,
+    started_event: threading.Event,
+) -> None:
+    """Run the persistent isolated subagent loop in a dedicated daemon thread."""
+    asyncio.set_event_loop(loop)
+    loop.call_soon(started_event.set)
+    try:
+        loop.run_forever()
+    finally:
+        started_event.clear()
+
+
+def _shutdown_isolated_subagent_loop() -> None:
+    """Stop and close the persistent isolated subagent loop."""
+    global _isolated_subagent_loop, _isolated_subagent_loop_thread, _isolated_subagent_loop_started
+
+    with _isolated_subagent_loop_lock:
+        loop = _isolated_subagent_loop
+        thread = _isolated_subagent_loop_thread
+        _isolated_subagent_loop = None
+        _isolated_subagent_loop_thread = None
+        _isolated_subagent_loop_started = None
+
+    if loop is None:
+        return
+
+    if loop.is_running():
+        loop.call_soon_threadsafe(loop.stop)
+
+    if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+        thread.join(timeout=1)
+
+    thread_stopped = thread is None or not thread.is_alive()
+    loop_stopped = not loop.is_running()
+
+    if not loop.is_closed():
+        if thread_stopped and loop_stopped:
+            loop.close()
+        else:
+            logger.warning(
+                "Skipping close of isolated subagent loop because shutdown did not complete within timeout (thread_alive=%s, loop_running=%s)",
+                thread is not None and thread.is_alive(),
+                loop.is_running(),
+            )
+
+
+atexit.register(_shutdown_isolated_subagent_loop)
+
+
+def _get_isolated_subagent_loop() -> asyncio.AbstractEventLoop:
+    """Return the persistent event loop used by isolated subagent executions."""
+    global _isolated_subagent_loop, _isolated_subagent_loop_thread, _isolated_subagent_loop_started
+    with _isolated_subagent_loop_lock:
+        thread_is_alive = _isolated_subagent_loop_thread is not None and _isolated_subagent_loop_thread.is_alive()
+        loop_is_usable = _isolated_subagent_loop is not None and not _isolated_subagent_loop.is_closed() and _isolated_subagent_loop.is_running() and thread_is_alive
+
+        if not loop_is_usable:
+            loop = asyncio.new_event_loop()
+            started_event = threading.Event()
+            thread = threading.Thread(
+                target=_run_isolated_subagent_loop,
+                args=(loop, started_event),
+                name="subagent-persistent-loop",
+                daemon=True,
+            )
+            thread.start()
+            if not started_event.wait(timeout=5):
+                loop.call_soon_threadsafe(loop.stop)
+                thread.join(timeout=1)
+                loop.close()
+                raise RuntimeError("Timed out starting isolated subagent event loop")
+            _isolated_subagent_loop = loop
+            _isolated_subagent_loop_thread = thread
+            _isolated_subagent_loop_started = started_event
+
+        if _isolated_subagent_loop is None:
+            raise RuntimeError("Isolated subagent event loop is not initialized")
+        return _isolated_subagent_loop
+
+
+def _submit_to_isolated_loop_in_context(
+    context: Context,
+    coro_factory: Callable[[], Coroutine[Any, Any, "SubagentResult"]],
+) -> Future["SubagentResult"]:
+    """Submit a coroutine to the isolated loop while preserving ContextVar state."""
+    return context.run(
+        lambda: asyncio.run_coroutine_threadsafe(
+            coro_factory(),
+            _get_isolated_subagent_loop(),
+        )
+    )
 
 
 def _filter_tools(
@@ -113,35 +218,21 @@ def _filter_tools(
 def _load_skill_contents(skill_names: list[str]) -> str:
     """Load and inline skill file contents for subagent prompt injection.
 
-    Reads SKILL.md files for the requested skill names, strips YAML frontmatter,
-    and wraps each in a <skill> XML tag for clean prompt injection.
+    Delegates to ``deerflow.skills.render.render_skill_sections`` which is
+    independently unit-tested (see ``tests/test_subagent_skill_path_rewrite.py``).
+    Kept here as a thin wrapper so existing call sites stay untouched.
 
     Returns:
         Concatenated skill content string, or empty string if no skills loaded.
     """
-    from deerflow.skills.loader import load_skills
+    from deerflow.config import get_app_config
+    from deerflow.skills.render import render_skill_sections
 
-    all_skills = load_skills(enabled_only=True)
-    skill_map = {s.name: s for s in all_skills}
-
-    sections = []
-    for name in skill_names:
-        skill = skill_map.get(name)
-        if not skill:
-            logger.warning("Skill '%s' not found or not enabled, skipping injection for subagent", name)
-            continue
-        try:
-            content = skill.skill_file.read_text(encoding="utf-8")
-            # Strip YAML frontmatter (--- ... ---)
-            if content.startswith("---"):
-                end = content.find("---", 3)
-                if end != -1:
-                    content = content[end + 3 :].strip()
-            sections.append(f'<skill name="{name}">\n{content}\n</skill>')
-        except Exception:
-            logger.warning("Failed to read skill file for '%s'", name, exc_info=True)
-
-    return "\n\n".join(sections)
+    try:
+        container_base_path = get_app_config().skills.container_path
+    except Exception:
+        container_base_path = "/mnt/skills"
+    return render_skill_sections(skill_names, container_base_path)
 
 
 def _get_model_name(config: SubagentConfig, parent_model: str | None) -> str | None:
@@ -171,6 +262,8 @@ class SubagentExecutor:
         thread_data: ThreadDataState | None = None,
         thread_id: str | None = None,
         trace_id: str | None = None,
+        authorized_handoff_paths: set[str] | None = None,
+        app_config=None,
     ):
         """Initialize the executor.
 
@@ -182,6 +275,15 @@ class SubagentExecutor:
             thread_data: Thread data from parent agent.
             thread_id: Thread ID for sandbox operations.
             trace_id: Trace ID from parent for distributed tracing.
+            authorized_handoff_paths: Set of absolute workspace paths the
+                subagent is authorized to read via read_file. Populated by
+                task_tool from {{handoff://<name>}} placeholders in the lead's
+                task prompt. None or empty set = no authorization (subagent
+                cannot read peer handoff files). Consumed by
+                HandoffIsolationProvider attached to the subagent's middleware
+                chain (see Task 11).
+            app_config: Reserved for upstream parity (resolved AppConfig).
+                Ignored locally — config is fetched via the global cache.
         """
         self.config = config
         self.parent_model = parent_model
@@ -190,6 +292,8 @@ class SubagentExecutor:
         self.thread_id = thread_id
         # Generate trace_id if not provided (for top-level calls)
         self.trace_id = trace_id or str(uuid.uuid4())[:8]
+        self.authorized_handoff_paths = authorized_handoff_paths or set()
+        self.app_config = app_config
 
         # Filter tools based on config
         self.tools = _filter_tools(
@@ -199,8 +303,13 @@ class SubagentExecutor:
         )
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
-    def _create_agent(self):
-        """Create the agent instance."""
+    def _create_agent(self, tools: list[BaseTool] | None = None):
+        """Create the agent instance.
+
+        Args:
+            tools: Optional tool list to override ``self.tools`` (e.g., after
+                applying skill-allowed-tools filtering in ``_build_initial_state``).
+        """
         model_name = _get_model_name(self.config, self.parent_model)
         model = create_chat_model(name=model_name, thinking_enabled=False)
 
@@ -209,45 +318,76 @@ class SubagentExecutor:
         # Reuse shared middleware composition with lead agent.
         middlewares = build_subagent_runtime_middlewares(lazy_init=True)
 
-        # Build system prompt with inline skill injection
-        system_prompt = self._build_system_prompt()
+        # Attach HandoffIsolationProvider so subagent's read_file on
+        # handoff_*.json files is gated by lead's {{handoff://}} authorization.
+        from deerflow.guardrails.handoff_isolation_provider import HandoffIsolationProvider
+        from deerflow.guardrails.middleware import GuardrailMiddleware
 
+        handoff_isolation = HandoffIsolationProvider(
+            authorized_paths=self.authorized_handoff_paths,
+            self_outbox_subagent_name=self.config.name,
+        )
+        middlewares.append(GuardrailMiddleware(
+            provider=handoff_isolation,
+            passport=f"subagent:{self.config.name}",
+        ))
+
+        # Attach ScriptInvocationOnlyProvider so code-executor's bash tool is
+        # whitelisted to ethoinsight.scripts.* invocations + safe file ops.
+        # Non-code-executor subagents pass through (provider self-gates by agent_id).
+        from deerflow.guardrails.script_invocation_only_provider import (
+            ScriptInvocationOnlyProvider,
+        )
+
+        middlewares.append(GuardrailMiddleware(
+            provider=ScriptInvocationOnlyProvider(),
+            passport=f"subagent:{self.config.name}",
+        ))
+
+        # A-10: system_prompt is injected as a SystemMessage in the initial
+        # state (see _build_initial_state), merged with any skill content into
+        # a single SystemMessage. Passing system_prompt=None here prevents
+        # create_agent from prepending a second SystemMessage — some LLM APIs
+        # reject multiple system messages with "System message must be at the
+        # beginning."
         return create_agent(
             model=model,
-            tools=self.tools,
+            tools=tools if tools is not None else self.tools,
             middleware=middlewares,
-            system_prompt=system_prompt,
+            system_prompt=None,
             state_schema=ThreadState,
         )
 
-    def _build_system_prompt(self) -> str:
-        """Build system prompt with inline skill content injection.
-
-        If the subagent config declares skill names, their SKILL.md content
-        is loaded and appended to the base system_prompt so the subagent
-        has full skill knowledge without spending turns on read_file.
-        """
-        base_prompt = self.config.system_prompt
-        if not self.config.skills:
-            return base_prompt
-
-        skill_sections = _load_skill_contents(self.config.skills)
-        if not skill_sections:
-            return base_prompt
-
-        return f"{base_prompt}\n\n{skill_sections}"
-
-    def _build_initial_state(self, task: str) -> dict[str, Any]:
+    def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool]]:
         """Build the initial state for agent execution.
+
+        Combines the subagent's system_prompt with any skill content into a
+        single SystemMessage to avoid the multi-SystemMessage rejection some
+        LLM APIs raise (vLLM, Xinference, Chinese providers).
 
         Args:
             task: The task description.
 
         Returns:
-            Initial state dictionary.
+            Tuple of (initial_state, filtered_tools) — filtered_tools mirrors
+            the upstream contract; locally we have no skill-allowed-tools
+            policy, so it always equals ``self.tools``.
         """
+        system_parts: list[str] = []
+        if self.config.system_prompt:
+            system_parts.append(self.config.system_prompt)
+        if self.config.skills:
+            skill_sections = _load_skill_contents(self.config.skills)
+            if skill_sections:
+                system_parts.append(skill_sections)
+
+        messages: list[Any] = []
+        if system_parts:
+            messages.append(SystemMessage(content="\n\n".join(system_parts)))
+        messages.append(HumanMessage(content=task))
+
         state: dict[str, Any] = {
-            "messages": [HumanMessage(content=task)],
+            "messages": messages,
         }
 
         # Pass through sandbox and thread data from parent
@@ -256,7 +396,7 @@ class SubagentExecutor:
         if self.thread_data is not None:
             state["thread_data"] = self.thread_data
 
-        return state
+        return state, self.tools
 
     async def _aexecute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
         """Execute a task asynchronously.
@@ -281,9 +421,16 @@ class SubagentExecutor:
                 started_at=datetime.now(),
             )
 
+        collector: SubagentTokenCollector | None = None
         try:
-            agent = self._create_agent()
-            state = self._build_initial_state(task)
+            state, filtered_tools = self._build_initial_state(task)
+            agent = self._create_agent(filtered_tools)
+
+            # Token collector for subagent LLM calls — records flow into
+            # SubagentResult.token_usage_records and are reported to the
+            # parent RunJournal by task_tool when the subagent terminates.
+            collector_caller = f"subagent:{self.config.name}"
+            collector = SubagentTokenCollector(caller=collector_caller)
 
             # Build config with thread_id for sandbox access and recursion limit
             # LangGraph counts node steps (model=1 + tools=1 per turn), so multiply
@@ -291,6 +438,8 @@ class SubagentExecutor:
             # The actual turn limit is enforced by AI message counting below.
             run_config: RunnableConfig = {
                 "recursion_limit": self.config.max_turns * 2 + 1,
+                "callbacks": [collector],
+                "tags": [collector_caller],
             }
             context = {}
             if self.thread_id:
@@ -311,6 +460,8 @@ class SubagentExecutor:
                         result.status = SubagentStatus.CANCELLED
                         result.error = "Cancelled by user"
                         result.completed_at = datetime.now()
+                if collector is not None:
+                    result.token_usage_records = collector.snapshot_records()
                 return result
 
             async for chunk in agent.astream(state, config=run_config, context=context, stream_mode="values"):  # type: ignore[arg-type]
@@ -325,6 +476,7 @@ class SubagentExecutor:
                             result.status = SubagentStatus.CANCELLED
                             result.error = "Cancelled by user"
                             result.completed_at = datetime.now()
+                    result.token_usage_records = collector.snapshot_records()
                     return result
 
                 final_state = chunk
@@ -352,13 +504,11 @@ class SubagentExecutor:
 
                             # Hard limit: terminate early when AI message count reaches max_turns
                             if len(result.ai_messages) >= self.config.max_turns:
-                                logger.warning(
-                                    f"[trace={self.trace_id}] Subagent {self.config.name} reached "
-                                    f"max_turns={self.config.max_turns} AI messages, terminating early"
-                                )
+                                logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} reached max_turns={self.config.max_turns} AI messages, terminating early")
                                 break
 
             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} completed async execution")
+            result.token_usage_records = collector.snapshot_records()
 
             if final_state is None:
                 logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} no final state")
@@ -438,46 +588,10 @@ class SubagentExecutor:
             result.status = SubagentStatus.FAILED
             result.error = str(e)
             result.completed_at = datetime.now()
+            if collector is not None:
+                result.token_usage_records = collector.snapshot_records()
 
         return result
-
-    def _execute_in_isolated_loop(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
-        """Execute the subagent in a completely fresh event loop.
-
-        This method is designed to run in a separate thread to ensure complete
-        isolation from any parent event loop, preventing conflicts with asyncio
-        primitives that may be bound to the parent loop (e.g., httpx clients).
-        """
-        try:
-            previous_loop = asyncio.get_event_loop()
-        except RuntimeError:
-            previous_loop = None
-
-        # Create and set a new event loop for this thread
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(self._aexecute(task, result_holder))
-        finally:
-            try:
-                pending = asyncio.all_tasks(loop)
-                if pending:
-                    for task_obj in pending:
-                        task_obj.cancel()
-                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-
-                loop.run_until_complete(loop.shutdown_asyncgens())
-                loop.run_until_complete(loop.shutdown_default_executor())
-            except Exception:
-                logger.debug(
-                    f"[trace={self.trace_id}] Failed while cleaning up isolated event loop for subagent {self.config.name}",
-                    exc_info=True,
-                )
-            finally:
-                try:
-                    loop.close()
-                finally:
-                    asyncio.set_event_loop(previous_loop)
 
     def execute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
         """Execute a task synchronously (wrapper around async execution).
@@ -499,11 +613,31 @@ class SubagentExecutor:
                 loop = None
 
             if loop is not None and loop.is_running():
-                logger.debug(f"[trace={self.trace_id}] Subagent {self.config.name} detected running event loop, using isolated thread")
-                future = _isolated_loop_pool.submit(self._execute_in_isolated_loop, task, result_holder)
-                return future.result()
+                logger.debug(f"[trace={self.trace_id}] Subagent {self.config.name} detected running event loop, using persistent isolated loop")
+                # Snapshot parent ContextVar state (e.g., user_id) so that the
+                # subagent coroutine running on the isolated loop sees the same
+                # auth context as the lead agent. Without copy_context() here, the
+                # coroutine would run with an empty context and any
+                # ContextVar.get() (such as runtime/user_context._current_user)
+                # would fall back to its default ("default" user_id).
+                parent_context = copy_context()
+                future: Future[SubagentResult] | None = None
+                try:
+                    future = _submit_to_isolated_loop_in_context(
+                        parent_context,
+                        lambda: self._aexecute(task, result_holder),
+                    )
+                    return future.result(timeout=self.config.timeout_seconds)
+                except FuturesTimeoutError:
+                    if result_holder is not None:
+                        result_holder.cancel_event.set()
+                    if future is not None:
+                        future.cancel()
+                    raise
 
             # Standard path: no running event loop, use asyncio.run
+            # asyncio.run preserves the current context for the coroutine, so
+            # ContextVars set in the calling thread are visible inside _aexecute.
             return asyncio.run(self._aexecute(task, result_holder))
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} execution failed")
@@ -547,7 +681,13 @@ class SubagentExecutor:
         with _background_tasks_lock:
             _background_tasks[task_id] = result
 
-        # Submit to scheduler pool
+        # Snapshot parent ContextVar state BEFORE submitting to thread pool.
+        # _scheduler_pool is a ThreadPoolExecutor, which does NOT propagate
+        # contextvars across thread boundaries. We must capture the parent
+        # context here (still on the calling task's thread) and explicitly
+        # replay it inside _submit_to_isolated_loop_in_context.
+        parent_context = copy_context()
+
         def run_task():
             with _background_tasks_lock:
                 _background_tasks[task_id].status = SubagentStatus.RUNNING
@@ -555,9 +695,14 @@ class SubagentExecutor:
                 result_holder = _background_tasks[task_id]
 
             try:
-                # Submit execution to execution pool with timeout
-                # Pass result_holder so execute() can update it in real-time
-                execution_future: Future = _execution_pool.submit(self.execute, task, result_holder)
+                # Submit execution directly to the persistent isolated loop so the
+                # background path does not create a temporary loop via execute().
+                # Pass the captured parent_context so user_id and other
+                # ContextVars propagate into the subagent coroutine.
+                execution_future = _submit_to_isolated_loop_in_context(
+                    parent_context,
+                    lambda: self._aexecute(task, result_holder),
+                )
                 try:
                     # Wait for execution with timeout
                     exec_result = execution_future.result(timeout=self.config.timeout_seconds)

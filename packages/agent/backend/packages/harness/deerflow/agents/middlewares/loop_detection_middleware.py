@@ -22,7 +22,6 @@ from typing import override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import HumanMessage
 from langgraph.runtime import Runtime
 
 logger = logging.getLogger(__name__)
@@ -32,8 +31,8 @@ _DEFAULT_WARN_THRESHOLD = 3  # inject warning after 3 identical calls
 _DEFAULT_HARD_LIMIT = 5  # force-stop after 5 identical calls
 _DEFAULT_WINDOW_SIZE = 20  # track last N tool calls
 _DEFAULT_MAX_TRACKED_THREADS = 100  # LRU eviction limit
-_DEFAULT_TOOL_FREQ_WARN = 30  # warn after 30 calls to the same tool type
-_DEFAULT_TOOL_FREQ_HARD_LIMIT = 50  # force-stop after 50 calls to the same tool type
+_DEFAULT_TOOL_FREQ_WARN = 3  # warn after 3 calls to the same tool type (P0 fix: lead 微调 bash command 让 hash 不同绕过 Layer 1)
+_DEFAULT_TOOL_FREQ_HARD_LIMIT = 5  # force-stop after 5 calls to the same tool type
 
 
 def _normalize_tool_call_args(raw_args: object) -> tuple[dict, str | None]:
@@ -94,6 +93,14 @@ def _stable_tool_key(name: str, args: dict, fallback_key: str | None) -> str:
             return fallback_key
         return json.dumps(args, sort_keys=True, default=str)
 
+    # `task` is a dispatcher — its identity is the target subagent, not the
+    # tool name itself. Two task() calls dispatching different subagents
+    # should be treated as different "tools" for loop-detection purposes.
+    if name == "task" and fallback_key is None:
+        subagent_type = args.get("subagent_type") or "?"
+        description = args.get("description") or ""
+        return f"{subagent_type}::{description}"
+
     salient_fields = ("path", "url", "query", "command", "pattern", "glob", "cmd")
     stable_args = {field: args[field] for field in salient_fields if args.get(field) is not None}
     if stable_args:
@@ -129,12 +136,15 @@ def _hash_tool_calls(tool_calls: list[dict]) -> str:
 _WARNING_MSG = "[LOOP DETECTED] You are repeating the same tool calls. Stop calling tools and produce your final answer now. If you cannot complete the task, summarize what you accomplished so far."
 
 _TOOL_FREQ_WARNING_MSG = (
-    "[LOOP DETECTED] You have called {tool_name} {count} times without producing a final answer. Stop calling tools and produce your final answer now. If you cannot complete the task, summarize what you accomplished so far."
+    "[LOOP DETECTED] You have called {tool_name} {count} times without success."
+    " If you are trying to run analysis commands (parse.*, catalog.*), use task(code-executor) instead of bash."
+    " If you need to generate metric_plan.json, use the prep_metric_plan tool."
+    " Stop using {tool_name} and produce a decision now."
 )
 
 _HARD_STOP_MSG = "[FORCED STOP] Repeated tool calls exceeded the safety limit. Producing final answer with results collected so far."
 
-_TOOL_FREQ_HARD_STOP_MSG = "[FORCED STOP] Tool {tool_name} called {count} times — exceeded the per-tool safety limit. Producing final answer with results collected so far."
+_TOOL_FREQ_HARD_STOP_MSG = "[FORCED STOP] Tool {tool_name} called {count} times — exceeded the per-tool safety limit. All tool_calls stripped. Produce a final text answer now summarizing what to do next (e.g., dispatch task(code-executor) or ask_clarification)."
 
 
 class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
@@ -272,38 +282,50 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                     return _WARNING_MSG, False
 
             # --- Layer 2: per-tool-type frequency ---
+            # `task` is a dispatcher tool — bucket per subagent_type so that
+            # dispatching 3 different subagents (code-executor → data-analyst
+            # → chart-maker) is NOT flagged as "called task 3 times". That
+            # produced a spurious LOOP DETECTED warning in 2026-05-19 dogfood.
             freq = self._tool_freq[thread_id]
             for tc in tool_calls:
                 name = tc.get("name", "")
                 if not name:
                     continue
-                freq[name] += 1
-                tc_count = freq[name]
+                if name == "task":
+                    args, _fallback = _normalize_tool_call_args(tc.get("args", {}))
+                    subagent_type = args.get("subagent_type") or "?"
+                    freq_key = f"task:{subagent_type}"
+                    display_name = f"task({subagent_type})"
+                else:
+                    freq_key = name
+                    display_name = name
+                freq[freq_key] += 1
+                tc_count = freq[freq_key]
 
                 if tc_count >= self.tool_freq_hard_limit:
                     logger.error(
                         "Tool frequency hard limit reached — forcing stop",
                         extra={
                             "thread_id": thread_id,
-                            "tool_name": name,
+                            "tool_name": display_name,
                             "count": tc_count,
                         },
                     )
-                    return _TOOL_FREQ_HARD_STOP_MSG.format(tool_name=name, count=tc_count), True
+                    return _TOOL_FREQ_HARD_STOP_MSG.format(tool_name=display_name, count=tc_count), True
 
                 if tc_count >= self.tool_freq_warn:
                     warned = self._tool_freq_warned[thread_id]
-                    if name not in warned:
-                        warned.add(name)
+                    if freq_key not in warned:
+                        warned.add(freq_key)
                         logger.warning(
                             "Tool frequency warning — too many calls to same tool type",
                             extra={
                                 "thread_id": thread_id,
-                                "tool_name": name,
+                                "tool_name": display_name,
                                 "count": tc_count,
                             },
                         )
-                        return _TOOL_FREQ_WARNING_MSG.format(tool_name=name, count=tc_count), False
+                        return _TOOL_FREQ_WARNING_MSG.format(tool_name=display_name, count=tc_count), False
 
         return None, False
 
@@ -356,13 +378,30 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             return {"messages": [stripped_msg]}
 
         if warning:
-            # Inject as HumanMessage instead of SystemMessage to avoid
-            # Anthropic's "multiple non-consecutive system messages" error.
-            # Anthropic models require system messages only at the start of
-            # the conversation; injecting one mid-conversation crashes
-            # langchain_anthropic's _format_messages(). HumanMessage works
-            # with all providers. See #1299.
-            return {"messages": [HumanMessage(content=warning)]}
+            # WORKAROUND for v2.0-m1 — see #2724.
+            #
+            # Append the warning to the AIMessage content instead of
+            # injecting a separate HumanMessage. Inserting any non-tool
+            # message between an AIMessage(tool_calls=...) and its
+            # ToolMessage responses breaks OpenAI/Moonshot strict pairing
+            # validation ("tool_call_ids did not have response messages")
+            # because the tools node has not run yet at after_model time.
+            # tool_calls are preserved so the tools node still executes.
+            #
+            # This is a temporary mitigation: mutating an existing
+            # AIMessage to carry framework-authored text leaks loop-warning
+            # text into downstream consumers (MemoryMiddleware fact
+            # extraction, TitleMiddleware, telemetry, model replay) as if
+            # the model said it. The proper fix is to defer warning
+            # injection from after_model to wrap_model_call so every prior
+            # ToolMessage is already in the request — see RFC #2517 (which
+            # lists "loop intervention does not leave invalid
+            # tool-call/tool-message state" as acceptance criteria) and
+            # the prototype on `fix/loop-detection-tool-call-pairing`.
+            messages = state.get("messages", [])
+            last_msg = messages[-1]
+            patched_msg = last_msg.model_copy(update={"content": self._append_text(last_msg.content, warning)})
+            return {"messages": [patched_msg]}
 
         return None
 

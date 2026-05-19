@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE boost_serialization>
+<boost_serialization signature="serialization::archive" version="19">
+<HardwareSetup class_id="0" tracking_level="0" version="0">
+	<m_vecConfigDataIOBox class_id="1" tracking_level="0" version="0">
+		<count>1</count>
+		<item_version>1</item_version>
+		<item class_id="2" tracking_level="0" version="1">
+			<m_idIOBox>-1</m_idIOBox>
+			<m_eIOBoxType>1</m_eIOBoxType>
+			<m_dDvWlDefVal>1.00000000000000000e+03</m_dDvWlDefVal>
+			<m_iDvWlDefCmdId>399459176</m_iDvWlDefCmdId>
+			<m_lDvWlDefValRangeId>1632192</m_lDvWlDefValRangeId>
+			<m_vecConfigDataPortDevice class_id="3" tracking_level="0" version="0">
+				<count>0</count>
+				<item_version>0</item_version>
+			</m_vecConfigDataPortDevice>
+		</item>
+	</m_vecConfigDataIOBox>
+</HardwareSetup>
+</boost_serialization>

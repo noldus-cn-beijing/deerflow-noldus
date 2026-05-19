@@ -1,10 +1,11 @@
 ---
 name: ethoinsight
 description: >
-  Behavioral neuroscience data analysis guide for EthoVision XT exported data.
-  Covers paradigm interpretation, confound checking, effect size assessment,
-  and APA-format scientific reporting. Use when analyzing animal behavior data
-  or writing analysis reports.
+  Behavioral neuroscience data interpretation methodology for data-analyst &
+  report-writer subagents. Covers confound checking, statistical method selection,
+  effect size assessment, and APA-format scientific reporting. Use AFTER
+  code-executor handoff is received. For paradigm-specific judgment knowledge,
+  see `ethovision-paradigm-knowledge` skill.
 version: 1.0.0
 author: noldus-insight
 ---
@@ -27,7 +28,7 @@ author: noldus-insight
 
 ### Step 2: 范式解读
 
-根据实验范式（EPM、OFT、Shoaling 等）查阅指标含义和组间对比判读原则。详见 `references/paradigm-interpretation.md`。
+根据实验范式（EPM、OFT等）查阅指标含义和组间对比判读原则。详见 `references/paradigm-interpretation.md`。
 
 ### Step 3: 统计方法选择
 
@@ -48,3 +49,7 @@ author: noldus-insight
 - `get_paradigm`: 查询范式详情（setup、指标、相关产品）
 - `get_terminology`: 查询行为学术语定义和计算方法
 - `list_products` / `list_paradigms`: 浏览可用范式和产品
+
+## 操作约束
+
+执行类 subagent (code-executor / chart-maker) **必读** `references/execution-conventions.md`(bash 形式、handoff 写入、error recovery、gate_signals 格式)。

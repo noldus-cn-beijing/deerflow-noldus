@@ -273,6 +273,22 @@ export const enUS: Translations = {
     clickToViewContent: "Click to view file content",
     writeTodos: "Update to-do list",
     skillInstallTooltip: "Install skill and make it available to DeerFlow",
+    stageBroadcast: {
+      dispatchSubagent: (subagentType: string) => {
+        const labels: Record<string, string> = {
+          "code-executor": "🧮 Computing metrics, ~30-60 seconds...",
+          "data-analyst": "🔬 Metrics ready, consulting domain expert, ~1-2 minutes...",
+          "report-writer": "📝 Insights ready, drafting research report...",
+          "knowledge-assistant": "📚 Looking up domain knowledge...",
+        };
+        return labels[subagentType] ?? `🛠 Dispatching ${subagentType}...`;
+      },
+      parseHeaders: "📂 Parsing EthoVision file structure...",
+      resolveCatalog: "📋 Generating metric plan...",
+      askClarification: "⚠️ Need to confirm one thing first...",
+      runScript: (scriptName: string) => `⚙️ Running ${scriptName}...`,
+      genericBash: "💻 Executing command...",
+    },
   },
 
   // Subtasks
@@ -323,6 +339,7 @@ export const enUS: Translations = {
     title: "Settings",
     description: "Adjust how DeerFlow looks and behaves for you.",
     sections: {
+      account: "Account",
       appearance: "Appearance",
       memory: "Memory",
       tools: "Tools",
@@ -408,6 +425,23 @@ export const enUS: Translations = {
           view: "View",
         },
       },
+    },
+    account: {
+      profileTitle: "Profile",
+      email: "Email",
+      role: "Role",
+      changePasswordTitle: "Change Password",
+      changePasswordDescription: "Update your account password.",
+      currentPassword: "Current password",
+      newPassword: "New password",
+      confirmNewPassword: "Confirm new password",
+      passwordMismatch: "New passwords do not match",
+      passwordTooShort: "Password must be at least 8 characters",
+      passwordChangedSuccess: "Password changed successfully",
+      networkError: "Network error. Please try again.",
+      updating: "Updating...",
+      updatePassword: "Update Password",
+      signOut: "Sign Out",
     },
     appearance: {
       themeTitle: "Theme",

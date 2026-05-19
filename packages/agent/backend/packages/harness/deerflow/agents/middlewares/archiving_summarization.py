@@ -39,6 +39,7 @@ from langchain_core.messages import HumanMessage, messages_to_dict
 from langgraph.runtime import Runtime
 
 from deerflow.config.paths import get_paths
+from deerflow.runtime.user_context import get_effective_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +203,7 @@ class ArchivingSummarizationMiddleware(SummarizationMiddleware):
 
         try:
             paths = get_paths()
-            workspace_dir = paths.sandbox_work_dir(thread_id)
+            workspace_dir = paths.sandbox_work_dir(thread_id, user_id=get_effective_user_id())
             workspace_dir.mkdir(parents=True, exist_ok=True)
             summary_path = workspace_dir / SUMMARY_FILENAME
 
@@ -243,7 +244,7 @@ class ArchivingSummarizationMiddleware(SummarizationMiddleware):
 
         try:
             paths = get_paths()
-            archive_dir = paths.thread_dir(thread_id) / ARCHIVE_DIR_NAME
+            archive_dir = paths.thread_dir(thread_id, user_id=get_effective_user_id()) / ARCHIVE_DIR_NAME
             archive_dir.mkdir(parents=True, exist_ok=True)
 
             timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
