@@ -137,3 +137,36 @@ class Plan:
     charts: list[PlanChart]
     skipped: list[PlanSkipped]
     notes: list[str]
+
+
+# ============================================================================
+# Plan split (W2): 拆 Plan → PlanMetrics + PlanCharts
+# 老 Plan dataclass 保留,等 W4/W11/W13 完成后 W22 dogfood 前彻底删。
+# ============================================================================
+
+
+@dataclass
+class PlanMetrics:
+    paradigm: str
+    ev19_template: str | None
+    generated_at: str
+    inputs: PlanInputs
+    metrics: list[PlanMetric]
+    statistics: PlanStatistics | None
+    skipped: list[PlanSkipped]
+    notes: list[str]
+    schema_version: str = "1.0"
+
+
+@dataclass
+class PlanCharts:
+    paradigm: str
+    ev19_template: str | None
+    generated_at: str
+    inputs: PlanInputs
+    charts: list[PlanChart]
+    charts_fallback_available: list[PlanChart]
+    skipped: list[PlanSkipped]
+    user_intent: str | None
+    notes: list[str]
+    schema_version: str = "1.0"
