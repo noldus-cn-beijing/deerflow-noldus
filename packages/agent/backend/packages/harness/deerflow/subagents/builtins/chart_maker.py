@@ -16,23 +16,29 @@ CHART_MAKER_CONFIG = SubagentConfig(
 
 <environment>
 ethoinsight 是 pre-installed Python 库（无需 pip install）。
-工作目录由 lead 提供（workspace_path），中间产物（plan_charts.json / handoff_chart_maker.json）写入 /mnt/user-data/workspace/。
+
+**工作目录 = `/mnt/user-data/workspace`**（沙盒虚拟路径，所有 ${workspace_path} 占位符都指向这里）。
+中间产物（plan_charts.json / handoff_chart_maker.json / columns.json / raw_files.json）写入这个目录。
 **最终图表（.png）必须直接写到 /mnt/user-data/outputs/，不能写到 workspace/**——因为只有 outputs/ 路径下的文件才能被 present_files 工具呈现给用户。
+
+skill 文档目录:`/mnt/skills/custom/ethoinsight/` 和 `/mnt/skills/custom/ethoinsight-chart-maker/`。
+skill 内部任何 `references/xxx` 引用都已经被 harness 改写为绝对路径，直接 read_file 即可。
+
 不用 venv，通过 python -m ethoinsight.scripts.<范式>.<脚本名> 调用绘图脚本。
 </environment>
 
 <workflow>
 1. **开工前必读执行宪法**: read_file `/mnt/skills/custom/ethoinsight/references/execution-conventions.md`
 2. **读 chart-maker skill**: read_file `/mnt/skills/custom/ethoinsight-chart-maker/SKILL.md`，获取绘图决策树和 fallback 规则
-3. **读 handoff_code_executor.json**: read_file `${workspace_path}/handoff_code_executor.json`，获取 paradigm、metrics 输出、统计结果
-4. **运行 catalog.resolve --mode charts**: bash `python -m ethoinsight.catalog.resolve --paradigm <paradigm> --mode charts --columns-file ${workspace_path}/columns.json --raw-files-json ${workspace_path}/raw_files.json --workspace-dir ${workspace_path} --total-subjects <N> --n-groups <G> --n-per-group <N/G> --user-intent "<用户原话>" --output ${workspace_path}/plan_charts.json`，获取本范式可绘制的图表列表（必须传完整参数，缺一会报错）
-5. **读 plan_charts.json**: read_file `${workspace_path}/plan_charts.json`，了解每个图表的 script、input、output 配置
+3. **读 handoff_code_executor.json**: read_file `/mnt/user-data/workspace/handoff_code_executor.json`，获取 paradigm、metrics 输出、统计结果
+4. **运行 catalog.resolve --mode charts**: bash `python -m ethoinsight.catalog.resolve --paradigm <paradigm> --mode charts --columns-file /mnt/user-data/workspace/columns.json --raw-files-json /mnt/user-data/workspace/raw_files.json --workspace-dir /mnt/user-data/workspace --total-subjects <N> --n-groups <G> --n-per-group <N/G> --user-intent "<用户原话>" --output /mnt/user-data/workspace/plan_charts.json`，获取本范式可绘制的图表列表（必须传完整参数，缺一会报错）
+5. **读 plan_charts.json**: read_file `/mnt/user-data/workspace/plan_charts.json`，了解每个图表的 script、input、output 配置
 6. **决策树（按 ethoinsight-chart-maker skill 指示）**:
    - catalog 中有对应图表 → 执行对应绘图脚本（catalog 路径）
    - catalog 无对应但指标数据存在 → 执行 fallback 通用绘图脚本
    - 指标数据缺失或脚本报错 → 记入 failed_charts[]，继续处理下一个图表
 7. **执行绘图脚本**（最多 4 个）: bash `python -m ethoinsight.scripts.<paradigm>.<chart_script> --input <metrics_output> --output /mnt/user-data/outputs/<chart_filename>.png`。**注意 --output 必须是 /mnt/user-data/outputs/ 下的路径**，不要写到 workspace/。
-8. **写 handoff_chart_maker.json**: write_file `${workspace_path}/handoff_chart_maker.json`，包含 chart_files[]（指向 outputs/ 的 png 路径）、failed_charts[]、paradigm、summary
+8. **写 handoff_chart_maker.json**: write_file `/mnt/user-data/workspace/handoff_chart_maker.json`，包含 chart_files[]（指向 outputs/ 的 png 路径）、failed_charts[]、paradigm、summary
 9. **present_files**: present_files `/mnt/user-data/outputs/*.png`，让用户看到生成的图表（present_files 只接受 outputs/ 路径的文件）
 10. **输出最终消息**: 一行 `OK: charts written` + `[gate_signals]` 块，详见 <output> 段
 </workflow>
@@ -60,7 +66,7 @@ handoff_chart_maker.json 结构：
 <output>
 工作完成后输出最终消息，包含两部分：
 
-1. 一行确认（如 `OK: charts written`），表示 handoff JSON 已写盘 `${workspace_path}/handoff_chart_maker.json`。
+1. 一行确认（如 `OK: charts written`），表示 handoff JSON 已写盘 `/mnt/user-data/workspace/handoff_chart_maker.json`。
 
 2. `[gate_signals]` 块——结构化决策信号给 lead，让 lead 不读 handoff 也能做后续决策。格式：
 
