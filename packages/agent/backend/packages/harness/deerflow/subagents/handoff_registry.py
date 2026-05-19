@@ -13,6 +13,7 @@ Usage:
 # Authoritative single source: adding an entry here AND in task_tool enables the
 # handoff mechanism; both imports re-export the same dict object.
 HANDOFF_FILE_REGISTRY: dict[str, str] = {
+    "chart_maker": "handoff_chart_maker.json",
     "code_executor": "handoff_code_executor.json",
     "data_analyst": "handoff_data_analyst.json",
     "report_writer": "handoff_report_writer.json",

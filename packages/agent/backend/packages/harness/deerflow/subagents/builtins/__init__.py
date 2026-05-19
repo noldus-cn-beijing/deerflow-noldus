@@ -1,6 +1,7 @@
 """Built-in subagent configurations."""
 
 from .bash_agent import BASH_AGENT_CONFIG
+from .chart_maker import CHART_MAKER_CONFIG
 from .code_executor import CODE_EXECUTOR_CONFIG
 from .data_analyst import DATA_ANALYST_CONFIG
 from .general_purpose import GENERAL_PURPOSE_CONFIG
@@ -10,6 +11,7 @@ from .report_writer import REPORT_WRITER_CONFIG
 __all__ = [
     "GENERAL_PURPOSE_CONFIG",
     "BASH_AGENT_CONFIG",
+    "CHART_MAKER_CONFIG",
     "CODE_EXECUTOR_CONFIG",
     "DATA_ANALYST_CONFIG",
     "KNOWLEDGE_ASSISTANT_CONFIG",
@@ -19,6 +21,7 @@ __all__ = [
 # Registry of built-in subagents
 # EthoInsight uses dedicated subagents; DeerFlow defaults disabled
 BUILTIN_SUBAGENTS = {
+    "chart-maker": CHART_MAKER_CONFIG,
     "code-executor": CODE_EXECUTOR_CONFIG,
     "data-analyst": DATA_ANALYST_CONFIG,
     "report-writer": REPORT_WRITER_CONFIG,
