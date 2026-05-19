@@ -108,7 +108,7 @@ errors_count: <int>
         "image_search",
     ],
     model="inherit",
-    max_turns=20,
+    max_turns=40,
     timeout_seconds=900,
     when_to_use=(
         "适合:\n"
