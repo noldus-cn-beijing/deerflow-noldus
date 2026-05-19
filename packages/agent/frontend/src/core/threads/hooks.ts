@@ -252,6 +252,7 @@ export function useThreadStream({
     loadMore: loadMoreHistory,
     loading: isHistoryLoading,
     appendMessages,
+    messageRunIds: historyMessageRunIds,
   } = useThreadHistory(onStreamThreadId ?? "");
 
   // Keep listeners ref updated with latest callbacks
@@ -760,7 +761,19 @@ export function useThreadStream({
     messages: [...cachedMessages, ...optimisticMessages],
   } as typeof thread;
 
-  return [mergedThread, sendMessage, isUploading, messageRunIds] as const;
+  // Merge stream-derived and history-derived run_id maps so the feedback
+  // buttons render for both live messages and reloaded history. Stream events
+  // take precedence (they reflect the most recent run for a message id), but
+  // history fills in everything plain-text messages and pre-refresh state miss.
+  const mergedMessageRunIds = useMemo(() => {
+    if (historyMessageRunIds.size === 0) return messageRunIds;
+    if (messageRunIds.size === 0) return historyMessageRunIds;
+    const merged = new Map(historyMessageRunIds);
+    for (const [k, v] of messageRunIds) merged.set(k, v);
+    return merged;
+  }, [messageRunIds, historyMessageRunIds]);
+
+  return [mergedThread, sendMessage, isUploading, mergedMessageRunIds] as const;
 }
 
 export function useThreadHistory(threadId: string) {
@@ -774,6 +787,12 @@ export function useThreadHistory(threadId: string) {
   const loadedRunIdsRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Per-message run_id discovered during history fetch. Feedback buttons need
+  // a run_id to bind to, and on_tool_end stream events only fire for
+  // tool-using messages — plain-text answers / clarifications / reasoning
+  // wouldn't get a run_id otherwise, and a page refresh empties the in-memory
+  // map maintained by useThreadStream. This source is authoritative.
+  const [historyMessageRunIds, setHistoryMessageRunIds] = useState<Map<string, string>>(() => new Map());
 
   const loadMessages = useCallback(async () => {
     if (loadingRef.current) {
@@ -833,6 +852,23 @@ export function useThreadHistory(threadId: string) {
         setMessages((prev) =>
           dedupeMessagesByIdentity([..._messages, ...prev]),
         );
+        // Populate historyMessageRunIds from history fetch so every prior AIMessage
+        // gets a run_id binding for the feedback buttons. Without this,
+        // feedback only shows on messages that arrived via on_tool_end stream
+        // events; plain-text AIMessages (final answers, clarifications) and
+        // everything before page refresh never get a run_id and the buttons
+        // never render. Source of run_id is authoritative (the run-messages
+        // API endpoint).
+        setHistoryMessageRunIds((prev) => {
+          let next: Map<string, string> | null = null;
+          for (const msg of _messages) {
+            const msgId = msg.id;
+            if (!msgId || prev.get(msgId) === run.run_id) continue;
+            if (next === null) next = new Map(prev);
+            next.set(msgId, run.run_id);
+          }
+          return next ?? prev;
+        });
         loadedRunIdsRef.current.add(run.run_id);
         indexRef.current = findLatestUnloadedRunIndex(
           runsRef.current,
@@ -887,6 +923,7 @@ export function useThreadHistory(threadId: string) {
     appendMessages,
     hasMore,
     loadMore: loadMessages,
+    messageRunIds: historyMessageRunIds,
   };
 }
 

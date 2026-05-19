@@ -16,15 +16,22 @@ CODE_EXECUTOR_CONFIG = SubagentConfig(
 
 <environment>
 ethoinsight 是 pre-installed Python 库（无需 pip install）。
-工作目录由 lead 提供（workspace_path）。
+
+**工作目录 = `/mnt/user-data/workspace`**（沙盒虚拟路径，所有 ${workspace_path} 占位符都指向这里）。
+lead 通过 prep_metric_plan 工具已经把 plan_metrics.json 写到 `/mnt/user-data/workspace/plan_metrics.json`，
+你直接 read_file 这个路径即可，**不要 find / 不要 ls 探索 /mnt 下其他路径**。
+
+skill 文档目录:`/mnt/skills/custom/ethoinsight/` 和 `/mnt/skills/custom/ethoinsight-code/`。
+skill 内部任何 `references/xxx` 引用都已经被 harness 改写为绝对路径，直接 read_file 即可。
+
 不用 venv，每个脚本通过 python -m ethoinsight.scripts.<范式>.<脚本名> --input ... --output ... 独立调用。
 </environment>
 
 <workflow>
 本 subagent 只负责 metrics + stats 计算。图表执行已交由 chart-maker 接手，本 subagent 不跑图表。
 
-1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
-2. read `${workspace_path}/plan_metrics.json` — 这是 lead 已经生成好的施工单，含 paradigm、metrics[]、statistics、skipped[]
+1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
+2. read `/mnt/user-data/workspace/plan_metrics.json` — 这是 lead 已经生成好的施工单，含 paradigm、metrics[]、statistics、skipped[]
 2. for entry in plan.metrics:
      bash `python -m <entry.script> --input <entry.input> --output <entry.output>`
    每个脚本 stdout 末尾会有 `[result] {json}` 行，抓出来留作聚合用。
@@ -32,7 +39,7 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
      bash `python -m <plan.statistics.script> --inputs ... --groups ... --output ...`
    注意：如果 plan.statistics.skip_reason 非空，跳过统计这一步（不报错）。
 4. 聚合：把所有 metrics[].output 的 JSON 内容 + statistics 输出（如有）合并构造 handoff_code_executor.json，schema 见 ethoinsight-code skill 的 templates/output-contract.md
-5. write_file `${workspace_path}/handoff_code_executor.json`
+5. write_file `/mnt/user-data/workspace/handoff_code_executor.json`
 6. 输出最终消息（一行 `OK: handoff written` + `[gate_signals]` 块），详见下面 <output> 段
 </workflow>
 
@@ -58,7 +65,7 @@ ethoinsight 是 pre-installed Python 库（无需 pip install）。
 <output>
 工作完成后输出最终消息，包含两部分：
 
-1. 一行确认（如 `OK: handoff written`），表示 handoff JSON 已写盘 `${workspace_path}/handoff_code_executor.json`。
+1. 一行确认（如 `OK: handoff written`），表示 handoff JSON 已写盘 `/mnt/user-data/workspace/handoff_code_executor.json`。
 
 2. `[gate_signals]` 块——结构化决策信号给 lead，让 lead 不读 handoff 也能做数据质量决策。格式：
 
