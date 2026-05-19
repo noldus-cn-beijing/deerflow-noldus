@@ -210,6 +210,24 @@ export function MessageList({
                   />,
                 );
               }
+              // Render the lead's narrative content alongside the dispatched
+              // subagents. Without this branch, any AIMessage that arrives with
+              // both content and a `task` tool_call has its prose dropped —
+              // during streaming, that means already-rendered text disappears
+              // the moment the tool_call chunk lands, leaving an empty
+              // container behind (the "横线 div" symptom seen in dogfood).
+              if (hasContent(message)) {
+                const narrative = extractContentFromMessage(message);
+                if (narrative) {
+                  results.push(
+                    <MarkdownContent
+                      key={"narrative-" + message.id}
+                      content={narrative}
+                      isLoading={thread.isLoading}
+                    />,
+                  );
+                }
+              }
               results.push(
                 <div
                   key="subtask-count"
