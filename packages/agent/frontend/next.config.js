@@ -13,10 +13,6 @@ function getInternalServiceURL(envKey, fallbackURL) {
 
 /** @type {import("next").NextConfig} */
 const config = {
-  i18n: {
-    locales: ["en", "zh"],
-    defaultLocale: "en",
-  },
   devIndicators: false,
   async rewrites() {
     const rewrites = [];
