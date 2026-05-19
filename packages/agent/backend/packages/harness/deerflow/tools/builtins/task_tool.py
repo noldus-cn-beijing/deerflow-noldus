@@ -88,6 +88,32 @@ def _resolve_handoff_placeholders(prompt: str) -> tuple[str, set[str]]:
     return replaced, authorized
 
 
+def _auto_inject_handoff_placeholders(prompt: str, subagent_type: str) -> str:
+    """W19: 按 SubagentConfig.required_upstream_handoffs 自动注入 {{handoff://X}}
+    占位符,跳过已存在的(避免双注入)。
+    """
+    from deerflow.subagents.builtins import BUILTIN_SUBAGENTS
+
+    config = BUILTIN_SUBAGENTS.get(subagent_type)
+    if config is None or not config.required_upstream_handoffs:
+        return prompt
+
+    existing = set(_HANDOFF_PLACEHOLDER_RE.findall(prompt))
+    additions = []
+    for name in config.required_upstream_handoffs:
+        if name not in existing:
+            additions.append(f"{{{{handoff://{name}}}}}")
+
+    if not additions:
+        return prompt
+
+    return (
+        f"{prompt}\n\n"
+        f"[Upstream handoff (auto-injected by harness)]\n"
+        + "\n".join(f"- {p}" for p in additions)
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Upstream: subagent token-usage cache + journal recorder helpers             #
 # --------------------------------------------------------------------------- #
@@ -353,6 +379,9 @@ async def task_tool(
 
     # Noldus: resolve {{shared://...}} placeholders to /mnt/shared/... paths.
     prompt = _resolve_placeholders(prompt)
+
+    # W19: 自动注入 required_upstream_handoffs 对应的 {{handoff://X}} 占位符
+    prompt = _auto_inject_handoff_placeholders(prompt, subagent_type)
 
     # Noldus: resolve {{handoff://...}} placeholders and capture authorized paths.
     # The authorized set is consumed by HandoffIsolationProvider so the subagent
