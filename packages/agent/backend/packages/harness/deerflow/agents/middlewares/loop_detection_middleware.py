@@ -93,6 +93,14 @@ def _stable_tool_key(name: str, args: dict, fallback_key: str | None) -> str:
             return fallback_key
         return json.dumps(args, sort_keys=True, default=str)
 
+    # `task` is a dispatcher — its identity is the target subagent, not the
+    # tool name itself. Two task() calls dispatching different subagents
+    # should be treated as different "tools" for loop-detection purposes.
+    if name == "task" and fallback_key is None:
+        subagent_type = args.get("subagent_type") or "?"
+        description = args.get("description") or ""
+        return f"{subagent_type}::{description}"
+
     salient_fields = ("path", "url", "query", "command", "pattern", "glob", "cmd")
     stable_args = {field: args[field] for field in salient_fields if args.get(field) is not None}
     if stable_args:
@@ -274,38 +282,50 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                     return _WARNING_MSG, False
 
             # --- Layer 2: per-tool-type frequency ---
+            # `task` is a dispatcher tool — bucket per subagent_type so that
+            # dispatching 3 different subagents (code-executor → data-analyst
+            # → chart-maker) is NOT flagged as "called task 3 times". That
+            # produced a spurious LOOP DETECTED warning in 2026-05-19 dogfood.
             freq = self._tool_freq[thread_id]
             for tc in tool_calls:
                 name = tc.get("name", "")
                 if not name:
                     continue
-                freq[name] += 1
-                tc_count = freq[name]
+                if name == "task":
+                    args, _fallback = _normalize_tool_call_args(tc.get("args", {}))
+                    subagent_type = args.get("subagent_type") or "?"
+                    freq_key = f"task:{subagent_type}"
+                    display_name = f"task({subagent_type})"
+                else:
+                    freq_key = name
+                    display_name = name
+                freq[freq_key] += 1
+                tc_count = freq[freq_key]
 
                 if tc_count >= self.tool_freq_hard_limit:
                     logger.error(
                         "Tool frequency hard limit reached — forcing stop",
                         extra={
                             "thread_id": thread_id,
-                            "tool_name": name,
+                            "tool_name": display_name,
                             "count": tc_count,
                         },
                     )
-                    return _TOOL_FREQ_HARD_STOP_MSG.format(tool_name=name, count=tc_count), True
+                    return _TOOL_FREQ_HARD_STOP_MSG.format(tool_name=display_name, count=tc_count), True
 
                 if tc_count >= self.tool_freq_warn:
                     warned = self._tool_freq_warned[thread_id]
-                    if name not in warned:
-                        warned.add(name)
+                    if freq_key not in warned:
+                        warned.add(freq_key)
                         logger.warning(
                             "Tool frequency warning — too many calls to same tool type",
                             extra={
                                 "thread_id": thread_id,
-                                "tool_name": name,
+                                "tool_name": display_name,
                                 "count": tc_count,
                             },
                         )
-                        return _TOOL_FREQ_WARNING_MSG.format(tool_name=name, count=tc_count), False
+                        return _TOOL_FREQ_WARNING_MSG.format(tool_name=display_name, count=tc_count), False
 
         return None, False
 
