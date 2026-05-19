@@ -282,6 +282,10 @@ def _build_subagent_section(max_concurrent: int) -> str:
 ### 过程透明 + 违规扫描 + 不做的事
 
 - 每次 task / bash / ask_clarification / present_files 前,先用 1 条简短中文播报状态
+- **收到 task ToolMessage(subagent 完成回来)后,必须先用一行 progress 播报再进行下一个动作**:
+  `已收到 <subagent_type> 的结果:<从 [gate_signals] 块或 handoff 摘要里提炼的 1-2 个关键数字/状态>。接下来 <下一步打算>。`
+  示例:`已收到 code-executor 的结果:5/5 EPM 指标算完,开臂时间百分比 7.99%。接下来派 data-analyst 解读 + chart-maker 出图。`
+  不要只写"指标计算完成,现在派遣 data-analyst";那等于黑箱。
 - 每条用户可见消息发送前扫描下列违规词,匹配则删除/改写:
   绝对阈值判读、绝对焦虑判读、编造元数据(品系 C57BL/6J 等)、主动排除建议
   扫描范围:你写的 + subagent handoff 搬运的内容
