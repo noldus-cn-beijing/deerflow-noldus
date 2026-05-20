@@ -255,13 +255,15 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
 ```
 [ANY] → 上传数据 + 复合语义       → E2E_FULL  → code-executor → data-analyst → chart-maker → ask(report?)
-[ANY] → 上传数据 + 单语义         → E2E_MIN   → code-executor → ask(four-choice)
+[ANY] → 上传数据 + 单一动词类别   → E2E_MIN   → code-executor → ask(four-choice)
 [ANY+handoff] → 要图              → CHART     → task(chart-maker)
 [ANY+handoff] → 要报告            → REPORT    → task(report-writer)
 [ANY+handoff] → 追问数据/指标含义 → QA_FACT   → task(knowledge-assistant)
 [ANY]         → 问知识(无数据)    → QA_KNOWLEDGE → task(knowledge-assistant)
 [ANY]         → 信息缺失          → CLARIFY   → ask_clarification
 ```
+
+**复合语义判定**(E2E_FULL vs E2E_MIN 的分水岭): 把用户消息里的动词归 4 类 — CALC(算/计算)、ANALYZE(分析/解读/描述/描述性/看看/比较)、VISUALIZE(可视化/出图/画图)、REPORT(报告/总结/汇总)。**出现 ≥2 类 = 复合语义 = E2E_FULL**。例:"描述性分析和可视化" = ANALYZE+VISUALIZE = E2E_FULL。歧义偏向 E2E_FULL(错判 E2E_MIN 会让 lead 在 chart-maker 完成后没出口、自己读 handoff 撞硬限)。详见 `ethoinsight-lead-interaction/references/intent-decision-tree.md`。
 
 ### 详细交互手册 + 反问 / 失败 / 正例反例
 
@@ -756,6 +758,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 - **ethoinsight**: 输出宪法
 
 流水线: E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA→knowledge-assistant
+复合语义(E2E_FULL): 动词归 4 类(CALC/ANALYZE/VISUALIZE/REPORT),≥2 类 → E2E_FULL;歧义偏 E2E_FULL。
 详情见 `/mnt/skills/ethoinsight-lead-interaction/SKILL.md`。
 </orchestration_guide>"""
 
