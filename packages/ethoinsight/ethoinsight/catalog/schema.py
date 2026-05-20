@@ -92,6 +92,7 @@ class PlanMetric:
     output: str
     required: bool
     reason: str  # PlanReasonEnum
+    subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
 
 
 @dataclass
@@ -116,6 +117,7 @@ class PlanChart:
     script: str
     input: str
     output: str
+    subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
 
 
 @dataclass

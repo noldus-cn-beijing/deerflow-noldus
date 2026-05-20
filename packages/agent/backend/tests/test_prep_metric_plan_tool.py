@@ -102,7 +102,7 @@ class TestPrepMetricPlanToolOk:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/test_epm.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/test_epm.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -122,7 +122,7 @@ class TestPrepMetricPlanToolErrors:
         """thread_data 为 None → error_code=workspace_missing, hint 含 'bug'。"""
         runtime = _runtime_without_workspace()
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/x.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/x.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -139,7 +139,7 @@ class TestPrepMetricPlanToolErrors:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/nonexistent.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/nonexistent.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -160,7 +160,7 @@ class TestPrepMetricPlanToolErrors:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/test.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/test.txt"],
             "paradigm": "invalid_paradigm",
             "runtime": runtime,
         })
@@ -187,7 +187,7 @@ class TestPrepMetricPlanToolErrors:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/minimal.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/minimal.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -207,7 +207,7 @@ class TestPrepMetricPlanToolErrors:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/test2.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/test2.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -236,7 +236,7 @@ class TestPrepMetricPlanToolW20:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/w20_epm.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/w20_epm.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -261,7 +261,7 @@ class TestPrepMetricPlanToolW20:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/w20_epm2.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/w20_epm2.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -285,7 +285,7 @@ class TestPrepMetricPlanToolW20:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/w20_epm3.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/w20_epm3.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -320,7 +320,7 @@ class TestPrepMetricPlanToolVirtualPathLeakage:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/vp_epm.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/vp_epm.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -345,7 +345,7 @@ class TestPrepMetricPlanToolVirtualPathLeakage:
 
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": "/mnt/user-data/uploads/vp_epm2.txt",
+            "uploaded_files": ["/mnt/user-data/uploads/vp_epm2.txt"],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -375,7 +375,7 @@ class TestPrepMetricPlanToolVirtualPathLeakage:
         virtual_path = f"/mnt/user-data/uploads/{filename}"
         runtime = _runtime_with_paths(workspace, uploads)
         result = prep_metric_plan_tool.invoke({
-            "uploaded_file": virtual_path,
+            "uploaded_files": [virtual_path],
             "paradigm": "epm",
             "runtime": runtime,
         })
@@ -386,3 +386,144 @@ class TestPrepMetricPlanToolVirtualPathLeakage:
         assert payload["inputs"]["raw_files"] == [virtual_path]
         for metric in payload["metrics"]:
             assert metric["input"] == virtual_path
+
+
+class TestPrepMetricPlanToolMultipleFiles:
+    """防回归 (2026-05-20 FST E2E): 用户传 2 个 Arena 数据,Arena 2 在 plan 这一层
+    被丢失只生成 Arena 1 的 PlanMetric。修复后 prep_metric_plan 接受
+    uploaded_files: list[str],为每个文件 × 每个指标各生成一个 PlanMetric。
+
+    覆盖:
+    - 单元素 list 仍走老路径,output 文件名兼容 m_<id>.json (无 _s 后缀)
+    - 多元素 list 展开 N×M 个 PlanMetric,output 带 _s<idx> 后缀防覆盖
+    - inputs.raw_files 保留全部文件路径
+    - subject_index 字段 0..N-1
+    - failed_file 字段定位失败文件
+    - 空 list 报 no_files_provided
+    """
+
+    def test_two_files_expand_to_metrics_times_files(self, tmp_path):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        f1 = uploads / "arena1.txt"
+        f2 = uploads / "arena2.txt"
+        _write_ethovision_file(str(f1), EPM_COLUMNS)
+        _write_ethovision_file(str(f2), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_files": [
+                "/mnt/user-data/uploads/arena1.txt",
+                "/mnt/user-data/uploads/arena2.txt",
+            ],
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        assert result["plan_summary"]["subject_count"] == 2
+        unique_metric_count = result["plan_summary"]["metric_count"]
+        assert unique_metric_count > 0
+
+        plan_file = workspace / "plan_metrics.json"
+        payload = json.loads(plan_file.read_text())
+        # raw_files 完整保留两个虚拟路径
+        assert payload["inputs"]["raw_files"] == [
+            "/mnt/user-data/uploads/arena1.txt",
+            "/mnt/user-data/uploads/arena2.txt",
+        ]
+        # metrics 数 = 唯一指标 × 文件数
+        assert len(payload["metrics"]) == unique_metric_count * 2
+        # 每个指标各出现 2 次 (每个 subject 一次),且 subject_index 是 0/1
+        from collections import Counter
+        per_id_count = Counter(m["id"] for m in payload["metrics"])
+        for mid, cnt in per_id_count.items():
+            assert cnt == 2, f"metric {mid} 出现 {cnt} 次,应为 2"
+        indices = sorted({m["subject_index"] for m in payload["metrics"]})
+        assert indices == [0, 1]
+        # output 带 _s 后缀防覆盖
+        outputs = [m["output"] for m in payload["metrics"]]
+        s0 = [o for o in outputs if "_s0" in o]
+        s1 = [o for o in outputs if "_s1" in o]
+        assert len(s0) == unique_metric_count
+        assert len(s1) == unique_metric_count
+        # 每个指标的 input 都对应它声明的 subject
+        for m in payload["metrics"]:
+            expected_input = (
+                "/mnt/user-data/uploads/arena1.txt"
+                if m["subject_index"] == 0
+                else "/mnt/user-data/uploads/arena2.txt"
+            )
+            assert m["input"] == expected_input
+
+    def test_single_file_keeps_legacy_output_name_without_suffix(self, tmp_path):
+        """单文件场景 output 仍是 m_<id>.json 无 _s 后缀,保持向后兼容。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        data_file = uploads / "single.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_files": ["/mnt/user-data/uploads/single.txt"],
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        assert result["plan_summary"]["subject_count"] == 1
+        plan_file = workspace / "plan_metrics.json"
+        payload = json.loads(plan_file.read_text())
+        for m in payload["metrics"]:
+            assert "_s" not in m["output"], (
+                f"单文件 output 不应带 _s 后缀: {m['output']}"
+            )
+            assert m["subject_index"] == 0
+
+    def test_empty_uploaded_files_returns_error(self, tmp_path):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_files": [],
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "error"
+        assert result["error_code"] == "no_files_provided"
+        assert "no_files_provided" in _ERROR_HINTS
+
+    def test_second_file_missing_returns_failed_file(self, tmp_path):
+        """第 2 个文件不存在 → 报 file_not_found + failed_file 字段指向 arena2。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        f1 = uploads / "arena1.txt"
+        _write_ethovision_file(str(f1), EPM_COLUMNS)
+        # arena2 不写入
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_files": [
+                "/mnt/user-data/uploads/arena1.txt",
+                "/mnt/user-data/uploads/arena2.txt",
+            ],
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "error"
+        assert result["error_code"] == "file_not_found"
+        assert result["failed_file"] == "/mnt/user-data/uploads/arena2.txt"

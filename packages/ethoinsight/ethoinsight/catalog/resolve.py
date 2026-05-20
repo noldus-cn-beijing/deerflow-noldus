@@ -187,7 +187,7 @@ def resolve_metrics(
                     "available_columns": columns,
                 },
             )
-        plan_metrics.append(
+        plan_metrics.extend(
             _metric_to_plan(
                 m, raw_files, workspace_dir, required=True, reason="paradigm.default",
                 virtual_workspace_dir=virtual_workspace_dir,
@@ -218,7 +218,7 @@ def resolve_metrics(
                 )
             )
             continue
-        plan_metrics.append(
+        plan_metrics.extend(
             _metric_to_plan(
                 m, raw_files, workspace_dir, required=False, reason="user.include",
                 virtual_workspace_dir=virtual_workspace_dir,
@@ -317,7 +317,7 @@ def resolve_charts(
     charts: list[PlanChart] = []
     for ch in cat.charts:
         if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
-            charts.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+            charts.extend(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
 
     fallback: list[PlanChart] = []
     if not charts:
@@ -327,7 +327,7 @@ def resolve_charts(
             common = CommonCatalog(common_charts=[])
         for ch in common.common_charts:
             if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
-                fallback.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+                fallback.extend(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
 
     notes: list[str] = []
     if charts:
@@ -372,31 +372,63 @@ def _metric_to_plan(
     required: bool,
     reason: str,
     virtual_workspace_dir: str | None = None,
-) -> PlanMetric:
-    input_path = raw_files[0]
+) -> list[PlanMetric]:
+    """Expand one MetricEntry into N PlanMetric (one per raw_file).
+
+    Fix 2026-05-20 (FST E2E): 之前只生成单个 PlanMetric 且 input=raw_files[0],
+    用户上传多文件时除第一个外的 subject 全部丢失。现在按 raw_files 展开,
+    每个 subject 一个 PlanMetric,output 用 subject_index 后缀避免覆盖。
+    单文件(len==1)保持 output 名 m_<id>.json 兼容现有产物。
+    """
+    if not raw_files:
+        return []
     effective_workspace = virtual_workspace_dir or workspace_dir
-    output_path = str(Path(effective_workspace) / f"m_{m.id}.json")
-    return PlanMetric(
-        id=m.id,
-        script=m.script,
-        input=input_path,
-        output=output_path,
-        required=required,
-        reason=reason,
-    )
+    multi = len(raw_files) > 1
+    plans: list[PlanMetric] = []
+    for idx, raw_file in enumerate(raw_files):
+        suffix = f"_s{idx}" if multi else ""
+        output_path = str(Path(effective_workspace) / f"m_{m.id}{suffix}.json")
+        plans.append(
+            PlanMetric(
+                id=m.id,
+                script=m.script,
+                input=raw_file,
+                output=output_path,
+                required=required,
+                reason=reason,
+                subject_index=idx,
+            )
+        )
+    return plans
 
 
 def _chart_to_plan(
     ch: ChartEntry, raw_files: list[str], workspace_dir: str,
     virtual_workspace_dir: str | None = None,
-) -> PlanChart:
+) -> list[PlanChart]:
+    """Expand one ChartEntry into N PlanChart (one per raw_file).
+
+    See _metric_to_plan for fix rationale. Single-subject charts (typical for
+    group-comparison plots) callers can still wrap a single raw_file.
+    """
+    if not raw_files:
+        return []
     effective_workspace = virtual_workspace_dir or workspace_dir
-    return PlanChart(
-        id=ch.id,
-        script=ch.script,
-        input=raw_files[0],
-        output=str(Path(effective_workspace) / f"plot_{ch.id}.png"),
-    )
+    multi = len(raw_files) > 1
+    plans: list[PlanChart] = []
+    for idx, raw_file in enumerate(raw_files):
+        suffix = f"_s{idx}" if multi else ""
+        output_path = str(Path(effective_workspace) / f"plot_{ch.id}{suffix}.png")
+        plans.append(
+            PlanChart(
+                id=ch.id,
+                script=ch.script,
+                input=raw_file,
+                output=output_path,
+                subject_index=idx,
+            )
+        )
+    return plans
 
 
 def _stats_to_plan(
@@ -481,6 +513,7 @@ def plan_to_dict(plan: Plan) -> dict:
                 "output": m.output,
                 "required": m.required,
                 "reason": m.reason,
+                "subject_index": m.subject_index,
             }
             for m in plan.metrics
         ],
@@ -496,7 +529,7 @@ def plan_to_dict(plan: Plan) -> dict:
             }
         ),
         "charts": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            {"id": c.id, "script": c.script, "input": c.input, "output": c.output, "subject_index": c.subject_index}
             for c in plan.charts
         ],
         "skipped": [
@@ -526,6 +559,7 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
                 "output": m.output,
                 "required": m.required,
                 "reason": m.reason,
+                "subject_index": m.subject_index,
             }
             for m in pm.metrics
         ],
@@ -560,11 +594,11 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
             "columns_file": pc.inputs.columns_file,
         },
         "charts": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            {"id": c.id, "script": c.script, "input": c.input, "output": c.output, "subject_index": c.subject_index}
             for c in pc.charts
         ],
         "charts_fallback_available": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            {"id": c.id, "script": c.script, "input": c.input, "output": c.output, "subject_index": c.subject_index}
             for c in pc.charts_fallback_available
         ],
         "skipped": [
