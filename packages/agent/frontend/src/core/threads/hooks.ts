@@ -680,9 +680,9 @@ export function useThreadStream({
               is_plan_mode: context.mode === "flywheel",
               // Mirror the UI mode into the deerflow workflow_mode runtime
               // config. The backend uses this to gate manual-mode middlewares
-              // (GateEnforcementMiddleware / future StepwiseGateMiddleware).
-              // Without this line, the UI toggle silently has no effect on
-              // those middlewares and they never activate.
+              // (currently GateEnforcementMiddleware for Gate 1 paradigm
+              // clarification). Without this line, the UI toggle silently has
+              // no effect on those middlewares and they never activate.
               workflow_mode: context.mode === "flywheel" ? "manual" : "auto",
               subagent_enabled: true,
               reasoning_effort: context.reasoning_effort ?? (context.mode === "flywheel" ? "high" : undefined),
