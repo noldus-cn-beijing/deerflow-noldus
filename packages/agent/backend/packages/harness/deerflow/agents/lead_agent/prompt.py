@@ -741,10 +741,12 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
 当本轮 `<uploaded_files>` 有新增数据文件且用户请求分析时:
 1. 意图分类 → 第一个非 read_file tool call 前输出 `[intent] <INTENT>` 行
-2. 范式识别 → 综合文件名 + 用户描述 + 必要时 read raw txt
-   (详见 `ethovision-paradigm-knowledge` skill, Gate before guess)
-3. **仅两种模糊情况反问**: 范式推断失败 / 分组无法推断(其他走默认)
-4. `set_experiment_paradigm(...)` → experiment-context.json
+2. 范式识别 → 调 `identify_ev19_template(uploaded_files, user_message)` 工具
+   (不要自己 read_file 读取 skill 引用文件——工具内部完成所有文件读取)
+3. 工具返回 status="ambiguous" → 用返回的 `clarification_question` 调 `ask_clarification`
+   工具返回 status="ok" → 直接用返回的 `ev19_template` + `paradigm_key`
+   工具返回 status="unknown" → `ask_clarification` 反问
+4. `set_experiment_paradigm(paradigm=<key>, ev19_template=<模板>, ...)` → experiment-context.json
 5. `prep_metric_plan(...)` → plan_metrics.json
 6. 按 SubagentConfig.input_contract 派遣 subagent
 

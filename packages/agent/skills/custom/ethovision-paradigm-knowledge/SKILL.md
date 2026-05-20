@@ -21,23 +21,21 @@ author: noldus-insight
 ## 核心原则
 
 1. **EV19 模板 = 用户语言**（agent 与用户对话时使用），**学术范式 = 内部分析路径**（agent 调 set_experiment_paradigm 时填这个）。
-2. **不要硬猜**——如果信息不足，**用 ask_clarification 给结构化选项**让用户选；不要瞎填导致下游分析跑错路径。
-3. **反问最多 1 次**——LoopDetectionMiddleware 会在重复反问时强制中断；如果范式无法唯一确定，必须用 ask_clarification 带证据反问，不允许默认猜测（见"Gate before guess"节）。
+2. **模板识别走 tool，不自己读文件**——lead agent 在调 `set_experiment_paradigm` 之前，**必须先调 `identify_ev19_template` 工具**。该工具内部完成所有文件读取和候选交叉排除，返回结构化结果。lead 不要自己 `read_file` 读取 `_facts.md` / `identification-decision-tree.md` / `by-template/*.md`，否则会消耗 LoopDetectionMiddleware 配额导致 FORCED STOP。
+3. **不要硬猜**——如果 tool 返回 `status="ambiguous"`，用返回的 `clarification_question` 直接调 `ask_clarification`；不要自己编反问。
+4. **反问最多 1 次**——LoopDetectionMiddleware 会在重复反问时强制中断。
 
 ## 工作场景
 
-每个 agent 按自己**当下在做什么**对照下表，决定是否 read 对应文件。SKILL.md 不规定具体哪个 agent 必须 read 什么——这交给 agent 自己根据任务上下文判断。
-
-| 工作场景 | read 哪个文件 |
+| 工作场景 | 做法 |
 |---|---|
-| 识别用户的实验 / 模板 / 变体 | `references/_facts.md` + `references/identification-decision-tree.md` + `references/by-template/<大类>.md` |
-| 分析 / 解读 / 写报告 | `references/by-experiment/<范式>.md` |
+| 识别用户的实验 / 模板 / 变体 | **调 `identify_ev19_template` 工具**（1 次 tool call 完成）。不要自己 `read_file` 读取引用文件。 |
+| 分析 / 解读 / 写报告 | `read_file` `references/by-experiment/<范式>.md`（领域知识供 data-analyst / report-writer 使用） |
 
 **路径占位符**：
 
-- `<范式>` = `experiment-context.json` 的 `paradigm` 字段（snake_case 英文，如 `epm`、`open_field`）。识别阶段未写入时，按用户消息中文意推断（如"高架十字迷宫" → `epm`）后 read `by-experiment/epm.md` 验证候选。
-- `<大类>` = EV19 模板大类（`PlusMaze`、`OpenFieldRectangle` 等）。识别阶段从用户消息或文件名推断；如已确定 `ev19_template`（如 `PlusMaze-AllZones`），取 `-` 前的部分（`PlusMaze`）。
-- 文件不存在时（同事尚未填写的范式 / 大类）：read 报错可接受，回到 `references/identification-decision-tree.md` 用 `_facts.md` 兜底，范式无法唯一确定时 ask_clarification 反问。
+- `<范式>` = `experiment-context.json` 的 `paradigm` 字段（snake_case 英文，如 `epm`、`open_field`）。
+- `by-template/*.md` 和 `_facts.md` **不再需要 lead 手动 read**——`identify_ev19_template` 工具内部使用它们。
 
 ## 反问哲学:Gate before guess (spec §13.5)
 
