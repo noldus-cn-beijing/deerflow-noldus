@@ -159,18 +159,34 @@ export function extractTextFromMessage(message: Message) {
 }
 
 const THINK_TAG_RE = /<think>\s*([\s\S]*?)\s*<\/think>/g;
+// Trailing unclosed <think> (no </think> yet) — captured during streaming so
+// the reasoning panel can show partial thinking before the tag closes.
+const TRAILING_UNCLOSED_THINK_RE = /<think>\s*([\s\S]*)$/;
 
 function splitInlineReasoning(content: string) {
   const reasoningParts: string[] = [];
-  const cleaned = content
-    .replace(THINK_TAG_RE, (_, reasoning: string) => {
-      const normalized = reasoning.trim();
-      if (normalized) {
-        reasoningParts.push(normalized);
-      }
-      return "";
-    })
-    .trim();
+  let cleaned = content.replace(THINK_TAG_RE, (_, reasoning: string) => {
+    const normalized = reasoning.trim();
+    if (normalized) {
+      reasoningParts.push(normalized);
+    }
+    return "";
+  });
+
+  // After removing closed pairs, check for a trailing unclosed <think> ...
+  // (mid-stream). Route its inner text to reasoning and drop the open tag
+  // from content. Without this, the model's first <think>...</think> stream
+  // would leave the bubble blank until the closing tag arrives.
+  const trailingMatch = cleaned.match(TRAILING_UNCLOSED_THINK_RE);
+  if (trailingMatch?.index !== undefined) {
+    const partial = (trailingMatch[1] ?? "").trim();
+    if (partial) {
+      reasoningParts.push(partial);
+    }
+    cleaned = cleaned.slice(0, trailingMatch.index).trim();
+  } else {
+    cleaned = cleaned.trim();
+  }
 
   return {
     content: cleaned,

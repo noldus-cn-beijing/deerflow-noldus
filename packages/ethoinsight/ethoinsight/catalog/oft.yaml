@@ -67,6 +67,12 @@ charts:
   - id: box_center
     script: ethoinsight.scripts.oft.plot_box_center
     when: n_per_group >= 3
+  - id: center_time_ratio_bar
+    script: ethoinsight.scripts.oft.plot_center_time_ratio_bar
+    when: total_subjects >= 1
+  - id: center_entry_summary
+    script: ethoinsight.scripts.oft.plot_center_entry_summary
+    when: total_subjects >= 1
 
 statistics:
   default:

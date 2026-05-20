@@ -376,7 +376,7 @@ def test_auth_config_token_expiry_boundary_30_ok():
     assert config.token_expiry_days == 30
 
 
-def test_get_auth_config_missing_env_var_generates_ephemeral(caplog):
+def test_get_auth_config_missing_env_var_generates_ephemeral(monkeypatch, caplog):
     """get_auth_config() auto-generates ephemeral secret when AUTH_JWT_SECRET is unset."""
     import logging
 
@@ -384,10 +384,12 @@ def test_get_auth_config_missing_env_var_generates_ephemeral(caplog):
 
     old = cfg._auth_config
     cfg._auth_config = None
+    # Stub dotenv so a developer's .env doesn't repopulate the env var.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: False)
     try:
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("AUTH_JWT_SECRET", None)
-            with caplog.at_level(logging.WARNING):
+            with caplog.at_level(logging.WARNING, logger=cfg.logger.name):
                 config = cfg.get_auth_config()
             assert config.jwt_secret
             assert any("AUTH_JWT_SECRET" in msg for msg in caplog.messages)

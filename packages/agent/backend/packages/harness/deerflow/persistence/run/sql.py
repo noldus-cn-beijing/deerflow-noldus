@@ -77,9 +77,16 @@ class RunRepository(RunStore):
         error=None,
         created_at=None,
         follow_up_to_run_id=None,
+        model_name=None,
     ):
         resolved_user_id = resolve_user_id(user_id, method_name="RunRepository.put")
         now = datetime.now(UTC)
+        # Normalize + truncate model_name to fit the VARCHAR(128) column. None stays None.
+        normalized_model_name: str | None
+        if model_name is None:
+            normalized_model_name = None
+        else:
+            normalized_model_name = str(model_name)[:128]
         row = RunRow(
             run_id=run_id,
             thread_id=thread_id,
@@ -91,6 +98,7 @@ class RunRepository(RunStore):
             kwargs_json=self._safe_json(kwargs) or {},
             error=error,
             follow_up_to_run_id=follow_up_to_run_id,
+            model_name=normalized_model_name,
             created_at=datetime.fromisoformat(created_at) if created_at else now,
             updated_at=now,
         )

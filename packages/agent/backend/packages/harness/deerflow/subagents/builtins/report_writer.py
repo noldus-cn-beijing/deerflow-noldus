@@ -222,7 +222,7 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 constitution_acknowledged: true
 sections_written_count: <int>         # sections_written 数组长度（期望 6）
 sections_missing: [<str>, ...]        # 6 段骨架中未写成功的章节名（中文），为空则 []
-statistical_validity: ok | failed     # report-writer 不评估统计有效性，按 handoff_code_executor 透传
+statistical_validity: ok | failed | skipped     # report-writer 不评估统计有效性，按 handoff_code_executor 透传（含 skipped:单样本未做统计检验，报告须写"无法做组间推断"局限性段落）
 errors_count: <int>                   # handoff_report_writer.json 中 errors 数组长度
 ```
 

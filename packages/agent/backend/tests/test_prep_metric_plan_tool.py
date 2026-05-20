@@ -296,3 +296,93 @@ class TestPrepMetricPlanToolW20:
         assert isinstance(payload["metrics"], list)
         assert len(payload["metrics"]) == result["plan_summary"]["metric_count"]
         assert len(payload["metrics"]) > 0
+
+
+class TestPrepMetricPlanToolVirtualPathLeakage:
+    """2026-05-20: plan_metrics.json 不能泄漏宿主机绝对路径。
+
+    根因:之前 prep_metric_plan_tool 把 real_file_path (宿主机绝对路径)
+    传给 resolve_metrics 作 raw_files,导致 plan.inputs.raw_files 和
+    plan.metrics[*].input 都是宿主机路径。subagent read 后照抄进 --input,
+    宿主机路径在 sandbox 内不可达 → 失败 → 重试用虚拟路径 → 成功。
+    浪费一个 tool call。
+    """
+
+    def test_inputs_raw_files_uses_virtual_path(self, tmp_path):
+        """plan_metrics.json 的 inputs.raw_files[*] 必须是 /mnt/user-data/uploads/<file>。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        data_file = uploads / "vp_epm.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/vp_epm.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        plan_file = workspace / "plan_metrics.json"
+        payload = json.loads(plan_file.read_text())
+        assert payload["inputs"]["raw_files"] == ["/mnt/user-data/uploads/vp_epm.txt"]
+        # 绝对不能含宿主机路径片段
+        for rf in payload["inputs"]["raw_files"]:
+            assert str(uploads) not in rf, f"raw_files leaked host path: {rf}"
+
+    def test_metrics_input_uses_virtual_path(self, tmp_path):
+        """plan_metrics.json 的 metrics[*].input 必须是虚拟路径。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        data_file = uploads / "vp_epm2.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": "/mnt/user-data/uploads/vp_epm2.txt",
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        plan_file = workspace / "plan_metrics.json"
+        payload = json.loads(plan_file.read_text())
+        assert len(payload["metrics"]) > 0
+        for metric in payload["metrics"]:
+            assert metric["input"] == "/mnt/user-data/uploads/vp_epm2.txt", (
+                f"metric {metric['id']} input is not virtual path: {metric['input']}"
+            )
+            assert str(uploads) not in metric["input"]
+
+    def test_filename_with_spaces_preserved_in_virtual_path(self, tmp_path):
+        """EthoVision 常见文件名含连续空格,虚拟路径要原样保留。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        # 模拟 5 连续空格的 EthoVision 文件名
+        filename = "轨迹-EPM XT190-Trial     1-Arena 1.txt"
+        data_file = uploads / filename
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        virtual_path = f"/mnt/user-data/uploads/{filename}"
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_file": virtual_path,
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        plan_file = workspace / "plan_metrics.json"
+        payload = json.loads(plan_file.read_text())
+        assert payload["inputs"]["raw_files"] == [virtual_path]
+        for metric in payload["metrics"]:
+            assert metric["input"] == virtual_path

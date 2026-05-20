@@ -1,7 +1,11 @@
 import type { Message } from "@langchain/langgraph-sdk";
 import { describe, expect, it } from "vitest";
 
-import { groupMessages } from "./utils";
+import {
+  extractContentFromMessage,
+  extractReasoningContentFromMessage,
+  groupMessages,
+} from "./utils";
 
 function makeAIMsg(
   id: string,
@@ -81,5 +85,58 @@ describe("groupMessages", () => {
     });
     const result = groupTypes([msg1, msg2]);
     expect(result).toEqual(["assistant:processing", "assistant"]);
+  });
+});
+
+describe("inline <think> handling — streaming TTFT", () => {
+  it("closed <think>...</think> in string content: reasoning extracted, content cleaned", () => {
+    const msg = makeAIMsg("1", {
+      content: "<think>I will analyze</think>Here is the answer",
+    });
+    expect(extractReasoningContentFromMessage(msg)).toBe("I will analyze");
+    expect(extractContentFromMessage(msg)).toBe("Here is the answer");
+  });
+
+  it("multiple closed <think> blocks: all reasoning concatenated", () => {
+    const msg = makeAIMsg("1", {
+      content: "<think>first</think>visible<think>second</think> answer",
+    });
+    expect(extractReasoningContentFromMessage(msg)).toBe("first\n\nsecond");
+    expect(extractContentFromMessage(msg)).toBe("visible answer");
+  });
+
+  it("unclosed <think> at end (mid-stream): reasoning streams live, content empty", () => {
+    const msg = makeAIMsg("1", {
+      content: "<think>I am still thinking about",
+    });
+    expect(extractReasoningContentFromMessage(msg)).toBe("I am still thinking about");
+    expect(extractContentFromMessage(msg)).toBe("");
+  });
+
+  it("closed <think> + open trailing <think> (mid-stream second block): both reasonings shown", () => {
+    const msg = makeAIMsg("1", {
+      content: "<think>first done</think>partial answer<think>second thought streaming",
+    });
+    expect(extractReasoningContentFromMessage(msg)).toBe(
+      "first done\n\nsecond thought streaming",
+    );
+    expect(extractContentFromMessage(msg)).toBe("partial answer");
+  });
+
+  it("content without any <think>: returned as-is, no reasoning", () => {
+    const msg = makeAIMsg("1", {
+      content: "plain answer with no thinking",
+    });
+    expect(extractReasoningContentFromMessage(msg)).toBeNull();
+    expect(extractContentFromMessage(msg)).toBe("plain answer with no thinking");
+  });
+
+  it("unclosed <think> with empty body (just <think> typed): does not crash, no reasoning yet", () => {
+    const msg = makeAIMsg("1", {
+      content: "<think>",
+    });
+    // Open tag with nothing after it — reasoning is empty string, treat as null
+    expect(extractReasoningContentFromMessage(msg)).toBeNull();
+    expect(extractContentFromMessage(msg)).toBe("");
   });
 });

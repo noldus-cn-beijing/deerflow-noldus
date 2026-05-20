@@ -62,5 +62,5 @@ def test_code_executor_declares_matching_tools():
                  "generate_charts", "assess_and_handoff", "get_analysis_template"}
     present_old = old_tools & declared
     assert not present_old, f"code_executor still has deprecated tools: {present_old}"
-    assert c.max_turns == 20, f"max_turns should be 20, got {c.max_turns}"
+    assert c.max_turns == 40, f"max_turns should be 40, got {c.max_turns}"
     assert "ethoinsight-code" in (c.skills or [])
