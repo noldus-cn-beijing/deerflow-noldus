@@ -316,17 +316,104 @@ rsync -aLvz --delete \
 
 ### 下一 sprint 方向(用户最终决策: γ + β 混合)
 
-**γ. 短期**: 今天 7 处修复全部 commit + memory/handoff 写完(本任完成)
+**γ. 短期**: 今天 7 处修复全部 commit + memory/handoff 写完(本任完成 — commit `e706435d`)
 
-**β. 中期**: CI/CD 镜像发布流程
-- GitHub Actions / 阿里云 CodePipeline build → push 阿里云 ACR
-- ECS 上 `docker compose pull && up -d`,不再本机 build
-- 解决今天 #3 (uv run sync 卡)、#4 (symlink) 这种 ECS 本机 build 才有的问题
-- 镜像里固化所有 hot-patch,不再 docker cp 热补丁
+**β. 中期 sprint: CI/CD 镜像发布流程**
 
-**不在本 sprint 范围**:
-- 试 Gateway mode (用户选 γ 不动架构)
-- 买 LangSmith license
+#### 决策(本任会话末用户已选)
+
+| 维度 | 选定方案 | 备选 |
+|---|---|---|
+| CI 平台 | **阿里云 Flow (云效)** | GitHub Actions, GitLab CI |
+| 镜像 Registry | **阿里云 ACR (个人版或企业版)** | ghcr.io, Docker Hub |
+| Build 触发 | **PR merge 到 main 分支** | git push dev / git tag |
+| ECS 拉镜像 | **watchtower 自动拉** | ssh 手动 / GHA ssh 跳板 |
+
+#### Sprint 目标(SMART)
+
+**Specific**: ECS i-2ze446h4ats7y8bgjn4w 部署链路从"本机 build"切到"pull 预 build 镜像",废止 docker cp 热补丁工作流.
+
+**Measurable** — 验证标准:
+1. main 分支 PR merge 后,阿里云 Flow 完成 build + push ACR,**全程不需要在 ECS 上跑 build**
+2. watchtower 在 ECS 上检测到 ACR 新镜像 tag,自动 `docker compose pull && up -d` 完成滚动重启
+3. 整个流程从 merge 到 ECS 跑新版本 **≤ 15 分钟**(build 10 + watchtower poll 5)
+4. 验证今天 7 处修复(commit `e706435d`)在新流程下**镜像里固化**,重新 deploy 不丢失
+5. CLAUDE.md 第 "Git" 节更新"主分支 dev"为 "main(prod) + dev(工作分支)" 双分支模型
+
+**Achievable** — 不在本 sprint 范围:
+- 切 Gateway mode (`make up-pro`) — 后置
+- 买 LangSmith license / 切 `langgraph up` — 后置
+- K8s / Helm chart — 后置, 单机 docker compose 够 v0.1
+- frontend 容器拆分 — 现状 `make up` 三镜像够
+
+**Relevant** — 为什么这个 sprint:
+- 今天 #3 (uv run sync 卡)、#4 (symlink 跨 build context) 都是 **ECS 本机 build 才有的环境问题**.切预 build 镜像直接消除一整类故障
+- 今天 5 处 hot-patch (database_config.py / engine.py / nginx.conf / docker-compose.yaml / ethoinsight symlink) 全部 docker cp 进容器,**下次 `docker compose build` 就丢光**.必须固化进镜像
+- v0.1 9 月里程碑临近, 不能再每次部署都重演今天追一天 bug
+
+**Time-bound**: 建议 **2 周** sprint window (含 main 分支建立 + Flow pipeline 配置 + watchtower POC + ECS 验证).
+
+#### 前置任务(sprint 开始前必须做)
+
+⚠ **本仓库当前只有 `dev` 分支** (见 CLAUDE.md "Git" 节: "主分支：`dev`（当前工作分支）"). 用户选了 "PR merge 到 main 触发 build", 所以 sprint 起点是:
+
+1. 从 `dev` 当前 HEAD 建 `main` 分支并 push origin
+2. 更新 CLAUDE.md "Git" 节, 描述新分支模型:
+   - `main` = 生产分支, 触发 CI build & push ACR
+   - `dev` = 日常开发分支, 提 PR merge 到 main
+   - 旧 commit 工作流不变(用户写 commit, agent 不主动 commit)
+3. 配 GitHub branch protection: `main` 禁直推, 必须 PR
+4. 决定 `dev → main` PR 节奏: 按 sprint? 按 feature ready? — **本 sprint kickoff 时定**
+
+#### 工作分解
+
+**Phase 1: Flow pipeline (~3 天)**
+- 在阿里云 Flow 建项目, 关联 GitHub 仓库
+- 配 trigger: PR merge to main → 启动流水线
+- Pipeline 步骤:
+  1. checkout main HEAD
+  2. **解 symlink** (rsync `-L` 或 `cp -rL`) — 解决今天 #4 ethoinsight symlink 跨 build context 问题
+  3. `docker compose -f docker/docker-compose.yaml build` (复用现有 Dockerfile, **build args 写明** `APT_MIRROR=mirrors.aliyun.com`, `UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/`)
+  4. tag: `<acr-namespace>/ethoinsight-{gateway,langgraph,frontend}:main-<git-sha>` + `:latest`
+  5. `docker push` 到 ACR
+- 验证: PR merge 到 main 自动跑流水线, ACR 看到新 tag
+
+**Phase 2: watchtower 上 ECS (~2 天)**
+- ECS 上 docker compose 加 watchtower 服务
+- 配 ACR registry credentials (docker login + watchtower 读 `~/.docker/config.json`)
+- 标签 `com.centurylinklabs.watchtower.enable=true` 标在 gateway/langgraph/frontend 容器上, **不要标 nginx/provisioner** (avoid restart unrelated svc)
+- 配 poll interval: `--interval 300` (5 分钟)
+- 验证: 手动 push 一个新镜像 tag, 看 watchtower 5 分钟内 pull + restart
+
+**Phase 3: 镜像固化今天 hot-patch (~1 天)**
+- 把 ECS 上 hot-patch 全部回到本地仓库 (本任 commit `e706435d` 已完成,本步骤验证而已)
+- 确认 build 出来的镜像包含 7 处修复
+- 在 staging (或 ECS 上 `docker-compose-dev.yaml`) 拉新镜像,验证浏览器完整聊天流跑通
+- 跑 `Background run succeeded` 验证 BlockingError 永久消失
+
+**Phase 4: 切流量 + ECS 老 build 流程废止 (~1 天)**
+- ECS 上 `make down`, `docker image prune` 清本地 build 镜像
+- 改 `make up` 让它 `docker compose pull` 而非 `build` (或新加 `make pull-up` 命令)
+- 文档化新工作流到 `docs/sop/deploy-sop.md`
+- 通知团队: 本机 build 路径仅用于离线 / 应急
+
+#### 风险 & 缓解
+
+| 风险 | 缓解 |
+|---|---|
+| 阿里云 Flow 不支持某个 GitHub webhook 事件 | 调研阶段 (Phase 1 day 1) 先验证 PR merge trigger 能不能稳定收到 |
+| ACR 个人版镜像总大小有限 (~5GB), 三镜像各 1.4-2.7GB,撑不了几个版本 | 个人版只保留 latest + main-<sha>×3, 老 sha 自动 GC; 不行换企业版 |
+| watchtower restart 时机不可控, 可能中断在线用户对话 | (a) 配 `--monitor-only --include-restarting` 先验证 (b) 后续上 langgraph thread checkpoint Postgres 后用户对话不丢 |
+| ACR `docker login` 凭证泄露在 ECS 上 | 用阿里云 RAM 子账号 token 限定 read-only + ACR namespace; 不要用主账号 AK |
+| watchtower 拉到坏镜像导致服务挂 | rollback 流程: 保留前一个 tag, 手动 `docker pull <prev-tag> && docker compose up -d`, ECS 应急 SSH 可达就行 |
+
+#### 不在本 sprint 范围
+
+- 试 Gateway mode (`make up-pro`) — 上游标 experimental, 用户选 γ 不动架构. 留待 v0.1 后单独评估
+- 买 LangSmith license — 看 v0.1 后多用户规模决定
+- K8s / Helm — v0.1 单机够, 不引入新基础设施复杂度
+- 自动化 e2e 测试 — 部署链路稳定后再做
+- ECS HA / 多机部署 — v0.1 单机研究助手不需要
 
 ### 其他改进(原内容保留)
 
