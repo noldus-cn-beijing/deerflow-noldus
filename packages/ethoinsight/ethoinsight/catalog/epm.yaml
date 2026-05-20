@@ -66,6 +66,12 @@ charts:
   - id: box_open_arm
     script: ethoinsight.scripts.epm.plot_box_open_arm
     when: n_per_group >= 3
+  - id: open_arm_time_ratio_bar
+    script: ethoinsight.scripts.epm.plot_open_arm_time_ratio_bar
+    when: total_subjects >= 1
+  - id: zone_entry_distribution
+    script: ethoinsight.scripts.epm.plot_zone_entry_distribution
+    when: total_subjects >= 1
 
 statistics:
   default:
