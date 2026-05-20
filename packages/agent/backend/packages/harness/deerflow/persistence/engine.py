@@ -70,8 +70,21 @@ async def init_engine(
         echo: Echo SQL to log.
         pool_size: Postgres connection pool size.
         sqlite_dir: Directory to create for SQLite (ensured to exist).
+
+    Idempotency:
+        Once the engine has been initialized, subsequent calls are a no-op.
+        get_local_provider() in app.gateway.deps calls init_engine_from_config
+        on every authenticated request (including from langgraph_auth.authenticate
+        running inside the ASGI event loop). Without this guard each call would
+        re-run os.makedirs() and rebuild the SQLAlchemy engine — the former
+        trips langgraph's blockbuster middleware (os.mkdir is on its blocklist),
+        the latter leaks engines on every request. Returning early once the
+        engine exists fixes both problems.
     """
     global _engine, _session_factory
+
+    if _engine is not None:
+        return
 
     if backend == "memory":
         logger.info("Persistence backend=memory -- ORM engine not initialized")
@@ -86,11 +99,18 @@ async def init_engine(
             ) from None
 
     if backend == "sqlite":
+        import asyncio
         import os
 
         from sqlalchemy import event
 
-        os.makedirs(sqlite_dir or ".", exist_ok=True)
+        # os.makedirs is a blocking syscall (calls mkdir, which langgraph_api's
+        # blockbuster middleware flags when invoked on the ASGI event loop).
+        # init_engine is reachable from an ASGI handler (auth runs it on first
+        # use), so we always run the directory creation in a worker thread.
+        # The thread offload itself takes microseconds; the idempotency guard
+        # above ensures this only ever runs once per process.
+        await asyncio.to_thread(os.makedirs, sqlite_dir or ".", exist_ok=True)
         _engine = create_async_engine(url, echo=echo, json_serializer=_json_serializer)
 
         # Enable WAL on every new connection. SQLite PRAGMA settings are

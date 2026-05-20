@@ -32,9 +32,43 @@ need to do any environment variable processing.
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+@lru_cache(maxsize=128)
+def _resolve_sqlite_dir(raw: str) -> str:
+    """Module-level cached resolver for sqlite_dir paths.
+
+    Why module-level (vs. an instance attribute):
+        AppConfig.from_file() is called on every request that needs the local
+        provider (e.g. langgraph_auth.authenticate). Each call constructs a
+        fresh DatabaseConfig, so an instance-level cache would still recompute
+        on every request. lru_cache here keys on the raw config string, so the
+        *process* only ever resolves each distinct sqlite_dir value once.
+
+    Why we don't call Path.resolve() / os.path.abspath() / os.getcwd():
+        All three call os.getcwd under the hood, which langgraph's blockbuster
+        middleware (langgraph_api >= 0.7) flags as a blocking call when invoked
+        from the ASGI event loop. AppConfig.from_file() runs inside the
+        authenticate handler, so we cannot rely on the cache being warm before
+        the first ASGI hit — meaning the first miss would still trip
+        blockbuster.
+
+        Workaround: read PWD from the environment (set by every POSIX shell and
+        propagated through Docker's exec). This is a pure-Python dict lookup,
+        not a syscall, so blockbuster does not see it. If PWD is missing or
+        does not exist as a directory we fall back to "/" — the only scenarios
+        where that matters are pathological (e.g. someone unset PWD before
+        starting the process), and they would surface as a clear sqlite file
+        path error rather than as silent corruption.
+    """
+    if os.path.isabs(raw):
+        return raw
+    cwd = os.environ.get("PWD") or "/"
+    return os.path.normpath(os.path.join(cwd, raw))
 
 
 class DatabaseConfig(BaseModel):
@@ -68,10 +102,14 @@ class DatabaseConfig(BaseModel):
 
     @property
     def _resolved_sqlite_dir(self) -> str:
-        """Resolve sqlite_dir to an absolute path (relative to CWD)."""
-        from pathlib import Path
+        """Absolute path for sqlite_dir.
 
-        return str(Path(self.sqlite_dir).resolve())
+        Resolution is cached at module level via _resolve_sqlite_dir, so this
+        property is event-loop-safe: at most one Path.resolve() call per
+        distinct sqlite_dir value across the process lifetime, and zero calls
+        if the configured value is already absolute.
+        """
+        return _resolve_sqlite_dir(self.sqlite_dir)
 
     @property
     def sqlite_path(self) -> str:
