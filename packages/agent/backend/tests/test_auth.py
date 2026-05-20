@@ -679,15 +679,22 @@ def test_password_blocklist_keeps_short_passwords_for_length_check():
 
 
 def test_missing_jwt_secret_generates_ephemeral(monkeypatch, caplog):
-    """get_auth_config() auto-generates an ephemeral secret when AUTH_JWT_SECRET is unset."""
+    """get_auth_config() auto-generates an ephemeral secret when AUTH_JWT_SECRET is unset.
+
+    Note:get_auth_config() calls load_dotenv() which would re-inject a local
+    ``.env`` value (developer machines have one). Stub load_dotenv to a no-op
+    so this test verifies the env-missing path,not the dotenv path.
+    """
     import logging
 
     import app.gateway.auth.config as config_module
 
     config_module._auth_config = None
     monkeypatch.delenv("AUTH_JWT_SECRET", raising=False)
+    # Stub dotenv so a developer's .env doesn't repopulate the env var.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: False)
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING, logger=config_module.logger.name):
         config = config_module.get_auth_config()
 
     assert config.jwt_secret  # non-empty ephemeral secret

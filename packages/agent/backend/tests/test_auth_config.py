@@ -8,6 +8,15 @@ import pytest
 import app.gateway.auth.config as cfg
 
 
+@pytest.fixture(autouse=True)
+def _stub_dotenv(monkeypatch):
+    """Stub load_dotenv so developer-machine .env doesn't repopulate
+    AUTH_JWT_SECRET while these tests are verifying env-missing behavior.
+    """
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: False)
+    yield
+
+
 def test_auth_config_defaults():
     config = cfg.AuthConfig(jwt_secret="test-secret-key-123")
     assert config.token_expiry_days == 7

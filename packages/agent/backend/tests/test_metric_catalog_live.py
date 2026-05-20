@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 
 from deerflow.client import DeerFlowClient
-from deerflow.config.paths import get_path_config
+from deerflow.config.paths import get_paths
 
 # ---------------------------------------------------------------------------
 # Skip gates
@@ -43,7 +43,9 @@ from deerflow.config.paths import get_path_config
 _REAL_EPM_DIR = Path("/home/wangqiuyang/DemoData/newdemodata/高架十字迷宫_小鼠_三点")
 
 _skip_reason = None
-if os.environ.get("CI"):
+if not os.environ.get("ETHOINSIGHT_LIVE_E2E"):
+    _skip_reason = "Live e2e disabled — set ETHOINSIGHT_LIVE_E2E=1 to enable"
+elif os.environ.get("CI"):
     _skip_reason = "Live test skipped in CI"
 elif not Path(__file__).resolve().parents[2].joinpath("config.yaml").exists():
     _skip_reason = "No config.yaml — live test requires API credentials"
@@ -81,7 +83,7 @@ def epm_raw_file() -> Path:
 @pytest.fixture(scope="module")
 def workspace_dir(thread_id) -> Path:
     """Host path to thread's workspace dir (where plan.json / handoff lands)."""
-    return get_path_config().sandbox_work_dir(thread_id)
+    return get_paths().sandbox_work_dir(thread_id)
 
 
 # ---------------------------------------------------------------------------

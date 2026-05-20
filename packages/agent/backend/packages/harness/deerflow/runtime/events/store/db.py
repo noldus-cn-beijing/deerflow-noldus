@@ -33,14 +33,15 @@ class DbRunEventStore(RunEventStore):
         if isinstance(val, datetime):
             d["created_at"] = val.isoformat()
         d.pop("id", None)
-        # Restore dict content that was JSON-serialized on write
+        # Restore structured content (dict/list) that was JSON-serialized on write.
+        # The canonical flag is content_is_json; content_is_dict is a legacy alias
+        # kept on dict payloads for backward-compat with older consumers.
         raw = d.get("content", "")
-        if isinstance(raw, str) and d.get("metadata", {}).get("content_is_dict"):
+        meta = d.get("metadata") or {}
+        if isinstance(raw, str) and (meta.get("content_is_json") or meta.get("content_is_dict")):
             try:
                 d["content"] = json.loads(raw)
             except (json.JSONDecodeError, ValueError):
-                # Content looked like JSON (content_is_dict flag) but failed to parse;
-                # keep the raw string as-is.
                 logger.debug("Failed to deserialize content as JSON for event seq=%s", d.get("seq"))
         return d
 
@@ -104,9 +105,12 @@ class DbRunEventStore(RunEventStore):
         the initial ``human_message`` event (once per run).
         """
         content, metadata = self._truncate_trace(category, content, metadata)
-        if isinstance(content, dict):
+        if isinstance(content, (dict, list)):
             db_content = json.dumps(content, default=str, ensure_ascii=False)
-            metadata = {**(metadata or {}), "content_is_dict": True}
+            metadata = {**(metadata or {}), "content_is_json": True}
+            if isinstance(content, dict):
+                # Legacy alias kept so older consumers / migrations still work.
+                metadata["content_is_dict"] = True
         else:
             db_content = content
         user_id = self._user_id_from_context()
@@ -150,9 +154,11 @@ class DbRunEventStore(RunEventStore):
                     category = e.get("category", "trace")
                     metadata = e.get("metadata")
                     content, metadata = self._truncate_trace(category, content, metadata)
-                    if isinstance(content, dict):
+                    if isinstance(content, (dict, list)):
                         db_content = json.dumps(content, default=str, ensure_ascii=False)
-                        metadata = {**(metadata or {}), "content_is_dict": True}
+                        metadata = {**(metadata or {}), "content_is_json": True}
+                        if isinstance(content, dict):
+                            metadata["content_is_dict"] = True
                     else:
                         db_content = content
                     row = RunEventRow(

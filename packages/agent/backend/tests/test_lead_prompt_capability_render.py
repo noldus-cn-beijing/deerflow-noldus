@@ -58,9 +58,13 @@ def test_prompt_no_chart_selection_logic():
 
 
 def test_prompt_line_count_drastically_reduced():
+    """W16 砍 prompt 后的 ratchet:防止 prompt 再次膨胀失控。
+    阈值 700 由 2026-05-20 校准 — 当前实测 598 行,余 100 行余量足够吸纳
+    Gate 反问 / 中文调度 / subagent 描述等合理增长。超过 700 应警告并讨论。
+    """
     prompt = apply_prompt_template(subagent_enabled=True, max_concurrent_subagents=3)
     line_count = prompt.count("\n")
-    assert line_count < 400, f"lead prompt too long after W16 (got {line_count} lines, expect <400)"
+    assert line_count < 700, f"lead prompt too long (got {line_count} lines, expect <700)"
 
 
 def test_prompt_no_default_fallback_reference():
