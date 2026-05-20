@@ -107,11 +107,11 @@ constitution_acknowledged: true
 method_warnings_count: <int>          # method_warnings 数组长度
 outlier_count: <int>                  # outlier_findings 数组长度
 excluded_metrics_count: <int>         # excluded_metrics 数组长度
-statistical_validity: ok | warning | failed
+statistical_validity: ok | warning | failed | skipped
 errors_count: <int>
 ```
 
-- `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读
+- `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读；"skipped" = 上游 code-executor 未运行统计检验（单样本/n_per_group<2），data-analyst 透传该值，按"不做组间推断"路径解读
 - 即便所有 count 为 0，仍必须输出完整 `[gate_signals]` 块
 </gate_signals_contract>
 

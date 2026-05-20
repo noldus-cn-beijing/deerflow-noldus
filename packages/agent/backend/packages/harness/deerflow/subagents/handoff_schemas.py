@@ -67,7 +67,7 @@ class GateSignals(BaseModel):
             "'critical_items': [str, ...]  # 关键 critical 条目摘要，每条 <80 字}"
         ),
     )
-    statistical_validity: Literal["ok", "warning", "failed"] = "ok"
+    statistical_validity: Literal["ok", "warning", "failed", "skipped"] = "ok"
     errors_count: int = 0
 
 
