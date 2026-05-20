@@ -129,11 +129,14 @@ def prep_metric_plan_tool(
         )
 
     # Step 5: resolve catalog → PlanMetrics
+    # raw_files 走虚拟路径,避免宿主机路径泄漏到 plan_metrics.json 后被 subagent
+    # 照抄进 bash --input。IO 部分(detect_ethovision / parse_header)已在 Step 3-4
+    # 完成,resolve_metrics 内部只把 raw_files 透传到 PlanMetric.input + PlanInputs.raw_files。
     try:
         plan = resolve_metrics(
             paradigm=paradigm,
             columns=columns,
-            raw_files=[real_file_path],
+            raw_files=[uploaded_file],
             workspace_dir=real_workspace_path,
             virtual_workspace_dir="/mnt/user-data/workspace",
         )
