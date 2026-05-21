@@ -324,13 +324,15 @@ class MemoryUpdater:
         agent_name: str | None,
         correction_detected: bool,
         reinforcement_detected: bool,
+        *,
+        user_id: str | None = None,
     ) -> tuple[dict[str, Any], str] | None:
         """Load memory and build the update prompt for a conversation."""
         config = get_memory_config()
         if not config.enabled or not messages:
             return None
 
-        current_memory = get_memory_data(agent_name)
+        current_memory = get_memory_data(agent_name, user_id=user_id)
         conversation_text = format_conversation_for_update(messages)
         if not conversation_text.strip():
             return None
@@ -352,6 +354,8 @@ class MemoryUpdater:
         response_content: Any,
         thread_id: str | None,
         agent_name: str | None,
+        *,
+        user_id: str | None = None,
     ) -> bool:
         """Parse the model response, apply updates, and persist memory."""
         response_text = _extract_text(response_content).strip()
@@ -365,7 +369,7 @@ class MemoryUpdater:
         # cannot corrupt the still-cached original object reference.
         updated_memory = self._apply_updates(copy.deepcopy(current_memory), update_data, thread_id)
         updated_memory = _strip_upload_mentions_from_memory(updated_memory)
-        return get_memory_storage().save(updated_memory, agent_name)
+        return get_memory_storage().save(updated_memory, agent_name, user_id=user_id)
 
     async def aupdate_memory(
         self,
@@ -374,6 +378,8 @@ class MemoryUpdater:
         agent_name: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
+        *,
+        user_id: str | None = None,
     ) -> bool:
         """Update memory asynchronously based on conversation messages."""
         try:
@@ -383,6 +389,7 @@ class MemoryUpdater:
                 agent_name=agent_name,
                 correction_detected=correction_detected,
                 reinforcement_detected=reinforcement_detected,
+                user_id=user_id,
             )
             if prepared is None:
                 return False
@@ -396,6 +403,7 @@ class MemoryUpdater:
                 response_content=response.content,
                 thread_id=thread_id,
                 agent_name=agent_name,
+                user_id=user_id,
             )
         except json.JSONDecodeError as e:
             logger.warning("Failed to parse LLM response for memory update: %s", e)
@@ -411,6 +419,8 @@ class MemoryUpdater:
         agent_name: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
+        *,
+        user_id: str | None = None,
     ) -> bool:
         """Pure-sync memory update using ``model.invoke()``.
 
@@ -426,6 +436,7 @@ class MemoryUpdater:
                 agent_name=agent_name,
                 correction_detected=correction_detected,
                 reinforcement_detected=reinforcement_detected,
+                user_id=user_id,
             )
             if prepared is None:
                 return False
@@ -438,6 +449,7 @@ class MemoryUpdater:
                 response_content=response.content,
                 thread_id=thread_id,
                 agent_name=agent_name,
+                user_id=user_id,
             )
         except json.JSONDecodeError as e:
             logger.warning("Failed to parse LLM response for memory update: %s", e)
@@ -491,6 +503,7 @@ class MemoryUpdater:
                     agent_name=agent_name,
                     correction_detected=correction_detected,
                     reinforcement_detected=reinforcement_detected,
+                    user_id=user_id,
                 )
                 return future.result()
             except Exception:
@@ -503,6 +516,7 @@ class MemoryUpdater:
             agent_name=agent_name,
             correction_detected=correction_detected,
             reinforcement_detected=reinforcement_detected,
+            user_id=user_id,
         )
 
     def _apply_updates(

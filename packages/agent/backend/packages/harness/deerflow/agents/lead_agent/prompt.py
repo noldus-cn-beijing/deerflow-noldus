@@ -529,6 +529,10 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 def _get_memory_context(agent_name: str | None = None) -> str:
     """Get memory context for injection into system prompt.
 
+    Resolves the current user from the request-scoped ContextVar so each
+    user sees only their own memory. Falls back to global memory when no
+    user is authenticated.
+
     Args:
         agent_name: If provided, loads per-agent memory. If None, loads global memory.
 
@@ -538,12 +542,15 @@ def _get_memory_context(agent_name: str | None = None) -> str:
     try:
         from deerflow.agents.memory import format_memory_for_injection, get_memory_data
         from deerflow.config.memory_config import get_memory_config
+        from deerflow.runtime.user_context import get_current_user
 
         config = get_memory_config()
         if not config.enabled or not config.injection_enabled:
             return ""
 
-        memory_data = get_memory_data(agent_name)
+        current_user = get_current_user()
+        user_id = current_user.id if current_user is not None else None
+        memory_data = get_memory_data(agent_name, user_id=user_id)
         memory_content = format_memory_for_injection(memory_data, max_tokens=config.max_injection_tokens)
 
         if not memory_content.strip():

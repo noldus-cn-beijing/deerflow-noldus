@@ -1,4 +1,4 @@
-"""Memory API router for retrieving and managing global memory data."""
+"""Memory API router for retrieving and managing per-user memory data."""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -13,8 +13,15 @@ from deerflow.agents.memory.updater import (
     update_memory_fact,
 )
 from deerflow.config.memory_config import get_memory_config
+from deerflow.runtime.user_context import get_current_user
 
 router = APIRouter(prefix="/api", tags=["memory"])
+
+
+def _resolve_user_id() -> str | None:
+    """Resolve the current user id from the request-scoped ContextVar."""
+    user = get_current_user()
+    return user.id if user is not None else None
 
 
 class ContextSection(BaseModel):
@@ -114,7 +121,7 @@ class MemoryStatusResponse(BaseModel):
     description="Retrieve the current global memory data including user context, history, and facts.",
 )
 async def get_memory() -> MemoryResponse:
-    """Get the current global memory data.
+    """Get the current per-user memory data.
 
     Returns:
         The current memory data with user context, history, and facts.
@@ -147,7 +154,7 @@ async def get_memory() -> MemoryResponse:
         }
         ```
     """
-    memory_data = get_memory_data()
+    memory_data = get_memory_data(user_id=_resolve_user_id())
     return MemoryResponse(**memory_data)
 
 
@@ -167,7 +174,7 @@ async def reload_memory() -> MemoryResponse:
     Returns:
         The reloaded memory data.
     """
-    memory_data = reload_memory_data()
+    memory_data = reload_memory_data(user_id=_resolve_user_id())
     return MemoryResponse(**memory_data)
 
 
@@ -181,7 +188,7 @@ async def reload_memory() -> MemoryResponse:
 async def clear_memory() -> MemoryResponse:
     """Clear all persisted memory data."""
     try:
-        memory_data = clear_memory_data()
+        memory_data = clear_memory_data(user_id=_resolve_user_id())
     except OSError as exc:
         raise HTTPException(status_code=500, detail="Failed to clear memory data.") from exc
 
@@ -202,6 +209,7 @@ async def create_memory_fact_endpoint(request: FactCreateRequest) -> MemoryRespo
             content=request.content,
             category=request.category,
             confidence=request.confidence,
+            user_id=_resolve_user_id(),
         )
     except ValueError as exc:
         raise _map_memory_fact_value_error(exc) from exc
@@ -221,7 +229,7 @@ async def create_memory_fact_endpoint(request: FactCreateRequest) -> MemoryRespo
 async def delete_memory_fact_endpoint(fact_id: str) -> MemoryResponse:
     """Delete a single fact from memory by fact id."""
     try:
-        memory_data = delete_memory_fact(fact_id)
+        memory_data = delete_memory_fact(fact_id, user_id=_resolve_user_id())
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Memory fact '{fact_id}' not found.") from exc
     except OSError as exc:
@@ -245,6 +253,7 @@ async def update_memory_fact_endpoint(fact_id: str, request: FactPatchRequest) -
             content=request.content,
             category=request.category,
             confidence=request.confidence,
+            user_id=_resolve_user_id(),
         )
     except ValueError as exc:
         raise _map_memory_fact_value_error(exc) from exc
@@ -265,7 +274,7 @@ async def update_memory_fact_endpoint(fact_id: str, request: FactPatchRequest) -
 )
 async def export_memory() -> MemoryResponse:
     """Export the current memory data."""
-    memory_data = get_memory_data()
+    memory_data = get_memory_data(user_id=_resolve_user_id())
     return MemoryResponse(**memory_data)
 
 
@@ -279,7 +288,7 @@ async def export_memory() -> MemoryResponse:
 async def import_memory(request: MemoryResponse) -> MemoryResponse:
     """Import and persist memory data."""
     try:
-        memory_data = import_memory_data(request.model_dump())
+        memory_data = import_memory_data(request.model_dump(), user_id=_resolve_user_id())
     except OSError as exc:
         raise HTTPException(status_code=500, detail="Failed to import memory data.") from exc
 
