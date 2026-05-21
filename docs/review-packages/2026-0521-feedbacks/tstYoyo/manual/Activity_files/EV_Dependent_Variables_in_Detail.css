@@ -1,0 +1,690 @@
+﻿
+table.TopRowAlternatingRows tr.t1Row td {
+        
+                                         font-family:Arial;
+                                         font-size:10pt;
+                                         border-left-style:Solid;
+                                         border-left-width:1px;
+                                         border-left-color:#000000;
+                                         border-right-style:Solid;
+                                         border-right-width:1px;
+                                         border-right-color:#000000;
+                                         border-top-style:Solid;
+                                         border-top-width:1px;
+                                         border-top-color:#000000;
+                                         border-bottom-style:Solid;
+                                         border-bottom-width:1px;
+                                         border-bottom-color:#000000;
+                                         background-color:#ccffcc;
+
+}
+table.TopRowAlternatingRows tr.t1st td {
+        
+                                        text-align:Center;
+                                        font-family:Arial;
+                                        font-size:10pt;
+                                        font-weight:bold;
+                                        background-color:#c0c0c0;
+                                        border-left-style:Solid;
+                                        border-left-width:1px;
+                                        border-left-color:#000000;
+                                        border-right-style:Solid;
+                                        border-right-width:1px;
+                                        border-right-color:#000000;
+                                        border-top-style:Solid;
+                                        border-top-width:1px;
+                                        border-top-color:#000000;
+                                        border-bottom-style:Solid;
+                                        border-bottom-width:1px;
+                                        border-bottom-color:#000000;
+
+}
+table.TopRowAlternatingRows tr.t2Row td {
+        
+                                         font-family:Arial;
+                                         font-size:10pt;
+                                         border-left-style:Solid;
+                                         border-left-width:1px;
+                                         border-left-color:#000000;
+                                         border-right-style:Solid;
+                                         border-right-width:1px;
+                                         border-right-color:#000000;
+                                         border-top-style:Solid;
+                                         border-top-width:1px;
+                                         border-top-color:#000000;
+                                         border-bottom-style:Solid;
+                                         border-bottom-width:1px;
+                                         border-bottom-color:#000000;
+
+}
+table.TopRowAlternatingRows {
+        
+                             border-left-style:Solid;
+                             border-left-width:1px;
+                             border-left-color:#000000;
+                             border-right-style:Solid;
+                             border-right-width:1px;
+                             border-right-color:#000000;
+                             border-top-style:Solid;
+                             border-top-width:1px;
+                             border-top-color:#000000;
+                             border-bottom-style:Solid;
+                             border-bottom-width:1px;
+                             border-bottom-color:#000000;
+                             x-border-spacing:0px;
+                             x-row-pat-1:1;
+                             x-row-pat-1-name:t1Row;
+                             x-row-pat-count:2;
+                             x-row-pat-2:1;
+                             x-row-pat-2-name:t2Row;
+                             x-1st-row:1;
+                             x-1st-row-name:t1st;
+
+}
+table.ShadedAlternatingRows tr.t2Row td {
+        
+                                         font-family:Arial;
+                                         font-size:10pt;
+                                         border-left-style:Solid;
+                                         border-left-width:1px;
+                                         border-left-color:#000000;
+                                         border-right-style:Solid;
+                                         border-right-width:1px;
+                                         border-right-color:#000000;
+                                         border-top-style:Solid;
+                                         border-top-width:1px;
+                                         border-top-color:#000000;
+                                         border-bottom-style:Solid;
+                                         border-bottom-width:1px;
+                                         border-bottom-color:#000000;
+                                         background-color:#cccccc;
+
+}
+table.ShadedAlternatingRows tr.t1Row td {
+        
+                                         font-family:Arial;
+                                         font-size:10pt;
+                                         border-left-style:Solid;
+                                         border-left-width:1px;
+                                         border-left-color:#000000;
+                                         border-right-style:Solid;
+                                         border-right-width:1px;
+                                         border-right-color:#000000;
+                                         border-top-style:Solid;
+                                         border-top-width:1px;
+                                         border-top-color:#000000;
+                                         border-bottom-style:Solid;
+                                         border-bottom-width:1px;
+                                         border-bottom-color:#000000;
+                                         background-color:#ccffcc;
+
+}
+table.ShadedAlternatingRows {
+        
+                             border-left-style:Solid;
+                             border-left-width:1px;
+                             border-left-color:#000000;
+                             border-right-style:Solid;
+                             border-right-width:1px;
+                             border-right-color:#000000;
+                             border-top-style:Solid;
+                             border-top-width:1px;
+                             border-top-color:#000000;
+                             border-bottom-style:Solid;
+                             border-bottom-width:1px;
+                             border-bottom-color:#000000;
+                             x-border-spacing:0px;
+                             x-row-pat-1:1;
+                             x-row-pat-1-name:t1Row;
+                             x-row-pat-count:2;
+                             x-row-pat-2:1;
+                             x-row-pat-2-name:t2Row;
+
+}
+h1 {
+        
+    text-align:center;
+    color:#5d86ff;
+    text-decoration:none;
+    font:normal 24pt/50pt Segoe UI;
+    vertical-align:top;
+    border-bottom:1pt solid silver;
+    border-top-style:none;
+    border-right-style:none;
+    border-left-style:none;
+    border-top-color:silver;
+    border-right-color:silver;
+    border-left-color:silver;
+    top:auto;
+
+}
+caption.h1 {
+        
+    text-align:center;
+    color:#5d86ff;
+    text-decoration:none;
+    font:normal 24pt/50pt Segoe UI;
+    vertical-align:top;
+    border-bottom:1pt solid silver;
+    border-top-style:none;
+    border-right-style:none;
+    border-left-style:none;
+    border-top-color:silver;
+    border-right-color:silver;
+    border-left-color:silver;
+    top:auto;
+
+}
+p.FM_PDF_Page_number {
+        margin-left:     0.000pt;
+        margin-right:    0.000pt;
+        text-align:      center;
+        text-indent:     0.000pt;
+        margin-top:      0.000pt;
+        margin-bottom:   0.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       10.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_PDF_Page_number {
+        margin-left:     0.000pt;
+        margin-right:    0.000pt;
+        text-align:      center;
+        text-indent:     0.000pt;
+        margin-top:      0.000pt;
+        margin-bottom:   0.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       10.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Heading_3 {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      19.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      italic;
+        font-weight:     normal;
+        font-size:       13.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Heading_3 {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      19.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      italic;
+        font-weight:     normal;
+        font-size:       13.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Numbered {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -19.843pt;
+        margin-top:      7.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Numbered {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -19.843pt;
+        margin-top:      7.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Heading_2 {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      16.000pt;
+        margin-bottom:   11.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       16.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Heading_2 {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      16.000pt;
+        margin-bottom:   11.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       16.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Small_text_indented {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      4.000pt;
+        margin-bottom:   4.000pt;
+        word-spacing:    0.250em;
+        font-family:     Consolas;
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       10.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Small_text_indented {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      4.000pt;
+        margin-bottom:   4.000pt;
+        word-spacing:    0.250em;
+        font-family:     Consolas;
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       10.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Small_text_indented {
+        
+                          color:#5d86ff;
+
+}
+p.FM_Indented {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      5.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Indented {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      5.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Indented {
+        
+               text-align:left;
+
+}
+p.FM_Bulleted_indented {
+        margin-left:     93.543pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -21.269pt;
+        margin-top:      0.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Bulleted_indented {
+        margin-left:     93.543pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -21.269pt;
+        margin-top:      0.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Table_text {
+        margin-left:     5.669pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      4.000pt;
+        margin-bottom:   8.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       10.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Table_text {
+        margin-left:     5.669pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      4.000pt;
+        margin-bottom:   8.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       10.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_PDF_Body {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      5.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_PDF_Body {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      5.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Bulleted {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -19.843pt;
+        margin-top:      0.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Bulleted {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -19.843pt;
+        margin-top:      0.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Numbered_first {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -19.843pt;
+        margin-top:      0.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Numbered_first {
+        margin-left:     70.866pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     -19.843pt;
+        margin-top:      0.000pt;
+        margin-bottom:   7.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+p.FM_Body {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      5.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+caption.FM_Body {
+        margin-left:     28.346pt;
+        margin-right:    0.000pt;
+        text-align:      left;
+        text-indent:     0.000pt;
+        margin-top:      5.000pt;
+        margin-bottom:   10.000pt;
+        word-spacing:    0.250em;
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        background-color: none;
+        text-decoration:  none  ;
+		letter-spacing:  0.00em;
+        
+}
+OL, UL {
+        margin-top: 0px;
+        margin-bottom: 0px;
+}
+
+span.FM_Emphasis {
+        font-style:      italic;
+        color:           #000000;
+        
+}
+span.FM_Link {
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #0000ff;
+        text-decoration :  none  ;
+		letter-spacing:  0.00em;
+        
+}
+span.FM_Link {
+        
+              font:12px Segoe UI;
+              color:#3366ff;
+
+}
+span.FM_All_caps {
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     bold;
+        font-size:       12.0pt;
+        color:           #000000;
+        text-decoration :  none  ;
+		letter-spacing:  0.00em;
+        font-variant:    small-caps;
+        
+}
+span.FM_Bulletfont {
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        text-decoration :  none  ;
+		letter-spacing:  0.00em;
+        
+}
+span.FM_Bold {
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     bold;
+        font-size:       12.0pt;
+        color:           #000000;
+        text-decoration :  none  ;
+		letter-spacing:  0.00em;
+        
+}
+span.FM_PDF_Character {
+        font-family:     'Segoe UI';
+        font-style:      normal;
+        font-weight:     normal;
+        font-size:       12.0pt;
+        color:           #000000;
+        text-decoration :  none  ;
+		letter-spacing:  0.00em;
+        
+}
+span.FM_EquationVariables {
+        font-style:      italic;
+        
+}

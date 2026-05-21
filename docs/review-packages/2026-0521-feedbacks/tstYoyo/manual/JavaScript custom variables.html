@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<!-- saved from url=(0214)file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_custom_variables.htm?rhhlterm=javascript&rhsyns=%20 -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style>.rh-hide:not(.rh-animate){display:none !important;}</style>
+
+ 
+ <title>JavaScript custom variables</title>
+
+ <link rel="stylesheet" href="./JavaScript custom variables_files/EV_Dependent_Variables_in_Detail.css" type="text/css">
+
+ <link rel="stylesheet" href="./JavaScript custom variables_files/HTMLStyling.css" type="text/css">
+ <link rel="StyleSheet" href="./JavaScript custom variables_files/Responsive_HTML5_stylesheet.css" type="text/css">
+
+
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe FrameMaker 2017">
+<script type="text/javascript" src="./JavaScript custom variables_files/rh.min.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/common.min.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/topic.min.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/constants.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/utils.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/mhutils.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/mhlang.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/mhver.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/settings.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/XmlJsReader.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/loadparentdata.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/loadscreen.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/loadprojdata.js"></script>
+<script type="text/javascript" src="./JavaScript custom variables_files/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="./JavaScript custom variables_files/topic.min.css">
+<script type="text/javascript">
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "18.6.0_13";
+</script>
+ <meta name="brsprev" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Multi_condition.htm">
+ <meta name="brsnext" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm">
+ <meta name="topic-breadcrumbs" content="Dependent Variables in Detail &gt; Hardware and Advanced">
+<script type="text/javascript" charset="utf-8" src="./JavaScript custom variables_files/screendata.js"></script><script type="text/javascript" charset="utf-8" src="./JavaScript custom variables_files/parentdata.js"></script><script src="./JavaScript custom variables_files/projectdata.js"></script><style type="text/css">.topic-header { background-color: #232323; color: #FFFFFF; width: calc(100%); height: 3em; position: fixed; left: 0; top: 0; font-family: Segoe UI; display: table; box-sizing: border-box; }.topic-header-shadow { height: 3em; width: 100%; }.logo { cursor: pointer; padding: 0.2em; height: calc(100% - 0.4em); text-align: center; display: table-cell; vertical-align: middle; }.logo img { max-height: 100%; display: block; }.nav { width: 100%; display: table-cell; }.title { width: 40%; height: 100%; float: left; line-height: 3em; cursor: pointer; }.gotohome { width: 60%; float: left; text-align: right; height: 100%; line-height: 3em; cursor: pointer; }.title span, .gotohome span { padding: 0em 1em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; display: block; }</style></head>
+
+<body dir="ltr"><div><div class="topic-header">  <div class="logo" onclick="rh._.redirectToLayout()">    <img src="./JavaScript custom variables_files/logo.png">  </div>  <div class="nav">    <div class="title" title="EthoVision XT 19 Help">      <span onclick="rh._.redirectToLayout()">EthoVision XT 19 Help</span>    </div>    <div class="gotohome" title="" onclick="rh._.redirectToLayout()">      <span></span>    </div></div>  </div><div class="topic-header-shadow"></div></div>
+<script type="text/javascript" src="./JavaScript custom variables_files/ehlpdhtm.js"></script>
+ <div dir="ltr">
+  <h1 dir="ltr"><a name="XREF_76127_JavaScript_custom"></a>JavaScript custom variables</h1>
+  <p dir="ltr" class="FM_Heading_2">Aim</p>
+  <p dir="ltr" class="FM_Body">To expand EthoVision XT’s analysis capabilities by introducing calculations, custom expression, and search functions in JavaScript code embedded in EthoVision XT.</p>
+  <p dir="ltr" class="FM_Body">There is a wide range of questions that can be answered with custom JavaScript variables. Here we list a few examples:</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Calculate the average of coordinates x and y of a number of subjects.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Calculate the number of subjects present in a zone.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Find the body length of an animal by taking the distance between the nose-point and the tail-base point.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Calculate the nearest neighbor distance in a school of fish.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Recalculate the coordinates of a subject based on a reference point.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Calculate the running average of a variable.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Find the time when the animal reaches 80% of correct choices in a learning test.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Create bins of velocity and assign each sample to one of them depending on the speed of the subject.</p>
+  <p dir="ltr" class="FM_Body">You can find JavaScript variables ready to use on the EthoVision XT 19 Installation package, under <span class="FM_Bold">Drivers and tools\JavaScript custom variables</span>. You can also find the variables on GitHub:</p>
+  <p dir="ltr" class="FM_Body" style="color   : #0000ff;"><a href="https://github.com/noldus/EthoVision-JavaScriptCustomAnalysis">https://github.com/noldus/EthoVision-JavaScriptCustomAnalysis</a></p>
+  <p dir="ltr" class="FM_Body">Simply copy the code to the JavaScript window in an Analysis profile of EthoVision XT (see below). You can often customize the code by adjusting specific parameters.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_64451_Calculation"></a>Calculation</p>
+  <p dir="ltr" class="FM_Body"><a name="IX_JavaScript_variable"></a>When you define JavaScript code in EthoVision XT, the software&nbsp;considers the data available at sample S<sub>k</sub> and produces a value JS<sub>k</sub>&nbsp;(numeric, or boolean) based on the JavaScript code specified. </p>
+  <p dir="ltr" class="FM_Body"><img alt="inset_3901043.jpg" id="image1044" src="./JavaScript custom variables_files/inset_3901043.jpg" style="width:100%; max-width:256px">&nbsp;</p>
+  <p dir="ltr" class="FM_Body">In the figure above, S<sub>k</sub>&nbsp;represents a generic sample, which contains not only the x,y coordinates of the subjects but also their body area, elongation and mobility at the current time. You can extract a lot of information and process it in the code. </p>
+  <p dir="ltr" class="FM_Body">The output values can be in one of three formats:</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>A rational number, like the average of speed of three subjects. This is an example of <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm#XREF_86779_JavaScript">JavaScript continuous</a> variable.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>A point event, like the event that occurs when a certain variable reaches the threshold of 80%. This is an example of a <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_event.htm#XREF_39400_JavaScript_event">JavaScript event</a> variable.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>A state event, like the time that a variable stays above a certain threshold. This is an example of a <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_state.htm#XREF_21016_JavaScript_state">JavaScript state</a> variable.</p>
+  <p dir="ltr" class="FM_Body">Remember that the JavaScript code outputs one or more values (depending on the code) per sample. Those values are used to calculate Trial statistics and Group statistics just like any other dependent variable; for example, the average and the standard deviation.</p>
+  <p dir="ltr" class="FM_Heading_2">Procedure</p>
+  <p dir="ltr" class="FM_Numbered_first">1.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Open your Analysis profile.</p>
+  <p dir="ltr" class="FM_Numbered">2.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Choose of the three options: <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm#XREF_86779_JavaScript">JavaScript continuous</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_event.htm#XREF_39400_JavaScript_event">JavaScript event</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_state.htm#XREF_21016_JavaScript_state">JavaScript state</a>.</p>
+  <p dir="ltr" class="FM_Numbered">3.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Insert the code in the window that appears.</p>
+  <p dir="ltr" class="FM_Numbered">4.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Run analysis as usual.</p>
+  <p dir="ltr" class="FM_Body">&nbsp;</p>
+  </div>
+
+</body></html>
