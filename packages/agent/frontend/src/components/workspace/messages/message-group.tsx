@@ -22,6 +22,7 @@ import {
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
 import { CodeBlock } from "@/components/ai-elements/code-block";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -178,11 +179,16 @@ export function MessageGroup({
             onClick={() => setShowLastThinking(!showLastThinking)}
           >
             <div className="flex w-full items-center justify-between">
-              <ChainOfThoughtStep
-                className="font-normal"
-                label={t.common.thinking}
-                icon={LightbulbIcon}
-              ></ChainOfThoughtStep>
+              <div className="flex items-center gap-2">
+                <ChainOfThoughtStep
+                  className="font-normal"
+                  label={t.common.thinking}
+                  icon={LightbulbIcon}
+                ></ChainOfThoughtStep>
+                <Badge variant="secondary" className="text-xs font-normal">
+                  Lead Agent
+                </Badge>
+              </div>
               <div>
                 <ChevronUp
                   className={cn(
