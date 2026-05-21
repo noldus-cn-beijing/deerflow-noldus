@@ -175,6 +175,7 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
         max_tracked_threads: int = _DEFAULT_MAX_TRACKED_THREADS,
         tool_freq_warn: int = _DEFAULT_TOOL_FREQ_WARN,
         tool_freq_hard_limit: int = _DEFAULT_TOOL_FREQ_HARD_LIMIT,
+        tool_freq_overrides: dict[str, tuple[int, int]] | None = None,
     ):
         super().__init__()
         self.warn_threshold = warn_threshold
@@ -183,6 +184,7 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
         self.max_tracked_threads = max_tracked_threads
         self.tool_freq_warn = tool_freq_warn
         self.tool_freq_hard_limit = tool_freq_hard_limit
+        self._tool_freq_overrides: dict[str, tuple[int, int]] = tool_freq_overrides or {}
         self._lock = threading.Lock()
         # Per-thread tracking using OrderedDict for LRU eviction
         self._history: OrderedDict[str, list[str]] = OrderedDict()
@@ -190,6 +192,24 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
         # Per-thread, per-tool-type cumulative call counts
         self._tool_freq: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._tool_freq_warned: dict[str, set[str]] = defaultdict(set)
+
+    @classmethod
+    def from_config(cls, config: "LoopDetectionConfig") -> "LoopDetectionMiddleware":
+        """Construct from a Pydantic-validated LoopDetectionConfig.
+
+        Trusts the Pydantic validation already performed on ``config`` and
+        forwards every field — including the per-tool overrides — into the
+        middleware constructor.
+        """
+        return cls(
+            warn_threshold=config.warn_threshold,
+            hard_limit=config.hard_limit,
+            window_size=config.window_size,
+            max_tracked_threads=config.max_tracked_threads,
+            tool_freq_warn=config.tool_freq_warn,
+            tool_freq_hard_limit=config.tool_freq_hard_limit,
+            tool_freq_overrides={name: (o.warn, o.hard_limit) for name, o in config.tool_freq_overrides.items()},
+        )
 
     def _get_thread_id(self, runtime: Runtime) -> str:
         """Extract thread_id from runtime context for per-thread tracking."""
@@ -302,7 +322,16 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                 freq[freq_key] += 1
                 tc_count = freq[freq_key]
 
-                if tc_count >= self.tool_freq_hard_limit:
+                # Per-tool overrides take precedence over global defaults.
+                # Overrides are keyed by the raw tool name (e.g. "bash"), not
+                # the dispatcher-aware freq_key, so `task:code-executor` falls
+                # back to the global tool_freq_* defaults — same as upstream.
+                if name in self._tool_freq_overrides:
+                    eff_warn, eff_hard = self._tool_freq_overrides[name]
+                else:
+                    eff_warn, eff_hard = self.tool_freq_warn, self.tool_freq_hard_limit
+
+                if tc_count >= eff_hard:
                     logger.error(
                         "Tool frequency hard limit reached — forcing stop",
                         extra={
@@ -313,7 +342,7 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                     )
                     return _TOOL_FREQ_HARD_STOP_MSG.format(tool_name=display_name, count=tc_count), True
 
-                if tc_count >= self.tool_freq_warn:
+                if tc_count >= eff_warn:
                     warned = self._tool_freq_warned[thread_id]
                     if freq_key not in warned:
                         warned.add(freq_key)

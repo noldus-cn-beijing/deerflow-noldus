@@ -202,9 +202,3 @@ def _run_async_install(coro):
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             return executor.submit(asyncio.run, coro).result()
     return asyncio.run(coro)
-
-
-def get_skills_root_path() -> Path:
-    """Compat shim — delegate to new SkillStorage API."""
-    from deerflow.skills.storage import get_or_new_skill_storage
-    return get_or_new_skill_storage().get_skills_root_path()

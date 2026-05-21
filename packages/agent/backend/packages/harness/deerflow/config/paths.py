@@ -154,7 +154,15 @@ class Paths:
 
     def user_agent_memory_file(self, user_id: str, agent_name: str) -> Path:
         """Per-user per-agent memory: `{base_dir}/users/{user_id}/agents/{name}/memory.json`."""
-        return self.user_dir(user_id) / "agents" / agent_name.lower() / "memory.json"
+        return self.user_agent_dir(user_id, agent_name) / "memory.json"
+
+    def user_agents_dir(self, user_id: str) -> Path:
+        """Root directory for a user's custom agents: `{base_dir}/users/{user_id}/agents/`."""
+        return self.user_dir(user_id) / "agents"
+
+    def user_agent_dir(self, user_id: str, agent_name: str) -> Path:
+        """Directory for one of a user's custom agents: `{base_dir}/users/{user_id}/agents/{name}/`."""
+        return self.user_agents_dir(user_id) / agent_name.lower()
 
     def thread_dir(self, thread_id: str, *, user_id: str | None = None) -> Path:
         """

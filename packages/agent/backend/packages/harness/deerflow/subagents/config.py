@@ -33,7 +33,7 @@ class SubagentConfig:
     model: str = "inherit"
     max_turns: int = 50
     timeout_seconds: int = 900
-    # ---- W1 capability metadata 新增 ----
+    # Noldus extensions — capability-exposure contract for subagent dispatch
     when_to_use: str | None = None
     input_contract: str | None = None
     output_contract: str | None = None

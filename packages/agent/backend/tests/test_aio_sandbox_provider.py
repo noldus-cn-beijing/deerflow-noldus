@@ -65,7 +65,7 @@ def test_get_thread_mounts_includes_acp_workspace(tmp_path, monkeypatch):
     container_paths = {m[1]: (m[0], m[2]) for m in mounts}
 
     assert "/mnt/acp-workspace" in container_paths, "ACP workspace mount is missing"
-    expected_host = str(tmp_path / "threads" / "thread-3" / "acp-workspace")
+    expected_host = str(Paths(base_dir=tmp_path).acp_workspace_dir("thread-3", user_id="test-user-autouse"))
     actual_host, read_only = container_paths["/mnt/acp-workspace"]
     assert actual_host == expected_host
     assert read_only is True, "ACP workspace should be read-only inside the sandbox"
@@ -102,10 +102,10 @@ def test_get_thread_mounts_preserves_windows_host_path_style(tmp_path, monkeypat
 
     container_paths = {container_path: host_path for host_path, container_path, _ in mounts}
 
-    assert container_paths["/mnt/user-data/workspace"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\threads\thread-10\user-data\workspace"
-    assert container_paths["/mnt/user-data/uploads"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\threads\thread-10\user-data\uploads"
-    assert container_paths["/mnt/user-data/outputs"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\threads\thread-10\user-data\outputs"
-    assert container_paths["/mnt/acp-workspace"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\threads\thread-10\acp-workspace"
+    assert container_paths["/mnt/user-data/workspace"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\users\test-user-autouse\threads\thread-10\user-data\workspace"
+    assert container_paths["/mnt/user-data/uploads"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\users\test-user-autouse\threads\thread-10\user-data\uploads"
+    assert container_paths["/mnt/user-data/outputs"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\users\test-user-autouse\threads\thread-10\user-data\outputs"
+    assert container_paths["/mnt/acp-workspace"] == r"C:\Users\demo\deer-flow\backend\.deer-flow\users\test-user-autouse\threads\thread-10\acp-workspace"
 
 
 def test_discover_or_create_only_unlocks_when_lock_succeeds(tmp_path, monkeypatch):

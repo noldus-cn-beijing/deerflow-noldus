@@ -2,21 +2,19 @@ import logging
 
 from langchain.tools import BaseTool
 
-from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool
 from deerflow.config import get_app_config
+from deerflow.config.app_config import AppConfig
 from deerflow.reflection import resolve_variable
 from deerflow.sandbox.security import is_host_bash_allowed
-from deerflow.tools.builtins import ask_clarification_tool, identify_ev19_template_tool, prep_metric_plan_tool, present_file_tool, task_tool, view_image_tool
+from deerflow.tools.builtins import ask_clarification_tool, present_file_tool, task_tool, view_image_tool
 from deerflow.tools.builtins.tool_search import get_deferred_registry
+from deerflow.tools.sync import make_sync_tool_wrapper
 
 logger = logging.getLogger(__name__)
 
 BUILTIN_TOOLS = [
     present_file_tool,
     ask_clarification_tool,
-    set_experiment_paradigm_tool,
-    identify_ev19_template_tool,
-    prep_metric_plan_tool,
 ]
 
 SUBAGENT_TOOLS = [
@@ -36,12 +34,20 @@ def _is_host_bash_tool(tool: object) -> bool:
     return False
 
 
+def _ensure_sync_invocable_tool(tool: BaseTool) -> BaseTool:
+    """Attach a sync wrapper to async-only tools used by sync agent callers."""
+    if getattr(tool, "func", None) is None and getattr(tool, "coroutine", None) is not None:
+        tool.func = make_sync_tool_wrapper(tool.coroutine, tool.name)
+    return tool
+
+
 def get_available_tools(
     groups: list[str] | None = None,
     include_mcp: bool = True,
     model_name: str | None = None,
     subagent_enabled: bool = False,
-    app_config=None,
+    *,
+    app_config: AppConfig | None = None,
 ) -> list[BaseTool]:
     """Get all available tools from config.
 
@@ -53,13 +59,11 @@ def get_available_tools(
         include_mcp: Whether to include tools from MCP servers (default: True).
         model_name: Optional model name to determine if vision tools should be included.
         subagent_enabled: Whether to include subagent tools (task, task_status).
-        app_config: Reserved for upstream parity (resolved AppConfig). Ignored
-            locally — config is fetched via the global ``get_app_config`` cache.
 
     Returns:
         List of available tools.
     """
-    config = get_app_config()
+    config = app_config or get_app_config()
     tool_configs = [tool for tool in config.tools if groups is None or tool.group in groups]
 
     # Do not expose host bash by default when LocalSandboxProvider is active.
@@ -81,7 +85,7 @@ def get_available_tools(
                 cfg.use,
             )
 
-    loaded_tools = [t for _, t in loaded_tools_raw]
+    loaded_tools = [_ensure_sync_invocable_tool(t) for _, t in loaded_tools_raw]
 
     # Conditionally add tools based on config
     builtin_tools = BUILTIN_TOOLS.copy()
@@ -182,10 +186,14 @@ def get_available_tools(
     # Add invoke_acp_agent tool if any ACP agents are configured
     acp_tools: list[BaseTool] = []
     try:
-        from deerflow.config.acp_config import get_acp_agents
         from deerflow.tools.builtins.invoke_acp_agent_tool import build_invoke_acp_agent_tool
 
-        acp_agents = get_acp_agents()
+        if app_config is None:
+            from deerflow.config.acp_config import get_acp_agents
+
+            acp_agents = get_acp_agents()
+        else:
+            acp_agents = getattr(config, "acp_agents", {}) or {}
         if acp_agents:
             acp_tools.append(build_invoke_acp_agent_tool(acp_agents))
             logger.info(f"Including invoke_acp_agent tool ({len(acp_agents)} agent(s): {list(acp_agents.keys())})")
@@ -197,7 +205,7 @@ def get_available_tools(
     # Deduplicate by tool name — config-loaded tools take priority, followed by
     # built-ins, MCP tools, and ACP tools.  Duplicate names cause the LLM to
     # receive ambiguous or concatenated function schemas (issue #1803).
-    all_tools = loaded_tools + builtin_tools + mcp_tools + acp_tools
+    all_tools = [_ensure_sync_invocable_tool(t) for t in loaded_tools + builtin_tools + mcp_tools + acp_tools]
     seen_names: set[str] = set()
     unique_tools: list[BaseTool] = []
     for t in all_tools:

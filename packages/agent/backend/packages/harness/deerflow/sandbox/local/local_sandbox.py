@@ -110,7 +110,16 @@ class LocalSandbox(Sandbox):
             if path_str == container_path or path_str.startswith(container_path + "/"):
                 # Replace the container path prefix with local path
                 relative = path_str[len(container_path) :].lstrip("/")
-                resolved = str(Path(local_path) / relative) if relative else local_path
+                local_root = Path(local_path).resolve()
+                resolved = str(local_root / relative) if relative else str(local_root)
+
+                # Prevent symlink escapes — the resolved real path must stay
+                # under the mount's local root.
+                try:
+                    Path(resolved).resolve().relative_to(local_root)
+                except ValueError as exc:
+                    raise PermissionError(errno.EACCES, "Access denied: path escapes mounted directory", path_str) from exc
+
                 return resolved
 
         # No mapping found, return original path
@@ -422,4 +431,24 @@ class LocalSandbox(Sandbox):
                 f.write(content)
         except OSError as e:
             # Re-raise with the original path for clearer error messages, hiding internal resolved paths
+            raise type(e)(e.errno, e.strerror, path) from None
+
+    def download_file(self, path: str) -> bytes:
+        from deerflow.config.paths import VIRTUAL_PATH_PREFIX
+
+        normalised = path.replace("\\", "/")
+        stripped_path = normalised.lstrip("/")
+        allowed_prefix = VIRTUAL_PATH_PREFIX.lstrip("/")
+        if stripped_path != allowed_prefix and not stripped_path.startswith(f"{allowed_prefix}/"):
+            raise PermissionError(errno.EACCES, f"Access denied: path must be under '{VIRTUAL_PATH_PREFIX}'", path)
+
+        resolved_path = self._resolve_path(path)
+        max_download_size = 100 * 1024 * 1024
+        try:
+            file_size = os.path.getsize(resolved_path)
+            if file_size > max_download_size:
+                raise OSError(errno.EFBIG, f"File exceeds maximum download size of {max_download_size} bytes", path)
+            with open(resolved_path, "rb") as f:
+                return f.read()
+        except OSError as e:
             raise type(e)(e.errno, e.strerror, path) from None
