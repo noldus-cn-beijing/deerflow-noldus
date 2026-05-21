@@ -242,7 +242,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 ### 派遣硬约束(违反会被 Guardrail 拦截)
 
 1. **第一个非 read_file tool call 之前必须输出 `[intent] <INTENT>` 行**
-   INTENT ∈ E2E_FULL / E2E_MIN / CHART / REPORT / QA_FACT / QA_KNOWLEDGE / CLARIFY
+   INTENT ∈ E2E_FULL / E2E_FULL_ASKVIZ / E2E_MIN / CHART / REPORT / QA_FACT / QA_KNOWLEDGE / CLARIFY
    违反 → `ethoinsight.intent_not_declared` (IntentClassificationGuardrailProvider, W17)
 2. **派遣 task() 时不写 handoff 占位符语法或完整 handoff 文件路径** —— harness 按
    SubagentConfig.required_upstream_handoffs 自动注入授权 + 路径
@@ -254,8 +254,9 @@ def _build_subagent_section(max_concurrent: int) -> str:
 ### 意图状态机(7 类 INTENT → 派遣链)
 
 ```
-[ANY] → 上传数据 + 复合语义       → E2E_FULL  → code-executor → data-analyst → chart-maker → ask(report?)
-[ANY] → 上传数据 + 单一动词类别   → E2E_MIN   → code-executor → ask(four-choice)
+[ANY] → 上传数据 + 模糊总称(分析/看看/研究下/整一下) → E2E_FULL_ASKVIZ → code-executor → data-analyst → ask(要不要出图?) → [yes]chart-maker → ask(report?) / [no] ask(report?)
+[ANY] → 上传数据 + 明确出图意愿(画/图/可视化/箱线/轨迹/...) → E2E_FULL → code-executor → data-analyst → chart-maker → ask(report?)
+[ANY] → 上传数据 + 单一动词类别(仅"算"/"计算") → E2E_MIN   → code-executor → ask(four-choice)
 [ANY+handoff] → 要图              → CHART     → task(chart-maker)
 [ANY+handoff] → 要报告            → REPORT    → task(report-writer)
 [ANY+handoff] → 追问数据/指标含义 → QA_FACT   → task(knowledge-assistant)
@@ -263,7 +264,26 @@ def _build_subagent_section(max_concurrent: int) -> str:
 [ANY]         → 信息缺失          → CLARIFY   → ask_clarification
 ```
 
-**复合语义判定**(E2E_FULL vs E2E_MIN 的分水岭): 把用户消息里的动词归 4 类 — CALC(算/计算)、ANALYZE(分析/解读/描述/描述性/看看/比较)、VISUALIZE(可视化/出图/画图)、REPORT(报告/总结/汇总)。**出现 ≥2 类 = 复合语义 = E2E_FULL**。例:"描述性分析和可视化" = ANALYZE+VISUALIZE = E2E_FULL。歧义偏向 E2E_FULL(错判 E2E_MIN 会让 lead 在 chart-maker 完成后没出口、自己读 handoff 撞硬限)。详见 `ethoinsight-lead-interaction/references/intent-decision-tree.md`。
+**复合语义判定**(E2E_FULL_ASKVIZ vs E2E_FULL vs E2E_MIN 的分水岭):
+
+**Fast-path(优先短路,直接定型,不再做分类计数)**:
+- 用户消息含「**分析**」「**看看**」「**帮我看下**」「**研究下**」「**整一下**」等模糊总称(没有明说要图) → **E2E_FULL_ASKVIZ**。代码 + 解读跑完后,反问用户要不要出图。
+- 用户消息含明确出图意愿——任一触发词:「画」「图」「可视化」「画出来」「画一下」「展示」「用图说」「表」「表格」「列出来」「一览表」「箱线」「轨迹」「趋势」「热图」等 → **E2E_FULL**。直接跑到 chart-maker,不再反问要不要出图。
+- 用户消息明确只说「算一下」「计算」「跑数」(不含其他词) → **E2E_MIN**。
+- 用户消息含「报告」/「总结」 → REPORT(有 handoff)或 E2E_FULL(无 handoff)。
+
+**仅在 fast-path 不命中时**才按 4 类归类: CALC(算/计算)、ANALYZE-EXPLICIT(解读/描述/比较 — 不含"分析"这个总称词)、VISUALIZE(可视化/出图/画图/箱线/轨迹/趋势/热图/表/列出来)、REPORT(报告/总结/汇总)。出现 VISUALIZE 类 → E2E_FULL;只 ANALYZE-EXPLICIT 一类 → E2E_FULL_ASKVIZ;只 CALC 一类 → E2E_MIN。
+
+**E2E_FULL_ASKVIZ 反问模板**(data-analyst 完成后):
+```
+ask_clarification(
+  question="📊 指标和解读已完成。需要我把结果可视化成图吗?",
+  options=["A. 是,把刚才的结论画成图(默认推荐,箱线图/轨迹图/时序图)",
+           "B. 不用,直接给我报告"]
+)
+```
+
+歧义剩余偏 E2E_FULL_ASKVIZ(让用户选,代价小)。详见 `ethoinsight-lead-interaction/references/intent-decision-tree.md`。
 
 ### 详细交互手册 + 反问 / 失败 / 正例反例
 
@@ -770,8 +790,8 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 - **ethoinsight-metric-catalog**: catalog 索引(prep_metric_plan 内部使用)
 - **ethoinsight**: 输出宪法
 
-流水线: E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA→knowledge-assistant
-复合语义(E2E_FULL): 动词归 4 类(CALC/ANALYZE/VISUALIZE/REPORT),≥2 类 → E2E_FULL;歧义偏 E2E_FULL。
+流水线: E2E_FULL_ASKVIZ→code→data→ask(viz?)→[yes]chart→ask(report?) | E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA→knowledge-assistant
+复合语义: 「分析/看看/研究下」模糊总称 → E2E_FULL_ASKVIZ(跑完解读再问要不要出图)。明确含「画/图/可视化/箱线/轨迹/趋势/表」→ E2E_FULL(直接画)。明确单「算/计算」→ E2E_MIN。歧义偏 E2E_FULL_ASKVIZ。
 详情见 `/mnt/skills/ethoinsight-lead-interaction/SKILL.md`。
 </orchestration_guide>"""
 
