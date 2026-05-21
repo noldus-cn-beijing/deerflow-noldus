@@ -65,7 +65,9 @@ export function MessageList({
       className={cn("flex size-full flex-col justify-center", className)}
     >
       <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-12">
-        {groupMessages(messages, (group) => {
+        {groupMessages(
+          messages,
+          (group) => {
           if (group.type === "human" || group.type === "assistant") {
             return group.messages.map((msg) => {
               return (
@@ -266,7 +268,9 @@ export function MessageList({
               isLoading={thread.isLoading}
             />
           );
-        })}
+        },
+        { isStreaming: thread.isLoading },
+        )}
         {thread.isLoading && <StreamingIndicator className="my-4" />}
         <div style={{ height: `${paddingBottom}px` }} />
       </ConversationContent>

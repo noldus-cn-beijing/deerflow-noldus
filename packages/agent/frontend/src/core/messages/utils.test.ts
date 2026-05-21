@@ -88,6 +88,52 @@ describe("groupMessages", () => {
   });
 });
 
+describe("groupMessages — streaming continuity (no flicker)", () => {
+  // Streaming order from server: reasoning chunks → content chunks → tool_calls
+  // chunks (if any). Each chunk re-classifies the same message. Without
+  // streaming-aware classification, the SAME message id jumps between groups
+  // (reasoning → assistant:processing, then +content+no tool_calls →
+  // assistant, then +tool_calls → assistant:processing), unmounting and
+  // remounting the React tree on every chunk = visible "flicker / reload".
+  //
+  // Fix: while a message is the last in the array AND isStreaming=true, keep
+  // it pinned to processing instead of promoting to the final "assistant"
+  // group. After the stream ends, re-classification picks the final group.
+
+  it("isStreaming=true: last AI msg with reasoning+content (no tools yet) stays in processing", () => {
+    const msg = makeAIMsg("1", {
+      content: "partial answer streaming...",
+      reasoning: "deciding next action",
+    });
+    const result = groupMessages([msg], (g) => g.type, { isStreaming: true });
+    expect(result).toEqual(["assistant:processing"]);
+  });
+
+  it("isStreaming=false: same message classifies as assistant (no pinning)", () => {
+    const msg = makeAIMsg("1", {
+      content: "complete answer",
+      reasoning: "decided",
+    });
+    const result = groupTypes([msg]);
+    expect(result).toEqual(["assistant"]);
+  });
+
+  it("isStreaming=true: non-last messages classify normally (pinning ONLY on last)", () => {
+    const msg1 = makeAIMsg("1", {
+      content: "first turn final",
+      reasoning: "thought 1",
+    });
+    const msg2 = makeAIMsg("2", {
+      content: "second turn streaming",
+      reasoning: "thought 2",
+    });
+    const result = groupMessages([msg1, msg2], (g) => g.type, {
+      isStreaming: true,
+    });
+    expect(result).toEqual(["assistant", "assistant:processing"]);
+  });
+});
+
 describe("inline <think> handling — streaming TTFT", () => {
   it("closed <think>...</think> in string content: reasoning extracted, content cleaned", () => {
     const msg = makeAIMsg("1", {

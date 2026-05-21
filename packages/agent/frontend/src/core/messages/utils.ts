@@ -36,12 +36,15 @@ const HIDDEN_CONTROL_MESSAGE_NAMES = new Set([
 export function groupMessages<T>(
   messages: Message[],
   mapper: (group: MessageGroup) => T,
+  options: { isStreaming?: boolean } = {},
 ): T[] {
   if (messages.length === 0) {
     return [];
   }
 
   const groups: MessageGroup[] = [];
+  const lastIndex = messages.length - 1;
+  const { isStreaming = false } = options;
 
   // Returns the last group if it can still accept tool messages
   // (i.e. it's an in-flight processing group, not a terminal human/assistant group).
@@ -58,7 +61,8 @@ export function groupMessages<T>(
     return null;
   }
 
-  for (const message of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]!;
     if (isHiddenFromUIMessage(message)) {
       continue;
     }
@@ -90,6 +94,7 @@ export function groupMessages<T>(
     }
 
     if (message.type === "ai") {
+      const isLastAndStreaming = isStreaming && i === lastIndex;
       if (hasPresentFiles(message)) {
         groups.push({
           id: message.id,
@@ -105,17 +110,30 @@ export function groupMessages<T>(
       } else if (
         hasReasoning(message) &&
         hasContent(message) &&
-        !hasToolCalls(message)
+        !hasToolCalls(message) &&
+        !isLastAndStreaming
       ) {
         // Final answer with reasoning + content (no tool calls).
         // Must NOT also enter the processing group below — one message, one group.
+        //
+        // Streaming exception: when this IS the last message and the stream is
+        // still active, we cannot tell whether tool_calls chunks will arrive
+        // next. Keep the message pinned to assistant:processing (handled by the
+        // branch below) so the React tree stays mounted across chunks instead
+        // of flickering between processing → assistant → processing. Once the
+        // stream ends, re-classification picks the final assistant group.
         groups.push({
           id: message.id,
           type: "assistant",
           messages: [message],
         });
-      } else if (hasReasoning(message) || hasToolCalls(message)) {
+      } else if (
+        hasReasoning(message) ||
+        hasToolCalls(message) ||
+        (isLastAndStreaming && hasContent(message))
+      ) {
         // Intermediate step: reasoning-only, tool_calls-only, or reasoning+tool_calls.
+        // Streaming tail also lands here to avoid the flicker described above.
         const lastGroup = groups[groups.length - 1];
         if (lastGroup?.type !== "assistant:processing") {
           groups.push({
