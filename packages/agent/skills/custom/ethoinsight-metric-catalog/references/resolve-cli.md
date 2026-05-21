@@ -6,7 +6,7 @@
 |------|------|------|
 | `--paradigm` | str | 范式 key: epm / oft / fst / tst / ldb / zero_maze / shoaling |
 | `--columns-file` | path | dump_headers 产物路径 `columns.json` |
-| `--raw-files-json` | path | JSON 数组文件 含 raw 文件绝对路径 |
+| `--raw-files-json` | path | JSON 数组文件 含 raw 文件**虚拟路径**(如 `/mnt/user-data/uploads/xxx.txt`),**不可填宿主机绝对路径**。resolve.py 把这些路径原样写到 plan_charts.json 的 `input` 字段,下游脚本执行受 sandbox guardrail 拦截宿主机路径。
 | `--workspace-dir` | path | 工作区根目录（物理路径，用于脚本执行） |
 | `--virtual-workspace-dir` | path | plan.json output 字段使用的虚拟路径。**通常无需在 sandbox 中显式传入**——CLI 优先读 env var `DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE` 自动确定。显式传入只用于直接命令行调试（无 sandbox 环境）。fallback 顺序：(1) 显式 `--virtual-workspace-dir` 是虚拟路径 → 用它 (2) env var 存在 → 用硬编码 `/mnt/user-data/workspace` (3) 兜底物理 `--workspace-dir` |
 | `--output` | path | 输出 plan.json 路径 |
