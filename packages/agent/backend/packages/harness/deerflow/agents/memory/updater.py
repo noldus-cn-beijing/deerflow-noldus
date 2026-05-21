@@ -228,9 +228,6 @@ def _extract_text(content: Any) -> str:
 
 
 # Matches sentences that describe a file-upload *event* rather than general
-
-
-# Matches sentences that describe a file-upload *event* rather than general
 # file-related work.  Deliberately narrow to avoid removing legitimate facts
 # such as "User works with CSV files" or "prefers PDF export".
 _UPLOAD_SENTENCE_RE = re.compile(
@@ -342,7 +339,7 @@ class MemoryUpdater:
             reinforcement_detected=reinforcement_detected,
         )
         prompt = MEMORY_UPDATE_PROMPT.format(
-            current_memory=json.dumps(current_memory, indent=2),
+            current_memory=json.dumps(current_memory, indent=2, ensure_ascii=False),
             conversation=conversation_text,
             correction_hint=correction_hint,
         )
@@ -381,36 +378,23 @@ class MemoryUpdater:
         *,
         user_id: str | None = None,
     ) -> bool:
-        """Update memory asynchronously based on conversation messages."""
-        try:
-            prepared = await asyncio.to_thread(
-                self._prepare_update_prompt,
-                messages=messages,
-                agent_name=agent_name,
-                correction_detected=correction_detected,
-                reinforcement_detected=reinforcement_detected,
-                user_id=user_id,
-            )
-            if prepared is None:
-                return False
+        """Update memory asynchronously by delegating to the sync path.
 
-            current_memory, prompt = prepared
-            model = self._get_model()
-            response = await model.ainvoke(prompt, config={"run_name": "memory_agent"})
-            return await asyncio.to_thread(
-                self._finalize_update,
-                current_memory=current_memory,
-                response_content=response.content,
-                thread_id=thread_id,
-                agent_name=agent_name,
-                user_id=user_id,
-            )
-        except json.JSONDecodeError as e:
-            logger.warning("Failed to parse LLM response for memory update: %s", e)
-            return False
-        except Exception as e:
-            logger.exception("Memory update failed: %s", e)
-            return False
+        Uses ``asyncio.to_thread`` to run the *sync* ``model.invoke()`` path
+        in a worker thread so no second event loop is created and the
+        langchain async httpx client pool (shared with the lead agent) is
+        never touched.  This eliminates the cross-loop connection-reuse bug
+        described in issue #2615.
+        """
+        return await asyncio.to_thread(
+            self._do_update_memory_sync,
+            messages=messages,
+            thread_id=thread_id,
+            agent_name=agent_name,
+            correction_detected=correction_detected,
+            reinforcement_detected=reinforcement_detected,
+            user_id=user_id,
+        )
 
     def _do_update_memory_sync(
         self,

@@ -155,7 +155,7 @@ def test_get_work_dir_uses_per_thread_path_when_thread_id_given(monkeypatch, tmp
 
     monkeypatch.setattr(paths_module, "get_paths", lambda: paths_module.Paths(base_dir=tmp_path))
     result = _get_work_dir("thread-abc-123")
-    expected = tmp_path / "threads" / "thread-abc-123" / "acp-workspace"
+    expected = paths_module.Paths(base_dir=tmp_path).acp_workspace_dir("thread-abc-123", user_id="test-user-autouse")
     assert result == str(expected)
     assert expected.exists()
 
@@ -382,7 +382,9 @@ async def test_invoke_acp_agent_uses_per_thread_workspace_when_thread_id_in_conf
     )
 
     thread_id = "thread-xyz-789"
-    expected_cwd = str(tmp_path / "threads" / thread_id / "acp-workspace")
+    from deerflow.config import paths as _paths_mod
+
+    expected_cwd = str(_paths_mod.Paths(base_dir=tmp_path).acp_workspace_dir(thread_id, user_id="test-user-autouse"))
 
     tool = build_invoke_acp_agent_tool({"codex": ACPAgentConfig(command="codex-acp", description="Codex CLI")})
 

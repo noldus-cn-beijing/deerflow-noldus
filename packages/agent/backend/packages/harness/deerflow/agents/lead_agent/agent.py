@@ -250,7 +250,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     Returns:
         List of middleware instances.
     """
-    middlewares = build_lead_runtime_middlewares(lazy_init=True)
+    middlewares = build_lead_runtime_middlewares(app_config=get_app_config(), lazy_init=True)
 
     # LoopDetectionMiddleware — detect and break repetitive tool call loops.
     # Created early so it can be passed to summarization middleware for reset-on-compact.
