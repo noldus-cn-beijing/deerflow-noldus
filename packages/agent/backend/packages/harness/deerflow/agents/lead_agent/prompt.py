@@ -275,7 +275,21 @@ def _build_subagent_section(max_concurrent: int) -> str:
 **仅在 fast-path 不命中时**才按 4 类归类: CALC(算/计算)、ANALYZE-EXPLICIT(解读/描述/比较 — 不含"分析"这个总称词)、VISUALIZE(可视化/出图/画图/箱线/轨迹/趋势/热图/表/列出来)、REPORT(报告/总结/汇总)。出现 VISUALIZE 类 → E2E_FULL;只 ANALYZE-EXPLICIT 一类 → E2E_FULL_ASKVIZ;只 CALC 一类 → E2E_MIN。
 
 **E2E_FULL_ASKVIZ 反问模板**(data-analyst 完成后):
+
+**关键:在 ask_clarification 之前必须先输出一段汇报 message**,内容包含:
+1. data-analyst 的核心发现(2-3 句搬运,不叠加判读)
+2. 然后才反问要不要出图
+
+错误示范(违反):data-analyst 返回后**直接** ask_clarification,用户只看到"📊 指标和解读已完成。需要我把结果可视化成图吗?"——前文没有任何 data-analyst 的发现汇报,用户看不到分析结果。
+
+正确流程:
 ```
+[lead 输出 1 条 AIMessage,内容包含]
+✅ 已完成 data-analyst 的解读。核心发现:
+- <搬运 data-analyst 的 key_findings 第 1-3 条,不叠加自己的判读>
+- 注意:<搬运 method_warnings 的核心>
+
+[然后 lead 调]
 ask_clarification(
   question="📊 指标和解读已完成。需要我把结果可视化成图吗?",
   options=["A. 是,把刚才的结论画成图(默认推荐,箱线图/轨迹图/时序图)",

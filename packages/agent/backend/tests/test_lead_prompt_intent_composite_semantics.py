@@ -68,6 +68,16 @@ class TestCompositeSemanticsRule:
         assert "歧义" in section or "偏向" in section, \
             "歧义兜底规则缺失;下次 lead 在边界 case 仍可能反复摇摆"
 
+    def test_section_requires_summary_before_askviz_clarification(self):
+        """ASKVIZ 反问前 lead 必须先汇报 data-analyst 发现(防回归:thread 7456611e
+        直接 ask 没汇报,用户只看到反问卡片看不到分析结果)。"""
+        section = _section()
+        # 关键短语之一必须出现,描述"先汇报 + 再 ask"两步流程
+        assert any(
+            phrase in section
+            for phrase in ["先输出一段汇报", "搬运 data-analyst", "搬运 ... key_findings", "搬运 data-analyst 的 key_findings"]
+        ), "ASKVIZ 流程缺少'反问前必须汇报 data-analyst 发现'的明示规则"
+
 
 class TestCompositeSemanticsExampleInSkill:
     """具体例子仍在 skill markdown 中。"""

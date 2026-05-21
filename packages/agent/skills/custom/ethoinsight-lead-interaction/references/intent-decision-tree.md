@@ -46,9 +46,15 @@
 
 ## E2E_FULL_ASKVIZ 反问模板
 
-data-analyst 完成后,lead 调:
+data-analyst 完成后,lead **必须先发一条汇报 message**,然后才调 ask_clarification:
 
-```python
+```
+[第 1 步 — AIMessage,搬运 data-analyst 发现]
+✅ 已完成 data-analyst 的解读。核心发现:
+- <搬运 handoff_data_analyst.json 的 key_findings 第 1-3 条>
+- 注意:<搬运 method_warnings 的关键提示,如 "n=1 无法统计推断">
+
+[第 2 步 — ask_clarification 调用]
 ask_clarification(
     question="📊 指标和解读已完成。需要我把结果可视化成图吗?",
     options=[
@@ -57,6 +63,10 @@ ask_clarification(
     ]
 )
 ```
+
+**为什么必须先汇报**:ask_clarification 在前端展示成一个"反问卡片",卡片本身是简短的二选一。如果 lead 直接 ask 不汇报,用户只能看到选项卡,完全看不到 data-analyst 跑了什么、发现了什么(thinking 折叠了用户不看)。这会让用户产生"系统跳过了分析直接问出图"的错觉。
+
+**汇报的边界**:只搬运,不叠加判读。这条规则继承自调度员角色边界(prompt §"调度员角色边界")。
 
 - 用户选 A → 派 chart-maker → 完成后再 ask(要不要报告?)
 - 用户选 B → 直接 ask(要不要报告?),跳过 chart-maker
