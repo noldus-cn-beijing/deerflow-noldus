@@ -19,9 +19,13 @@ author: noldus-insight
 ## 工作流
 1. read `handoff_code_executor.json` → 拿 paradigm / n_per_group / n_groups / total_subjects
 2. bash `python -m ethoinsight.catalog.resolve --mode charts --paradigm <p> --user-intent "<原话>" ... --output plan_charts.json`
+   - **`--raw-files-json` 必须指向一个 JSON 数组,里面是虚拟路径**(`/mnt/user-data/uploads/xxx.txt`),**不可写宿主机绝对路径**。
+   - raw_files 路径直接从上游 `handoff_code_executor.json` 的 `inputs.raw_files` 字段(或 lead 派遣 prompt 给的虚拟路径)抄过来,**不要用 `Path(...).resolve()` 或 `realpath` 把它转成宿主机绝对路径**。
+   - resolve.py 会把这些路径原样写到 `plan_charts.json` 的 `input` 字段,后续脚本被 sandbox guardrail 拦宿主机路径。
 3. read `plan_charts.json` → charts[] + charts_fallback_available[]
 4. 决策(见 references/fallback-decision-tree.md)
 5. for each selected chart: bash 跑脚本
+   - 通用图(`_common.plot_timeseries` / `_common.plot_trajectory`)必须追加 `--paradigm <p>`,让脚本按范式选默认 y_col。漏传会让 timeseries 退到 `distance_moved` 列;FST/LDB 等范式数据里没有这列,会出空图。
 6. write `handoff_chart_maker.json`
 7. `present_files(<生成的 png 列表>)`
 8. 输出 `OK: <N> charts generated\n[gate_signals]\n...`
