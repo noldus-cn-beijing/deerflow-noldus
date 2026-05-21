@@ -141,6 +141,18 @@ def _shutdown_isolated_subagent_loop() -> None:
 atexit.register(_shutdown_isolated_subagent_loop)
 
 
+# Module reload safety: if a previous version of this module also registered
+# _shutdown_isolated_subagent_loop with atexit (e.g. via importlib.reload in
+# tests, or hot-reload), the old callback would still fire on process exit
+# referencing a stale loop reference. Unregister the previous version so we
+# only ever have one active shutdown hook per process. Borrowed from upstream
+# deer-flow e19bec1.
+_previous_shutdown_isolated_subagent_loop = globals().get("_previous_shutdown_isolated_subagent_loop")
+if callable(_previous_shutdown_isolated_subagent_loop) and _previous_shutdown_isolated_subagent_loop is not _shutdown_isolated_subagent_loop:
+    atexit.unregister(_previous_shutdown_isolated_subagent_loop)
+_previous_shutdown_isolated_subagent_loop = _shutdown_isolated_subagent_loop
+
+
 def _get_isolated_subagent_loop() -> asyncio.AbstractEventLoop:
     """Return the persistent event loop used by isolated subagent executions."""
     global _isolated_subagent_loop, _isolated_subagent_loop_thread, _isolated_subagent_loop_started
