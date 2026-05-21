@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from deerflow.sandbox.local.list_dir import list_dir
 from deerflow.sandbox.sandbox import Sandbox
@@ -18,6 +19,24 @@ class PathMapping:
     container_path: str
     local_path: str
     read_only: bool = False
+
+
+class ResolvedPath(NamedTuple):
+    """Result of resolving a container path against the mapping table.
+
+    Borrowed from upstream deer-flow so callers can fetch the resolved local
+    path and the source mapping in a single pass (instead of looping the
+    mapping table twice via _resolve_path + _is_read_only_path).
+
+    Attributes:
+        path: The resolved local filesystem path. When no mapping matched, this
+              is the original input path unchanged.
+        mapping: The PathMapping that produced this resolution, or None when
+                 the path didn't match any registered mapping.
+    """
+
+    path: str
+    mapping: PathMapping | None
 
 
 class LocalSandbox(Sandbox):
@@ -91,15 +110,23 @@ class LocalSandbox(Sandbox):
 
         return best_mapping.read_only
 
-    def _resolve_path(self, path: str) -> str:
+    def _resolve_path_with_mapping(self, path: str) -> ResolvedPath:
         """
         Resolve container path to actual local path using mappings.
+
+        Returns both the resolved path and the matched mapping so callers can
+        make a single pass for resolution + read-only check (vs. _resolve_path
+        followed by _is_read_only_path which loops the mapping table twice).
 
         Args:
             path: Path that might be a container path
 
         Returns:
-            Resolved local path
+            ResolvedPath(path, mapping). mapping is None when no mapping matched.
+
+        Raises:
+            PermissionError: If the resolved path escapes the mount's local
+                root via symlink (R7 surgical-merge protection, preserved).
         """
         path_str = str(path)
 
@@ -120,10 +147,27 @@ class LocalSandbox(Sandbox):
                 except ValueError as exc:
                     raise PermissionError(errno.EACCES, "Access denied: path escapes mounted directory", path_str) from exc
 
-                return resolved
+                return ResolvedPath(resolved, mapping)
 
         # No mapping found, return original path
-        return path_str
+        return ResolvedPath(path_str, None)
+
+    def _resolve_path(self, path: str) -> str:
+        """Resolve container path to actual local path. Returns just the path string.
+
+        Thin wrapper over _resolve_path_with_mapping for callers that don't
+        need the mapping object.
+        """
+        return self._resolve_path_with_mapping(path).path
+
+    def _is_resolved_path_read_only(self, resolved: ResolvedPath) -> bool:
+        """Check read-only on a ResolvedPath without re-scanning the mapping table.
+
+        Prefer this over ``_resolve_path`` + ``_is_read_only_path`` when you
+        already have a ResolvedPath, since the latter walks the mapping list
+        a second time.
+        """
+        return bool(resolved.mapping and resolved.mapping.read_only) or self._is_read_only_path(resolved.path)
 
     def _reverse_resolve_path(self, path: str) -> str:
         """
@@ -365,8 +409,9 @@ class LocalSandbox(Sandbox):
             raise type(e)(e.errno, e.strerror, path) from None
 
     def write_file(self, path: str, content: str, append: bool = False) -> None:
-        resolved_path = self._resolve_path(path)
-        if self._is_read_only_path(resolved_path):
+        resolved = self._resolve_path_with_mapping(path)
+        resolved_path = resolved.path
+        if self._is_resolved_path_read_only(resolved):
             raise OSError(errno.EROFS, "Read-only file system", path)
         try:
             dir_path = os.path.dirname(resolved_path)
@@ -420,8 +465,9 @@ class LocalSandbox(Sandbox):
         ], truncated
 
     def update_file(self, path: str, content: bytes) -> None:
-        resolved_path = self._resolve_path(path)
-        if self._is_read_only_path(resolved_path):
+        resolved = self._resolve_path_with_mapping(path)
+        resolved_path = resolved.path
+        if self._is_resolved_path_read_only(resolved):
             raise OSError(errno.EROFS, "Read-only file system", path)
         try:
             dir_path = os.path.dirname(resolved_path)

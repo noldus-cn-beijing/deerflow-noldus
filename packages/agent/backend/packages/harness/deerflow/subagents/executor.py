@@ -37,6 +37,16 @@ class SubagentStatus(Enum):
     CANCELLED = "cancelled"
     TIMED_OUT = "timed_out"
 
+    @property
+    def is_terminal(self) -> bool:
+        """True for statuses that mark a subagent as done (success or failure).
+
+        Compares by ``.value`` (string) rather than enum identity so this stays
+        correct across ``importlib.reload`` boundaries — under reload, the enum
+        class identity changes but ``.value`` is stable.
+        """
+        return self.value in {"completed", "failed", "cancelled", "timed_out"}
+
 
 @dataclass
 class SubagentResult:
@@ -64,11 +74,61 @@ class SubagentResult:
     token_usage_records: list[dict[str, int | str]] = field(default_factory=list)
     usage_reported: bool = False
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    _state_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self):
         """Initialize mutable defaults."""
         if self.ai_messages is None:
             self.ai_messages = []
+
+    def try_set_terminal(
+        self,
+        status: SubagentStatus,
+        *,
+        result: str | None = None,
+        error: str | None = None,
+        completed_at: datetime | None = None,
+        ai_messages: list[dict[str, Any]] | None = None,
+        token_usage_records: list[dict[str, int | str]] | None = None,
+    ) -> bool:
+        """Set a terminal status exactly once (CAS — first writer wins).
+
+        Background timeout/cancellation and the execution worker can race on
+        the same result holder. The first terminal transition wins; late
+        terminal writes are silently ignored and return False (so callers can
+        detect they were beaten to the punch).
+
+        Borrowed from upstream deer-flow.
+
+        Args:
+            status: A terminal status (COMPLETED/FAILED/CANCELLED/TIMED_OUT).
+            result/error/ai_messages/token_usage_records: Optional payload
+                fields to set atomically with the status transition.
+            completed_at: Override for the completion timestamp. Defaults to
+                ``datetime.now()`` when omitted.
+
+        Returns:
+            True if the transition was applied, False if the status was
+            already terminal.
+        """
+        if not status.is_terminal:
+            raise ValueError(f"Status {status} is not terminal")
+
+        with self._state_lock:
+            if self.status.is_terminal:
+                return False
+
+            if result is not None:
+                self.result = result
+            if error is not None:
+                self.error = error
+            if ai_messages is not None:
+                self.ai_messages = ai_messages
+            if token_usage_records is not None:
+                self.token_usage_records = token_usage_records
+            self.completed_at = completed_at or datetime.now()
+            self.status = status
+            return True
 
 
 # Global storage for background task results
@@ -468,10 +528,7 @@ class SubagentExecutor:
             if result.cancel_event.is_set():
                 logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} cancelled before streaming")
                 with _background_tasks_lock:
-                    if result.status == SubagentStatus.RUNNING:
-                        result.status = SubagentStatus.CANCELLED
-                        result.error = "Cancelled by user"
-                        result.completed_at = datetime.now()
+                    result.try_set_terminal(SubagentStatus.CANCELLED, error="Cancelled by user")
                 if collector is not None:
                     result.token_usage_records = collector.snapshot_records()
                 return result
@@ -484,10 +541,7 @@ class SubagentExecutor:
                 if result.cancel_event.is_set():
                     logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} cancelled by parent")
                     with _background_tasks_lock:
-                        if result.status == SubagentStatus.RUNNING:
-                            result.status = SubagentStatus.CANCELLED
-                            result.error = "Cancelled by user"
-                            result.completed_at = datetime.now()
+                        result.try_set_terminal(SubagentStatus.CANCELLED, error="Cancelled by user")
                     result.token_usage_records = collector.snapshot_records()
                     return result
 
@@ -592,14 +646,11 @@ class SubagentExecutor:
                     logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} no messages in final state")
                     result.result = "No response generated"
 
-            result.status = SubagentStatus.COMPLETED
-            result.completed_at = datetime.now()
+            result.try_set_terminal(SubagentStatus.COMPLETED)
 
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} async execution failed")
-            result.status = SubagentStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.now()
+            result.try_set_terminal(SubagentStatus.FAILED, error=str(e))
             if collector is not None:
                 result.token_usage_records = collector.snapshot_records()
 
@@ -657,14 +708,15 @@ class SubagentExecutor:
             if result_holder is not None:
                 result = result_holder
             else:
+                # Initialise as RUNNING so try_set_terminal can transition it
+                # to FAILED; if we initialised as FAILED directly, the CAS
+                # guard would reject the error/completed_at write.
                 result = SubagentResult(
                     task_id=str(uuid.uuid4())[:8],
                     trace_id=self.trace_id,
-                    status=SubagentStatus.FAILED,
+                    status=SubagentStatus.RUNNING,
                 )
-            result.status = SubagentStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.now()
+            result.try_set_terminal(SubagentStatus.FAILED, error=str(e))
             return result
 
     def execute_async(self, task: str, task_id: str | None = None) -> str:
@@ -719,27 +771,31 @@ class SubagentExecutor:
                     # Wait for execution with timeout
                     exec_result = execution_future.result(timeout=self.config.timeout_seconds)
                     with _background_tasks_lock:
-                        _background_tasks[task_id].status = exec_result.status
-                        _background_tasks[task_id].result = exec_result.result
-                        _background_tasks[task_id].error = exec_result.error
-                        _background_tasks[task_id].completed_at = datetime.now()
-                        _background_tasks[task_id].ai_messages = exec_result.ai_messages
+                        # exec_result already set terminal status via try_set_terminal
+                        # inside _aexecute. Mirror its final fields into the
+                        # shared _background_tasks entry. We use try_set_terminal
+                        # so the timeout path (if it raced) wins instead of being
+                        # overwritten.
+                        _background_tasks[task_id].try_set_terminal(
+                            exec_result.status,
+                            result=exec_result.result,
+                            error=exec_result.error,
+                            ai_messages=exec_result.ai_messages,
+                        )
                 except FuturesTimeoutError:
                     logger.error(f"[trace={self.trace_id}] Subagent {self.config.name} execution timed out after {self.config.timeout_seconds}s")
                     with _background_tasks_lock:
-                        if _background_tasks[task_id].status == SubagentStatus.RUNNING:
-                            _background_tasks[task_id].status = SubagentStatus.TIMED_OUT
-                            _background_tasks[task_id].error = f"Execution timed out after {self.config.timeout_seconds} seconds"
-                            _background_tasks[task_id].completed_at = datetime.now()
+                        _background_tasks[task_id].try_set_terminal(
+                            SubagentStatus.TIMED_OUT,
+                            error=f"Execution timed out after {self.config.timeout_seconds} seconds",
+                        )
                     # Signal cooperative cancellation and cancel the future
                     result_holder.cancel_event.set()
                     execution_future.cancel()
             except Exception as e:
                 logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} async execution failed")
                 with _background_tasks_lock:
-                    _background_tasks[task_id].status = SubagentStatus.FAILED
-                    _background_tasks[task_id].error = str(e)
-                    _background_tasks[task_id].completed_at = datetime.now()
+                    _background_tasks[task_id].try_set_terminal(SubagentStatus.FAILED, error=str(e))
 
         _scheduler_pool.submit(run_task)
         return task_id
