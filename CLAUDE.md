@@ -189,9 +189,20 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 ### Git
 
-- 主分支：`dev`（当前工作分支）
+- 分支模型：
+  - `main` — 生产分支。PR merge 到 main 触发 GitHub Actions 自动 build & push 镜像到 ACR（`.github/workflows/build-push-acr.yml`）
+  - `dev` — 日常开发分支。所有 commit 先进 dev
+  - Sprint/feature 完成后从 dev 提 PR 到 main
 - 提交前跑 `make test` 和 `make lint`
 - commit message 用中文，简洁描述改动意图
+
+### CI/CD
+
+- **触发**：PR merge 到 `main` → GitHub Actions 自动执行
+- **构建**：`.github/workflows/build-push-acr.yml`，并行 build backend（gateway + langgraph 同一镜像）和 frontend
+- **推送**：镜像 push 到 ACR `registry.cn-beijing.aliyuncs.com/ethoinsight/`
+- **部署**：ECS 上 watchtower 5 分钟 poll 检测 ACR 新镜像 → `docker compose pull && up -d`
+- **凭证**：ACR 登录凭证存在 GitHub Secrets（`ACR_USERNAME` / `ACR_PASSWORD`）
 
 ### 文档
 

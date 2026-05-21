@@ -21,16 +21,16 @@
 
 | 维度 | 选定方案 | 备选 |
 |---|---|---|
-| CI 平台 | **阿里云 Flow（云效）** | GitHub Actions / GitLab CI |
+| CI 平台 | **GitHub Actions**（2026-05-21 由 Flow 切换） | 阿里云 Flow / GitLab CI |
 | 镜像 Registry | **阿里云 ACR（个人版起步，必要时升企业版）** | ghcr.io / Docker Hub |
 | Build 触发 | **PR merge 到 `main` 分支** | git tag / push dev / 手动 |
 | ECS 拉镜像 | **watchtower 自动 pull + restart** | ssh 手动 / GHA ssh 跳板 |
 
-为什么这套组合：
-- Flow + ACR 都在阿里云内网，跟 ECS 同 VPC build/push/pull 全走内网，规避 GitHub Actions → ACR 的公网 token 管理痛点
-- 阿里云 Flow 直接支持 GitHub repo 触发（不需要镜像仓库中转）
-- PR-merge 触发让 `main` 始终代表"生产可部署"，`dev` 仍是日常开发流
-- watchtower 5 分钟 poll 对 v0.1 内部使用够用，不引入 K8s/Argo 复杂度
+为什么从 Flow 换成 GitHub Actions：
+- 代码仓库已在 GitHub org，Actions 零额外学习成本
+- GitHub Secrets 管理 ACR 凭证，配置一次永不再碰，公网 token 管理痛点不成立
+- 私有 org 每月 2,000 分钟免费额度，预估月消耗 300-500 分钟，完全白嫖
+- Workflow YAML 可移植，后续想换 Flow 也只需改 runner
 
 ---
 
