@@ -2,11 +2,19 @@ import logging
 
 from langchain.tools import BaseTool
 
+from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool
 from deerflow.config import get_app_config
 from deerflow.config.app_config import AppConfig
 from deerflow.reflection import resolve_variable
 from deerflow.sandbox.security import is_host_bash_allowed
-from deerflow.tools.builtins import ask_clarification_tool, present_file_tool, task_tool, view_image_tool
+from deerflow.tools.builtins import (
+    ask_clarification_tool,
+    identify_ev19_template_tool,
+    prep_metric_plan_tool,
+    present_file_tool,
+    task_tool,
+    view_image_tool,
+)
 from deerflow.tools.builtins.tool_search import get_deferred_registry
 from deerflow.tools.sync import make_sync_tool_wrapper
 
@@ -15,6 +23,9 @@ logger = logging.getLogger(__name__)
 BUILTIN_TOOLS = [
     present_file_tool,
     ask_clarification_tool,
+    set_experiment_paradigm_tool,
+    identify_ev19_template_tool,
+    prep_metric_plan_tool,
 ]
 
 SUBAGENT_TOOLS = [
