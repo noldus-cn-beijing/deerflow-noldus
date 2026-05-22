@@ -30,7 +30,7 @@ def test_plan_metrics_dataclass_has_required_fields():
         notes=[],
     )
     assert pm.paradigm == "epm"
-    assert pm.schema_version == "1.0"
+    assert pm.schema_version == "1.1"
     assert pm.metrics == []
     assert pm.statistics is None
 
@@ -48,7 +48,7 @@ def test_plan_charts_dataclass_has_required_fields():
         notes=[],
     )
     assert pc.paradigm == "epm"
-    assert pc.schema_version == "1.0"
+    assert pc.schema_version == "1.1"
     assert pc.charts_fallback_available == []
     assert pc.user_intent is None
 
@@ -96,7 +96,7 @@ def test_plan_metrics_serialize_roundtrip():
         inputs=_sample_inputs(), metrics=[], statistics=None, skipped=[], notes=[],
     )
     d = dataclasses.asdict(pm)
-    assert d["schema_version"] == "1.0"
+    assert d["schema_version"] == "1.1"
     assert d["paradigm"] == "epm"
     assert d["inputs"]["raw_files"] == ["/tmp/raw.txt"]
     # json round-trip
@@ -113,7 +113,7 @@ def test_plan_charts_serialize_roundtrip():
         skipped=[], user_intent="画图", notes=[],
     )
     d = dataclasses.asdict(pc)
-    assert d["schema_version"] == "1.0"
+    assert d["schema_version"] == "1.1"
     assert d["user_intent"] == "画图"
     assert d["charts_fallback_available"] == []
     # json round-trip

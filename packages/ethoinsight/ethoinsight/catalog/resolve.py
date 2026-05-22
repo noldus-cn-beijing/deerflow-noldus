@@ -327,7 +327,7 @@ def resolve_charts(
             common = CommonCatalog(common_charts=[])
         for ch in common.common_charts:
             if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
-                fallback.extend(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+                fallback.extend(_chart_to_plan(ch, raw_files, workspace_dir, paradigm=cat.paradigm, virtual_workspace_dir=virtual_workspace_dir))
 
     notes: list[str] = []
     if charts:
