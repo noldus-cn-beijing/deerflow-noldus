@@ -44,6 +44,61 @@ def _resolve_placeholders(prompt: str) -> str:
     return _SHARED_PLACEHOLDER_RE.sub(lambda m: f"/mnt/shared/{m.group(1)}", prompt)
 
 
+def _build_progress_timeline(ai_messages: list[dict[str, Any]]) -> str:
+    """Build a one-line-per-step progress timeline from subagent AI messages.
+
+    Extracts a short milestone label from each message so the lead agent can
+    quickly understand what the subagent did without reading the full result.
+    """
+    if not ai_messages:
+        return ""
+
+    lines: list[str] = []
+    total = len(ai_messages)
+
+    for i, msg in enumerate(ai_messages):
+        label = _extract_milestone_label(msg)
+        if not label:
+            continue
+        lines.append(f"{i + 1}/{total}: {label}")
+
+    if not lines:
+        return ""
+
+    return "## 进度时间线\n" + "\n".join(lines)
+
+
+def _extract_milestone_label(msg: dict[str, Any]) -> str:
+    """Extract a short milestone description from a single AI message dict."""
+    # Prefer tool calls as the clearest progress signal
+    tool_calls = msg.get("tool_calls") or msg.get("additional_kwargs", {}).get("tool_calls", [])
+    if tool_calls:
+        names = [tc.get("name", "?") for tc in tool_calls if isinstance(tc, dict)]
+        if names:
+            return "调用 " + ", ".join(names[:3]) + ("..." if len(names) > 3 else "")
+
+    # Fall back to content — extract first sentence
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        text_parts = []
+        for block in content:
+            if isinstance(block, str):
+                text_parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+        content = " ".join(text_parts)
+    if not isinstance(content, str) or not content.strip():
+        return ""
+
+    # Take the first sentence or first 60 chars
+    content = content.strip()
+    for end_char in ("。", "\n", "."):
+        idx = content.find(end_char)
+        if idx > 0:
+            return content[:idx + 1]
+    return content[:60] + ("..." if len(content) > 60 else "")
+
+
 # Handoff-file placeholder registry: subagent name → handoff filename.
 # Lead uses {{handoff://<name>}} in task prompt; task_tool resolves it to the
 # full workspace path AND adds the path to the per-task authorized_handoff_paths
@@ -473,7 +528,9 @@ async def task_tool(
                 writer({"type": "task_completed", "task_id": task_id, "result": result.result, "usage": usage})
                 logger.info(f"[trace={trace_id}] Task {task_id} completed after {poll_count} polls")
                 cleanup_background_task(task_id)
-                return f"Task Succeeded. Result: {result.result}"
+                timeline = _build_progress_timeline(result.ai_messages or [])
+                header = f"Task Succeeded.\n\n{timeline}\n" if timeline else "Task Succeeded.\n\n"
+                return f"{header}## 最终结果\n{result.result}"
             elif result.status == SubagentStatus.FAILED:
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 _report_subagent_usage(runtime, result)
