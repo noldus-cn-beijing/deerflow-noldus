@@ -1,20 +1,20 @@
 ---
 name: ethoinsight-charts
 description: >
-  服务对象:**chart-maker subagent**。图种 → 适用场景对照表,chart-maker
-  决策选哪些图时的查询源。Lead 不读本 skill — capability-exposure 后
-  "用户语义 → 图种" 归 chart-maker,lead 不持图选择 know-how。
+  chart-maker subagent 的图种知识库（what-to-pick）。
+  8 种图表 × 适用场景对照表 + 选择决策树。
+  执行工作流（how-to-execute）见姐妹 skill `ethoinsight-chart-maker`。
+  Lead 不读本 skill — capability-exposure 模式下，"用户语义 → 图种" 归 chart-maker。
 version: 2.0.0
 author: noldus-insight
 ---
 
 # EthoInsight 图表指南（chart-maker 用）
 
-**变更说明 (2026-05-18 W9)**:
-- 服务对象从"lead agent"变为"chart-maker subagent"
-- lead 不再读本 skill 决策图种
-- "用户语义 → 图种" 决策树移到 `ethoinsight-chart-maker` skill (W21)
-- 本 skill 保留作为图种适用性查询源 (chart-maker 在 W21 skill 决策时 reference 这里)
+**变更说明 (2026-05-22 PR-2)**:
+- chart-maker subagent 通过 `skills=[..., "ethoinsight-charts"]` 把本 SKILL.md 主文注入 system prompt（L2 知识）
+- 选图决策树（图种 → 适用场景）留在本 skill；fallback 决策树（catalog 命中 / 模糊语义时的 fallback）在姐妹 `ethoinsight-chart-maker` skill
+- references/ 是 L3 深细节，按需 read_file（chart-maker prompt workflow Step 10 触发）
 
 ## 图种 → 适用场景对照表
 
