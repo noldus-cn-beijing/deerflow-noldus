@@ -42,6 +42,7 @@ charts:
   - id: box_immobility
     script: ethoinsight.scripts.tst.plot_box_immobility
     when: n_per_group >= 3
+    display_name_zh: "不动时间箱线图"
 
 statistics:
   default:
