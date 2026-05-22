@@ -1,8 +1,9 @@
 ---
 name: ethoinsight-chart-maker
 description: >
-  chart-maker subagent 的可视化决策手册。基于 catalog plan_charts.json
-  和用户语义,决策跑哪些图脚本。
+  chart-maker subagent 的执行工作流手册（how-to-execute）。
+  包含：bash 调用模板、fallback 决策树、handoff schema、用户意图模糊时的处理。
+  图种知识（图种 → 适用场景，what-to-pick）见姐妹 skill `ethoinsight-charts`。
   Use when chart-maker receives a visualization task with handoff_code_executor.json.
 version: 1.0.0
 author: noldus-insight
@@ -24,8 +25,9 @@ author: noldus-insight
    - resolve.py 会把这些路径原样写到 `plan_charts.json` 的 `input` 字段,后续脚本被 sandbox guardrail 拦宿主机路径。
 3. read `plan_charts.json` → charts[] + charts_fallback_available[]
 4. 决策(见 references/fallback-decision-tree.md)
-5. for each selected chart: bash 跑脚本
-   - 通用图(`_common.plot_timeseries` / `_common.plot_trajectory`)必须追加 `--paradigm <p>`,让脚本按范式选默认 y_col。漏传会让 timeseries 退到 `distance_moved` 列;FST/LDB 等范式数据里没有这列,会出空图。
+5. for each entry in plan_charts.json.charts: bash 跑脚本
+   - 用 `python -m <entry.script> <entry.args 拼接>` 形式调用
+   - **不要自己拼 paradigm 前缀或追加 --paradigm 参数**——entry.script 和 entry.args 已经是 resolve 阶段按 catalog yaml `accepts_paradigm` 字段拼好的（PR-1 落地)
 6. write `handoff_chart_maker.json`
 7. `present_files(<生成的 png 列表>)`
 8. 输出 `OK: <N> charts generated\n[gate_signals]\n...`
