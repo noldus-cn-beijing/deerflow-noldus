@@ -2,7 +2,7 @@ import logging
 
 from langchain.tools import BaseTool
 
-from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool
+from deerflow.agents.middlewares.experiment_context import set_experiment_paradigm_tool, set_viz_choice_tool
 from deerflow.config import get_app_config
 from deerflow.config.app_config import AppConfig
 from deerflow.reflection import resolve_variable
@@ -24,6 +24,7 @@ BUILTIN_TOOLS = [
     present_file_tool,
     ask_clarification_tool,
     set_experiment_paradigm_tool,
+    set_viz_choice_tool,
     identify_ev19_template_tool,
     prep_metric_plan_tool,
 ]

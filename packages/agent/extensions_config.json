@@ -41,9 +41,6 @@
   "skills": {
     "ethoinsight-metric-catalog": {
       "enabled": true
-    },
-    "ethoinsight-planning": {
-      "enabled": true
     }
   }
 }

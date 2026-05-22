@@ -337,6 +337,18 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
             fail_closed=guardrails_cfg.fail_closed,
         ))
 
+        # W20: IntentPostStepAskGate — 拦截 ASKVIZ 流程中跳过 ask(viz?) 直接派 chart-maker
+        from deerflow.guardrails.intent_post_step_ask_gate_provider import (
+            IntentPostStepAskGateBridge,
+            IntentPostStepAskGateProvider,
+        )
+
+        middlewares.append(IntentPostStepAskGateBridge())
+        middlewares.append(GuardrailMiddleware(
+            provider=IntentPostStepAskGateProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
         # W19 (relocated): Inject {{handoff://X}} placeholders into task() prompts
         # BEFORE the W18 guardrail evaluates them. Without this middleware, lead
         # tasks that omit the placeholder are unconditionally denied by the W18

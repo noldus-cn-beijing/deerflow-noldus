@@ -67,3 +67,11 @@ author: noldus-insight
 - ❌ 不要 read_file raw EthoVision txt 文件
 - ❌ 不要默认猜测范式(范式不明 → ask_clarification)
 - ❌ 不要替 subagent 决定"该跑哪些图/指标"
+
+## 参考资料
+
+- [意图分类决策树](references/intent-decision-tree.md)
+- [范式识别流程](references/paradigm-identification.md)
+- [反问模板](references/clarification-templates.md)
+- [质量门控点](references/quality-gates.md) — 各 Gate 触发时机、检查项、行动模板
+- [失败场景降级策略](references/failure-recovery.md) — code-executor/data-analyst/report-writer 失败应对
