@@ -33,7 +33,7 @@ from ethoinsight.catalog.schema import (
     StatisticsEntry,
 )
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 class ResolveError(Exception):
@@ -317,7 +317,7 @@ def resolve_charts(
     charts: list[PlanChart] = []
     for ch in cat.charts:
         if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
-            charts.extend(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+            charts.extend(_chart_to_plan(ch, raw_files, workspace_dir, paradigm=cat.paradigm, virtual_workspace_dir=virtual_workspace_dir))
 
     fallback: list[PlanChart] = []
     if not charts:
@@ -397,6 +397,7 @@ def _metric_to_plan(
                 required=required,
                 reason=reason,
                 subject_index=idx,
+                display_name_zh=m.display_name_zh,
             )
         )
     return plans
@@ -404,21 +405,29 @@ def _metric_to_plan(
 
 def _chart_to_plan(
     ch: ChartEntry, raw_files: list[str], workspace_dir: str,
+    paradigm: str = "",                          # 1.1: 范式名，用于 --paradigm
     virtual_workspace_dir: str | None = None,
+    virtual_outputs_dir: str | None = None,       # 1.1: outputs 虚拟路径
 ) -> list[PlanChart]:
     """Expand one ChartEntry into N PlanChart (one per raw_file).
 
     See _metric_to_plan for fix rationale. Single-subject charts (typical for
     group-comparison plots) callers can still wrap a single raw_file.
+
+    1.1: PlanChart.output → outputs/ (与 chart_maker "PNG 必须写到 outputs/" 一致)；
+    按 accepts_paradigm 决定 args 是否含 --paradigm。
     """
     if not raw_files:
         return []
-    effective_workspace = virtual_workspace_dir or workspace_dir
+    effective_outputs = virtual_outputs_dir or "/mnt/user-data/outputs"
     multi = len(raw_files) > 1
     plans: list[PlanChart] = []
     for idx, raw_file in enumerate(raw_files):
         suffix = f"_s{idx}" if multi else ""
-        output_path = str(Path(effective_workspace) / f"plot_{ch.id}{suffix}.png")
+        output_path = str(Path(effective_outputs) / f"plot_{ch.id}{suffix}.png")
+        args = ["--input", raw_file, "--output", output_path]
+        if ch.accepts_paradigm and paradigm:
+            args.extend(["--paradigm", paradigm])
         plans.append(
             PlanChart(
                 id=ch.id,
@@ -426,6 +435,8 @@ def _chart_to_plan(
                 input=raw_file,
                 output=output_path,
                 subject_index=idx,
+                display_name_zh=ch.display_name_zh,
+                args=args,
             )
         )
     return plans
@@ -514,6 +525,7 @@ def plan_to_dict(plan: Plan) -> dict:
                 "required": m.required,
                 "reason": m.reason,
                 "subject_index": m.subject_index,
+                "display_name_zh": m.display_name_zh,
             }
             for m in plan.metrics
         ],
@@ -560,6 +572,7 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
                 "required": m.required,
                 "reason": m.reason,
                 "subject_index": m.subject_index,
+                "display_name_zh": m.display_name_zh,
             }
             for m in pm.metrics
         ],
@@ -594,11 +607,21 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
             "columns_file": pc.inputs.columns_file,
         },
         "charts": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output, "subject_index": c.subject_index}
+            {
+                "id": c.id, "script": c.script, "input": c.input, "output": c.output,
+                "subject_index": c.subject_index,
+                "display_name_zh": c.display_name_zh,
+                "args": c.args,
+            }
             for c in pc.charts
         ],
         "charts_fallback_available": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output, "subject_index": c.subject_index}
+            {
+                "id": c.id, "script": c.script, "input": c.input, "output": c.output,
+                "subject_index": c.subject_index,
+                "display_name_zh": c.display_name_zh,
+                "args": c.args,
+            }
             for c in pc.charts_fallback_available
         ],
         "skipped": [
