@@ -6,7 +6,7 @@ pyproject.toml）。YAML 校验由 loader.py 手工做。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 DirectionEnum = Literal["lower_is_anxious", "higher_is_anxious"] | None
@@ -46,6 +46,8 @@ class ChartEntry:
     id: str
     script: str
     when: ChartCondition  # "always" | "n_per_group >= K" | "n_groups >= K"
+    display_name_zh: str = ""          # 1.1: 中文图名，必填（loader 校验）
+    accepts_paradigm: bool = False      # 1.1: 脚本是否接受 --paradigm 参数
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,7 @@ class PlanMetric:
     required: bool
     reason: str  # PlanReasonEnum
     subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
+    display_name_zh: str = ""           # 1.1: 中文指标名，透传自 MetricEntry
 
 
 @dataclass
@@ -118,6 +121,8 @@ class PlanChart:
     input: str
     output: str
     subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
+    display_name_zh: str = ""           # 1.1: 中文图名，透传自 ChartEntry
+    args: list[str] = field(default_factory=list)  # 1.1: resolve 阶段填充的 CLI 参数数组
 
 
 @dataclass
@@ -157,7 +162,7 @@ class PlanMetrics:
     statistics: PlanStatistics | None
     skipped: list[PlanSkipped]
     notes: list[str]
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
 
 
 @dataclass
@@ -171,4 +176,4 @@ class PlanCharts:
     skipped: list[PlanSkipped]
     user_intent: str | None
     notes: list[str]
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
