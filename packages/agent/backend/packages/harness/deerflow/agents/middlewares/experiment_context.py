@@ -94,31 +94,81 @@ def is_quality_acknowledged(workspace_dir: str) -> bool:
 
 @tool("set_experiment_paradigm", parse_docstring=True)
 def set_experiment_paradigm_tool(
-    paradigm: str,
-    paradigm_cn: str,
-    category: str,
-    subject: str,
-    ev19_template: str,
+    paradigm: str | None = None,
+    paradigm_cn: str | None = None,
+    category: str | None = None,
+    subject: str | None = None,
+    ev19_template: str | None = None,
+    acknowledge_quality: bool = False,
     workspace_dir: str = "/mnt/user-data/workspace/",
     runtime: ToolRuntime[ContextT, ThreadState] = None,
 ) -> str:
-    """Record the user's experiment paradigm choice for the analysis pipeline.
+    """Record the user's experiment paradigm choice and/or acknowledge data quality.
 
-    Call this after the user has confirmed their experiment type via ask_clarification.
-    Writes experiment-context.json to the workspace so downstream agents know the paradigm.
+    Two usage modes:
+      1) Gate 1 paradigm confirmation:
+         set_experiment_paradigm(paradigm="forced_swim", paradigm_cn="...", category="...",
+                                 subject="...", ev19_template="...")
+         → creates experiment-context.json with gate_completed=["gate1_paradigm"]
+      2) Gate 2 quality acknowledgement:
+         set_experiment_paradigm(acknowledge_quality=True)
+         → reads existing experiment-context.json, appends "gate2_quality_acknowledged"
+           to gate_completed (preserving all other fields). Requires Gate 1 already done.
 
     Args:
-        paradigm: English paradigm name key (e.g. "shoaling", "epm", "open_field")
-        paradigm_cn: Chinese display name (e.g. "斑马鱼鱼群行为")
-        category: Category name (e.g. "zebrafish", "anxiety", "spatial_memory")
-        subject: Subject type — "rodent" | "fish" | "insect" | "other"
-        ev19_template: EthoVision 19 template variant ID (e.g. "PlusMaze-AllZones"). Must be one of the 62 known variants.
-        workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/"
+        paradigm: English paradigm name key. Required for Gate 1 mode.
+        paradigm_cn: Chinese display name. Required for Gate 1 mode.
+        category: Category name. Required for Gate 1 mode.
+        subject: Subject type — "rodent" | "fish" | "insect" | "other". Required for Gate 1 mode.
+        ev19_template: EthoVision 19 template variant ID (e.g. "PlusMaze-AllZones"). Required for Gate 1 mode.
+        acknowledge_quality: Set True to acknowledge data quality warnings (Gate 2 mode).
+                             When True, all paradigm fields may be omitted — the existing
+                             experiment-context.json is read and only gate_completed is updated.
+        workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
 
     Returns:
-        JSON confirmation with paradigm, category, subject, ev19_template, and file path.
+        JSON confirmation with the updated context.
     """
+
+    # Resolve the actual host workspace path from thread state.
+    actual_workspace = workspace_dir
+    if runtime is not None and runtime.state is not None:
+        thread_data: ThreadDataState | None = runtime.state.get("thread_data")
+        if thread_data is not None:
+            host_workspace = thread_data.get("workspace_path")
+            if host_workspace is not None:
+                actual_workspace = host_workspace
+
+    existing = read_context(actual_workspace)
+
+    # --- Gate 2: quality acknowledgement ---
+    if acknowledge_quality:
+        if existing is None:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Cannot acknowledge quality before Gate 1. Call set_experiment_paradigm with paradigm fields first.",
+                },
+                ensure_ascii=False,
+            )
+        gate_completed = existing.get("gate_completed", [])
+        if not isinstance(gate_completed, list):
+            gate_completed = []
+        if "gate2_quality_acknowledged" not in gate_completed:
+            gate_completed.append("gate2_quality_acknowledged")
+        data = {**existing, "gate_completed": gate_completed, "gate2_acknowledged_at": datetime.now(UTC).isoformat()}
+        path = Path(actual_workspace) / "experiment-context.json"
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        return json.dumps({"status": "ok", "path": str(path), "gate_completed": gate_completed}, ensure_ascii=False)
+
+    # --- Gate 1: paradigm confirmation ---
     from ethoinsight.ev19_facts import is_paradigm_template_compatible, is_valid_ev19_template, suggest_nearby_templates
+
+    required = {"paradigm": paradigm, "paradigm_cn": paradigm_cn, "category": category, "subject": subject, "ev19_template": ev19_template}
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        return json.dumps({"status": "error", "message": f"Missing required fields for Gate 1: {missing}"}, ensure_ascii=False)
 
     # Validate ev19_template against the 62-variant whitelist
     if not is_valid_ev19_template(ev19_template):
@@ -139,16 +189,11 @@ def set_experiment_paradigm_tool(
         warning = f"ev19_template {ev19_template!r} is not in the recommended list for paradigm {paradigm!r}. Proceeding anyway."
         logger.warning(warning)
 
-    # Resolve the actual host workspace path from thread state.
-    # The default workspace_dir is a sandbox virtual path; the tool runs in the
-    # lead agent host process so we must write to the host-side workspace.
-    actual_workspace = workspace_dir
-    if runtime is not None and runtime.state is not None:
-        thread_data: ThreadDataState | None = runtime.state.get("thread_data")
-        if thread_data is not None:
-            host_workspace = thread_data.get("workspace_path")
-            if host_workspace is not None:
-                actual_workspace = host_workspace
+    # Preserve gate2_quality_acknowledged if it was already set (user changing paradigm)
+    prior_gate_completed = existing.get("gate_completed", []) if isinstance(existing, dict) else []
+    gate_completed: list[str] = ["gate1_paradigm"]
+    if "gate2_quality_acknowledged" in prior_gate_completed:
+        gate_completed.append("gate2_quality_acknowledged")
 
     data = {
         "paradigm": paradigm,
@@ -157,7 +202,7 @@ def set_experiment_paradigm_tool(
         "subject": subject,
         "ev19_template": ev19_template,
         "paradigm_confirmed_at": datetime.now(UTC).isoformat(),
-        "gate_completed": ["gate1_paradigm"],
+        "gate_completed": gate_completed,
     }
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)

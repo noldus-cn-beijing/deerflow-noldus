@@ -22,8 +22,11 @@ from typing import Any, override
 from langchain.agents.middleware import TodoListMiddleware
 from langchain.agents.middleware.todo import PlanningState, Todo
 from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse, hook_config
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
+from langchain.tools import InjectedToolCallId, tool
+from langgraph.types import Command
+from typing_extensions import Annotated
 
 
 def _todos_in_messages(messages: list[Any]) -> bool:
@@ -168,6 +171,29 @@ class TodoMiddleware(TodoListMiddleware):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+
+        # Replace write_todos with a version that accepts an optional `reason`
+        # parameter. The reason value is ignored functionally but read by
+        # TodoPlanningDisciplineProvider as an explicit intent escape hatch.
+        if self.tools:
+            _original_desc = self.tools[0].description if self.tools else ""
+
+            @tool(description=_original_desc)
+            def write_todos(
+                todos: list[Todo],
+                reason: str | None = None,
+                tool_call_id: Annotated[str, InjectedToolCallId] = "",
+            ) -> Command:
+                """Create and manage a structured task list for your current work session."""
+                return Command(
+                    update={
+                        "todos": todos,
+                        "messages": [ToolMessage(f"Updated todo list to {todos}", tool_call_id=tool_call_id)],
+                    }
+                )
+
+            self.tools = [write_todos]
+
         self._lock = threading.Lock()
         self._pending_completion_reminders: dict[tuple[str, str], list[str]] = {}
         self._completion_reminder_counts: dict[tuple[str, str], int] = {}

@@ -61,4 +61,4 @@ def test_plan_charts_schema_version(tmp_path):
         paradigm="epm", columns=EPM_COLUMNS_SAMPLE, raw_files=RAW_FILES_SAMPLE,
         workspace_dir=str(tmp_path), total_subjects=1,
     )
-    assert pc.schema_version == "1.0"
+    assert pc.schema_version == "1.1"

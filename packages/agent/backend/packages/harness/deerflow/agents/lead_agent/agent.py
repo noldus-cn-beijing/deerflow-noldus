@@ -363,6 +363,17 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
 
+    # TodoPlanningDisciplineProvider — rate-limit write_todos after initial planning.
+    # Bridge middleware must be placed BEFORE the GuardrailMiddleware so the
+    # contextvar is set when the provider evaluates the tool call.
+    from deerflow.guardrails.todo_planning_discipline_provider import (
+        TodoDisciplineBridgeMiddleware,
+        TodoPlanningDisciplineProvider,
+    )
+
+    middlewares.append(TodoDisciplineBridgeMiddleware())
+    middlewares.append(GuardrailMiddleware(provider=TodoPlanningDisciplineProvider(), fail_closed=False, name="GuardrailMiddleware[todo-planning-discipline]"))
+
     # GateEnforcementMiddleware — block task() before Gate 1 in manual mode
     workflow_mode = config.get("configurable", {}).get("workflow_mode", "auto")
     if workflow_mode == "manual":
@@ -395,6 +406,37 @@ def make_lead_agent(config: RunnableConfig):
 
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
+
+    # Downgrade reasoning_effort based on Gate completion phase.
+    # Gate 1 done → step down once (high→medium); Gate 2 done → step down twice (high→low).
+    # This avoids wasting reasoning tokens on dispatch tasks that don't need deep thinking.
+    def _step_down(effort: str | None) -> str | None:
+        if effort == "high":
+            return "medium"
+        if effort == "medium":
+            return "low"
+        return effort  # "low", None, or unknown → keep
+
+    thread_id = cfg.get("thread_id")
+    if thread_id and reasoning_effort:
+        try:
+            from deerflow.agents.middlewares.experiment_context import read_context
+            from deerflow.runtime.user_context import get_effective_user_id
+
+            user_id = get_effective_user_id()
+            app_config = get_app_config()
+            workspace = app_config.paths.sandbox_work_dir(thread_id, user_id=user_id)
+            ctx = read_context(str(workspace))
+            if ctx:
+                gate_completed = ctx.get("gate_completed", [])
+                if isinstance(gate_completed, list):
+                    if "gate2_quality_acknowledged" in gate_completed:
+                        reasoning_effort = _step_down(_step_down(reasoning_effort))
+                    elif "gate1_paradigm" in gate_completed:
+                        reasoning_effort = _step_down(reasoning_effort)
+        except Exception:
+            pass  # fail-safe: keep configured reasoning_effort
+
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
     is_plan_mode = cfg.get("is_plan_mode", False)
     workflow_mode = cfg.get("workflow_mode", "auto")  # "manual" | "auto"

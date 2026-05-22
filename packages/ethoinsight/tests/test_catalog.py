@@ -378,7 +378,7 @@ def test_cli_happy_path(tmp_path):
     assert rc == 0, f"stderr: {stderr}"
     plan = json.loads(output.read_text())
     assert plan["paradigm"] == "epm"
-    assert plan["schema_version"] == "1.0"
+    assert plan["schema_version"] == "1.1"
     assert len(plan["metrics"]) == 5
 
 

@@ -171,7 +171,7 @@ def test_task_tool_threads_runtime_app_config_to_subagent_dependencies(monkeypat
         tool_call_id="tc-explicit-config",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert captured["names_app_config"] is app_config
     assert captured["config_lookup"] == ("bash", app_config)
     assert captured["bash_gate_app_config"] is app_config
@@ -226,7 +226,7 @@ def test_task_tool_emits_running_and_completed_events(monkeypatch):
         tool_call_id="tc-123",
     )
 
-    assert output == "Task Succeeded. Result: all done"
+    assert output == "Task Succeeded.\n\n## 进度时间线\n1/2: phase-1\n2/2: phase-2\n## 最终结果\nall done"
     assert captured["prompt"] == "collect diagnostics"
     assert captured["task_id"] == "tc-123"
     assert captured["executor_kwargs"]["thread_id"] == "thread-1"
@@ -285,7 +285,7 @@ def test_task_tool_propagates_tool_groups_to_subagent(monkeypatch):
         tool_call_id="tc-groups",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     # The key assertion: groups should be propagated from parent metadata
     get_available_tools.assert_called_once_with(model_name="ark-model", groups=parent_tool_groups, subagent_enabled=False)
 
@@ -332,7 +332,7 @@ def test_task_tool_uses_subagent_model_override_for_tool_loading(monkeypatch):
         tool_call_id="tc-issue-2543",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     get_available_tools.assert_called_once_with(
         model_name="vision-subagent-model",
         groups=None,
@@ -374,7 +374,7 @@ def test_task_tool_inherits_parent_skill_allowlist_for_default_subagent(monkeypa
         tool_call_id="tc-skills",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert captured["config"].skills == ["safe-skill"]
 
 
@@ -420,7 +420,7 @@ def test_task_tool_intersects_parent_and_subagent_skill_allowlists(monkeypatch):
         tool_call_id="tc-skills-intersection",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert captured["config"].skills == ["safe-skill"]
 
 
@@ -459,7 +459,7 @@ def test_task_tool_no_tool_groups_passes_none(monkeypatch):
         tool_call_id="tc-no-groups",
     )
 
-    assert output == "Task Succeeded. Result: ok"
+    assert output == "Task Succeeded.\n\n## 最终结果\nok"
     # No tool_groups in metadata → groups=None (default behavior preserved)
     get_available_tools.assert_called_once_with(model_name="ark-model", groups=None, subagent_enabled=False)
 
@@ -499,7 +499,7 @@ def test_task_tool_runtime_none_passes_groups_none(monkeypatch):
         tool_call_id="tc-no-runtime",
     )
 
-    assert output == "Task Succeeded. Result: ok"
+    assert output == "Task Succeeded.\n\n## 最终结果\nok"
     # runtime is None -> metadata is empty dict -> groups=None, model falls back to app default.
     get_available_tools.assert_called_once_with(
         model_name="default-model",
@@ -647,7 +647,7 @@ def test_cleanup_called_on_completed(monkeypatch):
         tool_call_id="tc-cleanup-completed",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert cleanup_calls == ["tc-cleanup-completed"]
 
 

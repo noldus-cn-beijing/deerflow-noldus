@@ -96,8 +96,8 @@ class GateEnforcementMiddleware(AgentMiddleware[GateEnforcementMiddlewareState])
                 f"{warning_lines}\n\n"
                 f"请调用 ask_clarification 告知用户这些问题，提供以下选项：\n"
                 f"(a) 排除异常个体并重算 (b) 保留并继续 (c) 查看详情\n\n"
-                f"用户确认后，调用 write_file 更新 experiment-context.json，"
-                f"在 gate_completed 中添加 'gate2_quality_acknowledged'，然后重新调用 task(data-analyst)。"
+                f"用户确认后，调用 set_experiment_paradigm(acknowledge_quality=True) 记录确认，"
+                f"然后重新调用 task(data-analyst)。"
             ),
             tool_call_id=request.tool_call.get("id", ""),
             name="gate_enforcement",

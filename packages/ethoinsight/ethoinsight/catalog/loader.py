@@ -168,7 +168,22 @@ def _parse_chart_list(raw: dict, source: Path) -> list[ChartEntry]:
         for f in ("id", "script", "when"):
             if f not in it:
                 raise CatalogError(f"{source}: charts[{i}] missing '{f}'")
-        out.append(ChartEntry(id=it["id"], script=it["script"], when=it["when"]))
+        # 1.1: display_name_zh 必填
+        display_name_zh = it.get("display_name_zh", "")
+        if not display_name_zh:
+            raise CatalogError(
+                f"{source}: charts[{i}] missing 'display_name_zh'"
+            )
+        accepts_paradigm = bool(it.get("accepts_paradigm", False))
+        out.append(
+            ChartEntry(
+                id=it["id"],
+                script=it["script"],
+                when=it["when"],
+                display_name_zh=display_name_zh,
+                accepts_paradigm=accepts_paradigm,
+            )
+        )
     return out
 
 
@@ -246,5 +261,20 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
         for f in ("id", "script", "when"):
             if f not in it:
                 raise CatalogError(f"{source}: {key}[{i}] missing '{f}'")
-        out.append(ChartEntry(id=it["id"], script=it["script"], when=it["when"]))
+        # 1.1: display_name_zh 必填
+        display_name_zh = it.get("display_name_zh", "")
+        if not display_name_zh:
+            raise CatalogError(
+                f"{source}: {key}[{i}] missing 'display_name_zh'"
+            )
+        accepts_paradigm = bool(it.get("accepts_paradigm", False))
+        out.append(
+            ChartEntry(
+                id=it["id"],
+                script=it["script"],
+                when=it["when"],
+                display_name_zh=display_name_zh,
+                accepts_paradigm=accepts_paradigm,
+            )
+        )
     return out
