@@ -100,7 +100,13 @@ def test_task_tool_returns_error_for_unknown_subagent(monkeypatch):
         tool_call_id="tc-1",
     )
 
-    assert result == "Error: Unknown subagent type 'general-purpose'. Available: general-purpose"
+    assert result == (
+        "Error: Unknown subagent type 'general-purpose'. "
+        "Valid subagent types: general-purpose. "
+        "请改用 task(subagent_type='<上述有效名称之一>', ...) 重新派遣，"
+        "因为 'general-purpose' 不是已注册的 subagent 类型，"
+        "不支持自定义名称或通用代理。"
+    )
 
 
 def test_task_tool_rejects_bash_subagent_when_host_bash_disabled(monkeypatch):

@@ -5,10 +5,11 @@ import logging
 import re
 import uuid
 from dataclasses import replace
-from typing import TYPE_CHECKING, Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from langchain.tools import InjectedToolCallId, tool
 from langgraph.config import get_stream_writer
+from pydantic import BaseModel, Field
 
 from deerflow.config import get_app_config
 from deerflow.sandbox.security import LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE, is_host_bash_allowed
@@ -320,7 +321,48 @@ def _merge_skill_allowlists(parent: list[str] | None, child: list[str] | None) -
     return [skill for skill in child if skill in parent_set]
 
 
-@tool("task", parse_docstring=True)
+def _make_subagent_literal():
+    """Dynamically construct a Literal type from the available subagent names.
+
+    Called at module load time so the JSON Schema enum is baked into the
+    tool's args_schema.  Falls back to BUILTIN_SUBAGENTS keys if the full
+    registry (which may require config.yaml) is not yet available.
+    """
+    try:
+        names = tuple(get_available_subagent_names())
+    except Exception:
+        from deerflow.subagents.builtins import BUILTIN_SUBAGENTS
+
+        names = tuple(BUILTIN_SUBAGENTS.keys())
+    return Literal[names]
+
+
+_SubagentLiteral = _make_subagent_literal()
+
+
+class _TaskArgs(BaseModel):
+    """Schema for the ``task`` tool — LLM-facing parameters only.
+
+    Injected params (``runtime``, ``tool_call_id``) are handled by the
+    LangChain framework and omitted from this schema.
+    """
+
+    description: str = Field(
+        description="A short (3-5 word) description of the task for logging/display. ALWAYS PROVIDE THIS PARAMETER FIRST.",
+    )
+    prompt: str = Field(
+        description="The task description for the subagent. Be specific and clear about what needs to be done. ALWAYS PROVIDE THIS PARAMETER SECOND.",
+    )
+    subagent_type: _SubagentLiteral = Field(
+        description="The type of subagent to use. ALWAYS PROVIDE THIS PARAMETER THIRD.",
+    )
+    max_turns: int | None = Field(
+        default=None,
+        description="Optional maximum number of agent turns. Defaults to subagent's configured max.",
+    )
+
+
+@tool("task", parse_docstring=True, args_schema=_TaskArgs)
 async def task_tool(
     runtime: Runtime,
     description: str,
@@ -373,7 +415,13 @@ async def task_tool(
     config = get_subagent_config(subagent_type, app_config=runtime_app_config) if runtime_app_config is not None else get_subagent_config(subagent_type)
     if config is None:
         available = ", ".join(available_subagent_names)
-        return f"Error: Unknown subagent type '{subagent_type}'. Available: {available}"
+        return (
+            f"Error: Unknown subagent type '{subagent_type}'. "
+            f"Valid subagent types: {available}. "
+            f"请改用 task(subagent_type='<上述有效名称之一>', ...) 重新派遣，"
+            f"因为 '{subagent_type}' 不是已注册的 subagent 类型，"
+            f"不支持自定义名称或通用代理。"
+        )
     if subagent_type == "bash":
         host_bash_allowed = is_host_bash_allowed(runtime_app_config) if runtime_app_config is not None else is_host_bash_allowed()
         if not host_bash_allowed:
