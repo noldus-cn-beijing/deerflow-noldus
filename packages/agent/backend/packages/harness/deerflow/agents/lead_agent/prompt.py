@@ -296,6 +296,7 @@ ask_clarification(
            "B. 不用,直接给我报告"]
 )
 ```
+**用户回答后,必须立即调 `set_viz_choice(choice='yes' | 'no')` 落盘 gate3**,然后再决定派 chart-maker (yes) 或跳到 ask(report?) (no)。否则后续 task(chart-maker) 会被 IntentPostStepAskGateProvider 拦截。`set_viz_choice` 需要在 workspace 中 experiment-context.json 已经创建后调用（即 Gate 1 已完成）。
 
 歧义剩余偏 E2E_FULL_ASKVIZ(让用户选,代价小)。详见 `ethoinsight-lead-interaction/references/intent-decision-tree.md`。
 
