@@ -122,7 +122,11 @@ class TestLiveToolUse:
         assert len(ai_events) >= 1
 
         assert tc_events[0].data["tool_calls"][0]["name"] == "bash"
-        assert "LIVE_TEST_OK" in tr_events[0].data["content"]
+        # Guardrail (IntentClassificationGuardrailProvider) may deny the first bash
+        # call until lead declares `[intent]`, then lead retries — assert the
+        # command's stdout reaches *some* tool result, not necessarily the first.
+        assert any("LIVE_TEST_OK" in e.data["content"] for e in tr_events), \
+            f"Expected LIVE_TEST_OK in some tool result, got: {[e.data.get('content') for e in tr_events]}"
 
     def test_agent_uses_ls_tool(self, client):
         """Agent uses ls tool to list a directory."""

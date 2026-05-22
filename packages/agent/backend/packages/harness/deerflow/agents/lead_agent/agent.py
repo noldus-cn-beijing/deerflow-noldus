@@ -21,6 +21,7 @@ from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config, validate_agent_name
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
+from deerflow.guardrails.middleware import GuardrailMiddleware
 from deerflow.models import create_chat_model
 from deerflow.runtime.user_context import set_current_user
 
@@ -319,7 +320,6 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
             Ev19TemplateGuardrailProvider,
             Ev19WorkspaceBridgeMiddleware,
         )
-        from deerflow.guardrails.middleware import GuardrailMiddleware
 
         provider = Ev19TemplateGuardrailProvider()
         middlewares.append(Ev19WorkspaceBridgeMiddleware())

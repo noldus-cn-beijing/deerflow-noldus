@@ -263,6 +263,7 @@ def test_update_memory_fact_route_preserves_omitted_fields() -> None:
         content="User prefers spaces",
         category=None,
         confidence=None,
+        user_id="test-user-autouse",
     )
     assert response.json()["facts"] == updated_memory["facts"]
 

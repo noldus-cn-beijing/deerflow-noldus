@@ -106,7 +106,7 @@ class TestGate2:
         assert "数据质量检查" in result.content
         assert "critical" in result.content
         assert "trajectory gap" in result.content
-        assert "gate2_quality_acknowledged" in result.content
+        assert "acknowledge_quality=True" in result.content
 
     def test_allows_when_no_critical(self, mw):
         """task(data-analyst) with no critical warnings → passes through."""
