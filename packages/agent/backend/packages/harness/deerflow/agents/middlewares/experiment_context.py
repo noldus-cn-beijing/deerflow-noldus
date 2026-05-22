@@ -17,6 +17,8 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+from typing import Literal
+
 from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
 
@@ -213,3 +215,63 @@ def set_experiment_paradigm_tool(
     if warning is not None:
         response["warning"] = warning
     return json.dumps(response, ensure_ascii=False)
+
+
+@tool("set_viz_choice", parse_docstring=True)
+def set_viz_choice_tool(
+    choice: Literal["yes", "no"],
+    workspace_dir: str = "/mnt/user-data/workspace/",
+    runtime: ToolRuntime[ContextT, ThreadState] = None,
+) -> str:
+    """Record the user's answer to the 'do you want a chart?' clarification.
+
+    Use this AFTER ask_clarification has presented the viz question to the user
+    and the user has replied. Writes gate3_viz_acknowledged + viz_choice to
+    experiment-context.json so IntentPostStepAskGateProvider knows the user
+    has answered and the lead can proceed to dispatch chart-maker (yes) or
+    skip to report-writer (no).
+
+    Args:
+        choice: "yes" if user wants charts; "no" otherwise.
+        workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
+    """
+
+    # Resolve the actual host workspace path from thread state.
+    actual_workspace = workspace_dir
+    if runtime is not None and runtime.state is not None:
+        thread_data: ThreadDataState | None = runtime.state.get("thread_data")
+        if thread_data is not None:
+            host_workspace = thread_data.get("workspace_path")
+            if host_workspace is not None:
+                actual_workspace = host_workspace
+
+    existing = read_context(actual_workspace)
+    if existing is None:
+        return json.dumps(
+            {
+                "status": "error",
+                "message": "experiment-context.json missing; call set_experiment_paradigm first.",
+            },
+            ensure_ascii=False,
+        )
+
+    gate_completed = existing.get("gate_completed", [])
+    if not isinstance(gate_completed, list):
+        gate_completed = []
+    if "gate3_viz_acknowledged" not in gate_completed:
+        gate_completed.append("gate3_viz_acknowledged")
+
+    data = {
+        **existing,
+        "gate_completed": gate_completed,
+        "viz_choice": choice,
+        "viz_acknowledged_at": datetime.now(UTC).isoformat(),
+    }
+    path = Path(actual_workspace) / "experiment-context.json"
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+
+    return json.dumps(
+        {"status": "ok", "viz_choice": choice, "gate_completed": gate_completed},
+        ensure_ascii=False,
+    )
