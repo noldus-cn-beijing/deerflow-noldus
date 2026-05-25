@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from langchain.tools import InjectedToolCallId, tool
+from langchain_core.callbacks import BaseCallbackManager
 from langgraph.config import get_stream_writer
 
 from deerflow.config import get_app_config
@@ -248,21 +249,30 @@ def _schedule_deferred_subagent_cleanup(task_id: str, trace_id: str, max_polls: 
 def _find_usage_recorder(runtime: Any) -> Any | None:
     """Find a callback handler with ``record_external_llm_usage_records`` in the runtime config.
 
-    LangGraph's runtime ``config["callbacks"]`` may be either a ``list`` of handlers OR a
-    ``BaseCallbackManager`` instance (e.g. ``AsyncCallbackManager`` on async paths). The
-    manager class has no ``__iter__``; iterating it directly raises ``TypeError``. Normalize
-    both shapes by reading ``.handlers`` when given a manager.
+    LangChain may pass ``config["callbacks"]`` in three different shapes:
+
+    - ``None`` (no callbacks registered): no recorder.
+    - A plain ``list[BaseCallbackHandler]``: iterate it directly.
+    - A ``BaseCallbackManager`` instance (e.g. ``AsyncCallbackManager`` on async
+      tool runs): managers are not iterable, so we unwrap ``.handlers`` first.
+
+    Any other shape (e.g. a single handler object accidentally passed without a
+    list wrapper) cannot be iterated safely; treat it as "no recorder" rather
+    than raise.
     """
     if runtime is None:
         return None
     config = getattr(runtime, "config", None)
     if not isinstance(config, dict):
         return None
-    callbacks = config.get("callbacks", [])
-    handlers = getattr(callbacks, "handlers", callbacks) if not isinstance(callbacks, list) else callbacks
-    if not handlers:
+    callbacks = config.get("callbacks")
+    if isinstance(callbacks, BaseCallbackManager):
+        callbacks = callbacks.handlers
+    if not callbacks:
         return None
-    for cb in handlers:
+    if not isinstance(callbacks, list):
+        return None
+    for cb in callbacks:
         if hasattr(cb, "record_external_llm_usage_records"):
             return cb
     return None
