@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<!-- saved from url=(0234)file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&rhsyns=%20 -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style>.rh-hide:not(.rh-animate){display:none !important;}</style>
+
+ 
+ <title>Commands and functions for JavaScript variables</title>
+
+ <link rel="stylesheet" href="./Commands and functions for JavaScript variables_files/EV_Dependent_Variables_in_Detail.css" type="text/css">
+
+ <link rel="stylesheet" href="./Commands and functions for JavaScript variables_files/HTMLStyling.css" type="text/css">
+ <link rel="StyleSheet" href="./Commands and functions for JavaScript variables_files/Responsive_HTML5_stylesheet.css" type="text/css">
+
+
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe FrameMaker 2017">
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/rh.min.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/common.min.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/topic.min.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/constants.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/utils.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/mhutils.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/mhlang.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/mhver.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/settings.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/XmlJsReader.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/loadparentdata.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/loadscreen.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/loadprojdata.js"></script>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="./Commands and functions for JavaScript variables_files/topic.min.css">
+<script type="text/javascript">
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "18.6.0_17";
+</script>
+ <meta name="brsprev" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_state.htm">
+ <meta name="brsnext" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Live_Mouse_Tracker.htm">
+ <meta name="topic-breadcrumbs" content="Dependent Variables in Detail &gt; Hardware and Advanced">
+<script type="text/javascript" charset="utf-8" src="./Commands and functions for JavaScript variables_files/screendata.js"></script><script type="text/javascript" charset="utf-8" src="./Commands and functions for JavaScript variables_files/parentdata.js"></script><script src="./Commands and functions for JavaScript variables_files/projectdata.js"></script><style type="text/css">.topic-header { background-color: #232323; color: #FFFFFF; width: calc(100%); height: 3em; position: fixed; left: 0; top: 0; font-family: Segoe UI; display: table; box-sizing: border-box; }.topic-header-shadow { height: 3em; width: 100%; }.logo { cursor: pointer; padding: 0.2em; height: calc(100% - 0.4em); text-align: center; display: table-cell; vertical-align: middle; }.logo img { max-height: 100%; display: block; }.nav { width: 100%; display: table-cell; }.title { width: 40%; height: 100%; float: left; line-height: 3em; cursor: pointer; }.gotohome { width: 60%; float: left; text-align: right; height: 100%; line-height: 3em; cursor: pointer; }.title span, .gotohome span { padding: 0em 1em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; display: block; }</style></head>
+
+<body dir="ltr"><div><div class="topic-header">  <div class="logo" onclick="rh._.redirectToLayout()">    <img src="./Commands and functions for JavaScript variables_files/logo.png">  </div>  <div class="nav">    <div class="title" title="EthoVision XT 19 Help">      <span onclick="rh._.redirectToLayout()">EthoVision XT 19 Help</span>    </div>    <div class="gotohome" title="" onclick="rh._.redirectToLayout()">      <span></span>    </div></div>  </div><div class="topic-header-shadow"></div></div>
+<script type="text/javascript" src="./Commands and functions for JavaScript variables_files/ehlpdhtm.js"></script>
+ <div dir="ltr">
+  <h1 dir="ltr"><a name="XREF_62170_Commands_and"></a>Commands and functions for JavaScript variables</h1>
+  <p dir="ltr" class="FM_Heading_2">Aim</p>
+  <p dir="ltr" class="FM_Body">In this topic you find the commands and functions that you can use to extract process tracking data with JavaScript code. </p>
+  <p dir="ltr" class="FM_Heading_2">Get started</p>
+  <p dir="ltr" class="FM_Body">We assume that you have basic knowledge about JavaScript. To get started with JavaScript we recommend this online compiler:</p>
+  <p dir="ltr" class="FM_Body"><a href="https://repl.it/languages/javascript">https://repl.it/languages/javascript</a></p>
+  <p dir="ltr" class="FM_Body">Many courses on the internet concern JavaScript for web page developers. An excellent course more focused on JavaScript as a data processing tool can be found here:</p>
+  <p dir="ltr" class="FM_Body"><a href="https://www.youtube.com/watch?v=Bv_5Zv5c-Ts">https://www.youtube.com/watch?v=Bv_5Zv5c-Ts</a></p>
+  <p dir="ltr" class="FM_Heading_2">Extract subject features</p>
+  <p dir="ltr" class="FM_Body">Use the functions below to extract the position and other features of your subjects.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_72594_GetCenter_GetNose">GetCenter, GetNose, GetTail</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_43965_GetSubjectCenter">GetSubjectCenter, GetSubjectNose, GetSubjectTail</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_61975_GetArea">GetArea, GetChangedArea</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_69045_GetSubjectArea">GetSubjectArea, GetSubjectChangedArea</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_55682_GetElongation">GetElongation</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_84682">GetSubjectElongation</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_67410_GetViewDirection">GetViewDirection</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_59094">GetSubjectViewDirection</a></p>
+  <p dir="ltr" class="FM_Heading_2">Extract other data</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_59353_GetSampleTime">GetSampleTime</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_35143_GetPixelChange">GetPixelChange</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_31152_GetDistanceToZone">GetDistanceToZone</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_65907_GetDistanceToPoi">GetDistanceToPoi</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_59935_GetBehaviorEvent">GetBehaviorEvent</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_51907_GetCommand">GetCommand</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_40633_GetSignal">GetSignal</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_18310_Point">new Point</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_10902_GetPointPoi">GetPointPoi</a></p>
+  <p dir="ltr" class="FM_Heading_2">Query data</p>
+  <p dir="ltr" class="FM_Body">Use the functions below to ask simple questions, like <span class="FM_Emphasis">Is the subject in the central zone?</span> The software gives a boolean answer (true/false).</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_18508_IsInZone">IsInZone</a> (discontinued)</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_81444">IsSubjectCenterInZone, IsSubjectNoseInZone, IsSubjectTailInZone</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_13373_IsPointInZone">IsPointInZone</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_49191_Point_Equals">Point.Equals</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_82204_IsSubjectActor">IsSubjectActor</a></p>
+  <p dir="ltr" class="FM_Heading_2">Calculate</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_31767_Distance">Distance</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_45806_Point_Distance">Point.Distance</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_56267_TurnAngle">TurnAngle</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_66996_Heading">Heading</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_66782_SetOutput">SetOutput</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_83638_SetOutputMissing">SetOutputMissing</a></p>
+  <p dir="ltr" class="FM_Body">&nbsp;</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_72594_GetCenter_GetNose"></a>GetCenter, GetNose, GetTail</p>
+  <p dir="ltr" class="FM_Body">Returns the x,y coordinates of the center-point, nose-point or tail-base point of the subjects in a single-subject trial, respectively. Use this function in a single-subject experiment, or in a multi-subject experiment to extract the body points of the focal subject.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetCenter()</p>
+  <p dir="ltr" class="FM_Small_text_indented">GetNose()</p>
+  <p dir="ltr" class="FM_Small_text_indented">GetTail()</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example 1</span></p>
+  <p dir="ltr" class="FM_Indented">In the following example, the code verifies if the center point of the subject, when found, is in the zone named Zone 1.</p>
+  <p dir="ltr" class="FM_Small_text_indented">const g_Zone = "Zone 1";</p>
+  <p dir="ltr" class="FM_Small_text_indented">(...)</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Process()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;var ptC = <span style="font-weight : bold; ">GetCenter</span>();</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;if (ptC)</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;g_bInZone = IsInZone(g_Zone, ptC);</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;}</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example 2</span></p>
+  <p dir="ltr" class="FM_Indented">In the following example, we calculate the average x coordinate of the center point and the nose point.</p>
+  <p dir="ltr" class="FM_Small_text_indented">var ptC = <span style="font-weight : bold; ">GetCenter</span>(); </p>
+  <p dir="ltr" class="FM_Small_text_indented">var ptN = <span style="font-weight : bold; ">GetNose</span>();</p>
+  <p dir="ltr" class="FM_Small_text_indented">var x_avg = ptC.x + ptN.x;</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_43965_GetSubjectCenter"></a>GetSubjectCenter, GetSubjectNose, GetSubjectTail</p>
+  <p dir="ltr" class="FM_Body">Returns the x, y coordinates of a body point of a specific subject in a multi-subject experiment. You can use this function to compare the position of different subjects in the same JavaScript variable.</p>
+  <p dir="ltr" class="FM_Body">See also the sample experiment Subject Counter with JavaScript code XT160, which you can find on my.noldus.com, under <span class="FM_Bold">Downloads</span>&nbsp;&gt; <span class="FM_Bold">EthoVision XT</span>&nbsp;&gt; <span class="FM_Bold">Drivers and tools</span>.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSubjectCenter(Subject name)</p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSubjectNose(Subject name)</p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSubjectTail(Subject name)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Subject name: the name of one of the subjects as defined in the Experiment Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">In the following loop (not shown entirely), the center point of each subject is loaded in the variable pt.</p>
+  <p dir="ltr" class="FM_Small_text_indented">const g_aSubjects = ["Subject 1", "Subject 2", "Subject 3", ... ]</p>
+  <p dir="ltr" class="FM_Small_text_indented">(...)</p>
+  <p dir="ltr" class="FM_Small_text_indented">for (i = 0; i &lt; g_aSubjects.length; ++i) </p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;var pt = <span style="font-weight : bold; ">GetSubjectCenter</span>(g_aSubjects[i]);</p>
+  <p dir="ltr" class="FM_Small_text_indented">(...)</p>
+  <p dir="ltr" class="FM_Indented">Note that g_aSubject.length function gets the length of the array variable g_aSubjects which contains the names of the subjects. The variable g_aSubjects is defined at the top of the script.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_61975_GetArea"></a>GetArea, GetChangedArea</p>
+  <p dir="ltr" class="FM_Body">Returns the current value of the subject’s area (in practice, the yellow blob that you see during tracking), and the area that has changed from the previous sample, respectively. Use these functions for</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>The subject in a single-subject experiment.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>The focal subject in a multi-subject experiment. Here “focal” refers to the subject for which the statistics are calculated.</p>
+  <p dir="ltr" class="FM_Body">Areas are expressed in internal units (mm<sup>2</sup>), independent of the units selected in the Experiment Settings. For information on the Changed area, see <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Rotation.htm#XREF_69871_Mobility_continuous">Rotation</a>.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetArea()</p>
+  <p dir="ltr" class="FM_Small_text_indented">GetChangedArea()</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var a = <span style="font-weight : bold; ">GetArea</span>();</p>
+  <p dir="ltr" class="FM_Small_text_indented">var ca = <span style="font-weight : bold; ">GetChangedArea</span>();</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">notes</span></p>
+  <p dir="ltr" class="FM_Indented">GetArea and GetChangedArea are not available when using Deep learning with two subjects per arena, because this method does not record the subjects’ body contour.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_69045_GetSubjectArea"></a>GetSubjectArea, GetSubjectChangedArea</p>
+  <p dir="ltr" class="FM_Body">GetSubjectArea returns the current value of the area of a specified subject in a multi-subject experiment. </p>
+  <p dir="ltr" class="FM_Body">GetSubjectChangedArea returns the area of the subject in a multi-subject experiment that has changed from the previous sample. For information on the Changed area, see <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Rotation.htm#XREF_69871_Mobility_continuous">Rotation</a>.</p>
+  <p dir="ltr" class="FM_Body">The subject’s area is the area of the yellow blob that you see during tracking. It is expressed in internal units (mm<sup>2</sup>), independent of the units selected in the Experiment Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSubjectArea(“subject name”)</p>
+  <p dir="ltr" class="FM_Small_text_indented">GetChangedArea(“subject name”)</p>
+  <p dir="ltr" class="FM_Indented">where Subject name is the name of the subject specified in the Experiment settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example 1</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var a = <span style="font-weight : bold; ">GetSubjectArea</span>(“Subject 1”);</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example 2</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">// This for loop extracts the area for a number of subjects </p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Small_text_indented">for (i = 0; i &lt; g_aSubjects.length; ++i)</p>
+  <p dir="ltr" class="FM_Body"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;var AreaSubj = <span style="font-weight : bold; ">GetSubjectArea</span>(g_aSubjects[i]);</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;...</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">notes</span></p>
+  <p dir="ltr" class="FM_Indented">GetSubjectArea and GetSubjectChangedArea are not available when using Deep learning with two subjects per arena, because this method does not record the subjects’ body contour.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_55682_GetElongation"></a>GetElongation</p>
+  <p dir="ltr" class="FM_Body">GetElongation returns the current value of Body elongation for</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>The subject in a single-subject experiment.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>The focal subject in a multi-subject experiment. Here “focal” refers to the subject for which the statistics are calculated.</p>
+  <p dir="ltr" class="FM_Body">It is expressed as a number between 0 and 1. To obtain the same as the dependent variable <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_elongation.htm#XREF_62052_body_elongation">Body elongation</a>, multiply it by 100.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetElongation()</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var y = <span style="font-weight : bold; ">GetElongation</span>();</p>
+  <p dir="ltr" class="FM_Small_text_indented">if (y != null)</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;SetOutput(y*100);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">else</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;SetOutputMissing();</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">notes</span></p>
+  <p dir="ltr" class="FM_Indented">GetElongation is not available when using Deep learning with two subjects per arena, because this method does not record the subjects’ body contour.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_84682"></a>GetSubjectElongation</p>
+  <p dir="ltr" class="FM_Body">Returns the current value of Body elongation for a specified subject in a multi-subject experiment. It is expressed as a number between 0 and 1. To obtain the same as the dependent variable Body elongation, multiply it by 100.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSubjectElongation(“Subject name”)</p>
+  <p dir="ltr" class="FM_Indented">where Subject name is the name of the subject specified in the Experiment settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">// This for loop extracts the body elongation for a number of subjects</p>
+  <p dir="ltr" class="FM_Small_text_indented">for (i = 0; i &lt; g_aSubjects.length; ++i)</p>
+  <p dir="ltr" class="FM_Body"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;var EloSubj = <span style="font-weight : bold; ">GetSubjectElongation</span>(g_aSubjects[i]);</p>
+  <p dir="ltr" class="FM_Small_text_indented">...</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">notes</span></p>
+  <p dir="ltr" class="FM_Indented">GetSubjectElongation is not available when using Deep learning with two subjects per arena, because this method does not record the subjects’ body contour.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_67410_GetViewDirection"></a>GetViewDirection</p>
+  <p dir="ltr" class="FM_Body">Returns the current value of the Head direction variable for</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>The subject in a single-subject experiment.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>The focal subject in a multi-subject experiment. Here “focal” refers to the subject for which the statistics are calculated.</p>
+  <p dir="ltr" class="FM_Body">It is expressed in radians. Note that the <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Head_direction.htm#XREF_72374_Head_direction">Head direction</a>&nbsp;dependent variable provided by EthoVision XT is expressed in degrees. To convert your JavaScript variable to degrees, see the example below.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetViewDirection()</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var dir = GetViewDirection();</p>
+  <p dir="ltr" class="FM_Indented">If you want to extract the head direction in degrees, convert the value of head direction to degrees with the following formula:</p>
+  <p dir="ltr" class="FM_Small_text_indented">function toDegrees(angle) </p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;return angle * (180 / Math.PI);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">(...)</p>
+  <p dir="ltr" class="FM_Small_text_indented">var dir = GetViewDirection();</p>
+  <p dir="ltr" class="FM_Small_text_indented">angle = toDegrees(dir);</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">notes</span></p>
+  <p dir="ltr" class="FM_Indented">GetViewDirection is not available when using Deep learning with two subjects per arena, because this method does not record the subjects’ head direction.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_59094"></a>GetSubjectViewDirection</p>
+  <p dir="ltr" class="FM_Body">Returns the value of the Head direction of a specified subject in a multi-subject experiment, for the current sample. The value is given in radians. Note that the <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Head_direction.htm#XREF_72374_Head_direction">Head direction</a>&nbsp;dependent variable provided by EthoVision XT is expressed in degrees. To convert your JavaScript variable to degrees, see the example in <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_67410_GetViewDirection">GetViewDirection</a>.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSubjectViewDirection(“subject name”)</p>
+  <p dir="ltr" class="FM_Indented">where Subject name is the name of the subject specified in the Experiment settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">// This for loop extracts the Head direction in radians for a number of subjects</p>
+  <p dir="ltr" class="FM_Small_text_indented">for (i = 0; i &lt; g_aSubjects.length; ++i)</p>
+  <p dir="ltr" class="FM_Body"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;var HDirSubj = <span style="font-weight : bold; ">GetSubjectViewDirection</span>(g_aSubjects[i]);</p>
+  <p dir="ltr" class="FM_Small_text_indented">...</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">notes</span></p>
+  <p dir="ltr" class="FM_Indented">GetSubjectViewDirection is not available when using Deep learning with two subjects per arena, because this method does not record the subjects’ head direction.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_59353_GetSampleTime"></a>GetSampleTime</p>
+  <p dir="ltr" class="FM_Body">Returns the sample time (in seconds) of the sample currently processed. You can use this function to calculate the latency of an event that you cannot obtain through the other dependent variables.</p>
+  <p dir="ltr" class="FM_Body"><span class="FM_All_caps">note</span>&nbsp;&nbsp;The sample time in this function is the track time, that is, the time elapsed from the start of the track (the first sample), not the start of the trial.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSampleTime()</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">The following example outputs the value of the current sample time. If it is not found, a missing value is assigned with the SetOutputMissing command (see below).</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Process()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;var st = <span style="font-weight : bold; ">GetSampleTime</span>();</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;if (st!= null)</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetOutput(st);</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;}</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;else</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SetOutputMissing();</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;}</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_35143_GetPixelChange"></a>GetPixelChange</p>
+  <p dir="ltr" class="FM_Body">Returns the current proportion of pixels in the arena that have changed intensity above the specified Activity threshold from the previous video frame. This proportion can be between 0 (no pixel in the arena has changed intensity value above the threshold) and 1 (all pixels in the arena have changed intensity value above the threshold). A pixel change value of 0.156 (expressed as proportion) corresponds to an <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_angle.htm#XREF_34881_Activity_continuous">Body angle</a> value without smoothing of 15.6%.</p>
+  <p dir="ltr" class="FM_Body">To use this variable, you must select <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Set_Up_Experiment/Activity_analysis.htm#XREF_21789_Activity_analysis">Activity analysis</a>&nbsp;in the Experiment Settings and define the threshold value in <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Detection_Settings/Activity_settings.htm#XREF_64690_8_9_Activity">Activity settings</a>&nbsp;in the Detection settings. For information on the pixel change, see <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_angle.htm#XREF_34881_Activity_continuous">Body angle</a>.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetPixelChange()</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var a = <span style="font-weight : bold; ">GetPixelChange</span>();</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_31152_GetDistanceToZone"></a>GetDistanceToZone</p>
+  <p dir="ltr" class="FM_Body">Returns the distance of a (body) point from a zone. The distance is zero if the body point is within the zone. Distances are expressed in internal units (mm), independent of the units selected in the Experiment Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetDistanceToZone(Zone, Point)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Zone: the name of the zone as it appears in the Arena Settings; e.g. “Platform”.</p>
+  <p dir="ltr" class="FM_Indented">Point: the name of the point; usually a body point.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">const g_strZone = "Object";</p>
+  <p dir="ltr" class="FM_Small_text_indented">(...)</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Process()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;var ptNose = GetNose();</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;var dist = <span style="font-weight : bold; ">GetDistanceToZone</span>(g_strZone, ptNose);</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_65907_GetDistanceToPoi"></a>GetDistanceToPoi</p>
+  <p dir="ltr" class="FM_Body">This is similar to GetDistanceToZone; it returns the distance from the specified point of interest. Distances are expressed in internal units (mm), independent of the units selected in the Experiment Settings. </p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetDistanceToPoi(Point of interest, Point)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Point of interest: the name of the point of interest as it is defined in the Arena Settings.</p>
+  <p dir="ltr" class="FM_Indented">Point: the name of the point to which distance is determined; usually a body point.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_59935_GetBehaviorEvent"></a>GetBehaviorEvent</p>
+  <p dir="ltr" class="FM_Body">This command returns the value of an event scored manually using the Manual Scoring function. If you work with Live Mouse Tracker, this command also works with the events listed under <span class="FM_Bold">Raw Live Mouse Tracker data</span> in the Analysis profile.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetBehaviorEvent(behavior)</p>
+  <p dir="ltr" class="FM_Small_text_indented">GetBehaviorEvent(behavior, receiver)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Behavior: The name of the behavior as in the Manual Scoring Settings or listed under <span class="FM_Bold">Raw Live Mouse Tracker data</span> in the Analysis profile.</p>
+  <p dir="ltr" class="FM_Indented">Receiver (optional): The name of the receiver, in case of multi-subject tracking.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">return values</span></p>
+  <p dir="ltr" class="FM_Indented">undefined: no behavior event</p>
+  <p dir="ltr" class="FM_Indented">1: start of a state event</p>
+  <p dir="ltr" class="FM_Indented">2: stop</p>
+  <p dir="ltr" class="FM_Indented">4: point event</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">The following code gets the values of the behavior <span class="FM_Emphasis">Sleep</span>&nbsp;that was scored. The function UpdateState at the top copies the values of <span class="FM_Emphasis">Sleep</span>, 1 or 2 to a new state variable g_bState with values true or false, respectively.</p>
+  <p dir="ltr" class="FM_Small_text_indented">var g_bState = false;</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Small_text_indented">function UpdateState(evt)</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;if (evt != undefined)</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if (evt == 1)</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;g_bState = true;</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else if (evt == 2)</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ &nbsp;</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;g_bState = false;</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;}</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Process()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;var evt = GetBehaviorEvent("Sleep");</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;UpdateState(evt);</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;&nbsp;</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;SetOutput(g_bState);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_51907_GetCommand"></a>GetCommand</p>
+  <p dir="ltr" class="FM_Body">Returns the event that represent a command to a hardware device.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetCommand(Device name, Command name)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Device name: the name of the device specified in EthoVision XT. For example, “Device A”. To know the device name, in the Arena Settings click the <span class="FM_Bold">Arena-Hardware Mapping </span>button, under <span class="FM_Bold">Device name</span>&nbsp;click the cell of the device you require and press <span class="FM_Bold">Ctrl</span>+<span class="FM_Bold">C</span>. Paste the text into the JavaScript code as <span class="FM_Emphasis">Device name</span>.</p>
+  <p dir="ltr" class="FM_Indented">Command name: the name of the command used in the Trial Control Settings. For example, “Drop pellet”. To know the command name, open the Trial Control Settings, locate the Action box that contains that command and click <span class="FM_Bold">Settings</span>. Take note of the text near <span class="FM_Bold">Action to perform</span>. Enter this text in the JS code as <span class="FM_Emphasis">Command name</span>.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">In the following example, JavaScript reads the command “Drop pellet” of a Pellet dispenser with name Device A and outputs the value for each sample of the track (1 = drop a pellet; missing value = no pellets dropped).</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Process()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;var DropPellet = GetCommand("Device A", "Drop pellet");</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;SetOutput(DropPellet);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_40633_GetSignal"></a>GetSignal</p>
+  <p dir="ltr" class="FM_Body">Returns the value of a hardware signal.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetSignal(Device name, Signal name)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Device name: the name of the device specified in EthoVision XT. For example, “Device B”. To know the device name, in the Arena Settings click the <span class="FM_Bold">Arena-Hardware Mapping </span>button, under <span class="FM_Bold">Device name</span>&nbsp;click the cell of the device you require and press <span class="FM_Bold">Ctrl</span>+<span class="FM_Bold">C</span>. Paste the text into the JavaScript code as <span class="FM_Emphasis">Device name</span>.</p>
+  <p dir="ltr" class="FM_Indented">Signal name: the name of the signal that you want to acquire. For example, “Number of licks”. To know the signal name, open an Analysis profile, click the button next to <span class="FM_Bold">Hardware continuous</span>, select a <span class="FM_Bold">Device type</span>, <span class="FM_Bold">Device</span>, and <span class="FM_Bold">Signal</span>. Take note of the text near <span class="FM_Bold">Signal</span>, and enter this text in the JS code as <span class="FM_Emphasis">Signal name</span>.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">In the following example, JavaScript reads the value of the signal “Number of licks” of a lickometer (Device B) and outputs it for each sample of the track.</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Process()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;var s = GetSignal("Device B", "Number of licks");</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;SetOutput(s);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_18310_Point"></a>new Point</p>
+  <p dir="ltr" class="FM_Body">With the <span class="FM_Emphasis">new Point</span> statement you can define a point in space.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">new Point(x,y,z)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">x, y, z (z is optional): The coordinates in mm based on the calibration axes and origin in the Arena Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">pt1 = new Point(200, 300);</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">note</span></p>
+  <p dir="ltr" class="FM_Indented">You cannot visualize the position of points defined with JavaScript. To do so, define points in the Arena Settings.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_10902_GetPointPoi"></a>GetPointPoi</p>
+  <p dir="ltr" class="FM_Body">With this command you can extract the coordinates of a point of interest of the center of a zone or arena. Note that GetPointPoi returns the position of the point, then you have to extract the coordinates with additional commands (e.g. x = pt.x).</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">GetPointPoi(point)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">point: The name of the point or the zone or arena, of which you want to find the center.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">const g_zone = "Zone 1";</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Start()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Stop()</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Process()</p>
+  <p dir="ltr" class="FM_Small_text_indented">var pt = GetPointPoi(g_zone);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var xc = pt.x;</p>
+  <p dir="ltr" class="FM_Small_text_indented">var xy = pt.y;</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_18508_IsInZone"></a>IsInZone</p>
+  <p dir="ltr" class="FM_Body">This function has been replaced by other functions in EthoVision XT 19 (see below).</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>For single-subject tracking: see <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_13373_IsPointInZone">IsPointInZone</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>For multi-subject tracking: see <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_81444">IsSubjectCenterInZone, IsSubjectNoseInZone, IsSubjectTailInZone</a>. </p>
+  <p dir="ltr" class="FM_Body">You can still use IsInZone in your code, but it won’t work properly when analyzing data points in hidden zones.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_81444"></a>IsSubjectCenterInZone, IsSubjectNoseInZone, IsSubjectTailInZone</p>
+  <p dir="ltr" class="FM_Body">Use this function to determine if a body point of a subject is within a zone. The zone must be defined in the Arena Settings. The return value is boolean (true or false).</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">IsSubjectCenterInZone(Subject name, Zone name);</p>
+  <p dir="ltr" class="FM_Small_text_indented">IsSubjectNoseInZone(Subject name, Zone name);</p>
+  <p dir="ltr" class="FM_Small_text_indented">IsSubjectTailInZone(Subject name, Zone name);</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Subject name: the name of one of the subjects listed in the Experiment Settings.</p>
+  <p dir="ltr" class="FM_Indented"><a name="IX_Hidden_zone_2"></a>Zone name: the name of the zone of interest defined in the Arena Settings; for example, "Zone 1". You can specify the name directly (“Zone 1” with quotes), or a variable that contains that name. The zone can be a single zone, a cumulative zone, an entry zone, or a hidden zone.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example - one subject</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var bC = IsSubjectCenterInZone(“Subject 1”, “Zone 1”);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var bN = IsSubjectNoseInZone(“Subject 1”, “Zone 1”);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var bT = IsSubjectTailInZone(“Subject 1”, “Zone 1”);</p>
+  <p dir="ltr" class="FM_Indented">or</p>
+  <p dir="ltr" class="FM_Small_text_indented">const g_sZone = "Zone 1"</p>
+  <p dir="ltr" class="FM_Small_text_indented">var bC = IsSubjectCenterInZone(“Subject 1”, g_sZone);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var bN = IsSubjectNoseInZone(“Subject 1”, g_sZone);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var bT = IsSubjectTailInZone(“Subject 1”, g_sZone);</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example - multiple subjects</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var bC1 = IsSubjectCenterInZone(“Subject 1”, “Zone 1”);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var bC2 = IsSubjectCenterInZone(“Subject 2”, “Zone 1”);</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_13373_IsPointInZone"></a>IsPointInZone</p>
+  <p dir="ltr" class="FM_Body">Use this function to determine if a point (a body point, or a point of interest) is within a zone. The zone must be defined in the Arena Settings. The return value is boolean (true or false).</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">IsPointInZone(Zone name, Point name)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Zone name: the name of a zone defined in the Arena Settings; for example, "Zone 1". </p>
+  <p dir="ltr" class="FM_Indented">Point name: The name of a body point or a point of interest defined in the Arena Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">pt = GetCenter();</p>
+  <p dir="ltr" class="FM_Small_text_indented">var b1 = IsPointInZone(“Zone 1”, pt);</p>
+  <p dir="ltr" class="FM_Indented">or</p>
+  <p dir="ltr" class="FM_Small_text_indented">pt = new Point (10, 10);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var b1 = IsPointInZone (“Zone 1”, pt);</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_49191_Point_Equals"></a>Point.Equals</p>
+  <p dir="ltr" class="FM_Body">Checks if two points are equal.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">point1.Equals(point2).</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">point 1: the first point</p>
+  <p dir="ltr" class="FM_Indented">point 2: the second point</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">The variable b gets the value 1 if the two points pt1 (the center of the subject) and pt2 (a point in space defined with the <span class="FM_Emphasis">new</span>&nbsp;statement) have the same coordinates.</p>
+  <p dir="ltr" class="FM_Small_text_indented">var pt1 = GetCenter();</p>
+  <p dir="ltr" class="FM_Small_text_indented">var pt2 = new Point(1.0, 2.0);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var b = pt1.Equals(pt2);</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">errors</span></p>
+  <p dir="ltr" class="FM_Indented">If one of the two points is null, the value is not calculated and an invalid reference is returned.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_82204_IsSubjectActor"></a>IsSubjectActor</p>
+  <p dir="ltr" class="FM_Body">Determines if the subject specified (argument) is currently the actor (focal subject) of the track being analyzed. The return value is boolean (true or false). You can use this function to skip comparisons and calculations that do not make sense.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">IsSubjectActor(Subject name)</p>
+  <p dir="ltr" class="FM_Indented">Where Subject name is the name of one of the subjects listed in the Experiment Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">In this example a for loop scans the list of i subjects Subject 1, Subject 2, etc. contained in the array g_aSubjects[i] and calculates the distance between the focal subject (that is, the subject of the currently analyzed track) and the subject i. </p>
+  <p dir="ltr" class="FM_Small_text_indented">for (i = 0; i &lt; g_aSubjects.length; ++i)</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;var ptSubj = GetSubjectCenter(g_aSubjects[i]);</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;(...)</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;//invoke Distance function</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;var Dist = Distance(ptFocal, ptSubj);</p>
+  <p dir="ltr" class="FM_Indented">Obviously at some point in this loop the focal subject and the subject i are the same individual. You can exclude the distance calculation focal-to-focal by inserting an extra check.</p>
+  <p dir="ltr" class="FM_Small_text_indented">var b = IsSubjectActor(g_aSubject[i]);</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;if b = true</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//invoke distance function</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_31767_Distance"></a>Distance</p>
+  <p dir="ltr" class="FM_Body">To calculate the distance between two points, see <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm?rhhlterm=javascript&amp;rhsyns=%20#XREF_45806_Point_Distance">Point.Distance</a>. You can also use the code here below and invoke the function in your script. Distance is expressed in internal units (mm), independent of the units selected in the Experiment Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">function</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">// Function to calculate distance between two points</p>
+  <p dir="ltr" class="FM_Small_text_indented">function Distance(pt1, pt2)</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;var dx = pt1.x - pt2.x;</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;var dy = pt1.y - pt2.y;</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;&nbsp;return Math.sqrt(dx * dx + dy * dy);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example of function call</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">//Get the center point of subject 1 and subject 2</p>
+  <p dir="ltr" class="FM_Small_text_indented">var cSubj1 = GetSubjectCenter(“Subject 1”);</p>
+  <p dir="ltr" class="FM_Small_text_indented">var cSubj2 = GetSubjectCenter(“Subject 2”);</p>
+  <p dir="ltr" class="FM_Small_text_indented">//call distance function</p>
+  <p dir="ltr" class="FM_Small_text_indented">var Dist = Distance(cSubj1, cSubj2);</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">errors</span></p>
+  <p dir="ltr" class="FM_Indented">If one of the two points is null, the value is not calculated.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_45806_Point_Distance"></a>Point.Distance</p>
+  <p dir="ltr" class="FM_Body">Calculates the distance between two points. Distance is expressed in internal units (mm), independent of the units selected in the Experiment Settings.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">point1.Distance(point2)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">point1: the first point</p>
+  <p dir="ltr" class="FM_Indented">point2: the second point</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var pt1 = GetCenter();</p>
+  <p dir="ltr" class="FM_Small_text_indented">var pt2 = GetNose();</p>
+  <p dir="ltr" class="FM_Small_text_indented">var dist = pt1.Distance(pt2);</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">errors</span></p>
+  <p dir="ltr" class="FM_Indented">If one of the two points is null, the value is not calculated and an invalid reference is returned.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_56267_TurnAngle"></a>TurnAngle</p>
+  <p dir="ltr" class="FM_Body">Returns the angle in radians between three points. The name suggests that this function is restricted to turn angles but you can use it to calculate any angle formed by three points in general. See also <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Turn_angle.htm#XREF_69019_Turn_angle">Turn angle</a></p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">TurnAngle(Point 1, Point 2, Point 3)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Point 1: the name of the begin point.</p>
+  <p dir="ltr" class="FM_Indented">Point 2: the name of the middle point.</p>
+  <p dir="ltr" class="FM_Indented">Point 3: the name of the end point. This is the point at the current sample time, while Point 1 and Point 2 are the points at two immediately preceding sample times.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">ta = <span style="font-weight : bold; ">TurnAngle</span>(g_aPoints[0], g_aPoints[1], g_aPoints[2]);</p>
+  <p dir="ltr" class="FM_Indented">where g_aPoints is an array variable of length 3.</p>
+  <p dir="ltr" class="FM_Indented">Remember that TurnAngle is in radians. At the top of the code, define a function to obtain the value in degrees:</p>
+  <p dir="ltr" class="FM_Small_text_indented">function toDegrees(angle) </p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;return angle * (180 / Math.PI);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">(...)</p>
+  <p dir="ltr" class="FM_Small_text_indented">var tadg = <span style="font-weight : bold; ">toDegrees</span>(ta);</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">errors</span></p>
+  <p dir="ltr" class="FM_Indented">If any of the three points is null, the value is not calculated.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_66996_Heading"></a>Heading</p>
+  <p dir="ltr" class="FM_Body">Returns the value of heading in radians based on two sample points. See <a>Heading</a></p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">Heading(Point 1, Point 2)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Point 1: Begin point.</p>
+  <p dir="ltr" class="FM_Indented">Point 2: End point.</p>
+  <p dir="ltr" class="FM_Indented">To calculate heading, Point 1 is the point at the previous sample time and Point 2 the point at the current sample time.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">var hd = <span style="font-weight : bold; ">Heading</span>(g_aPoints[0], g_aPoints[1]);</p>
+  <p dir="ltr" class="FM_Indented">where g_aPoints is an array variable of length 2.</p>
+  <p dir="ltr" class="FM_Indented">At the top of the code, define a function to obtain the value in degrees:</p>
+  <p dir="ltr" class="FM_Small_text_indented">function toDegrees(angle) </p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;return angle * (180 / Math.PI);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">(...)</p>
+  <p dir="ltr" class="FM_Small_text_indented">var hdg = <span style="font-weight : bold; ">toDegrees</span>(hd);</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">errors</span></p>
+  <p dir="ltr" class="FM_Indented">If one of the two points is null, the value is not calculated.</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_66782_SetOutput"></a>SetOutput</p>
+  <p dir="ltr" class="FM_Body">Assigns a value to the JavaScript variable for the current sample time.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">SetOutput(Value)</p>
+  <p dir="ltr" class="FM_Small_text_indented">SetOutput(Output, Value)</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">arguments</span></p>
+  <p dir="ltr" class="FM_Indented">Value: the value that you want to assign to the variable at the current sample time. </p>
+  <p dir="ltr" class="FM_Bulleted_indented">▪<span style="padding-left: 17pt;" class="FMAutoNumber_1"></span>For JavaScript Continuous variables: a rational number.</p>
+  <p dir="ltr" class="FM_Bulleted_indented">▪<span style="padding-left: 17pt;" class="FMAutoNumber_1"></span>For JavaScript State variables: true or false.</p>
+  <p dir="ltr" class="FM_Bulleted_indented">▪<span style="padding-left: 17pt;" class="FMAutoNumber_1"></span>For JavaScript Event variables: 0 or 1.</p>
+  <p dir="ltr" class="FM_Indented">Output: Output number. When the variable has just one value per sample, like in most applications, then you do not need to specify Output. When the variable has multiple outputs, like in a state variable with 4 possible states, specify the output in each line (beginning from zero). For example </p>
+  <p dir="ltr" class="FM_Small_text_indented">SetOutput(0, bOutput1); //write first state</p>
+  <p dir="ltr" class="FM_Small_text_indented">SetOutput(1, bOutput2); //write second state</p>
+  <p dir="ltr" class="FM_Small_text_indented">SetOutput(2, bOutput3); //write third state</p>
+  <p dir="ltr" class="FM_Small_text_indented">SetOutput(3, bOutput4); //write fourth state</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">if (x != null)</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;<span style="font-weight : bold; ">SetOutput</span>(x);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">errors</span></p>
+  <p dir="ltr" class="FM_Indented">If the value is null or undefined, the output will be missing.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">notes</span></p>
+  <p dir="ltr" class="FM_Indented">When the variable has multiple outputs, remember to specify the <span class="FM_Bold">Number of outputs</span> at the bottom of the JavaScript window.</p>
+  <p dir="ltr" class="FM_Indented"><img alt="inset_10501045.jpg" id="image1046" src="./Commands and functions for JavaScript variables_files/inset_10501045.jpg" style="width:100%; max-width:347px">&nbsp;</p>
+  <p dir="ltr" class="FM_Heading_2"><a name="XREF_83638_SetOutputMissing"></a>SetOutputMissing</p>
+  <p dir="ltr" class="FM_Body">Assigns a missing value to the JavaScript variable for the current sample time.</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">syntax</span></p>
+  <p dir="ltr" class="FM_Small_text_indented">SetOutputMissing()</p>
+  <p dir="ltr" class="FM_Bulleted" style="font-weight : bold; font-variant : small-caps;">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">example</span></p>
+  <p dir="ltr" class="FM_Indented">In the following example, if the value of x is not null, it is assigned to the output of the JavaScript variable; otherwise it is set to missing. </p>
+  <p dir="ltr" class="FM_Small_text_indented">if (x != null)</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented"> &nbsp;&nbsp;SetOutput(x);</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Small_text_indented">else</p>
+  <p dir="ltr" class="FM_Small_text_indented">{</p>
+  <p dir="ltr" class="FM_Small_text_indented">&nbsp;&nbsp;&nbsp;<span style="font-weight : bold; ">SetOutputMissing</span>();</p>
+  <p dir="ltr" class="FM_Small_text_indented">}</p>
+  <p dir="ltr" class="FM_Heading_3">See also</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm#XREF_86779_JavaScript">JavaScript continuous</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_state.htm#XREF_21016_JavaScript_state">JavaScript state</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_event.htm#XREF_39400_JavaScript_event">JavaScript event</a></p>
+  <p dir="ltr" class="FM_Body">&nbsp;</p>
+  </div>
+
+</body></html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<!-- saved from url=(0196)file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Activity_state.htm#XREF_41519_Activity_state -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style>.rh-hide:not(.rh-animate){display:none !important;}</style>
+
+ 
+ <title>Activity state</title>
+
+ <link rel="stylesheet" href="./Activity state_files/EV_Dependent_Variables_in_Detail.css" type="text/css">
+
+ <link rel="stylesheet" href="./Activity state_files/HTMLStyling.css" type="text/css">
+ <link rel="StyleSheet" href="./Activity state_files/Responsive_HTML5_stylesheet.css" type="text/css">
+
+
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe FrameMaker 2017">
+<script type="text/javascript" src="./Activity state_files/rh.min.js"></script>
+<script type="text/javascript" src="./Activity state_files/common.min.js"></script>
+<script type="text/javascript" src="./Activity state_files/topic.min.js"></script>
+<script type="text/javascript" src="./Activity state_files/constants.js"></script>
+<script type="text/javascript" src="./Activity state_files/utils.js"></script>
+<script type="text/javascript" src="./Activity state_files/mhutils.js"></script>
+<script type="text/javascript" src="./Activity state_files/mhlang.js"></script>
+<script type="text/javascript" src="./Activity state_files/mhver.js"></script>
+<script type="text/javascript" src="./Activity state_files/settings.js"></script>
+<script type="text/javascript" src="./Activity state_files/XmlJsReader.js"></script>
+<script type="text/javascript" src="./Activity state_files/loadparentdata.js"></script>
+<script type="text/javascript" src="./Activity state_files/loadscreen.js"></script>
+<script type="text/javascript" src="./Activity state_files/loadprojdata.js"></script>
+<script type="text/javascript" src="./Activity state_files/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="./Activity state_files/topic.min.css">
+<script type="text/javascript">
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "18.1.0_8";
+</script>
+ <meta name="brsprev" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Activity.htm">
+ <meta name="brsnext" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_elongation.htm">
+ <meta name="topic-breadcrumbs" content="Dependent Variables in Detail &gt; Activity and Movement">
+<script type="text/javascript" charset="utf-8" src="./Activity state_files/screendata.js"></script><script type="text/javascript" charset="utf-8" src="./Activity state_files/parentdata.js"></script><script src="./Activity state_files/projectdata.js"></script><style type="text/css">.topic-header { background-color: #232323; color: #FFFFFF; width: calc(100%); height: 3em; position: fixed; left: 0; top: 0; font-family: Segoe UI; display: table; box-sizing: border-box; }.topic-header-shadow { height: 3em; width: 100%; }.logo { cursor: pointer; padding: 0.2em; height: calc(100% - 0.4em); text-align: center; display: table-cell; vertical-align: middle; }.logo img { max-height: 100%; display: block; }.nav { width: 100%; display: table-cell; }.title { width: 40%; height: 100%; float: left; line-height: 3em; cursor: pointer; }.gotohome { width: 60%; float: left; text-align: right; height: 100%; line-height: 3em; cursor: pointer; }.title span, .gotohome span { padding: 0em 1em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; display: block; }</style></head>
+
+<body dir="ltr"><div><div class="topic-header">  <div class="logo" onclick="rh._.redirectToLayout()">    <img src="./Activity state_files/logo.png">  </div>  <div class="nav">    <div class="title" title="EthoVision XT 19 Help">      <span onclick="rh._.redirectToLayout()">EthoVision XT 19 Help</span>    </div>    <div class="gotohome" title="" onclick="rh._.redirectToLayout()">      <span></span>    </div></div>  </div><div class="topic-header-shadow"></div></div>
+<script type="text/javascript" src="./Activity state_files/ehlpdhtm.js"></script>
+ <div dir="ltr">
+  <h1 dir="ltr"><a name="IX_activity_state_2"></a><a name="IX_activity_3"></a><a name="IX_dependent_variables_2"></a><a name="XREF_41519_Activity_state"></a>Activity state</h1>
+  <p dir="ltr" class="FM_Body"><a name="IX_definition_4"></a>The dependent variable <span class="FM_Emphasis">Activity state</span>&nbsp;is only available when you selected Activity analysis in the Experiment Settings and you track only one subject per arena. With Activity state you can calculate how long and how frequent your subject has been in different activity states. These states depend on the total pixel change within the arena between a sample and the previous sample. The number of states and their thresholds are user-defined. </p>
+  <p dir="ltr" class="FM_Body">When the subject goes missing for more than three samples, the current <span class="FM_Emphasis">Activity state</span> is ended and the remaining missing samples are ignored.</p>
+  <p dir="ltr" class="FM_Heading_2">Calculation</p>
+  <p dir="ltr" class="FM_Heading_3"><a name="IX_calculation_1"></a>Step 1 - Calculation of proportion of pixel change</p>
+  <p dir="ltr" class="FM_Body">All pixel coordinates in the arena, so not only of the detected subject, are determined immediately after they have been detected. The gray scale values of all pixels are compared with the previous sample to determine the number of changed pixels in the arena between the two. The formula for Activity is simply the number of changed pixels for the current sample <span class="FM_Emphasis">k </span>divided by the total number of pixels in the arena:</p>
+  <p dir="ltr" class="FM_Body"><img alt="inset_4800920.jpg" id="image920" src="./Activity state_files/inset_4800920.jpg" style="width:100%; max-width:191px">&nbsp;</p>
+  <p dir="ltr" class="FM_Body"><span class="FM_Emphasis">Activity</span>&nbsp;is calculated by taking every pixel and comparing it between the current image and the previous one. If all the pixels are the same, there is zero activity. If all the pixels are different, there is 100% activity. If the animal is moving and increases its velocity (whilst keeping the same shape) there will be an increase in activity, because the pixels belonging to the animal are increasingly different as it moves faster.</p>
+  <p dir="ltr" class="FM_Heading_3"><a name="IX_running_average"></a><a name="XREF_13789_Step_3_Running"></a>Step 2 - Running average</p>
+  <p dir="ltr" class="FM_Body">To smooth the values of Activity, an Averaging interval is used. This gives you the option to specify the number of samples for calculating a running average of Activity. The Activity percentage is summed over the number of samples that you specify, and divided by the number of samples. This way, sudden changes in surface area caused by such factors as the animal entering a shadowed area, or a reflection, are smoothed out.</p>
+  <p dir="ltr" class="FM_Body"><span class="FM_All_caps">note</span>&nbsp;&nbsp;When you export the dependent variable, each row in the export file contains the Activity value, but not the averaging interval.</p>
+  <p dir="ltr" class="FM_Heading_3"><a name="IX_calculation_of_activity"></a>Step 3 - Calculation of the Activity state dependent variable</p>
+  <p dir="ltr" class="FM_Body">The <span class="FM_Emphasis">Activity state</span>&nbsp;variable is established for each sample, according to the value of running average Activity relative to the thresholds. You can define between two and four states, varying from <span class="FM_Emphasis">Inactive </span>(below the lowest threshold) to <span class="FM_Emphasis">Highly active</span>&nbsp;(above the highest threshold). </p>
+  <p dir="ltr" class="FM_Heading_2">How to specify Activity state</p>
+  <p dir="ltr" class="FM_Numbered_first">1.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Click the <span class="FM_Bold">Add</span>&nbsp;button next to <span class="FM_Bold">Activity State</span>.</p>
+  <p dir="ltr" class="FM_Numbered">2.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Enter the following: </p>
+  <p dir="ltr" class="FM_Indented"><a name="IX_activity_state_3"></a><span class="FM_Bold">Averaging</span>&nbsp;<span class="FM_Bold">Interval</span>: The number of samples over which the running average mobility is based. The default value is <span class="FM_Bold">1</span>, that is, the current value of Elongation is only based on the current image.</p>
+  <p dir="ltr" class="FM_Numbered">3.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span><a name="XREF_43134_3_Under_Number_of"></a>Under <span class="FM_Bold">Number</span>&nbsp;<span class="FM_Bold">of</span>&nbsp;<span class="FM_Bold">states</span>, select the number of activity levels you are interested in. The following options are available, dependent on the number of states:</p>
+  <p dir="ltr" class="FM_Indented"><span class="FM_Bold">2 states</span>: Highly active above and Inactive below.</p>
+  <p dir="ltr" class="FM_Indented"><span class="FM_Bold">3 states</span>: Highly active above, Moderately active between and Inactive below. </p>
+  <p dir="ltr" class="FM_Indented"><span class="FM_Bold">4 states</span>: Highly active above, Active between, Moderately active between and Inactive below. </p>
+  <p dir="ltr" class="FM_Numbered">4.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Under <span class="FM_Bold">Thresholds</span>, specify thresholds for the states defined in step <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Activity_state.htm#XREF_43134_3_Under_Number_of">3</a>. </p>
+  <p dir="ltr" class="FM_Indented"><a name="IX_thresholds"></a>You can enter a number with up to two decimals.</p>
+  <p dir="ltr" class="FM_Bulleted_indented">▪<span style="padding-left: 17pt;" class="FMAutoNumber_1"></span>Under <span class="FM_Bold">State duration threshold</span>, in the field next to E<span class="FM_Bold">xclude instances shorter than</span>, enter how long a state must last before it is scored as one of the four Activity states. If the duration passes this threshold, the samples in this time length are scored as one of the four states according to the criteria above. If the duration does not pass the threshold, the previous state ends, but no new state is defined. When you visualize <span class="FM_Emphasis">Activity state</span>&nbsp;in the Integrated Visualization, this is displayed as a gap between two adjacent color bars, which represent the scored activity states.</p>
+  <p dir="ltr" class="FM_Bulleted_indented">▪<span style="padding-left: 17pt;" class="FMAutoNumber_1"></span>Under <span class="FM_Bold">Calculate statistics for</span>, select at least one of the <span style="letter-spacing : 0.01em; ">states defined in step </span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Activity_state.htm#XREF_43134_3_Under_Number_of"><span style="letter-spacing : 0.01em; ">3</span></a><span style="letter-spacing : 0.01em; "></span>.</p>
+  <p dir="ltr" class="FM_Numbered">5.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Complete the procedure to add the variable. See <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Calculate_Statistics/Calculate_statistics_procedure.htm#XREF_17682_General_procedure">Calculate statistics: procedure</a>.</p>
+  <p dir="ltr" class="FM_Body">To find the optimal activity thresholds, run a few test trials and check in the Analysis Results and Scoring pane the values of Activity when the animal shows such behavior. These values are calculated real-time during acquisition. See an example in <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Acquire_Data/Choose_a_variable_to_view_real-time.htm#XREF_72441_Activity_state">Fear conditioning: view Activity state</a>.</p>
+  <p dir="ltr" class="FM_Heading_2">Notes</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">important</span>&nbsp;The Activity detection thresholds set in Acquisition are not used in analysis. When you specify <span class="FM_Emphasis">Activity</span>&nbsp;in your Analysis profile, enter the new values in the appropriate fields.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>In some cases the number of samples available for smoothing can be less than the averaging interval entered. For example, when there are missing samples or at the beginning of the track. In such cases EthoVision XT uses the samples available in the specified interval. For example, the value of Activity for the first sample of the track is always calculated over one sample.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>You set the thresholds during acquisition, but you can override them when calculating statistics to produce new values for Activity state. To see what the original values of Activity state thresholds were (unless you have changed them while acquiring data), open the Acquisition module and click the button under <span class="FM_Bold">Activity</span>&nbsp;in the Analysis results and Scoring pane. </p>
+  <p dir="ltr" class="FM_Heading_2"><a name="IX_frequently_asked"></a><a name="XREF_16294_Frequently_asked"></a>Frequently asked questions about Activity</p>
+  <p dir="ltr" class="FM_Numbered_first" style="font-style : italic;"><a name="IX_difference_with_activity"></a><a name="IX_difference_with_mobility"></a>1.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span><span class="FM_Emphasis">What is the difference between Activity and Mobility?</span></p>
+  <p dir="ltr" class="FM_Indented">Activity is the percentage change in <span style="text-decoration  : underline  ;
+		">all pixels</span>&nbsp;in the arena between the current sample and the previous sample. This is independent of the detected subject.</p>
+  <p dir="ltr" class="FM_Indented">Mobility is the percentage pixel change between the current sample and the previous sample <span style="text-decoration  : underline  ;
+		">in the detected subject only</span>. See <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Rotation.htm#XREF_69871_Mobility_continuous">Rotation</a></p>
+  <p dir="ltr" class="FM_Numbered" style="font-style : italic;">2.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span><span class="FM_Emphasis">When should I use Activity and when should I use Mobility?</span></p>
+  <p dir="ltr" class="FM_Indented">Use Activity when the dependent variable Mobility does not give satisfying results, or if detection of your subject is difficult. This can be the case when bars of the shock grid floor in the background complicate detection of the animal’s surface area, or when the animal is very large compared to the arena size. </p>
+  <p dir="ltr" class="FM_Numbered" style="font-style : italic;">3.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span><span class="FM_Emphasis">Does </span><span class="FM_Emphasis">Activity </span><span class="FM_Emphasis">detection depend on the size of the subject relative to the arena?</span></p>
+  <p dir="ltr" class="FM_Indented">Yes. Activity is calculated as the number of changed pixels divided by the total number of pixels in the arena. The smaller the subject relative to the arena, the smaller the activity will be. When your animal is very large in comparison to the arena size, for example when you have a rat in a small cage, activity detection is generally more suitable than mobility detection. </p>
+  <p dir="ltr" class="FM_Numbered" style="font-style : italic;">4.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span><span class="FM_Emphasis">Does </span><span class="FM_Emphasis">Activity</span><span class="FM_Emphasis"> detection depend on the video resolution?</span></p>
+  <p dir="ltr" class="FM_Indented">Yes. The higher the video resolution, the greater the number of pixels that change when the subject moves. Therefore, when you have a high video resolution, it is less likely that a small movement of the subject results in an abrupt change in activity.</p>
+  <p dir="ltr" class="FM_Indented">However, this effect is present at very low resolution (for example, when the subject is less than 100 pixels large). We advise you not to compare values of Activity between videos of different resolutions.</p>
+  <p dir="ltr" class="FM_Numbered" style="font-style : italic;">5.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span><span class="FM_Emphasis">Does </span><span class="FM_Emphasis">Activity</span><span class="FM_Emphasis"> detection depend on sample rate?</span></p>
+  <p dir="ltr" class="FM_Indented">Yes. Since Activity is detected from the change in pixels between two samples, and the pixel change depends on how frequently the area is acquired (that is, the sample rate), Activity depends on the sample rate. All being equal, the higher the sample rate, the smaller the pixel change. See also the effect of the sample rate on Mobility in <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Frequently_asked_questions_about_Mobility.htm#XREF_66588_Frequently_asked">Frequently asked questions about Mobility</a>. </p>
+  <p dir="ltr" class="FM_Heading_2"><a name="IX_application_3"></a>Applications</p>
+  <p dir="ltr" class="FM_Body"><span class="FM_Emphasis">Activity</span>&nbsp;can be used to determine freezing behavior in rodents. Also, it may be used to assess inactivity of rodents in a Porsolt Swim Test. Furthermore, the startle response of zebrafish larvae can automatically be detected with (in)activity. </p>
+  </div>
+
+</body></html>

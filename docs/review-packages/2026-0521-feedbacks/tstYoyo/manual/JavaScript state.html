@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<!-- saved from url=(0203)file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_state.htm?rhhlterm=javascript&rhsyns=%20 -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style>.rh-hide:not(.rh-animate){display:none !important;}</style>
+
+ 
+ <title>JavaScript state</title>
+
+ <link rel="stylesheet" href="./JavaScript state_files/EV_Dependent_Variables_in_Detail.css" type="text/css">
+
+ <link rel="stylesheet" href="./JavaScript state_files/HTMLStyling.css" type="text/css">
+ <link rel="StyleSheet" href="./JavaScript state_files/Responsive_HTML5_stylesheet.css" type="text/css">
+
+
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe FrameMaker 2017">
+<script type="text/javascript" src="./JavaScript state_files/rh.min.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/common.min.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/topic.min.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/constants.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/utils.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/mhutils.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/mhlang.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/mhver.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/settings.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/XmlJsReader.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/loadparentdata.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/loadscreen.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/loadprojdata.js"></script>
+<script type="text/javascript" src="./JavaScript state_files/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="./JavaScript state_files/topic.min.css">
+<script type="text/javascript">
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "18.6.0_16";
+</script>
+ <meta name="brsprev" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_event.htm">
+ <meta name="brsnext" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm">
+ <meta name="topic-breadcrumbs" content="Dependent Variables in Detail &gt; Hardware and Advanced">
+<script type="text/javascript" charset="utf-8" src="./JavaScript state_files/screendata.js"></script><script type="text/javascript" charset="utf-8" src="./JavaScript state_files/parentdata.js"></script><script src="./JavaScript state_files/projectdata.js"></script><style type="text/css">.topic-header { background-color: #232323; color: #FFFFFF; width: calc(100%); height: 3em; position: fixed; left: 0; top: 0; font-family: Segoe UI; display: table; box-sizing: border-box; }.topic-header-shadow { height: 3em; width: 100%; }.logo { cursor: pointer; padding: 0.2em; height: calc(100% - 0.4em); text-align: center; display: table-cell; vertical-align: middle; }.logo img { max-height: 100%; display: block; }.nav { width: 100%; display: table-cell; }.title { width: 40%; height: 100%; float: left; line-height: 3em; cursor: pointer; }.gotohome { width: 60%; float: left; text-align: right; height: 100%; line-height: 3em; cursor: pointer; }.title span, .gotohome span { padding: 0em 1em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; display: block; }</style></head>
+
+<body dir="ltr"><div><div class="topic-header">  <div class="logo" onclick="rh._.redirectToLayout()">    <img src="./JavaScript state_files/logo.png">  </div>  <div class="nav">    <div class="title" title="EthoVision XT 19 Help">      <span onclick="rh._.redirectToLayout()">EthoVision XT 19 Help</span>    </div>    <div class="gotohome" title="" onclick="rh._.redirectToLayout()">      <span></span>    </div></div>  </div><div class="topic-header-shadow"></div></div>
+<script type="text/javascript" src="./JavaScript state_files/ehlpdhtm.js"></script>
+ <div dir="ltr">
+  <h1 dir="ltr"><a name="XREF_21016_JavaScript_state"></a>JavaScript state</h1>
+  <p dir="ltr" class="FM_Heading_2">Definition</p>
+  <p dir="ltr" class="FM_Body">A custom variable that processes raw data (for example, the subject coordinates, or the distance moved) and produces a state (on/off) value for each sample of the track, based on an algorithm.</p>
+  <p dir="ltr" class="FM_Heading_2">Use cases</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span style="font-style : italic; ">Velocity bins</span>. Get the per-sample values of velocity and create velocity bins, for example from 0 to 100 mm/s, from 100 to 200 mm/s etc. </p>
+  <p dir="ltr" class="FM_Indented"><img alt="inset_10301044.jpg" id="image1045" src="./JavaScript state_files/inset_10301044.jpg" style="width:100%; max-width:450px">&nbsp;</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_Emphasis">Aggregation detector</span>. Calculate the number of subjects present in a zone and set the output of the variable to 1 if the number of subjects exceeds a certain threshold. Use this variable for example to calculate the time that more than 50% of the subjects cluster in one zone.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><span class="FM_All_caps">tip</span>&nbsp;&nbsp;Browse to my.noldus.com, log in or register and choose <span class="FM_Bold">Downloads</span>&nbsp;&gt; <span class="FM_Bold">EthoVision XT</span>&nbsp;&gt; <span class="FM_Bold">Drivers and tools</span>. There you can download examples of JavaScript state variables. Simply copy the code to the JavaScript State window and follow the instructions (see below).</p>
+  <p dir="ltr" class="FM_Heading_2">Calculation</p>
+  <p dir="ltr" class="FM_Body">The main difference with the JavaScript continuous variable is that the value calculated per sample and specified in SetOutput() is either 0 or 1. The variable has a duration based on the total number of 1s in the track or selected track segment.</p>
+  <p dir="ltr" class="FM_Body">See <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm#XREF_86779_JavaScript">JavaScript continuous</a>&nbsp;&gt; <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_custom_variables.htm#XREF_64451_Calculation">Calculation</a></p>
+  <p dir="ltr" class="FM_Heading_2">How to specify a JavaScript state variable</p>
+  <p dir="ltr" class="FM_Numbered_first">1.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>In the Analysis profile, under <span class="FM_Bold">Custom Variables</span>, click the button next to <span class="FM_Bold">JavaScript state</span>.</p>
+  <p dir="ltr" class="FM_Numbered">2.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Enter the code in the JavaScript State window. </p>
+  <p dir="ltr" class="FM_Numbered">3.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Next to <span class="FM_Bold">Number of outputs</span>, select the number of possible states of the variable. For example, in the Velocity example described above, select 4.</p>
+  <p dir="ltr" class="FM_Numbered">4.<span style="padding-left: 10pt;" class="FMAutoNumber_1"></span>Follow the rest of the procedure in <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm#XREF_86779_JavaScript">JavaScript continuous</a>&nbsp;&gt; <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm#XREF_20145_To_specify_a">To specify a JavaScript continuous variable</a>.</p>
+  <p dir="ltr" class="FM_Heading_2">Notes</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>In the Trial Statistics tab, select <span class="FM_Bold">Cumulative Duration</span>&nbsp;to calculate the total time that the state variable is “on”.</p>
+  <p dir="ltr" class="FM_Heading_3">See also</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_continuous.htm#XREF_86779_JavaScript">JavaScript continuous</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/JavaScript_event.htm#XREF_39400_JavaScript_event">JavaScript event</a></p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span><a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Commands_and_functions_for_JavaScript_variables.htm#XREF_62170_Commands_and">Commands and functions for JavaScript variables</a></p>
+  <p dir="ltr" class="FM_Body">&nbsp;</p>
+  </div>
+
+</body></html>
