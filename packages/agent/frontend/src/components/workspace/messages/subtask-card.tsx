@@ -122,6 +122,15 @@ export function SubtaskCard({
             </div>
           </Button>
         </div>
+        {task.status === "completed" && task.result && (
+          <div className="border-border/60 bg-muted/30 mx-3 mb-3 rounded-md border px-3 py-2">
+            <div className="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-medium">
+              <LightbulbIcon className="size-3" />
+              <span>{t.subtasks.taskResult}</span>
+            </div>
+            <MarkdownContent content={task.result} isLoading={false} />
+          </div>
+        )}
         <ChainOfThoughtContent className="px-4 pb-4">
           {task.prompt && (
             <ChainOfThoughtStep
@@ -146,23 +155,6 @@ export function SubtaskCard({
               messages={task.messages}
               isLoading={task.status === "in_progress"}
             />
-          )}
-          {task.status === "completed" && task.result && (
-            <ChainOfThoughtStep
-              label={
-                <span className="text-muted-foreground">
-                  {t.subtasks.taskResult}
-                </span>
-              }
-              icon={<CheckCircleIcon className="size-3" />}
-            >
-              <div className="pt-1">
-                <MarkdownContent
-                  content={task.result}
-                  isLoading={false}
-                />
-              </div>
-            </ChainOfThoughtStep>
           )}
           {task.status === "failed" && (
             <ChainOfThoughtStep

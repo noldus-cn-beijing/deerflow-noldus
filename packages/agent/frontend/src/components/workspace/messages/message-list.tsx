@@ -274,14 +274,64 @@ export function MessageList({
                 {results}
               </div>
             );
+          } else if (group.type === "assistant:processing") {
+            // Intermediate-step group: AIMessages that carry tool_calls (non-task,
+            // non-present_files) like ask_clarification / set_viz_choice /
+            // set_experiment_paradigm / prep_metric_plan / read_file. Without this
+            // branch we'd fall back to <MessageGroup>, which buries content in
+            // the CoT (thinking) collapse — that is the 2026-05-25 regression
+            // where lead's "已收到 X 的结果..." 汇报 was invisible to the user
+            // because cd512536 (5/21) packed report + ask_clarification into the
+            // same AIMessage (see thread 9f77adcc-2a18-... vs 7456611e-... where
+            // the final AIMessage had no tool_call and rendered as a main bubble).
+            //
+            // Strategy: render each AIMessage's narrative content as a main
+            // bubble; keep reasoning in its own collapsible MessageGroup (so
+            // users can still inspect thinking); tool_call results render via
+            // their own dedicated groups elsewhere (assistant:clarification,
+            // etc.).
+            const results: React.ReactNode[] = [];
+            for (const message of group.messages) {
+              if (message.type !== "ai") {
+                continue;
+              }
+              if (hasReasoning(message)) {
+                results.push(
+                  <MessageGroup
+                    key={"thinking-group-" + message.id}
+                    messages={[message]}
+                    isLoading={thread.isLoading}
+                  />,
+                );
+              }
+              if (hasContent(message)) {
+                const narrative = extractContentFromMessage(message);
+                if (narrative) {
+                  results.push(
+                    <MarkdownContent
+                      key={"narrative-" + message.id}
+                      content={narrative}
+                      isLoading={thread.isLoading}
+                    />,
+                  );
+                }
+              }
+            }
+            if (results.length === 0) {
+              return null;
+            }
+            return (
+              <div
+                key={"processing-group-" + group.id}
+                className="flex flex-col gap-2"
+              >
+                {results}
+              </div>
+            );
           }
-          return (
-            <MessageGroup
-              key={"group-" + group.id}
-              messages={group.messages}
-              isLoading={thread.isLoading}
-            />
-          );
+          // All MessageGroup variants are handled above; this is unreachable.
+          // Returning null keeps TypeScript's exhaustive narrowing happy.
+          return null;
         },
         { isStreaming: thread.isLoading },
         )}
