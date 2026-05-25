@@ -286,6 +286,7 @@ def resolve_charts(
     total_subjects: int | None = None,
     n_per_group: int | None = None,
     n_groups: int | None = None,
+    total_duration_seconds: float | None = None,
     groups_file: str | None = None,
     columns_file: str | None = None,
     ev19_template: str | None = None,
@@ -316,7 +317,7 @@ def resolve_charts(
 
     charts: list[PlanChart] = []
     for ch in cat.charts:
-        if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
+        if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
             charts.extend(_chart_to_plan(ch, raw_files, workspace_dir, paradigm=cat.paradigm, virtual_workspace_dir=virtual_workspace_dir))
 
     fallback: list[PlanChart] = []
@@ -326,7 +327,7 @@ def resolve_charts(
         except CatalogError:
             common = CommonCatalog(common_charts=[])
         for ch in common.common_charts:
-            if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
+            if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
                 fallback.extend(_chart_to_plan(ch, raw_files, workspace_dir, paradigm=cat.paradigm, virtual_workspace_dir=virtual_workspace_dir))
 
     notes: list[str] = []
@@ -459,6 +460,7 @@ def _stats_to_plan(
 def _evaluate_when(
     condition: str, *, n_per_group: int | None, n_groups: int | None,
     total_subjects: int | None = None,
+    total_duration_seconds: float | None = None,
 ) -> bool:
     cond = condition.strip()
     if cond == "always":
@@ -467,6 +469,7 @@ def _evaluate_when(
     for part in parts:
         if not _evaluate_atomic_when(
             part, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects,
+            total_duration_seconds=total_duration_seconds,
         ):
             return False
     return True
@@ -475,23 +478,26 @@ def _evaluate_when(
 def _evaluate_atomic_when(
     part: str, *, n_per_group: int | None, n_groups: int | None,
     total_subjects: int | None = None,
+    total_duration_seconds: float | None = None,
 ) -> bool:
     tokens = part.split()
     if len(tokens) != 3:
         return False
     var, op, val_str = tokens
-    if op != ">=":
+    if op not in (">=", ">"):
         return False
     try:
-        val = int(val_str)
+        val = float(val_str)
     except ValueError:
         return False
     if var == "n_per_group":
-        return n_per_group is not None and n_per_group >= val
+        return n_per_group is not None and (n_per_group >= val if op == ">=" else n_per_group > val)
     if var == "n_groups":
-        return n_groups is not None and n_groups >= val
+        return n_groups is not None and (n_groups >= val if op == ">=" else n_groups > val)
     if var == "total_subjects":
-        return total_subjects is not None and total_subjects >= val
+        return total_subjects is not None and (total_subjects >= val if op == ">=" else total_subjects > val)
+    if var == "total_duration_seconds":
+        return total_duration_seconds is not None and (total_duration_seconds >= val if op == ">=" else total_duration_seconds > val)
     return False
 
 

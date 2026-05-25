@@ -84,6 +84,10 @@ charts:
     script: ethoinsight.scripts._common.plot_heatmap
     when: total_subjects >= 1
     display_name_zh: "热区图"
+  - id: time_progress
+    script: ethoinsight.scripts.oft.plot_time_progress
+    when: total_duration_seconds > 300
+    display_name_zh: "时间进程图（5min bin）"
 
 statistics:
   default:
