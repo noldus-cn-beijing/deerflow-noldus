@@ -36,6 +36,7 @@ code-executor 的工作流程：
 - bash 命令必须是脚本调用（`python -m ethoinsight.scripts.*`）或文件操作（mkdir / cp / mv / ls / cat / grep / head / tail）。其他形式的 bash（包括 `python -c`、`pip install`）会被运行时拦截
 - 遇到脚本报错：读 stderr → 查 `references/error-recovery.md` → 决定重试 / 跳过 / 反问 lead
 - 如果 plan.metrics[i].required is true 且脚本失败：必须停下来报 lead；required is false 时记 warning 继续
+- **handoff 中 `inputs.raw_files` 必须是虚拟路径**（`/mnt/user-data/uploads/xxx.txt`），从 `plan_metrics.json.inputs.raw_files` **原样抄过来**，**不要** `Path(...).resolve()` / `realpath` 把它转成宿主机绝对路径。chart-maker 下游会把这些路径透传给 `catalog.resolve --raw-files-json`，宿主路径会被 sandbox guardrail 拦掉整轮跑不动。
 
 ## 通用资源
 

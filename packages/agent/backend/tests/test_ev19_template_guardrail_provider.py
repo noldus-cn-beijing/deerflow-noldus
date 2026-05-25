@@ -125,3 +125,30 @@ def test_allows_first_set_experiment_paradigm(workspace_without_ev19):
         "ev19_template": "PlusMaze-AllZones",
     }))
     assert decision.allow is True
+
+
+def test_allows_gate2_quality_acknowledgement_when_template_already_set(workspace_with_ev19):
+    """Regression: Gate 2 acknowledge_quality=True is orthogonal to template setting.
+    Previously this call was rejected as "template_already_set" because the guardrail
+    did not distinguish ack mode from a template-modification attempt, forcing the
+    LLM to retry with confirm_template_change=True (which is semantically wrong —
+    nothing about the template is changing).
+    """
+    p = _provider_with_workspace(workspace_with_ev19)
+    decision = p.evaluate(_make_request("set_experiment_paradigm", {
+        "acknowledge_quality": True,
+    }))
+    assert decision.allow is True
+
+
+def test_blocks_set_experiment_paradigm_when_ack_attempts_template_change(workspace_with_ev19):
+    """Defense in depth: acknowledge_quality=True PLUS a paradigm/template field is
+    treated as a smuggled template change and falls through to the lock check.
+    """
+    p = _provider_with_workspace(workspace_with_ev19)
+    decision = p.evaluate(_make_request("set_experiment_paradigm", {
+        "acknowledge_quality": True,
+        "ev19_template": "OpenFieldRectangle-AllZones",
+    }))
+    assert decision.allow is False
+    assert any(r.code == "ethoinsight.template_already_set" for r in decision.reasons)

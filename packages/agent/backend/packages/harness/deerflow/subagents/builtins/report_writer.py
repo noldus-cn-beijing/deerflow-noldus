@@ -188,11 +188,18 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 </json_writing>
 
 <workflow>
-1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
 2. read_file 两个 handoff 文件：
    - /mnt/user-data/workspace/handoff_code_executor.json（数据）
    - /mnt/user-data/workspace/handoff_data_analyst.json（解读）
    - 可选 read_file /mnt/user-data/workspace/handoff_planning.json 获取 group_semantics
+2.5 **按范式 read 判读文档**（用其"标准报告语言"作报告术语来源）：
+   - 从 handoff 的 paradigm 字段拿 slug
+   - read_file `/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md`
+   - 例：paradigm="forced_swim" → forced_swim.md；"epm" → epm.md；
+     "open_field" → open_field.md；"zero_maze" → zero_maze.md；
+     "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
+   - 把文档中"报告解读语言"段的标准表述用在报告里，不要自创术语
 
 <optional_chart_handoff>
 如果 lead 在 task prompt 中包含 handoff_chart_maker.json 路径
@@ -256,7 +263,7 @@ write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里
     model="inherit",
     max_turns=15,
     timeout_seconds=600,
-    skills=["ethoinsight", "ethoinsight-metric-catalog"],
+    skills=["ethoinsight", "ethoinsight-metric-catalog", "ethovision-paradigm-knowledge"],
     when_to_use=(
         "适合:\n"
         "- 已有 code-executor + data-analyst handoff,用户要'出报告' / '写 Discussion'\n"

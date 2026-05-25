@@ -70,9 +70,17 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 </json_writing>
 
 <workflow>
-1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
 2. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
    （一次读完，包含 per_subject / statistics / metrics_summary，不要零碎读多次）
+2.5 **按范式 read 对应判读文档**（解读语言/风险点/与其他范式区分由同事维护，必须 read）：
+   - 从 handoff_code_executor.json 的 paradigm 字段拿 slug
+   - read_file `/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md`
+   - 例如 paradigm="forced_swim" → read forced_swim.md；"epm" → epm.md；
+     "open_field" → open_field.md；"zero_maze" → zero_maze.md；
+     "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
+   - 该文档定义"必算指标"、"风险点"、"标准报告语言"、"与其他范式区分"——
+     在 method_warnings / recommendations / 解读语言中遵循它，不要自创术语
 2. 一次性完成核心分析推理（单轮 LLM 思考，不拆分多个 turn）：
    a. **方法学把关**：检查 statistics.test_used 是否匹配实验设计
       - MWM 训练数据用了 one-way ANOVA 而非 RM-ANOVA → method_warnings 添加一条
@@ -172,5 +180,5 @@ read_file:
         "outlier_count / excluded_metrics_count / statistical_validity / errors_count"
     ),
     required_upstream_handoffs=["code_executor"],
-    skills=["ethoinsight", "ethoinsight-metric-catalog"],
+    skills=["ethoinsight", "ethoinsight-metric-catalog", "ethovision-paradigm-knowledge"],
 )

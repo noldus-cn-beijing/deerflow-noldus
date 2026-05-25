@@ -170,13 +170,27 @@ export function MessageList({
                 const taskId = message.tool_call_id;
                 if (taskId) {
                   const result = extractTextFromMessage(message);
-                  if (result.startsWith("Task Succeeded. Result:")) {
+                  if (result.startsWith("Task Succeeded")) {
+                    // 兼容两种格式:
+                    // 旧: "Task Succeeded. Result: <...>"
+                    // 新 (5/22 起): "Task Succeeded.\n\n<timeline>\n## 最终结果\n<...>"
+                    const newDelim = "## 最终结果\n";
+                    const oldDelim = "Task Succeeded. Result:";
+                    let resultText: string | undefined;
+                    if (result.includes(newDelim)) {
+                      resultText = result.split(newDelim)[1]?.trim();
+                    } else if (result.startsWith(oldDelim)) {
+                      resultText = result.split(oldDelim)[1]?.trim();
+                    } else {
+                      // "Task Succeeded.\n\n" without timeline 也算成功，整体当 result
+                      resultText = result
+                        .replace(/^Task Succeeded\.\s*/u, "")
+                        .trim();
+                    }
                     updateSubtask({
                       id: taskId,
                       status: "completed",
-                      result: result
-                        .split("Task Succeeded. Result:")[1]
-                        ?.trim(),
+                      result: resultText,
                     });
                   } else if (result.startsWith("Task failed.")) {
                     updateSubtask({

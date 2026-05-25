@@ -7,6 +7,16 @@
 - 输出文件列表（metrics CSV、statistics JSON、charts PNG）
 - data_quality_warnings（如有）
 
+## handoff `inputs.raw_files` 路径约定（必读）
+
+`handoff_code_executor.json` 的 `inputs.raw_files` 字段**必须**是虚拟路径（`/mnt/user-data/uploads/xxx.txt`），**从 `plan_metrics.json.inputs.raw_files` 字段原样抄过来**。
+
+❌ 禁止：`Path(p).resolve()`、`os.path.realpath(p)`、把虚拟路径换成宿主机绝对路径（`/home/.../user-data/uploads/...`）。
+
+✅ 做法：直接 read plan_metrics.json → 取 `inputs.raw_files` → 原样写进 handoff。
+
+**为什么强制**：下游 chart-maker 读 handoff 拿 raw_files 后透传给 `catalog.resolve --raw-files-json`；resolve 会把这些路径原样写进 plan_charts.json 的 `input` 字段；plotting 脚本被 sandbox guardrail 校验调用参数中的路径——宿主路径会触发 `local.host_path_blocked` 拒绝，整轮跑不动。
+
 ## 脚本 stdout 最终输出契约
 
 `handoff_code_executor.json` 写盘后，**脚本 stdout 必须按以下格式输出 `[gate_signals]` 块**：
