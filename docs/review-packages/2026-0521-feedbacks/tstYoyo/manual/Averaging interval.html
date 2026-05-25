@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<!-- saved from url=(0204)file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Averaging_interval.htm#XREF_42033_Averaging_interval -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style>.rh-hide:not(.rh-animate){display:none !important;}</style>
+
+ 
+ <title>Averaging interval</title>
+
+ <link rel="stylesheet" href="./Averaging interval_files/EV_Dependent_Variables_in_Detail.css" type="text/css">
+
+ <link rel="stylesheet" href="./Averaging interval_files/HTMLStyling.css" type="text/css">
+ <link rel="StyleSheet" href="./Averaging interval_files/Responsive_HTML5_stylesheet.css" type="text/css">
+
+
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe FrameMaker 2017">
+<script type="text/javascript" src="./Averaging interval_files/rh.min.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/common.min.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/topic.min.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/constants.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/utils.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/mhutils.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/mhlang.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/mhver.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/settings.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/XmlJsReader.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/loadparentdata.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/loadscreen.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/loadprojdata.js"></script>
+<script type="text/javascript" src="./Averaging interval_files/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="./Averaging interval_files/topic.min.css">
+<script type="text/javascript">
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "18.1.0_3";
+</script>
+ <meta name="brsprev" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Velocity.htm">
+ <meta name="brsnext" value="EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Movement.htm">
+ <meta name="topic-breadcrumbs" content="Dependent Variables in Detail &gt; Activity and Movement">
+<script type="text/javascript" charset="utf-8" src="./Averaging interval_files/screendata.js"></script><script type="text/javascript" charset="utf-8" src="./Averaging interval_files/parentdata.js"></script><script src="./Averaging interval_files/projectdata.js"></script><style type="text/css">.topic-header { background-color: #232323; color: #FFFFFF; width: calc(100%); height: 3em; position: fixed; left: 0; top: 0; font-family: Segoe UI; display: table; box-sizing: border-box; }.topic-header-shadow { height: 3em; width: 100%; }.logo { cursor: pointer; padding: 0.2em; height: calc(100% - 0.4em); text-align: center; display: table-cell; vertical-align: middle; }.logo img { max-height: 100%; display: block; }.nav { width: 100%; display: table-cell; }.title { width: 40%; height: 100%; float: left; line-height: 3em; cursor: pointer; }.gotohome { width: 60%; float: left; text-align: right; height: 100%; line-height: 3em; cursor: pointer; }.title span, .gotohome span { padding: 0em 1em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; display: block; }</style></head>
+
+<body dir="ltr"><div><div class="topic-header">  <div class="logo" onclick="rh._.redirectToLayout()">    <img src="./Averaging interval_files/logo.png">  </div>  <div class="nav">    <div class="title" title="EthoVision XT 19 Help">      <span onclick="rh._.redirectToLayout()">EthoVision XT 19 Help</span>    </div>    <div class="gotohome" title="" onclick="rh._.redirectToLayout()">      <span></span>    </div></div>  </div><div class="topic-header-shadow"></div></div>
+<script type="text/javascript" src="./Averaging interval_files/ehlpdhtm.js"></script>
+ <div dir="ltr">
+  <h1 dir="ltr"><a name="XREF_42033_Averaging_interval"></a>Averaging interval</h1>
+  <p dir="ltr" class="FM_Heading_2">Aim</p>
+  <p dir="ltr" class="FM_Body">To smooth the values of a dependent variable.</p>
+  <p dir="ltr" class="FM_Heading_2">This topic applies to</p>
+  <p dir="ltr" class="FM_Body">Dependent variables: <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Acceleration_state.htm#XREF_85493_acceleration_state">Acceleration state</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_angle.htm#XREF_34881_Activity_continuous">Body angle</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Activity_state.htm#XREF_41519_Activity_state">Activity state</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_angle_state.htm#XREF_40275_body_angle_state">Body angle state</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_elongation.htm#XREF_62052_body_elongation">Body elongation</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Body_elongation_state.htm#XREF_50224_Elongation">Body elongation state</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/External_data_resampled.htm#XREF_92535_continuous_and">External data (resampled)</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/External_data_-_state.htm#XREF_23049_External_data_state">External data - state</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Rotation.htm#XREF_69871_Mobility_continuous">Rotation</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Mobility_state.htm#XREF_28826_Mobility">Mobility state</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Movement.htm#XREF_57571_Movement">Movement</a>, <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Velocity.htm#XREF_45425_Velocity">Velocity</a>. </p>
+  <p dir="ltr" class="FM_Body">The dependent variable can be in a condition defined in the Trial Control Settings, in the Analysis profile and in the Data profile. Setting the Averaging interval in one part of EthoVision XT does not influence the value of the same variable in the others.</p>
+  <p dir="ltr" class="FM_Heading_2">How to access this option</p>
+  <p dir="ltr" class="FM_Body">In the Trial Control Settings, in the Analysis profile or in the Data profile select the dependent variable and locate <span class="FM_Bold">Outlier filter</span>.</p>
+  <p dir="ltr" class="FM_Body"><img alt="inset_10100916.jpg" id="image916" src="./Averaging interval_files/inset_10100916.jpg" style="width:100%; max-width:356px">&nbsp;</p>
+  <p dir="ltr" class="FM_Heading_2">How Averaging interval works</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>When Averaging interval is 1, the outlier filter is off, thus the values of the variable are not smoothed.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>When Averaging interval is 2 or larger, EthoVision XT replaces the per-sample value of the dependent variable with the average calculated over the number of samples specified by the interval. </p>
+  <p dir="ltr" class="FM_Body">The table below shows how EthoVision XT re-calculates a variable V in a few samples when Averaging interval is set to 2. Note how the average (avg) is obtained when values of the dependent variable are missing. Remember that velocity V at time t is only calculated when there are valid samples at time t and t-1. See <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Dependent_Variables_in_Detail/Velocity.htm#XREF_45425_Velocity">Velocity</a></p>
+ <div width="100%" align="left">
+  <table border-spacing="0" dir="ltr" class="table0 TopRowAlternatingRows" border-collapse="collapse" style="width: 60%; " cellspacing="0px">
+   <tbody><tr class="t1st">
+   <td>
+   <p dir="ltr" class="FM_Table_text" style="font-weight : bold;"><span class="FM_Bold">Sample</span></p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text"><span class="FM_Bold">Valid </span>(•) <span class="FM_Bold">or missing</span> (-)</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text" style="font-weight : bold;"><span class="FM_Bold">Original value</span></p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text"><span class="FM_Bold">Smoothed value</span>&nbsp;when averaging interval = 2</p>
+</td>
+</tr>
+   <tr class="t2Row">
+   <td>
+   <p dir="ltr" class="FM_Table_text">1</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">•</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">V<sub>1</sub></p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">V<sub>1</sub></p>
+</td>
+</tr>
+   <tr class="t1Row">
+   <td>
+   <p dir="ltr" class="FM_Table_text">2</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">•</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">V<sub>2</sub></p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">avg (V<sub>1</sub>, V<sub>2</sub>)</p>
+</td>
+</tr>
+   <tr class="t2Row">
+   <td>
+   <p dir="ltr" class="FM_Table_text">3</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">•</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">V<sub>3</sub></p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">avg (V<sub>2</sub>, V<sub>3</sub>)</p>
+</td>
+</tr>
+   <tr class="t1Row">
+   <td>
+   <p dir="ltr" class="FM_Table_text">4</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">-</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">not calculated</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">avg (V<sub>3</sub>, [no value]) = V<sub>3</sub></p>
+</td>
+</tr>
+   <tr class="t2Row">
+   <td>
+   <p dir="ltr" class="FM_Table_text">5</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">-</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">not calculated</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">avg ([no value], [no value]) = [no value]</p>
+</td>
+</tr>
+   <tr class="t1Row">
+   <td>
+   <p dir="ltr" class="FM_Table_text">6</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">•</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">not calculated</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">avg ([no value], [no value]) = [no value]</p>
+</td>
+</tr>
+   <tr class="t2Row">
+   <td>
+   <p dir="ltr" class="FM_Table_text">7</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">•</p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">V<sub>7</sub></p>
+</td>
+   <td>
+   <p dir="ltr" class="FM_Table_text">avg ([no value], V<sub>7</sub>) = V<sub>7</sub></p>
+</td>
+</tr>
+  </tbody></table>
+ </div>
+  <p dir="ltr" class="FM_Body">&nbsp;</p>
+  <p dir="ltr" class="FM_Heading_2">Notes</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>Note the difference between Track Smoothing and the Outlier filter (this topic):</p>
+  <p dir="ltr" class="FM_Bulleted_indented">▪<span style="padding-left: 17pt;" class="FMAutoNumber_1"></span>With <span class="FM_Bold">Track Smoothing</span>, you smooth the <span class="FM_Emphasis">raw x,y coordinates</span>. This has also an effect on the dependent variables calculated based on those coordinates, for example <span class="FM_Emphasis">Distance moved</span>. See <a href="file:///C:/Program%20Files/Noldus/EthoVision%20XT%2019/Documentation/EthoVision%20XT%2019%20Help/EthoVision_XT_19_Help/EV_Track_Smoothing/EV_Track_Smoothing.htm#XREF_34753_text_for_analysis">Smooth the Tracks</a>&nbsp;</p>
+  <p dir="ltr" class="FM_Bulleted_indented">▪<span style="padding-left: 17pt;" class="FMAutoNumber_1"></span>With <span class="FM_Bold">Outlier filter</span>, you smooth the values of the <span class="FM_Emphasis">dependent variable</span>, for example velocity or mobility, after they are calculated from the raw data. The Outlier filter is useful when you want to calculate state variables. Apply the Outlier filter, for example, when you want to smooth <span class="FM_Emphasis">Velocity</span>&nbsp;to calculate the <span class="FM_Emphasis">Movement</span>&nbsp;states, which are based on velocity; or smooth <span class="FM_Emphasis">Mobility</span>&nbsp;when you want to calculate <span class="FM_Emphasis">Mobility state</span>.</p>
+  <p dir="ltr" class="FM_Bulleted">▪<span style="padding-left: 15pt;" class="FMAutoNumber_1"></span>If you combine Track Smoothing with Outlier filter, the dependent variable is calculated with the Outlier filter <span class="FM_Emphasis">after</span>&nbsp;the raw coordinates are smoothed with Track Smoothing. </p>
+  <p dir="ltr" class="FM_Body">&nbsp;</p>
+  </div>
+
+</body></html>
