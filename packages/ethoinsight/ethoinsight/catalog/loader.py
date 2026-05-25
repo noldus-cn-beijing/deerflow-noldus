@@ -1,7 +1,18 @@
-"""Catalog YAML loader + 一致性校验。
-
-加载 packages/ethoinsight/ethoinsight/catalog/<paradigm>.yaml 并构造
+"""加载 packages/ethoinsight/ethoinsight/catalog/<paradigm>.yaml 并构造
 Catalog dataclass。校验失败一律抛 CatalogError，含 paradigm + 问题点。
+
+Canonical paradigm key policy (2026-05-25):
+  The system uses ACADEMIC NAMES as canonical paradigm keys:
+    - forced_swim (file: fst.yaml)
+    - tail_suspension (file: tst.yaml)
+    - open_field (file: oft.yaml)
+    - light_dark_box (file: ldb.yaml)
+    - epm (file: epm.yaml)
+    - zero_maze (file: zero_maze.yaml)
+    - shoaling (file: shoaling.yaml)
+
+  ``load_catalog`` accepts either the academic name (preferred) or the
+  filename stem (legacy) and resolves to the correct YAML via _PARADIGM_ALIASES.
 """
 
 from __future__ import annotations
@@ -28,22 +39,50 @@ class CatalogError(Exception):
 
 _DEFAULT_CATALOG_DIR = Path(__file__).parent
 
+# Canonical paradigm key (academic name) → catalog YAML filename stem.
+# Upstream code (identify_ev19_template, prep_metric_plan, metrics dispatcher,
+# skill docs, experiment_context) ALL use the academic name as the
+# canonical paradigm key. Catalog YAML filenames historically use shortened
+# abbreviations (fst / tst / oft / ldb); the alias map below preserves that
+# physical layout without exposing the inconsistency upstream.
+#
+# Filename-style keys (e.g. "fst") are also accepted for backward
+# compatibility with existing scripts (plot_timeseries.py, test_catalog.py)
+# that still pass abbreviations directly.
+_PARADIGM_ALIASES: dict[str, str] = {
+    # academic name → filename stem
+    "forced_swim": "fst",
+    "tail_suspension": "tst",
+    "open_field": "oft",
+    "light_dark_box": "ldb",
+    # already aligned (no aliasing needed but listed for clarity)
+    "epm": "epm",
+    "zero_maze": "zero_maze",
+    "shoaling": "shoaling",
+}
+
 
 def load_catalog(paradigm: str, catalog_dir: str | Path | None = None) -> Catalog:
     """加载 <catalog_dir>/<paradigm>.yaml 并校验返回 Catalog。
 
     Args:
-        paradigm: 范式 key（如 "epm"、"oft"）
+        paradigm: Canonical paradigm key (academic name, e.g. "forced_swim",
+            "open_field", "epm"). Filename-style abbreviations (e.g. "fst",
+            "oft") are also accepted for backward compatibility.
         catalog_dir: catalog YAML 目录；默认为本模块所在目录
 
     Raises:
         CatalogError: 文件不存在 / 必填字段缺失 / enum 越界 / id 重复 等
     """
     catalog_dir = Path(catalog_dir) if catalog_dir else _DEFAULT_CATALOG_DIR
-    yaml_path = catalog_dir / f"{paradigm}.yaml"
+    # Resolve canonical academic name → filename stem. Accept both directions:
+    # if input is already the filename stem (no entry in alias map), use as-is.
+    filename_stem = _PARADIGM_ALIASES.get(paradigm, paradigm)
+    yaml_path = catalog_dir / f"{filename_stem}.yaml"
     if not yaml_path.is_file():
         raise CatalogError(
-            f"Catalog file not found for paradigm '{paradigm}': {yaml_path}"
+            f"Catalog file not found for paradigm '{paradigm}' "
+            f"(resolved to '{filename_stem}.yaml'): {yaml_path}"
         )
     try:
         raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))

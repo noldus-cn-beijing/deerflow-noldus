@@ -75,7 +75,10 @@ def prep_metric_plan_tool(
                       PlanMetric(N 文件 × M 指标 = N×M 个调用)。单文件场景传单元素 list。
                       **请把当前 <uploaded_files> 里所有相关数据文件全传进来**,
                       不要只传第 1 个,否则其余 subject 在分析中会被静默丢失。
-      paradigm: 范式如 'epm' / 'oft' / 'fst' / 'ldb' / 'tst' / 'zero_maze' / 'shoaling'
+      paradigm: 范式 canonical key（学术名）：
+                'epm' / 'open_field' / 'forced_swim' / 'light_dark_box' /
+                'tail_suspension' / 'zero_maze' / 'shoaling'
+                （filename-style 缩写如 'oft'/'fst'/'ldb'/'tst' 也接受，向后兼容）
 
     Returns:
       status="ok" 时:
