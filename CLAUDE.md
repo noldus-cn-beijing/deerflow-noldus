@@ -261,4 +261,5 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 - [docs/specs/llm-finetuning-strategy.md](docs/specs/llm-finetuning-strategy.md) — 微调策略
 - [docs/plans/2026-04-13-fine-tuning-small-model-design.md](docs/plans/2026-04-13-fine-tuning-small-model-design.md) — 微调设计
 - [docs/sop/deerflow-sync-sop.md](docs/sop/deerflow-sync-sop.md) — DeerFlow 同步 SOP
+- [docs/refs/2026-05-22-mousegpt-paper-review.md](docs/refs/2026-05-22-mousegpt-paper-review.md) — MouseGPT 论文借鉴分析（2026-05-22）
 - [packages/agent/backend/CLAUDE.md](packages/agent/backend/CLAUDE.md) — DeerFlow 后端架构细节
