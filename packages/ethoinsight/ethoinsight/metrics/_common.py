@@ -255,6 +255,39 @@ def compute_immobility_bout_count(
     return len(bouts)
 
 
+def extract_immobility_bouts(
+    df: pd.DataFrame,
+    mobility_col: str | None = None,
+) -> list[tuple[float, float]]:
+    """Extract (start_sec, end_sec) pairs for each immobility bout.
+
+    Uses trial_time column to convert frame indices to seconds.
+    Returns empty list if mobility column or trial_time is missing.
+    """
+    resolved = _resolve_immobile_series(df, mobility_col)
+    if resolved is None:
+        return []
+    series, immobile_value = resolved
+
+    frame_bouts = _runs(series, value=immobile_value)
+    if not frame_bouts:
+        return []
+
+    if "trial_time" not in df.columns:
+        return [(float(start), float(end)) for start, end in frame_bouts]
+
+    times = df["trial_time"].reset_index(drop=True)
+    result = []
+    for start_idx, end_idx in frame_bouts:
+        try:
+            t_start = float(times.iloc[start_idx])
+            t_end = float(times.iloc[end_idx])
+            result.append((t_start, t_end))
+        except (IndexError, ValueError):
+            continue
+    return result
+
+
 # ============================================================================
 # Export
 # ============================================================================
