@@ -15,6 +15,7 @@ from enum import Enum
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain.tools import BaseTool
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -25,6 +26,49 @@ from deerflow.subagents.config import SubagentConfig
 from deerflow.subagents.token_collector import SubagentTokenCollector
 
 logger = logging.getLogger(__name__)
+
+
+# Hook pairs (sync, async) on AgentMiddleware. Each pair becomes a graph node
+# in langchain.agents.create_agent if EITHER sync or async is overridden.
+# See langchain.agents.factory ~L1198-1290 for the wiring.
+_BEFORE_AGENT_HOOKS = (("before_agent", "abefore_agent"),)
+_BEFORE_MODEL_HOOKS = (("before_model", "abefore_model"),)
+_AFTER_MODEL_HOOKS = (("after_model", "aafter_model"),)
+_AFTER_AGENT_HOOKS = (("after_agent", "aafter_agent"),)
+
+
+def _middleware_implements(m: AgentMiddleware, sync_name: str, async_name: str) -> bool:
+    """Return True if middleware ``m`` overrides either the sync or async hook."""
+    base = AgentMiddleware
+    return getattr(m.__class__, sync_name) is not getattr(base, sync_name) or getattr(m.__class__, async_name) is not getattr(base, async_name)
+
+
+def calculate_subagent_recursion_limit(middlewares: list[AgentMiddleware], max_turns: int) -> int:
+    """Compute LangGraph recursion_limit for a subagent run from its middleware chain.
+
+    LangGraph counts node steps. ``langchain.agents.create_agent`` adds one node
+    per overridden middleware hook (before_agent / before_model / after_model /
+    after_agent), plus the fixed ``model`` and ``tools`` nodes. Per turn:
+
+        before_model_hooks + 1 (model) + after_model_hooks + 1 (tools)
+
+    before_agent / after_agent fire exactly once at entry / exit.
+
+    Adds +3 margin so an extra middleware hook landing during sync does not
+    immediately re-break the limit.
+    """
+    if max_turns <= 0:
+        raise ValueError(f"max_turns must be positive, got {max_turns}")
+
+    before_agent = sum(1 for m in middlewares if _middleware_implements(m, *_BEFORE_AGENT_HOOKS[0]))
+    before_model = sum(1 for m in middlewares if _middleware_implements(m, *_BEFORE_MODEL_HOOKS[0]))
+    after_model = sum(1 for m in middlewares if _middleware_implements(m, *_AFTER_MODEL_HOOKS[0]))
+    after_agent = sum(1 for m in middlewares if _middleware_implements(m, *_AFTER_AGENT_HOOKS[0]))
+
+    per_turn = before_model + 1 + after_model + 1
+    one_off = before_agent + after_agent
+    margin = 3
+    return max_turns * per_turn + one_off + margin
 
 
 class SubagentStatus(Enum):
@@ -375,16 +419,13 @@ class SubagentExecutor:
         )
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
-    def _create_agent(self, tools: list[BaseTool] | None = None):
-        """Create the agent instance.
+    def _build_middlewares(self) -> list[AgentMiddleware]:
+        """Build the subagent's middleware chain.
 
-        Args:
-            tools: Optional tool list to override ``self.tools`` (e.g., after
-                applying skill-allowed-tools filtering in ``_build_initial_state``).
+        Split out from ``_create_agent`` so callers can inspect the chain (e.g.,
+        to size ``recursion_limit`` based on the actual hook count) without
+        instantiating the LLM model.
         """
-        model_name = _get_model_name(self.config, self.parent_model)
-        model = create_chat_model(name=model_name, thinking_enabled=False)
-
         from deerflow.agents.middlewares.tool_error_handling_middleware import build_subagent_runtime_middlewares
 
         # Reuse shared middleware composition with lead agent.
@@ -415,6 +456,26 @@ class SubagentExecutor:
             provider=ScriptInvocationOnlyProvider(),
             passport=f"subagent:{self.config.name}",
         ))
+
+        return middlewares
+
+    def _create_agent(self, tools: list[BaseTool] | None = None):
+        """Create the agent instance.
+
+        Args:
+            tools: Optional tool list to override ``self.tools`` (e.g., after
+                applying skill-allowed-tools filtering in ``_build_initial_state``).
+
+        Side effect: caches the built middleware chain on ``self._last_middlewares``
+        so ``_aexecute`` can size LangGraph's ``recursion_limit`` against the actual
+        hook count without rebuilding (or, when tests ``patch.object`` this method
+        wholesale, fall back to a legacy formula).
+        """
+        model_name = _get_model_name(self.config, self.parent_model)
+        model = create_chat_model(name=model_name, thinking_enabled=False)
+
+        middlewares = self._build_middlewares()
+        self._last_middlewares = middlewares
 
         # A-10: system_prompt is injected as a SystemMessage in the initial
         # state (see _build_initial_state), merged with any skill content into
@@ -497,6 +558,7 @@ class SubagentExecutor:
         try:
             state, filtered_tools = self._build_initial_state(task)
             agent = self._create_agent(filtered_tools)
+            middlewares = getattr(self, "_last_middlewares", None)
 
             # Token collector for subagent LLM calls — records flow into
             # SubagentResult.token_usage_records and are reported to the
@@ -504,12 +566,22 @@ class SubagentExecutor:
             collector_caller = f"subagent:{self.config.name}"
             collector = SubagentTokenCollector(caller=collector_caller)
 
-            # Build config with thread_id for sandbox access and recursion limit
-            # LangGraph counts node steps (model=1 + tools=1 per turn), so multiply
-            # max_turns by 2 (+1 for margin) to set a reasonable recursion ceiling.
-            # The actual turn limit is enforced by AI message counting below.
+            # LangGraph recursion_limit counts node steps. With the current
+            # middleware chain each turn dispatches: before_model hooks + model +
+            # after_model hooks + tools. The actual turn limit is still enforced
+            # by AI message counting below; this just keeps LangGraph from
+            # tripping before we get to ``max_turns`` AI messages.
+            #
+            # ``middlewares`` is cached by ``_create_agent``. When tests mock
+            # ``_create_agent`` wholesale, the cache is empty and we fall back
+            # to the legacy 2x formula (which never triggers because the mock
+            # path doesn't go through real LangGraph either).
+            if middlewares is not None:
+                recursion_limit = calculate_subagent_recursion_limit(middlewares, self.config.max_turns)
+            else:
+                recursion_limit = self.config.max_turns * 2 + 1
             run_config: RunnableConfig = {
-                "recursion_limit": self.config.max_turns * 2 + 1,
+                "recursion_limit": recursion_limit,
                 "callbacks": [collector],
                 "tags": [collector_caller],
             }
@@ -518,7 +590,9 @@ class SubagentExecutor:
                 run_config["configurable"] = {"thread_id": self.thread_id}
                 context["thread_id"] = self.thread_id
 
-            logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} starting async execution with max_turns={self.config.max_turns}")
+            logger.info(
+                f"[trace={self.trace_id}] Subagent {self.config.name} starting async execution with max_turns={self.config.max_turns} (recursion_limit={recursion_limit}, middlewares={len(middlewares) if middlewares is not None else 'unknown'})"
+            )
 
             # Use stream instead of invoke to get real-time updates
             # This allows us to collect AI messages as they are generated
