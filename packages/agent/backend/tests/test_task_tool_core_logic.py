@@ -1291,3 +1291,68 @@ def test_subagent_usage_cache_is_cleared_when_polling_raises(monkeypatch):
         )
 
     assert task_tool_module.pop_cached_subagent_usage("tc-error") is None
+
+
+def test_task_tool_ainvoke_path_passes_injected_runtime_to_function_body(monkeypatch):
+    """Regression: PR-3 broke the LangChain ainvoke path by adding a custom
+    args_schema that did not declare runtime / tool_call_id, so model_validate
+    stripped them and the function body raised TypeError. This test exercises
+    the full ainvoke path that ToolNode uses in production — direct .coroutine()
+    invocations like the other tests in this file do not cover it.
+    """
+    from langgraph.prebuilt.tool_node import ToolRuntime
+
+    monkeypatch.setattr(task_tool_module, "get_subagent_config", lambda _, *, app_config=None: None)
+    monkeypatch.setattr(task_tool_module, "get_available_subagent_names", lambda *, app_config=None: ["code-executor"])
+
+    runtime = ToolRuntime(
+        state={},
+        context={},
+        config={},
+        tool_call_id="tc-regression",
+        store=None,
+        stream_writer=None,
+    )
+    tool_call = {
+        "name": "task",
+        "args": {
+            "description": "test",
+            "prompt": "do work",
+            "subagent_type": "code-executor",
+            "runtime": runtime,
+        },
+        "id": "tc-regression",
+        "type": "tool_call",
+    }
+
+    result = asyncio.run(task_tool_module.task_tool.ainvoke(tool_call, {}))
+
+    # If the bug regressed, ainvoke would raise TypeError before reaching the
+    # function body. Reaching the unknown-subagent error string proves the
+    # injected args (runtime, tool_call_id) flowed through to the function.
+    content = getattr(result, "content", result)
+    assert "Unknown subagent type" in content
+    assert "code-executor" in content
+
+
+def test_task_tool_schema_enforces_registered_subagent_literal(monkeypatch):
+    """Regression: the Literal enum constraint must survive the args_schema
+    refactor — invalid subagent_type values must be rejected at schema
+    validation, not by the runtime safety-net in the function body.
+    """
+    from pydantic import ValidationError
+
+    tool_call = {
+        "name": "task",
+        "args": {
+            "description": "test",
+            "prompt": "do work",
+            "subagent_type": "general-purpose-but-not-registered",
+        },
+        "id": "tc-bad",
+        "type": "tool_call",
+    }
+
+    with pytest.raises(ValidationError, match="subagent_type"):
+        asyncio.run(task_tool_module.task_tool.ainvoke(tool_call, {}))
+

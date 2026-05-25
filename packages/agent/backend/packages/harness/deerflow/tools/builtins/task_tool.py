@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from langchain.tools import InjectedToolCallId, tool
 from langgraph.config import get_stream_writer
-from pydantic import BaseModel, Field
 
 from deerflow.config import get_app_config
 from deerflow.sandbox.security import LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE, is_host_bash_allowed
@@ -325,8 +324,8 @@ def _make_subagent_literal():
     """Dynamically construct a Literal type from the available subagent names.
 
     Called at module load time so the JSON Schema enum is baked into the
-    tool's args_schema.  Falls back to BUILTIN_SUBAGENTS keys if the full
-    registry (which may require config.yaml) is not yet available.
+    tool's auto-inferred schema.  Falls back to BUILTIN_SUBAGENTS keys if the
+    full registry (which may require config.yaml) is not yet available.
     """
     try:
         names = tuple(get_available_subagent_names())
@@ -340,34 +339,12 @@ def _make_subagent_literal():
 _SubagentLiteral = _make_subagent_literal()
 
 
-class _TaskArgs(BaseModel):
-    """Schema for the ``task`` tool — LLM-facing parameters only.
-
-    Injected params (``runtime``, ``tool_call_id``) are handled by the
-    LangChain framework and omitted from this schema.
-    """
-
-    description: str = Field(
-        description="A short (3-5 word) description of the task for logging/display. ALWAYS PROVIDE THIS PARAMETER FIRST.",
-    )
-    prompt: str = Field(
-        description="The task description for the subagent. Be specific and clear about what needs to be done. ALWAYS PROVIDE THIS PARAMETER SECOND.",
-    )
-    subagent_type: _SubagentLiteral = Field(
-        description="The type of subagent to use. ALWAYS PROVIDE THIS PARAMETER THIRD.",
-    )
-    max_turns: int | None = Field(
-        default=None,
-        description="Optional maximum number of agent turns. Defaults to subagent's configured max.",
-    )
-
-
-@tool("task", parse_docstring=True, args_schema=_TaskArgs)
+@tool("task", parse_docstring=True)
 async def task_tool(
     runtime: Runtime,
     description: str,
     prompt: str,
-    subagent_type: str,
+    subagent_type: _SubagentLiteral,
     tool_call_id: Annotated[str, InjectedToolCallId],
     max_turns: int | None = None,
 ) -> str:
