@@ -208,6 +208,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 - 代码改动后同步更新相关 `docs/` 下文档
 - 重要会话结束后在 `docs/handoffs/` 写交接文档（文件名 `YYYY-MM-DD-<topic>-handoff.md`）
+- **写 handoff 时判断**：本次会话是否让某个 feature track 到达了 checkpoint（完成/阶段切换/阻塞解除）？如果是，在 handoff 末尾加 `## milestone 建议` 段，列出应创建/更新的 milestone 和关键摘要。下一 agent 读到后执行。用户也可随时说"为 XX 写 milestone"手动触发
 
 ## 重要注意事项
 
@@ -243,8 +244,9 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 1. 本文档 — 了解全貌
 2. [docs/roadmap.md](docs/roadmap.md) — 了解 12 个月规划和 v0.1 里程碑
-3. `docs/handoffs/` 下最新月份目录中最新日期的文档 — 了解上次会话到哪了
-4. 根据当前 Phase 的优先级开始工作
+3. [docs/milestone/README.md](docs/milestone/README.md) — 项目地图，每个 feature 当前状态一目了然（2 分钟）
+4. 具体 feature 的 milestone — 深入了解某个 track 的全貌（5 分钟）
+5. `docs/handoffs/` 下具体 handoff — 最细粒度的操作细节（按需）
 
 ## 相关文档
 
