@@ -38,7 +38,26 @@ default_metrics:
 
 optional_metrics: []
 
-charts: []
+charts:
+  - id: box_light
+    script: ethoinsight.scripts.ldb.plot_box_light
+    when: n_per_group >= 3
+    display_name_zh: "亮室时间箱线图"
+
+  - id: bar_light
+    script: ethoinsight.scripts.ldb.plot_bar_light
+    when: total_subjects >= 1
+    display_name_zh: "亮室指标柱状图（均值±SEM）"
+
+  - id: trajectory
+    script: ethoinsight.scripts._common.plot_trajectory
+    when: total_subjects >= 1
+    display_name_zh: "轨迹图"
+
+  - id: heatmap
+    script: ethoinsight.scripts._common.plot_heatmap
+    when: total_subjects >= 1
+    display_name_zh: "热区图"
 
 statistics:
   default:

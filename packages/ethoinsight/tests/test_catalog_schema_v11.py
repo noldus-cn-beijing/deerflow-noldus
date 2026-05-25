@@ -118,10 +118,10 @@ def test_plan_chart_output_in_outputs_dir(tmp_path: Path):
 def test_plan_chart_args_includes_paradigm_when_accepts_paradigm():
     """accepts_paradigm=true 的 chart → PlanChart.args 含 --paradigm."""
     # 需要一组数据触发 fallback（让 timeseries_plot 可用）
-    # 用 zero_maze — 该范式无 chart，会 fallback 到 common
+    # 用 shoaling — 该范式 charts: [] 会 fallback 到 common
     pc = resolve_charts(
-        paradigm="zero_maze",
-        columns=["in_zone_open_center", "distance_moved"],
+        paradigm="shoaling",
+        columns=["x_center", "y_center"],
         raw_files=RAW_FILES_SAMPLE,
         workspace_dir="/tmp",
         total_subjects=1,
@@ -133,15 +133,15 @@ def test_plan_chart_args_includes_paradigm_when_accepts_paradigm():
         assert c.args == [
             "--input", c.input,
             "--output", c.output,
-            "--paradigm", "zero_maze",
+            "--paradigm", "shoaling",
         ]
 
 
 def test_plan_chart_args_excludes_paradigm_otherwise():
     """accepts_paradigm=false 的 chart → PlanChart.args 不含 --paradigm."""
     pc = resolve_charts(
-        paradigm="zero_maze",
-        columns=["in_zone_open_center", "distance_moved"],
+        paradigm="shoaling",
+        columns=["x_center", "y_center"],
         raw_files=RAW_FILES_SAMPLE,
         workspace_dir="/tmp",
         total_subjects=1,
