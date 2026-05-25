@@ -1,106 +1,91 @@
-"""Regression tests for `_find_usage_recorder` callback normalization.
+"""Regression tests for _find_usage_recorder callback shape handling.
 
-Background: LangGraph runtime's ``config["callbacks"]`` is NOT guaranteed to be
-a ``list``. In async execution paths, LangChain often passes an
-``AsyncCallbackManager`` instance (subclass of ``BaseCallbackManager``), which
-has no ``__iter__`` method. Earlier code did ``for cb in callbacks:`` which
-raised ``TypeError: 'AsyncCallbackManager' object is not iterable``, breaking
-the entire subagent token-usage reporting path and (transitively) causing the
-task tool to return an error to the lead agent even after the subagent
-completed successfully.
+Bytedance issue #3107 BUG-002: When LangChain passes ``config["callbacks"]`` as
+an ``AsyncCallbackManager`` (instead of a plain list), the previous
+``for cb in callbacks`` loop raised ``TypeError: 'AsyncCallbackManager' object
+is not iterable``. ToolErrorHandlingMiddleware then converted the entire ``task``
+tool call into an error ToolMessage, losing the subagent result.
 """
 
-from __future__ import annotations
-
-import importlib
 from types import SimpleNamespace
 
-from langchain_core.callbacks.manager import (
-    AsyncCallbackManager,
-    BaseCallbackManager,
-    CallbackManager,
-)
+from langchain_core.callbacks import AsyncCallbackManager, CallbackManager
 
-task_tool_module = importlib.import_module("deerflow.tools.builtins.task_tool")
-_find_usage_recorder = task_tool_module._find_usage_recorder
+from deerflow.tools.builtins.task_tool import _find_usage_recorder
 
 
-class _Recorder:
-    """Stand-in for a real journal — has the duck-typed attribute we look for."""
-
-    def record_external_llm_usage_records(self, records: list) -> None:  # pragma: no cover - method existence is what matters
-        return None
+class _RecorderHandler:
+    def record_external_llm_usage_records(self, records):
+        self.records = records
 
 
-class _NonRecorder:
-    """Callback handler without the recorder attribute."""
+class _OtherHandler:
+    pass
 
 
 def _make_runtime(callbacks):
     return SimpleNamespace(config={"callbacks": callbacks})
 
 
-def test_runtime_none_returns_none():
-    assert _find_usage_recorder(None) is None
-
-
-def test_runtime_without_dict_config_returns_none():
-    runtime = SimpleNamespace(config=None)
-    assert _find_usage_recorder(runtime) is None
-
-
-def test_callbacks_missing_returns_none():
-    runtime = SimpleNamespace(config={})
-    assert _find_usage_recorder(runtime) is None
-
-
-def test_callbacks_empty_list_returns_none():
-    runtime = _make_runtime([])
-    assert _find_usage_recorder(runtime) is None
-
-
-def test_callbacks_list_with_recorder_returns_recorder():
-    recorder = _Recorder()
-    runtime = _make_runtime([_NonRecorder(), recorder])
+def test_find_usage_recorder_with_plain_list():
+    recorder = _RecorderHandler()
+    runtime = _make_runtime([_OtherHandler(), recorder])
     assert _find_usage_recorder(runtime) is recorder
 
 
-def test_callbacks_list_without_recorder_returns_none():
-    runtime = _make_runtime([_NonRecorder(), _NonRecorder()])
-    assert _find_usage_recorder(runtime) is None
+def test_find_usage_recorder_with_async_callback_manager():
+    """LangChain wraps callbacks in AsyncCallbackManager for async tool runs.
 
-
-def test_async_callback_manager_with_recorder_in_handlers():
-    """Regression: AsyncCallbackManager is not iterable but has .handlers list.
-
-    Reproduces the production failure path: LangGraph runtime hands us an
-    AsyncCallbackManager (no __iter__). _find_usage_recorder must look inside
-    its `.handlers` list rather than blindly iterating the manager.
+    The old implementation raised TypeError here. The recorder lives on
+    ``manager.handlers``; we must look there too.
     """
-    recorder = _Recorder()
-    manager = AsyncCallbackManager(handlers=[_NonRecorder(), recorder])
-    assert isinstance(manager, BaseCallbackManager)
-    assert not hasattr(manager, "__iter__")
-
+    recorder = _RecorderHandler()
+    manager = AsyncCallbackManager(handlers=[_OtherHandler(), recorder])
     runtime = _make_runtime(manager)
     assert _find_usage_recorder(runtime) is recorder
 
 
-def test_sync_callback_manager_with_recorder_in_handlers():
-    """Same protection for the sync CallbackManager variant."""
-    recorder = _Recorder()
+def test_find_usage_recorder_with_sync_callback_manager():
+    """Sync flavor of the same wrapper used by some langchain code paths."""
+    recorder = _RecorderHandler()
     manager = CallbackManager(handlers=[recorder])
     runtime = _make_runtime(manager)
     assert _find_usage_recorder(runtime) is recorder
 
 
-def test_async_callback_manager_without_recorder_returns_none():
-    manager = AsyncCallbackManager(handlers=[_NonRecorder()])
+def test_find_usage_recorder_returns_none_when_no_recorder():
+    manager = AsyncCallbackManager(handlers=[_OtherHandler()])
     runtime = _make_runtime(manager)
     assert _find_usage_recorder(runtime) is None
 
 
-def test_async_callback_manager_with_empty_handlers_returns_none():
+def test_find_usage_recorder_handles_empty_manager():
     manager = AsyncCallbackManager(handlers=[])
     runtime = _make_runtime(manager)
+    assert _find_usage_recorder(runtime) is None
+
+
+def test_find_usage_recorder_returns_none_for_none_runtime():
+    assert _find_usage_recorder(None) is None
+
+
+def test_find_usage_recorder_returns_none_when_callbacks_is_none():
+    runtime = _make_runtime(None)
+    assert _find_usage_recorder(runtime) is None
+
+
+def test_find_usage_recorder_returns_none_for_single_handler_object():
+    """A single handler instance (not wrapped in a list or manager) should not crash.
+
+    LangChain's contract is that ``config["callbacks"]`` is a list-or-manager,
+    but we treat any other shape defensively rather than letting a ``for`` loop
+    blow up at runtime.
+    """
+    runtime = _make_runtime(_RecorderHandler())
+    assert _find_usage_recorder(runtime) is None
+
+
+def test_find_usage_recorder_returns_none_when_config_not_dict():
+    """Defensive: a runtime without a dict-shaped config should not raise."""
+    runtime = SimpleNamespace(config="not-a-dict")
     assert _find_usage_recorder(runtime) is None
