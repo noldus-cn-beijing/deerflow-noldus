@@ -92,7 +92,7 @@ class TestTitleMiddlewareCoreLogic:
         title = result["title"]
 
         assert title == "短标题"
-        title_middleware_module.create_chat_model.assert_called_once_with(thinking_enabled=False)
+        title_middleware_module.create_chat_model.assert_called_once_with(thinking_enabled=False, attach_tracing=False)
         model.ainvoke.assert_awaited_once()
         assert model.ainvoke.await_args.kwargs["config"] == {
             "run_name": "title_agent",
@@ -124,6 +124,7 @@ class TestTitleMiddlewareCoreLogic:
         title_middleware_module.create_chat_model.assert_called_once_with(
             name="title-model",
             thinking_enabled=False,
+            attach_tracing=False,
             app_config=app_config,
         )
 
