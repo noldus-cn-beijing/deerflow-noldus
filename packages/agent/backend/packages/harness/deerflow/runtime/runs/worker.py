@@ -153,8 +153,6 @@ async def run_agent(
 
     journal = None
 
-    journal = None
-
     # Track whether "events" was requested but skipped
     if "events" in requested_modes:
         logger.info(
@@ -177,6 +175,7 @@ async def run_agent(
                 thread_id=thread_id,
                 event_store=event_store,
                 track_token_usage=getattr(run_events_config, "track_token_usage", True),
+                progress_reporter=lambda snapshot: run_manager.update_run_progress(run_id, **snapshot),
             )
 
         # 1. Mark running
@@ -238,16 +237,12 @@ async def run_agent(
         # can lift session_id / user_id / trace_name / tags onto the root trace.
         # Shared helper with ``DeerFlowClient.stream`` so both entry points stay
         # in sync; caller-provided metadata wins via setdefault inside the helper.
-        #
-        # NOTE: 本地 RunRecord 没有 model_name 字段 (上游引入但 Noldus 简化版未含),
-        # 因此 model_name 传 None。配置好后, langfuse tags 里就不会带 model:xxx,
-        # 不影响其他 attribute。后续若同步上游 RunRecord 扩字段时再补上。
         inject_langfuse_metadata(
             config,
             thread_id=thread_id,
             user_id=get_effective_user_id(),
             assistant_id=record.assistant_id,
-            model_name=None,
+            model_name=record.model_name,
             environment=os.environ.get("DEER_FLOW_ENV") or os.environ.get("ENVIRONMENT"),
         )
 
