@@ -21,7 +21,7 @@ from typing import Any, override
 
 from langchain.agents.middleware import TodoListMiddleware
 from langchain.agents.middleware.todo import PlanningState, Todo
-from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse, hook_config
+from langchain.agents.middleware.types import AgentState, ModelCallResult, ModelRequest, ModelResponse, hook_config
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 from langchain.tools import InjectedToolCallId, tool
@@ -107,6 +107,21 @@ def _has_tool_call_intent_or_error(message: AIMessage) -> bool:
     return response_metadata.get("finish_reason") in _TOOL_CALL_FINISH_REASONS
 
 
+class _TodoState(AgentState):
+    """Minimal state schema for TodoMiddleware — ThreadState owns todos exclusively.
+
+    Without this, LangChain's PlanningState (which defines ``todos`` with
+    ``OmitFromInput``) and ThreadState (which defines ``todos`` with
+    ``merge_todos`` reducer) would register conflicting channel types during
+    StateGraph compilation, raising::
+
+        ValueError: Channel 'todos' already exists with a different type
+
+    This schema carries no ``todos`` field so ThreadState is the single source.
+    """
+    pass
+
+
 class TodoMiddleware(TodoListMiddleware):
     """Extends TodoListMiddleware with `write_todos` context-loss detection.
 
@@ -115,6 +130,8 @@ class TodoMiddleware(TodoListMiddleware):
     todo list. This middleware detects that gap in `before_model` / `abefore_model`
     and injects a reminder message so the model can continue tracking progress.
     """
+
+    state_schema = _TodoState
 
     @override
     def before_model(

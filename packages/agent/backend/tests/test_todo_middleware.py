@@ -1,10 +1,10 @@
 """Tests for TodoMiddleware context-loss detection."""
 
 import asyncio
-from typing import Any
+from typing import Annotated, Any, NotRequired
 from unittest.mock import AsyncMock, MagicMock
 
-from langchain.agents import create_agent
+from langchain.agents import AgentState, create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import PrivateAttr
@@ -17,6 +17,13 @@ from deerflow.agents.middlewares.todo_middleware import (
     _reminder_in_messages,
     _todos_in_messages,
 )
+from deerflow.agents.thread_state import merge_todos
+
+
+class _TestThreadState(AgentState):
+    """Minimal state for TodoMiddleware tests — includes todos channel."""
+
+    todos: Annotated[NotRequired[list | None], merge_todos]
 
 
 def _ai_with_write_todos():
@@ -534,7 +541,7 @@ class TestTodoMiddlewareAgentGraphIntegration:
                 AIMessage(content="premature final 3"),
             ],
         )
-        graph = create_agent(model=model, tools=[], middleware=[mw])
+        graph = create_agent(model=model, tools=[], middleware=[mw], state_schema=_TestThreadState)
 
         result = graph.invoke(
             {"messages": [("user", "finish all todos")]},
