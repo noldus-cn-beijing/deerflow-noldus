@@ -30,6 +30,7 @@ from deerflow.runtime import (
     UnsupportedStrategyError,
     run_agent,
 )
+from deerflow.runtime.runs.naming import resolve_root_run_name
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,10 @@ def build_run_config(
             if not normalized or not re.fullmatch(r"[a-z0-9-]+", normalized):
                 raise ValueError(f"Invalid assistant_id {assistant_id!r}: must contain only letters, digits, and hyphens after normalization.")
             config["configurable"]["agent_name"] = normalized
+        # Inject Langfuse/LangGraph run_name from the resolved agent_name so traces
+        # show the custom agent identity rather than a generic "LangGraph".
+        agent_name = config["configurable"]["agent_name"]
+        config.setdefault("run_name", resolve_root_run_name(config, agent_name))
     if metadata:
         config.setdefault("metadata", {}).update(metadata)
     return config
