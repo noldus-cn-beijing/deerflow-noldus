@@ -9,6 +9,7 @@ from deerflow.agents.middlewares.archiving_summarization import ArchivingSummari
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
+from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 from deerflow.agents.middlewares.think_tag_middleware import ThinkTagMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
@@ -392,6 +393,16 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         from deerflow.agents.middlewares.gate_enforcement_middleware import GateEnforcementMiddleware
 
         middlewares.append(GateEnforcementMiddleware(enabled=True))
+
+    # SafetyFinishReasonMiddleware — suppress tool execution when the provider
+    # safety-terminates the response (OpenAI content_filter / Anthropic refusal /
+    # Gemini SAFETY). Appended near the end so LangChain's reverse-order
+    # after_model dispatch lets it strip stale tool_calls *first*; downstream
+    # Loop / Subagent accounting then sees a clean AIMessage. See
+    # safety_finish_reason_middleware.py docstring.
+    safety_config = app_config.safety_finish_reason
+    if safety_config.enabled:
+        middlewares.append(SafetyFinishReasonMiddleware.from_config(safety_config))
 
     # ClarificationMiddleware should always be last
     middlewares.append(ClarificationMiddleware())
