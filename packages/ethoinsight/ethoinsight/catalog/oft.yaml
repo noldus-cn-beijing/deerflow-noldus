@@ -76,6 +76,14 @@ charts:
     script: ethoinsight.scripts.oft.plot_center_entry_summary
     when: total_subjects >= 1
     display_name_zh: "中心进入汇总图"
+  - id: trajectory
+    script: ethoinsight.scripts._common.plot_trajectory
+    when: total_subjects >= 1
+    display_name_zh: "轨迹图"
+  - id: heatmap
+    script: ethoinsight.scripts._common.plot_heatmap
+    when: total_subjects >= 1
+    display_name_zh: "热区图"
 
 statistics:
   default:

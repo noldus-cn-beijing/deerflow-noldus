@@ -75,6 +75,14 @@ charts:
     script: ethoinsight.scripts.epm.plot_zone_entry_distribution
     when: total_subjects >= 1
     display_name_zh: "区域进入分布图"
+  - id: trajectory
+    script: ethoinsight.scripts._common.plot_trajectory
+    when: total_subjects >= 1
+    display_name_zh: "轨迹图"
+  - id: heatmap
+    script: ethoinsight.scripts._common.plot_heatmap
+    when: total_subjects >= 1
+    display_name_zh: "热区图"
 
 statistics:
   default:
