@@ -16,7 +16,6 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-
 from typing import Literal
 
 from langchain.tools import ToolRuntime, tool
@@ -59,22 +58,60 @@ def resolve_workspace_from_state(state: dict) -> str | None:
     return thread_data.get("workspace_path")
 
 
-def read_handoff(workspace_dir: str) -> dict | None:
-    """Read handoff_code_executor.json from host-side workspace_dir. Returns None if absent."""
+def read_handoff(workspace_dir: str, thread_data: ThreadDataState | None = None) -> dict | None:
+    """Read handoff_code_executor.json from host-side workspace_dir. Returns None if absent.
+
+    When ``thread_data`` is provided, host paths embedded in the JSON text are reverse-masked
+    back to virtual paths (e.g. ``/home/.../uploads/x.txt`` -> ``/mnt/user-data/uploads/x.txt``)
+    before parsing. This shields downstream consumers from subagents that leaked host paths
+    via ``Path.resolve()``; the masking re-uses the same helper that ``write_file_tool`` runs
+    on write.
+
+    The result is also schema-validated via :class:`CodeExecutorHandoff`; on validation
+    failure the schema errors are recorded in ``_schema_violations`` (a soft signal — the
+    raw dict is still returned so existing gate-2 checks keep working).
+    """
     path = Path(workspace_dir) / "handoff_code_executor.json"
     try:
         if not path.exists():
             return None
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, PermissionError, OSError) as e:
+        raw_text = path.read_text(encoding="utf-8")
+    except (PermissionError, OSError) as e:
         logger.warning("Failed to read handoff_code_executor.json: %s", e)
         return None
 
+    if thread_data is not None:
+        # Reverse-mask host paths embedded in the JSON text (defense in depth: write_file
+        # already masks on write, but legacy handoffs or out-of-band writers may still leak).
+        from deerflow.sandbox.tools import mask_local_paths_in_output
 
-def get_critical_warnings(workspace_dir: str) -> list[dict]:
+        raw_text = mask_local_paths_in_output(raw_text, thread_data)
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        logger.warning("Failed to parse handoff_code_executor.json: %s", e)
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    # Soft schema validation: surface violations without dropping the handoff.
+    try:
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+        CodeExecutorHandoff.model_validate(data)
+    except Exception as e:  # pragma: no cover - pydantic ValidationError
+        logger.warning("handoff_code_executor.json schema violation: %s", e)
+        violations = data.setdefault("_schema_violations", [])
+        if isinstance(violations, list):
+            violations.append(str(e))
+
+    return data
+
+
+def get_critical_warnings(workspace_dir: str, thread_data: ThreadDataState | None = None) -> list[dict]:
     """Extract severity='critical' warnings from handoff. Returns empty list if none or absent."""
-    handoff = read_handoff(workspace_dir)
+    handoff = read_handoff(workspace_dir, thread_data=thread_data)
     if not handoff:
         return []
     warnings = handoff.get("data_quality_warnings", [])

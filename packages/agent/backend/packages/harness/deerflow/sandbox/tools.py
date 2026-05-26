@@ -1769,6 +1769,11 @@ def write_file_tool(
         if is_local_sandbox(runtime):
             thread_data = get_thread_data(runtime)
             validate_local_tool_path(path, thread_data)
+            # Reverse-mask host paths embedded in content back to virtual paths
+            # (e.g. /home/.../uploads/x.txt -> /mnt/user-data/uploads/x.txt).
+            # Subagents writing handoff JSON sometimes leak host paths via Path.resolve();
+            # this keeps downstream consumers (other subagents, sandbox-aware tools) safe.
+            content = mask_local_paths_in_output(content, thread_data)
             if not _is_custom_mount_path(path):
                 path = _resolve_and_validate_user_data_path(path, thread_data)
             # Custom mount paths are resolved by LocalSandbox._resolve_path()
@@ -1832,6 +1837,9 @@ def str_replace_tool(
         if is_local_sandbox(runtime):
             thread_data = get_thread_data(runtime)
             validate_local_tool_path(path, thread_data)
+            # Reverse-mask host paths embedded in new_str back to virtual paths.
+            # See write_file_tool for the same rationale.
+            new_str = mask_local_paths_in_output(new_str, thread_data)
             if not _is_custom_mount_path(path):
                 path = _resolve_and_validate_user_data_path(path, thread_data)
             # Custom mount paths are resolved by LocalSandbox._resolve_path()

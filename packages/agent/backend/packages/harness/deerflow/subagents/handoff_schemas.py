@@ -13,7 +13,35 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Virtual path contract: all subagent handoff JSON files must reference user-data
+# files via virtual paths (e.g. /mnt/user-data/uploads/x.txt), never host absolute
+# paths (e.g. /home/.../user-data/uploads/x.txt). Downstream consumers like
+# chart-maker pass these paths to sandbox-enforced CLIs, which reject host paths.
+#
+# This invariant is enforced at the schema level so that a subagent leaking a host
+# path via Path.resolve() fails fast at handoff parse time rather than silently
+# propagating through the pipeline (see project_2026-05-26 path-pollution-defense).
+_VIRTUAL_USER_DATA_PREFIX = "/mnt/user-data/"
+
+
+def _validate_virtual_user_data_paths(paths: list[str]) -> list[str]:
+    """Validate that every path starts with /mnt/user-data/ (the sandbox virtual prefix).
+
+    Empty list is accepted (handoff may legitimately reference no raw files).
+    Raises ValueError listing every offender so the subagent can fix them all at once.
+    """
+    if not paths:
+        return paths
+    offenders = [p for p in paths if not (isinstance(p, str) and p.startswith(_VIRTUAL_USER_DATA_PREFIX))]
+    if offenders:
+        raise ValueError(
+            f"raw_files must use virtual paths under {_VIRTUAL_USER_DATA_PREFIX!r}, "
+            f"got host-side or malformed entries: {offenders}. "
+            "Copy paths verbatim from plan_metrics.json; do not run Path.resolve() / realpath."
+        )
+    return paths
 
 
 class MetricStat(BaseModel):
@@ -71,6 +99,30 @@ class GateSignals(BaseModel):
     errors_count: int = 0
 
 
+class CodeExecutorInputs(BaseModel):
+    """Inputs block recorded by code-executor (raw files + grouping + columns).
+
+    Subagent must copy raw_files verbatim from plan_metrics.json.inputs.raw_files;
+    field_validator enforces that paths stay virtual.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    raw_files: list[str] = Field(
+        default_factory=list,
+        description="Virtual paths (/mnt/user-data/uploads/...) of input trajectory files.",
+    )
+    groups: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional group assignment dict, e.g. {'Arena 1': 'Treatment'}.",
+    )
+
+    @field_validator("raw_files")
+    @classmethod
+    def _enforce_virtual_paths(cls, v: list[str]) -> list[str]:
+        return _validate_virtual_user_data_paths(v)
+
+
 class CodeExecutorHandoff(BaseModel):
     """Handoff JSON produced by the code-executor subagent (SOTA glue-script architecture).
 
@@ -81,6 +133,13 @@ class CodeExecutorHandoff(BaseModel):
 
     status: Literal["completed", "partial", "failed"]
     summary: str
+    inputs: CodeExecutorInputs | None = Field(
+        default=None,
+        description=(
+            "Inputs block (raw_files, groups, ...). Optional for backwards compatibility "
+            "with older handoff files; new code-executor invocations should populate it."
+        ),
+    )
     output_files: dict[str, Any] = Field(
         default_factory=dict,
         description="Map of category (metrics/statistics/charts) to path(s).",
@@ -202,6 +261,7 @@ class ReportWriterHandoff(BaseModel):
 
 __all__ = [
     "CodeExecutorHandoff",
+    "CodeExecutorInputs",
     "DataAnalystHandoff",
     "DataQualityWarning",
     "GateSignals",
