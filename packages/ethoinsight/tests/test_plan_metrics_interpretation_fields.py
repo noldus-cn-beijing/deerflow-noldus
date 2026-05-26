@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from ethoinsight.catalog.loader import load_catalog
-from ethoinsight.catalog.resolve import resolve_metrics
+from ethoinsight.catalog.resolve import plan_metrics_to_dict, plan_to_dict, resolve, resolve_metrics
 
 # 每个范式列举一组足以让 default_metrics 全部通过 columns 检查的列名。
 # 来源:packages/ethoinsight/ethoinsight/catalog/<paradigm>.yaml 的 requires_columns 字段。
@@ -61,3 +61,45 @@ def test_resolve_metrics_transfers_interpretation_fields(paradigm: str, tmp_path
         assert plan_metric.output_unit == entry.output_unit
         assert plan_metric.direction_for_anxiety == entry.direction_for_anxiety
         assert plan_metric.statistical_default == entry.statistical_default
+
+
+@pytest.mark.parametrize("paradigm", sorted(_MINIMAL_COLUMNS))
+def test_plan_metrics_to_dict_includes_interpretation_fields(paradigm: str, tmp_path: Path) -> None:
+    """plan_metrics_to_dict() 输出的 metrics[] 项必须含 5 个新字段。"""
+    raw_file = str(tmp_path / "dummy.txt")
+    Path(raw_file).write_text("placeholder", encoding="utf-8")
+    pm = resolve_metrics(
+        paradigm=paradigm,
+        columns=_MINIMAL_COLUMNS[paradigm],
+        raw_files=[raw_file],
+        workspace_dir=str(tmp_path),
+    )
+    d = plan_metrics_to_dict(pm)
+    assert d["metrics"], f"{paradigm}: dict 的 metrics 为空"
+    for m in d["metrics"]:
+        for fld in _EXPECTED_NEW_FIELDS:
+            assert fld in m, f"{paradigm}/{m['id']}: dict 缺 key {fld}"
+        # 字段值类型契约
+        assert isinstance(m["unit_zh"], str)
+        assert isinstance(m["one_liner"], str)
+        assert isinstance(m["output_unit"], str)
+        assert m["direction_for_anxiety"] in (None, "lower_is_anxious", "higher_is_anxious")
+        assert m["statistical_default"] in ("groupwise_compare", "paired_compare")
+
+
+@pytest.mark.parametrize("paradigm", sorted(_MINIMAL_COLUMNS))
+def test_plan_to_dict_includes_interpretation_fields(paradigm: str, tmp_path: Path) -> None:
+    """plan_to_dict()(旧 wrapper)也必须含新字段,保持两个序列化器一致。"""
+    raw_file = str(tmp_path / "dummy.txt")
+    Path(raw_file).write_text("placeholder", encoding="utf-8")
+    plan = resolve(
+        paradigm=paradigm,
+        columns=_MINIMAL_COLUMNS[paradigm],
+        raw_files=[raw_file],
+        workspace_dir=str(tmp_path),
+    )
+    d = plan_to_dict(plan)
+    assert d["metrics"]
+    for m in d["metrics"]:
+        for fld in _EXPECTED_NEW_FIELDS:
+            assert fld in m, f"plan_to_dict {paradigm}/{m['id']}: dict 缺 key {fld}"

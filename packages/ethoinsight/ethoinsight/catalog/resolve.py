@@ -725,6 +725,12 @@ def plan_to_dict(plan: Plan) -> dict:
                 "reason": m.reason,
                 "subject_index": m.subject_index,
                 "display_name_zh": m.display_name_zh,
+                # W27 (2026-05-27): 透传 catalog 判读 / 展示字段
+                "unit_zh": m.unit_zh,
+                "one_liner": m.one_liner,
+                "output_unit": m.output_unit,
+                "direction_for_anxiety": m.direction_for_anxiety,
+                "statistical_default": m.statistical_default,
             }
             for m in plan.metrics
         ],
@@ -772,6 +778,12 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
                 "reason": m.reason,
                 "subject_index": m.subject_index,
                 "display_name_zh": m.display_name_zh,
+                # W27 (2026-05-27): 透传 catalog 判读 / 展示字段
+                "unit_zh": m.unit_zh,
+                "one_liner": m.one_liner,
+                "output_unit": m.output_unit,
+                "direction_for_anxiety": m.direction_for_anxiety,
+                "statistical_default": m.statistical_default,
             }
             for m in pm.metrics
         ],
