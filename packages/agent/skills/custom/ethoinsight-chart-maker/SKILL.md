@@ -21,7 +21,7 @@ author: noldus-insight
 1. read `handoff_code_executor.json` → 拿 paradigm / n_per_group / n_groups / total_subjects
 2. bash `python -m ethoinsight.catalog.resolve --mode charts --paradigm <p> --user-intent "<原话>" ... --output plan_charts.json`
    - **`--raw-files-json` 必须指向一个 JSON 数组,里面是虚拟路径**(`/mnt/user-data/uploads/xxx.txt`),**不可写宿主机绝对路径**。
-   - raw_files 路径直接从上游 `handoff_code_executor.json` 的 `inputs.raw_files` 字段(或 lead 派遣 prompt 给的虚拟路径)抄过来,**不要用 `Path(...).resolve()` 或 `realpath` 把它转成宿主机绝对路径**。
+   - raw_files 路径的**单一真源是 `plan_metrics.json.inputs.raw_files`**：read 这个文件,把数组**原样**写进 raw_files.json。**不要**从 handoff_code_executor.json 抄(其 inputs 字段历史上有过宿主路径污染),**不要**用 `Path(...).resolve()` / `realpath` 转换。
    - resolve.py 会把这些路径原样写到 `plan_charts.json` 的 `input` 字段,后续脚本被 sandbox guardrail 拦宿主机路径。
 3. read `plan_charts.json` → charts[] + charts_fallback_available[]
 4. 决策(见 references/fallback-decision-tree.md)
