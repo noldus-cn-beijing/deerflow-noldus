@@ -129,7 +129,13 @@ services:
         UV_INDEX_URL: ${UV_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         NODE_MIRROR: ${NODE_MIRROR:-deb.nodesource.com}
     container_name: deer-flow-langgraph
-    command: sh -c 'cd /app/backend && args="--no-browser --no-reload --host 0.0.0.0 --port 2024 --n-jobs-per-worker $${LANGGRAPH_JOBS_PER_WORKER:-10}" && if [ "$${LANGGRAPH_ALLOW_BLOCKING:-0}" = "1" ]; then args="$$args --allow-blocking"; fi && /app/backend/.venv/bin/langgraph dev $$args'
+    # --allow-blocking is mandatory: ethoinsight code-executor + deerflow harness
+    # contain sync I/O (os.scandir for skill discovery, numpy/scipy/pandas in metric
+    # scripts) that langgraph dev's ASGI blocking-detector would otherwise reject.
+    # Mirrors backend/Makefile `dev` target which also passes --allow-blocking and
+    # sets BG_JOB_ISOLATED_LOOPS=true. Do not gate this behind an env var — the
+    # exemption is a property of this product, not a per-environment toggle.
+    command: sh -c 'cd /app/backend && /app/backend/.venv/bin/langgraph dev --no-browser --no-reload --host 0.0.0.0 --port 2024 --n-jobs-per-worker ${LANGGRAPH_JOBS_PER_WORKER:-10} --allow-blocking'
     volumes:
       - ${DEER_FLOW_CONFIG_PATH}:/app/backend/config.yaml:ro
       - ${DEER_FLOW_EXTENSIONS_CONFIG_PATH}:/app/backend/extensions_config.json:ro
@@ -159,6 +165,9 @@ services:
       - DEER_FLOW_HOST_BASE_DIR=${DEER_FLOW_HOME}
       - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_REPO_ROOT}/skills
       - DEER_FLOW_SANDBOX_HOST=host.docker.internal
+      # Mirrors backend/Makefile `dev` — runs each background job in its own event
+      # loop so blocking calls (allowed by --allow-blocking) don't tie up siblings.
+      - BG_JOB_ISOLATED_LOOPS=true
       # LangSmith tracing: set LANGSMITH_TRACING=true and LANGSMITH_API_KEY in .env to enable.
     env_file:
       - ../.env

@@ -228,7 +228,15 @@ if [ "$CMD" = "build" ]; then
         export DEER_FLOW_DOCKER_SOCKET="/var/run/docker.sock"
     fi
 
-    "${COMPOSE_CMD[@]}" build
+    # NO_CACHE=1: bypass docker layer cache (forces full rebuild). Set in
+    # deploy-via-tar.sh when shipping to ECS, since editable installs of
+    # packages/ethoinsight can otherwise stick to a cached layer's source.
+    BUILD_ARGS=()
+    if [ "${NO_CACHE:-0}" = "1" ]; then
+        BUILD_ARGS+=(--no-cache)
+    fi
+
+    "${COMPOSE_CMD[@]}" build "${BUILD_ARGS[@]}"
 
     echo ""
     echo "=========================================="
