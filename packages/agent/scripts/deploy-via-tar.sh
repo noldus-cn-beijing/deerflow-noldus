@@ -52,12 +52,14 @@ info() { echo -e "${BLUE}→ $*${NC}"; }
 warn() { echo -e "${YELLOW}⚠ $*${NC}"; }
 
 # ── Validate required env ─────────────────────────────────────────────────────
-[ -n "${DEPLOY_HOST:-}" ] || err "DEPLOY_HOST not set (e.g. deploy@1.2.3.4)"
-[ -n "${DEPLOY_PATH:-}" ] || err "DEPLOY_PATH not set (e.g. /opt/ethoinsight)"
-[ -n "${DEPLOY_CONFIG:-}" ] || err "DEPLOY_CONFIG not set (path to production config.yaml)"
+[ -n "${DEPLOY_HOST:-}" ]       || err "DEPLOY_HOST not set (e.g. deploy@1.2.3.4)"
+[ -n "${DEPLOY_PATH:-}" ]       || err "DEPLOY_PATH not set (e.g. /opt/ethoinsight)"
+[ -n "${DEPLOY_CONFIG:-}" ]     || err "DEPLOY_CONFIG not set (path to production config.yaml)"
 [ -n "${DEPLOY_EXTENSIONS:-}" ] || err "DEPLOY_EXTENSIONS not set (path to production extensions_config.json)"
-[ -f "$DEPLOY_CONFIG" ] || err "DEPLOY_CONFIG file not found: $DEPLOY_CONFIG"
-[ -f "$DEPLOY_EXTENSIONS" ] || err "DEPLOY_EXTENSIONS file not found: $DEPLOY_EXTENSIONS"
+[ -n "${DEPLOY_AGENT_ENV:-}" ]  || err "DEPLOY_AGENT_ENV not set (path to production .env for gateway/langgraph)"
+[ -f "$DEPLOY_CONFIG" ]         || err "DEPLOY_CONFIG file not found: $DEPLOY_CONFIG"
+[ -f "$DEPLOY_EXTENSIONS" ]     || err "DEPLOY_EXTENSIONS file not found: $DEPLOY_EXTENSIONS"
+[ -f "$DEPLOY_AGENT_ENV" ]      || err "DEPLOY_AGENT_ENV file not found: $DEPLOY_AGENT_ENV"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -114,18 +116,24 @@ info "[4/5] Shipping image tar and runtime files to ${DEPLOY_HOST}:${DEPLOY_PATH
 rsync -avz --progress "$TAR_PATH" "$DEPLOY_HOST:$DEPLOY_PATH/images/"
 
 # 4b. Compose file + nginx config (under docker/)
-rsync -avz --delete \
-    docker/docker-compose.yaml \
-    docker/nginx/ \
-    "$DEPLOY_HOST:$DEPLOY_PATH/docker/"
+rsync -avz --delete docker/docker-compose.yaml "$DEPLOY_HOST:$DEPLOY_PATH/docker/"
+# nginx.conf must be a file (not a directory) at docker/nginx/nginx.conf on the remote
+# Use explicit file transfer to avoid rsync creating a directory named nginx.conf
+ssh "$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/docker/nginx'"
+rsync -avz docker/nginx/nginx.conf "$DEPLOY_HOST:$DEPLOY_PATH/docker/nginx/nginx.conf"
 
 # 4c. Skills directory (read-only mount inside containers)
 rsync -avz --delete --exclude='__pycache__' --exclude='*.pyc' \
     skills/ "$DEPLOY_HOST:$DEPLOY_PATH/skills/"
 
-# 4d. Runtime configs (config.yaml + extensions_config.json) — never commit secrets to repo
+# 4d. Runtime configs (config.yaml + extensions_config.json + .env) — never commit secrets to repo
 rsync -avz "$DEPLOY_CONFIG"     "$DEPLOY_HOST:$DEPLOY_PATH/runtime/config.yaml"
 rsync -avz "$DEPLOY_EXTENSIONS" "$DEPLOY_HOST:$DEPLOY_PATH/runtime/extensions_config.json"
+rsync -avz "$DEPLOY_AGENT_ENV"  "$DEPLOY_HOST:$DEPLOY_PATH/.env"
+
+# 4e. frontend/.env — no secrets, just URL config; docker compose requires this file to exist
+ssh "$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/frontend'"
+rsync -avz frontend/.env "$DEPLOY_HOST:$DEPLOY_PATH/frontend/.env"
 
 ok "Files shipped"
 
@@ -172,7 +180,9 @@ mkdir -p "$HOME/.claude" "$HOME/.codex"
 
 echo "→ Restarting services via docker compose"
 cd "$DEPLOY_PATH/docker"
-docker compose -p deer-flow -f docker-compose.yaml up -d --remove-orphans
+# Explicitly list services to start — skips 'provisioner' (Kubernetes-only, not needed here)
+docker compose -p deer-flow -f docker-compose.yaml up -d --remove-orphans \
+    frontend gateway langgraph nginx
 
 echo "→ Pruning unused images older than 7 days"
 docker image prune -af --filter "until=168h" >/dev/null 2>&1 || true

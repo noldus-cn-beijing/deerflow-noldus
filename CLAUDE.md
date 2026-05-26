@@ -198,11 +198,21 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 ### CI/CD
 
-- **触发**：PR merge 到 `main` → GitHub Actions 自动执行
-- **构建**：`.github/workflows/build-push-acr.yml`，并行 build backend（gateway + langgraph 同一镜像）和 frontend
-- **推送**：镜像 push 到 ACR `registry.cn-beijing.aliyuncs.com/ethoinsight/`
-- **部署**：ECS 上 watchtower 5 分钟 poll 检测 ACR 新镜像 → `docker compose pull && up -d`
-- **凭证**：ACR 登录凭证存在 GitHub Secrets（`ACR_USERNAME` / `ACR_PASSWORD`）
+**当前实际部署方式（ACR 到位前）**: 本地 build → 镜像 tar 推送 ECS → docker compose up
+
+- **触发**: 开发者在本地跑 `cd packages/agent && make deploy-tar`
+- **构建**: 本地 `docker compose build`（linux/amd64），导出两个镜像（frontend + backend）为 gzip tar
+- **传输**: rsync 镜像 tar + docker-compose.yaml + nginx.conf + skills + config 到 ECS `/opt/ethoinsight/`
+- **部署**: 远程 `docker load` + `docker compose up -d`（frontend / gateway / langgraph / nginx 四个服务）
+- **反代**: ECS 上 1Panel + OpenResty，80/443 → 内部 127.0.0.1:2026
+- **配置文件**: `config.yaml` / `extensions_config.json` / `.env` 存在开发者本地 `~/ethoinsight-prod/`，不进 git，部署时 rsync 到 ECS
+- **SOP**: 见 [docs/sop/deploy-via-tar-sop.md](docs/sop/deploy-via-tar-sop.md)
+- **所需 env vars**: `DEPLOY_HOST` / `DEPLOY_PATH` / `DEPLOY_CONFIG` / `DEPLOY_EXTENSIONS` / `DEPLOY_AGENT_ENV`
+
+**未来 ACR pipeline（暂未启用）**: 待 ACR 权限到位后启用 `.github/workflows/build-push-acr.yml`：
+- PR merge 到 `main` → GitHub Actions build & push 到 ACR `registry.cn-beijing.aliyuncs.com/ethoinsight/`
+- ECS watchtower poll 检测新镜像 → `docker compose pull && up -d`
+- 届时 `make deploy-tar` 退役，`deploy-via-tar.sh` 中 `docker load` 换 `docker compose pull`
 
 ### 文档
 
