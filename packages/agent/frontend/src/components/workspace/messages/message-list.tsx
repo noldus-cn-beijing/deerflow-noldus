@@ -170,6 +170,12 @@ export function MessageList({
                 const taskId = message.tool_call_id;
                 if (taskId) {
                   const result = extractTextFromMessage(message);
+                  // 任何 tool_call_id 匹配的 ToolMessage 抵达都视为终态——in_progress 是 streaming 阶段才有效。
+                  // 后端短路返回的特殊 ToolMessage（如 GateEnforcementMiddleware 写 name="gate_enforcement"
+                  // 的"数据质量检查发现 critical 问题..."消息）不带 Task* 前缀，必须显式识别才不会让卡片永远卡在 in_progress。
+                  // 真实案例: 2026-05-26 FST 端到端 — data-analyst 第一次派遣被 gate_enforcement 短路，
+                  //         由于 ToolMessage 不以 "Task Succeeded/failed/timed out" 开头，
+                  //         以前 fallback 到 in_progress 让卡片永远不结束。
                   if (result.startsWith("Task Succeeded")) {
                     // 兼容两种格式:
                     // 旧: "Task Succeeded. Result: <...>"
@@ -204,10 +210,20 @@ export function MessageList({
                       status: "failed",
                       error: result,
                     });
-                  } else {
+                  } else if (result.startsWith("Task cancelled")) {
                     updateSubtask({
                       id: taskId,
-                      status: "in_progress",
+                      status: "failed",
+                      error: result,
+                    });
+                  } else {
+                    // 后端 middleware 短路（如 gate_enforcement）返回的 ToolMessage 不带 Task* 前缀。
+                    // ToolMessage 既已抵达 thread.messages，说明 lead 收到了，此 task 已不可能再 streaming。
+                    // 切到 completed 并把原文交给卡片展示（卡片可显示"被门拦截"的红字）。
+                    updateSubtask({
+                      id: taskId,
+                      status: "completed",
+                      result,
                     });
                   }
                 }

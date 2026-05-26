@@ -51,6 +51,10 @@ class ChartEntry:
     output_mode: str = "per_subject"   # 1.2: "per_subject" expands to N PlanCharts (one inputs.json per file);
                                          # "aggregate" collapses to 1 PlanChart with all files in one inputs.json
     needs_groups: bool = False          # 1.2: aggregate plots that compare across groups need a groups.json arg
+    requires_columns: list[str] = field(default_factory=list)
+    # 1.3: fnmatch glob 列名模式（如 "velocity"、"mobility_state*"、"in_zone*open*"）。
+    # 任一 pattern 在 columns.json 中无列匹配则该 chart 被 resolve_charts 跳过并写入 skipped。
+    # 默认 [] 表示"不依赖具体列"——兼容旧 yaml，但所有 audit 过的 catalog 都应显式声明。
 
 
 @dataclass(frozen=True)

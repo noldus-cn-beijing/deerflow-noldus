@@ -220,6 +220,11 @@ def _parse_chart_list(raw: dict, source: Path) -> list[ChartEntry]:
                 f"{source}: charts[{i}] output_mode must be 'per_subject' or 'aggregate', got {output_mode!r}"
             )
         needs_groups = bool(it.get("needs_groups", False))
+        requires_columns = it.get("requires_columns", []) or []
+        if not isinstance(requires_columns, list) or not all(isinstance(c, str) for c in requires_columns):
+            raise CatalogError(
+                f"{source}: charts[{i}] 'requires_columns' must be list[str] if present"
+            )
         out.append(
             ChartEntry(
                 id=it["id"],
@@ -229,6 +234,7 @@ def _parse_chart_list(raw: dict, source: Path) -> list[ChartEntry]:
                 accepts_paradigm=accepts_paradigm,
                 output_mode=output_mode,
                 needs_groups=needs_groups,
+                requires_columns=list(requires_columns),
             )
         )
     return out
@@ -321,6 +327,11 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
                 f"{source}: {key}[{i}] output_mode must be 'per_subject' or 'aggregate', got {output_mode!r}"
             )
         needs_groups = bool(it.get("needs_groups", False))
+        requires_columns = it.get("requires_columns", []) or []
+        if not isinstance(requires_columns, list) or not all(isinstance(c, str) for c in requires_columns):
+            raise CatalogError(
+                f"{source}: {key}[{i}] 'requires_columns' must be list[str] if present"
+            )
         out.append(
             ChartEntry(
                 id=it["id"],
@@ -330,6 +341,7 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
                 accepts_paradigm=accepts_paradigm,
                 output_mode=output_mode,
                 needs_groups=needs_groups,
+                requires_columns=list(requires_columns),
             )
         )
     return out

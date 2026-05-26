@@ -331,7 +331,21 @@ def resolve_charts(
     candidate_charts = _filter_charts_by_user_intent(cat.charts, user_intent)
 
     charts: list[PlanChart] = []
+    skipped: list[PlanSkipped] = []
     for ch in candidate_charts:
+        missing = _missing_columns(ch.requires_columns, columns)
+        if missing:
+            skipped.append(
+                PlanSkipped(
+                    id=ch.id,
+                    reason="columns.missing",
+                    detail=(
+                        f"Chart {ch.id} skipped: missing columns {missing} "
+                        f"(available: {sorted(columns)[:8]}{'...' if len(columns) > 8 else ''})."
+                    ),
+                )
+            )
+            continue
         if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
             charts.extend(_chart_to_plan(
                 ch, raw_files, workspace_dir, paradigm=cat.paradigm,
@@ -348,6 +362,19 @@ def resolve_charts(
         # Fallback also respects user_intent so "轨迹图" prefers trajectory over heatmap.
         candidate_fallback = _filter_charts_by_user_intent(common.common_charts, user_intent)
         for ch in candidate_fallback:
+            missing = _missing_columns(ch.requires_columns, columns)
+            if missing:
+                skipped.append(
+                    PlanSkipped(
+                        id=ch.id,
+                        reason="columns.missing",
+                        detail=(
+                            f"Fallback chart {ch.id} skipped: missing columns {missing} "
+                            f"(available: {sorted(columns)[:8]}{'...' if len(columns) > 8 else ''})."
+                        ),
+                    )
+                )
+                continue
             if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
                 fallback.extend(_chart_to_plan(
                     ch, raw_files, workspace_dir, paradigm=cat.paradigm,
@@ -362,6 +389,11 @@ def resolve_charts(
         notes.append(f"Fallback path: {len(fallback)} common charts available")
     else:
         notes.append("No charts matched; chart-maker should ask user")
+    if skipped:
+        notes.append(
+            f"Skipped {len(skipped)} chart(s) due to missing columns: "
+            f"{', '.join(s.id for s in skipped)}"
+        )
     if user_intent:
         notes.append(f"user_intent filter applied: {user_intent!r}")
 
@@ -372,7 +404,7 @@ def resolve_charts(
         inputs=PlanInputs(raw_files=list(raw_files), groups_file=groups_file, columns_file=columns_file),
         charts=charts,
         charts_fallback_available=fallback,
-        skipped=[],
+        skipped=skipped,
         user_intent=user_intent,
         notes=notes,
     )
