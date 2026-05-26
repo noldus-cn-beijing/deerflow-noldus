@@ -658,3 +658,20 @@ packages/ethoinsight/ethoinsight/catalog/
 - [2026-05-12 Script-Per-Metric 架构](2026-05-12-script-per-metric-architecture-design.md) — 前身
 - [2026-05-11 files-are-facts](2026-05-11-subagent-file-is-facts-design.md) — metric_plan.json 的机制基础
 - [packages/agent/backend/packages/harness/deerflow/guardrails/script_invocation_only_provider.py](../../../packages/agent/backend/packages/harness/deerflow/guardrails/script_invocation_only_provider.py) — Guardrail 现状（确认 lead pass through）
+
+---
+
+## Addendum 2026-05-27 — subagent 消费路径修正
+
+原 spec 设想 catalog YAML "被 lead / data-analyst / report-writer 多方共读"。这条
+契约在运行时不成立 — deerflow sandbox 的 read_file 白名单不放行 Python 包内路径
+(`/app/backend/packages/ethoinsight/ethoinsight/catalog/*.yaml` 会被
+PermissionError 拒)。
+
+修正后契约:catalog YAML **仅** 由 lead 通过 `prep_metric_plan` 工具在沙箱外消费,
+所有 subagent 需要的字段(`unit_zh` / `one_liner` / `output_unit` /
+`direction_for_anxiety` / `statistical_default` 等)由 resolve.py 透传到
+plan_metrics.json,subagent 走 `/mnt/user-data/workspace/plan_metrics.json`
+(白名单允许)一次读出。
+
+详细设计:[2026-05-27-catalog-fields-into-plan-design.md](2026-05-27-catalog-fields-into-plan-design.md)

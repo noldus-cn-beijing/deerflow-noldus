@@ -439,6 +439,9 @@ def _metric_to_plan(
     用户上传多文件时除第一个外的 subject 全部丢失。现在按 raw_files 展开,
     每个 subject 一个 PlanMetric,output 用 subject_index 后缀避免覆盖。
     单文件(len==1)保持 output 名 m_<id>.json 兼容现有产物。
+
+    W27 (2026-05-27): 透传 catalog 判读 / 展示字段到 PlanMetric,subagent 不再 read catalog YAML。
+    详见 docs/superpowers/specs/2026-05-27-catalog-fields-into-plan-design.md
     """
     if not raw_files:
         return []
@@ -458,6 +461,11 @@ def _metric_to_plan(
                 reason=reason,
                 subject_index=idx,
                 display_name_zh=m.display_name_zh,
+                unit_zh=m.unit_zh,
+                one_liner=m.one_liner,
+                output_unit=m.output_unit,
+                direction_for_anxiety=m.direction_for_anxiety,
+                statistical_default=m.statistical_default,
             )
         )
     return plans
@@ -717,6 +725,12 @@ def plan_to_dict(plan: Plan) -> dict:
                 "reason": m.reason,
                 "subject_index": m.subject_index,
                 "display_name_zh": m.display_name_zh,
+                # W27 (2026-05-27): 透传 catalog 判读 / 展示字段
+                "unit_zh": m.unit_zh,
+                "one_liner": m.one_liner,
+                "output_unit": m.output_unit,
+                "direction_for_anxiety": m.direction_for_anxiety,
+                "statistical_default": m.statistical_default,
             }
             for m in plan.metrics
         ],
@@ -764,6 +778,12 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
                 "reason": m.reason,
                 "subject_index": m.subject_index,
                 "display_name_zh": m.display_name_zh,
+                # W27 (2026-05-27): 透传 catalog 判读 / 展示字段
+                "unit_zh": m.unit_zh,
+                "one_liner": m.one_liner,
+                "output_unit": m.output_unit,
+                "direction_for_anxiety": m.direction_for_anxiety,
+                "statistical_default": m.statistical_default,
             }
             for m in pm.metrics
         ],

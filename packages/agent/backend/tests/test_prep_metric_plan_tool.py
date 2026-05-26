@@ -116,6 +116,50 @@ class TestPrepMetricPlanToolOk:
         plan_data = json.loads(plan_path.read_text())
         assert "metrics" in plan_data
 
+    def test_plan_metrics_json_contains_interpretation_fields(self, tmp_path):
+        """W27 e2e: tool 写出的 plan_metrics.json 必须含 catalog 5 个判读 / 展示字段。
+
+        这是 catalog → resolve_metrics → plan_metrics_to_dict → JSON 全链路防线。
+        任何环节漏字段(dataclass / 透传 / 序列化),这里 fail。
+        """
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        data_file = uploads / "test_epm.txt"
+        _write_ethovision_file(str(data_file), EPM_COLUMNS)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_metric_plan_tool.invoke({
+            "uploaded_files": ["/mnt/user-data/uploads/test_epm.txt"],
+            "paradigm": "epm",
+            "runtime": runtime,
+        })
+
+        assert result["status"] == "ok"
+        plan_path = workspace / "plan_metrics.json"
+        assert plan_path.exists()
+        plan_data = json.loads(plan_path.read_text())
+        assert plan_data["metrics"], "plan_metrics.json metrics 为空"
+
+        expected_fields = {
+            "unit_zh",
+            "one_liner",
+            "output_unit",
+            "direction_for_anxiety",
+            "statistical_default",
+        }
+        for m in plan_data["metrics"]:
+            missing = expected_fields - set(m.keys())
+            assert not missing, f"metric {m['id']}: plan_metrics.json 缺字段 {missing}"
+            # 类型契约(JSON 反序列化后)
+            assert isinstance(m["unit_zh"], str)
+            assert isinstance(m["one_liner"], str)
+            assert isinstance(m["output_unit"], str)
+            assert m["direction_for_anxiety"] in (None, "lower_is_anxious", "higher_is_anxious")
+            assert m["statistical_default"] in ("groupwise_compare", "paired_compare")
+
 
 class TestPrepMetricPlanToolErrors:
     def test_workspace_missing(self):

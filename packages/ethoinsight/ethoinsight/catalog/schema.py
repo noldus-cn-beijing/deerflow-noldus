@@ -103,6 +103,13 @@ class PlanMetric:
     reason: str  # PlanReasonEnum
     subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
     display_name_zh: str = ""           # 1.1: 中文指标名，透传自 MetricEntry
+    # W27 (2026-05-27): catalog 判读 / 展示字段透传到 plan,subagent 直接读 plan 即可,
+    # 不再 read catalog YAML。详见 docs/superpowers/specs/2026-05-27-catalog-fields-into-plan-design.md
+    unit_zh: str = ""
+    one_liner: str = ""
+    output_unit: str = ""
+    direction_for_anxiety: str | None = None
+    statistical_default: str = ""
 
 
 @dataclass
