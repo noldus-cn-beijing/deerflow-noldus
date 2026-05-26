@@ -116,7 +116,10 @@ def test_plan_chart_output_in_outputs_dir(tmp_path: Path):
 
 
 def test_plan_chart_args_includes_paradigm_when_accepts_paradigm():
-    """accepts_paradigm=true 的 chart → PlanChart.args 含 --paradigm."""
+    """accepts_paradigm=true 的 chart → PlanChart.args 含 --paradigm.
+
+    1.2: 所有 chart args 统一为 --inputs <json_file> 格式 (脚本签名统一)。
+    """
     # 需要一组数据触发 fallback（让 timeseries_plot 可用）
     # 用 shoaling — 该范式 charts: [] 会 fallback 到 common
     pc = resolve_charts(
@@ -130,15 +133,17 @@ def test_plan_chart_args_includes_paradigm_when_accepts_paradigm():
     assert len(ts_charts) >= 1, "timeseries_plot should be in fallback"
     for c in ts_charts:
         assert "--paradigm" in c.args, f"timeseries_plot args 缺 --paradigm: {c.args}"
-        assert c.args == [
-            "--input", c.input,
-            "--output", c.output,
-            "--paradigm", "shoaling",
-        ]
+        # Uniform contract: --inputs <inputs.json> + --output + --paradigm.
+        assert c.args[0] == "--inputs"
+        assert c.args[1] == c.input  # PlanChart.input now points to the inputs.json file
+        assert c.args[2:] == ["--output", c.output, "--paradigm", "shoaling"]
 
 
 def test_plan_chart_args_excludes_paradigm_otherwise():
-    """accepts_paradigm=false 的 chart → PlanChart.args 不含 --paradigm."""
+    """accepts_paradigm=false 的 chart → PlanChart.args 不含 --paradigm.
+
+    1.2: 统一 --inputs <json> 契约。
+    """
     pc = resolve_charts(
         paradigm="shoaling",
         columns=["x_center", "y_center"],
@@ -152,8 +157,8 @@ def test_plan_chart_args_excludes_paradigm_otherwise():
         assert "--paradigm" not in c.args, (
             f"trajectory_plot args 不应含 --paradigm: {c.args}"
         )
-        # verify base args are still present
-        assert c.args[:4] == ["--input", c.input, "--output", c.output]
+        # verify base args use the uniform --inputs contract
+        assert c.args[:4] == ["--inputs", c.input, "--output", c.output]
 
 
 def test_plan_chart_args_excludes_paradigm_for_paradigm_specific():

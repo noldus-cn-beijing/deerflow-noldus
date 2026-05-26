@@ -44,11 +44,15 @@ charts:
     script: ethoinsight.scripts.fst.plot_box_immobility
     when: n_per_group >= 3
     display_name_zh: "不动时间箱线图"
+    output_mode: aggregate
+    needs_groups: true
 
   - id: bar_immobility
     script: ethoinsight.scripts.fst.plot_bar_immobility
     when: total_subjects >= 1
     display_name_zh: "不动行为柱状图（均值±SEM）"
+    output_mode: aggregate
+    needs_groups: true
 
   - id: activity_intensity
     script: ethoinsight.scripts.fst.plot_activity_intensity
@@ -59,6 +63,7 @@ charts:
     script: ethoinsight.scripts.fst.plot_struggle_distribution
     when: total_subjects >= 1
     display_name_zh: "放弃挣扎分布图"
+    output_mode: aggregate
 
 statistics:
   default:

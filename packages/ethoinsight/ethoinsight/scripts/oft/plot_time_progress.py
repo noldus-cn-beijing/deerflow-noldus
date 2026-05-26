@@ -1,8 +1,12 @@
 """OFT: 时间进程图（5 分钟 bin，运动距离 + 中心区滞留双折线）。
 
-CLI: python -m ethoinsight.scripts.oft.plot_time_progress \
-       --input <轨迹文件> --output <png>
+CLI:
+  单文件:  python -m ethoinsight.scripts.oft.plot_time_progress \
+             --input <轨迹文件> --output <png>
+  多文件:  python -m ethoinsight.scripts.oft.plot_time_progress \
+             --inputs <inputs.json> --output <png>
 
+per-subject plot: reads ``paths[0]`` when given an inputs.json.
 catalog when: total_duration_seconds > 300
 bin 长度固定 300 秒，末尾不足并入最后一个 bin。
 """
@@ -18,7 +22,7 @@ import pandas as pd
 
 from ethoinsight.charts import time_progress_plot
 from ethoinsight.parse import parse_trajectory
-from ethoinsight.scripts._cli import emit_result, make_plot_parser
+from ethoinsight.scripts._cli import emit_result, make_plot_parser, resolve_per_subject_input
 
 
 def _find_center_col(df: pd.DataFrame) -> str | None:
@@ -88,11 +92,13 @@ def _compute_bins(df: pd.DataFrame) -> list[dict]:
 
 def main(argv: list[str] | None = None) -> int:
     args = make_plot_parser(description=__doc__, supports_groups=False).parse_args(argv)
-    if not args.input:
-        print("error: plot_time_progress requires --input (single file)", file=sys.stderr)
+    try:
+        path = resolve_per_subject_input(args)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 2
 
-    df = parse_trajectory(args.input)
+    df = parse_trajectory(path)
 
     if "trial_time" not in df.columns:
         print("error: trial_time column missing", file=sys.stderr)

@@ -142,9 +142,12 @@ chart_files:
     ),
     input_contract=(
         "派遣 prompt 模板:\n"
-        '  "请按 handoff_code_executor.json 生成图表。范式: <paradigm>"\n'
+        '  "请按 handoff_code_executor.json 生成图表。范式: <paradigm>。用户意图: <用户原话或 \\"未明确指定\\">"\n'
         "配套: 必须先派遣 code-executor 并确认 handoff_code_executor.json 已写盘\n"
-        "chart-maker 会自行调用 catalog.resolve --mode charts 获取图表配置"
+        "chart-maker 会自行调用 catalog.resolve --mode charts 获取图表配置\n\n"
+        "**用户意图字段填法**:\n"
+        "- 用户在反问/确认时用了具体图种词(\\\"箱线图\\\" / \\\"轨迹图\\\" / \\\"时序图\\\" 等),原样转给 chart-maker\n"
+        "- 用户只点了 ASKVIZ \\\"画图\\\" 默认选项(没指定图种),写 \\\"未明确指定\\\" 或省略该字段;**不要**把 ASKVIZ 选项里给用户看的提示文本(如 \\\"默认推荐: 箱线图/轨迹图/时序图\\\")当成用户意图转发"
     ),
     output_contract=(
         "- 写 /mnt/user-data/workspace/handoff_chart_maker.json\n"

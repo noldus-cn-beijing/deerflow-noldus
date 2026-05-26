@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import datetime as dt
 import fnmatch
+import json
 from pathlib import Path
+from typing import Any
 
 from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.schema import (
@@ -288,6 +290,7 @@ def resolve_charts(
     n_groups: int | None = None,
     total_duration_seconds: float | None = None,
     groups_file: str | None = None,
+    groups: dict[str, Any] | None = None,
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
@@ -296,6 +299,15 @@ def resolve_charts(
 
     主路径：for ch in cat.charts: if _evaluate_when → charts.append
     Fallback 触发：if len(charts)==0 → load_common_catalog() → for ch in common_charts: if _evaluate_when → fallback.append
+
+    1.2: ``groups`` (canonical {arena: group_name} or {group_name: [subject, ...]}) is
+    threaded into ``_chart_to_plan`` so aggregate plots with ``needs_groups: true`` get a
+    materialised groups.json passed via --groups.
+
+    1.2: ``user_intent`` is now consulted to narrow catalog charts when the user uses
+    common chart-type names (e.g. "箱线图" -> id contains "box", "时序图" -> id contains
+    "activity" / "timeseries" / "time"). Filter is opt-in: when no recognised keyword
+    is found, all catalog charts are returned unchanged.
     """
     try:
         cat = load_catalog(paradigm)
@@ -315,10 +327,17 @@ def resolve_charts(
             details={"paradigm": paradigm},
         ) from e
 
+    # Apply user_intent filter — keep entries whose id matches the intent keyword(s).
+    candidate_charts = _filter_charts_by_user_intent(cat.charts, user_intent)
+
     charts: list[PlanChart] = []
-    for ch in cat.charts:
+    for ch in candidate_charts:
         if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
-            charts.extend(_chart_to_plan(ch, raw_files, workspace_dir, paradigm=cat.paradigm, virtual_workspace_dir=virtual_workspace_dir))
+            charts.extend(_chart_to_plan(
+                ch, raw_files, workspace_dir, paradigm=cat.paradigm,
+                virtual_workspace_dir=virtual_workspace_dir,
+                groups=groups,
+            ))
 
     fallback: list[PlanChart] = []
     if not charts:
@@ -326,9 +345,15 @@ def resolve_charts(
             common = load_common_catalog()
         except CatalogError:
             common = CommonCatalog(common_charts=[])
-        for ch in common.common_charts:
+        # Fallback also respects user_intent so "轨迹图" prefers trajectory over heatmap.
+        candidate_fallback = _filter_charts_by_user_intent(common.common_charts, user_intent)
+        for ch in candidate_fallback:
             if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
-                fallback.extend(_chart_to_plan(ch, raw_files, workspace_dir, paradigm=cat.paradigm, virtual_workspace_dir=virtual_workspace_dir))
+                fallback.extend(_chart_to_plan(
+                    ch, raw_files, workspace_dir, paradigm=cat.paradigm,
+                    virtual_workspace_dir=virtual_workspace_dir,
+                    groups=groups,
+                ))
 
     notes: list[str] = []
     if charts:
@@ -337,6 +362,8 @@ def resolve_charts(
         notes.append(f"Fallback path: {len(fallback)} common charts available")
     else:
         notes.append("No charts matched; chart-maker should ask user")
+    if user_intent:
+        notes.append(f"user_intent filter applied: {user_intent!r}")
 
     return PlanCharts(
         paradigm=cat.paradigm,
@@ -404,36 +431,162 @@ def _metric_to_plan(
     return plans
 
 
+def _filter_charts_by_user_intent(charts: list[ChartEntry], user_intent: str | None) -> list[ChartEntry]:
+    """Narrow the candidate chart list when user_intent contains a recognised chart-type keyword.
+
+    Maps user-spoken chart-type names (Chinese & English) to substring patterns on chart id:
+
+      箱线图 / box plot         -> 'box'
+      柱状图 / bar              -> 'bar'
+      轨迹图 / trajectory       -> 'trajectory'
+      热力图 / heatmap          -> 'heatmap'
+      时序图 / timeseries / time-series / 时间进程 -> 'time' or 'activity_intensity'
+      分布图 / distribution     -> 'distribution'
+
+    Multi-keyword intents (e.g. "箱线图、轨迹图、时序图") accumulate matches across all hits.
+    Filter is *additive*: when no keyword matches, all charts pass through (no-op). This keeps
+    the legacy behaviour for ASKVIZ "A. 画图" choices that don't pin a specific chart type.
+    """
+    if not user_intent:
+        return list(charts)
+    intent_lower = user_intent.lower()
+    # Each rule maps {keyword fragments} -> {id substrings to match}.
+    rules: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+        (("箱线图", "box plot", "box-plot"), ("box",)),
+        (("柱状图", "bar chart", "bar plot", "bar-plot"), ("bar",)),
+        (("轨迹图", "轨迹", "trajectory"), ("trajectory",)),
+        (("热力图", "heatmap", "heat map"), ("heatmap",)),
+        (("时序图", "时间进程", "timeseries", "time-series", "time series"), ("time", "activity_intensity", "timeseries")),
+        (("分布图", "distribution", "分布"), ("distribution",)),
+    ]
+    wanted_id_fragments: set[str] = set()
+    for keywords, id_fragments in rules:
+        if any(kw in user_intent or kw in intent_lower for kw in keywords):
+            wanted_id_fragments.update(id_fragments)
+    if not wanted_id_fragments:
+        return list(charts)
+    filtered = [ch for ch in charts if any(frag in ch.id for frag in wanted_id_fragments)]
+    # Don't strip everything to zero — if the intent maps to nothing in this paradigm's catalog,
+    # fall back to the full list so user still sees something (better than an empty plan).
+    return filtered if filtered else list(charts)
+
+
 def _chart_to_plan(
     ch: ChartEntry, raw_files: list[str], workspace_dir: str,
     paradigm: str = "",                          # 1.1: 范式名，用于 --paradigm
     virtual_workspace_dir: str | None = None,
     virtual_outputs_dir: str | None = None,       # 1.1: outputs 虚拟路径
+    groups: dict[str, Any] | None = None,         # 1.2: optional group labels for aggregate plots
 ) -> list[PlanChart]:
-    """Expand one ChartEntry into N PlanChart (one per raw_file).
+    """Build PlanCharts from a ChartEntry, materializing inputs.json (and optional groups.json).
 
-    See _metric_to_plan for fix rationale. Single-subject charts (typical for
-    group-comparison plots) callers can still wrap a single raw_file.
+    1.2: Uniform CLI contract — every plot script is invoked with ``--inputs <json_file>``,
+    never ``--input <single_file>``. The catalog yaml decides how many PlanCharts are
+    produced and what gets written into each inputs.json:
 
-    1.1: PlanChart.output → outputs/ (与 chart_maker "PNG 必须写到 outputs/" 一致)；
-    按 accepts_paradigm 决定 args 是否含 --paradigm。
+      - ``output_mode: per_subject`` (default): expand to N PlanCharts (one per raw_file).
+        Each PlanChart materializes its own ``inputs_<chart_id>_s<idx>.json`` with a
+        single-element array. Scripts read ``paths[0]`` via ``resolve_per_subject_input``.
+
+      - ``output_mode: aggregate``: collapse to one PlanChart with ``inputs_<chart_id>.json``
+        containing all raw_files. Used for cross-subject comparisons (box / bar /
+        struggle distribution).
+
+    When ``ch.needs_groups`` is True and groups are available, ``groups_<chart_id>.json`` is
+    materialised alongside and added to args as ``--groups <path>``. The group JSON is in the
+    canonical ``{group_name: [subject_path, ...]}`` shape expected by ``read_groups_json``.
     """
     if not raw_files:
         return []
     effective_outputs = virtual_outputs_dir or "/mnt/user-data/outputs"
-    multi = len(raw_files) > 1
+    effective_workspace = virtual_workspace_dir or workspace_dir
+    # Physical paths for files we actually write (the virtual variants go into args).
+    physical_workspace = Path(workspace_dir)
+    physical_workspace.mkdir(parents=True, exist_ok=True)
+
+    def _materialise_inputs(json_name: str, paths: list[str]) -> str:
+        """Write inputs JSON to physical workspace, return its virtual path for args."""
+        physical_path = physical_workspace / json_name
+        physical_path.write_text(json.dumps(paths, ensure_ascii=False), encoding="utf-8")
+        return str(Path(effective_workspace) / json_name)
+
+    def _materialise_groups(json_name: str, mapping: dict[str, list[str]]) -> str:
+        physical_path = physical_workspace / json_name
+        physical_path.write_text(json.dumps(mapping, ensure_ascii=False), encoding="utf-8")
+        return str(Path(effective_workspace) / json_name)
+
+    def _build_groups_payload(paths: list[str]) -> dict[str, list[str]] | None:
+        """Reshape catalog/groups dict into {group_name: [subject_path, ...]}.
+
+        Accepts two upstream shapes:
+          - {arena_key: group_name}: assigns each raw_file to its group via arena_key match.
+          - {group_name: [subject_id, ...]}: passed through verbatim (legacy).
+        Returns None when groups can't be confidently mapped (avoids guessing).
+        """
+        if not groups:
+            return None
+        # Detect shape: values are str → {arena: group_name}; values are list → already final.
+        if all(isinstance(v, str) for v in groups.values()):
+            mapping: dict[str, list[str]] = {}
+            # Heuristic: each raw_file path likely contains the arena key (e.g. "Arena 1").
+            for arena_key, group_name in groups.items():
+                bucket = mapping.setdefault(group_name, [])
+                for p in paths:
+                    if arena_key in Path(p).name:
+                        bucket.append(p)
+            # If nothing matched, fall back to None to avoid silent miscategorisation.
+            if not any(mapping.values()):
+                return None
+            # Trim empty groups (defensive).
+            return {k: v for k, v in mapping.items() if v}
+        if all(isinstance(v, list) for v in groups.values()):
+            return {k: [str(x) for x in v] for k, v in groups.items()}
+        return None
+
     plans: list[PlanChart] = []
-    for idx, raw_file in enumerate(raw_files):
-        suffix = f"_s{idx}" if multi else ""
-        output_path = str(Path(effective_outputs) / f"plot_{ch.id}{suffix}.png")
-        args = ["--input", raw_file, "--output", output_path]
+
+    if ch.output_mode == "aggregate":
+        # One PlanChart aggregating all raw_files.
+        inputs_name = f"inputs_{ch.id}.json"
+        inputs_virtual = _materialise_inputs(inputs_name, raw_files)
+        output_path = str(Path(effective_outputs) / f"plot_{ch.id}.png")
+        args = ["--inputs", inputs_virtual]
+        if ch.needs_groups:
+            groups_payload = _build_groups_payload(raw_files)
+            if groups_payload:
+                groups_virtual = _materialise_groups(f"groups_{ch.id}.json", groups_payload)
+                args.extend(["--groups", groups_virtual])
+        args.extend(["--output", output_path])
         if ch.accepts_paradigm and paradigm:
             args.extend(["--paradigm", paradigm])
         plans.append(
             PlanChart(
                 id=ch.id,
                 script=ch.script,
-                input=raw_file,
+                input=str(Path(effective_workspace) / inputs_name),
+                output=output_path,
+                subject_index=0,
+                display_name_zh=ch.display_name_zh,
+                args=args,
+            )
+        )
+        return plans
+
+    # per_subject: expand to N PlanCharts, one inputs.json per file.
+    multi = len(raw_files) > 1
+    for idx, raw_file in enumerate(raw_files):
+        suffix = f"_s{idx}" if multi else ""
+        inputs_name = f"inputs_{ch.id}{suffix}.json"
+        inputs_virtual = _materialise_inputs(inputs_name, [raw_file])
+        output_path = str(Path(effective_outputs) / f"plot_{ch.id}{suffix}.png")
+        args = ["--inputs", inputs_virtual, "--output", output_path]
+        if ch.accepts_paradigm and paradigm:
+            args.extend(["--paradigm", paradigm])
+        plans.append(
+            PlanChart(
+                id=ch.id,
+                script=ch.script,
+                input=str(Path(effective_workspace) / inputs_name),
                 output=output_path,
                 subject_index=idx,
                 display_name_zh=ch.display_name_zh,

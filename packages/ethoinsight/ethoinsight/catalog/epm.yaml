@@ -67,6 +67,8 @@ charts:
     script: ethoinsight.scripts.epm.plot_box_open_arm
     when: n_per_group >= 3
     display_name_zh: "开放臂箱线图"
+    output_mode: aggregate
+    needs_groups: true
   - id: open_arm_time_ratio_bar
     script: ethoinsight.scripts.epm.plot_open_arm_time_ratio_bar
     when: total_subjects >= 1
