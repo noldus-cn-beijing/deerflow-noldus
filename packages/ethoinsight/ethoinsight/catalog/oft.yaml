@@ -68,6 +68,8 @@ charts:
     script: ethoinsight.scripts.oft.plot_box_center
     when: n_per_group >= 3
     display_name_zh: "中心时间箱线图"
+    output_mode: aggregate
+    needs_groups: true
   - id: center_time_ratio_bar
     script: ethoinsight.scripts.oft.plot_center_time_ratio_bar
     when: total_subjects >= 1

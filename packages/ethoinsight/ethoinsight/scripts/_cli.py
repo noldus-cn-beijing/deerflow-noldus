@@ -74,6 +74,25 @@ def read_groups_json(path: str | Path) -> dict[str, list[str]]:
     return {k: list(v) for k, v in data.items()}
 
 
+def resolve_per_subject_input(args: argparse.Namespace) -> str:
+    """For per-subject plots: return the single trajectory path from args.
+
+    Accepts either:
+      - ``--input <path>`` (legacy single-file form)
+      - ``--inputs <json>`` (uniform form; reads the FIRST path from the JSON array)
+
+    Raises ValueError if neither is provided or inputs.json is empty.
+    """
+    if getattr(args, "input", None):
+        return args.input
+    if getattr(args, "inputs", None):
+        paths = read_inputs_json(args.inputs)
+        if not paths:
+            raise ValueError(f"{args.inputs} is an empty JSON array")
+        return paths[0]
+    raise ValueError("plot script requires --input or --inputs")
+
+
 # ============================================================================
 # Standard argparse builders for the three script types
 # ============================================================================

@@ -48,6 +48,9 @@ class ChartEntry:
     when: ChartCondition  # "always" | "n_per_group >= K" | "n_groups >= K"
     display_name_zh: str = ""          # 1.1: 中文图名，必填（loader 校验）
     accepts_paradigm: bool = False      # 1.1: 脚本是否接受 --paradigm 参数
+    output_mode: str = "per_subject"   # 1.2: "per_subject" expands to N PlanCharts (one inputs.json per file);
+                                         # "aggregate" collapses to 1 PlanChart with all files in one inputs.json
+    needs_groups: bool = False          # 1.2: aggregate plots that compare across groups need a groups.json arg
 
 
 @dataclass(frozen=True)

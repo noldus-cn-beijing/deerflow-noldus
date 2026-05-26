@@ -21,16 +21,30 @@ author: noldus-insight
 1. read `handoff_code_executor.json` → 拿 paradigm / n_per_group / n_groups / total_subjects
 2. bash `python -m ethoinsight.catalog.resolve --mode charts --paradigm <p> --user-intent "<原话>" ... --output plan_charts.json`
    - **`--raw-files-json` 必须指向一个 JSON 数组,里面是虚拟路径**(`/mnt/user-data/uploads/xxx.txt`),**不可写宿主机绝对路径**。
-   - raw_files 路径的**单一真源是 `plan_metrics.json.inputs.raw_files`**：read 这个文件,把数组**原样**写进 raw_files.json。**不要**从 handoff_code_executor.json 抄(其 inputs 字段历史上有过宿主路径污染),**不要**用 `Path(...).resolve()` / `realpath` 转换。
+   - raw_files 路径的**单一真源是 `plan_metrics.json.inputs.raw_files`**: read 这个文件,数组**原样**写进 raw_files.json,**不要**从 handoff_code_executor.json 抄(其 inputs 字段历史上有过宿主路径污染),**不要**用 `Path(...).resolve()` / `realpath`。
+   - **若 handoff_code_executor.json.inputs.groups 存在,把它整个 dict 写到 `groups.json` 并加 `--groups-json /mnt/user-data/workspace/groups.json` 参数**;catalog 中 `needs_groups: true` 的 aggregate chart(box/bar 等)依赖该文件做组间对比。
    - resolve.py 会把这些路径原样写到 `plan_charts.json` 的 `input` 字段,后续脚本被 sandbox guardrail 拦宿主机路径。
 3. read `plan_charts.json` → charts[] + charts_fallback_available[]
 4. 决策(见 references/fallback-decision-tree.md)
 5. for each entry in plan_charts.json.charts: bash 跑脚本
    - 用 `python -m <entry.script> <entry.args 拼接>` 形式调用
-   - **不要自己拼 paradigm 前缀或追加 --paradigm 参数**——entry.script 和 entry.args 已经是 resolve 阶段按 catalog yaml `accepts_paradigm` 字段拼好的（PR-1 落地)
-6. write `handoff_chart_maker.json`
+   - **entry.args 永远是 `--inputs <inputs.json>` + 可能 `--groups <groups.json>` + `--output <png>` + 可能 `--paradigm`** —— resolve 已物化对应 JSON 文件到 workspace,**不要自己拼 `--input` 单文件形式**(脚本不再接受单文件 `--input` 之外的 fallback)
+   - **不要自己拼 paradigm 前缀或追加 --paradigm 参数**——entry.script 和 entry.args 已经是 resolve 阶段按 catalog yaml `accepts_paradigm` 字段拼好的
+6. write `handoff_chart_maker.json`(**任何退出路径都必须先写**,见下面"失败硬规范")
 7. `present_files(<生成的 png 列表>)`
 8. 输出 `OK: <N> charts generated\n[gate_signals]\n...`
+
+## 失败硬规范(2026-05-26 加)
+
+任何提前退出都必须先写 `handoff_chart_maker.json`,把已生成的图 / 失败原因 / 错误 trace 持久化,否则 lead 拿不到上下文会困惑。
+
+| 触发条件 | 处理 |
+|---|---|
+| bash 预算还剩 ≤ 2 次但 charts 还没跑完 | **立刻**写 handoff_chart_maker.json(status=`partial`),记录 `succeeded_charts[]` / `remaining_charts[]` / `reason="bash budget exhausted"`,present_files 已成功的 png,再输出 `OK` |
+| 某 chart 脚本连续失败 ≥ 2 次 | 记入 failed_charts[] 跳过下一个,**不要继续重试**(LLM 试错只会耗光预算) |
+| catalog.resolve 调用本身失败 | 写 handoff_chart_maker.json(status=`failed`),chart_files=[],failed_charts=[{chart_id:"all", reason:"<resolve error>"}],输出 `OK:` + [gate_signals] |
+| sandbox guardrail 拒绝(host_path_blocked 等) | **不要重试** —— guardrail 反馈消息已说明 root cause(路径错 / 参数错),把消息原样塞到 failed_charts[i].reason,跳过这个 chart |
+| 任何未预期异常 | catch 之,写 handoff status=`failed` + errors=[<traceback summary>],输出 `OK: ` + [gate_signals],**不要让 subagent 静默挂掉** |
 
 ## 用户语义解析(细节见 references/user-intent-parsing.md)
 

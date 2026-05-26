@@ -56,11 +56,15 @@ charts:
     script: ethoinsight.scripts.zero_maze.plot_box_open_zone
     when: n_per_group >= 3
     display_name_zh: "开放区时间箱线图"
+    output_mode: aggregate
+    needs_groups: true
 
   - id: bar_open_zone
     script: ethoinsight.scripts.zero_maze.plot_bar_open_zone
     when: total_subjects >= 1
     display_name_zh: "开放区指标柱状图（均值±SEM）"
+    output_mode: aggregate
+    needs_groups: true
 
   - id: trajectory
     script: ethoinsight.scripts._common.plot_trajectory

@@ -38,7 +38,7 @@ import os
 import sys
 from pathlib import Path
 
-from ethoinsight.catalog.resolve import ResolveError, plan_charts_to_dict, plan_metrics_to_dict, plan_to_dict, resolve, resolve_charts, resolve_metrics
+from ethoinsight.catalog.resolve import ResolveError, plan_charts_to_dict, plan_metrics_to_dict, resolve_charts, resolve_metrics
 
 
 # 与 deerflow.sandbox.tools._build_path_env 完全一致的命名规则：
@@ -91,6 +91,11 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Total number of subjects; used in charts mode when conditions")
     p.add_argument("--user-intent", default=None,
                    help="User's intent string; stored in plan_charts.json (charts mode only)")
+    p.add_argument("--groups-json", default=None,
+                   help="Optional path to a JSON file with group assignments. "
+                        "Accepted shapes: {arena_key: group_name} (e.g. {\"Arena 1\": \"Treatment\"}) "
+                        "or {group_name: [subject_path, ...]}. Threaded to aggregate plots that need "
+                        "group labels (chart entries with needs_groups: true).")
     p.add_argument("--ev19-template", default=None)
     p.add_argument("--output", required=True)
     return p
@@ -145,6 +150,25 @@ def main(argv: list[str] | None = None) -> int:
         args.virtual_workspace_dir, args.workspace_dir
     )
 
+    # Optional groups JSON (charts mode aggregate plots only).
+    groups: dict | None = None
+    if getattr(args, "groups_json", None):
+        try:
+            groups_data = json.loads(Path(args.groups_json).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            return _emit_error(
+                "schema_violation",
+                f"Cannot read groups-json: {e}",
+                {"path": args.groups_json},
+            )
+        if not isinstance(groups_data, dict):
+            return _emit_error(
+                "schema_violation",
+                f"groups-json must be a JSON object: {args.groups_json}",
+                {"path": args.groups_json},
+            )
+        groups = groups_data
+
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -161,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
                 n_per_group=args.n_per_group,
                 n_groups=args.n_groups,
                 groups_file=args.groups_file,
+                groups=groups,
                 columns_file=args.columns_file,
                 ev19_template=args.ev19_template,
                 virtual_workspace_dir=virtual_workspace_dir,

@@ -214,6 +214,12 @@ def _parse_chart_list(raw: dict, source: Path) -> list[ChartEntry]:
                 f"{source}: charts[{i}] missing 'display_name_zh'"
             )
         accepts_paradigm = bool(it.get("accepts_paradigm", False))
+        output_mode = str(it.get("output_mode", "per_subject"))
+        if output_mode not in ("per_subject", "aggregate"):
+            raise CatalogError(
+                f"{source}: charts[{i}] output_mode must be 'per_subject' or 'aggregate', got {output_mode!r}"
+            )
+        needs_groups = bool(it.get("needs_groups", False))
         out.append(
             ChartEntry(
                 id=it["id"],
@@ -221,6 +227,8 @@ def _parse_chart_list(raw: dict, source: Path) -> list[ChartEntry]:
                 when=it["when"],
                 display_name_zh=display_name_zh,
                 accepts_paradigm=accepts_paradigm,
+                output_mode=output_mode,
+                needs_groups=needs_groups,
             )
         )
     return out
@@ -307,6 +315,12 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
                 f"{source}: {key}[{i}] missing 'display_name_zh'"
             )
         accepts_paradigm = bool(it.get("accepts_paradigm", False))
+        output_mode = str(it.get("output_mode", "per_subject"))
+        if output_mode not in ("per_subject", "aggregate"):
+            raise CatalogError(
+                f"{source}: {key}[{i}] output_mode must be 'per_subject' or 'aggregate', got {output_mode!r}"
+            )
+        needs_groups = bool(it.get("needs_groups", False))
         out.append(
             ChartEntry(
                 id=it["id"],
@@ -314,6 +328,8 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
                 when=it["when"],
                 display_name_zh=display_name_zh,
                 accepts_paradigm=accepts_paradigm,
+                output_mode=output_mode,
+                needs_groups=needs_groups,
             )
         )
     return out
