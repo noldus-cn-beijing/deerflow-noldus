@@ -332,6 +332,14 @@ def identify_ev19_template_tool(
          "evidence": {...},
          "clarification_question": "无法确定实验范式，请确认？"}
 
+      status="unsupported" (v0.1 暂不支持该范式 — 鱼类 / TST / MWM 等):
+        {"status": "unsupported",
+         "paradigm_key": "shoaling",
+         "paradigm_label": "斑马鱼鱼群行为",
+         "supported_paradigms": ["epm", "forced_swim", "light_dark_box", "open_field", "zero_maze"],
+         "message": "当前版本暂不支持「斑马鱼鱼群行为」范式...",
+         "hint": "请用 ask_clarification 告知用户..."}
+
       status="error":
         {"status": "error", "error_code": "...", "message": "...", "hint": "..."}
     """
@@ -353,6 +361,41 @@ def identify_ev19_template_tool(
     # Step 2: extract paradigm hints from user message + filenames
     paradigm_key = _extract_paradigm_from_hints(user_message, uploaded_files)
     subject_hint = _extract_subject(user_message)
+
+    # Step 2.5: v0.1 范围公告 — 识别到不支持的范式 keyword 时直接 unsupported 返回,
+    # 不进入后续 zone 解析 / 候选搜索流水线。
+    # Why: 代码层只为 5 个范式实现了 catalog/metrics/scripts (见 SUPPORTED_PARADIGMS_V01),
+    # 其他 paradigm_key 即使识别成功也会在 code-executor 阶段炸。提前在这里告知用户更友好。
+    if paradigm_key is not None:
+        from ethoinsight.ev19_facts import SUPPORTED_PARADIGMS_V01
+
+        if paradigm_key not in SUPPORTED_PARADIGMS_V01:
+            paradigm_cn_map_short = {
+                "shoaling": "斑马鱼鱼群行为", "3d_swimming": "3D 游泳", "aquatic_open_field": "鱼类旷场",
+                "cross_maze_fish": "鱼类十字迷宫", "tail_suspension": "悬尾实验 (TST)",
+                "morris_water_maze": "Morris 水迷宫", "barnes_maze": "巴恩斯迷宫",
+                "y_maze": "Y 迷宫", "t_maze": "T 迷宫", "novel_object": "新物体识别",
+                "sociability": "社会交往", "radial_arm_maze": "八臂迷宫",
+                "fear_conditioning": "条件恐惧", "active_avoidance": "主动回避",
+                "insect_open_field": "昆虫旷场", "phenotyper_homecage": "PhenoTyper 居家",
+            }
+            paradigm_label = paradigm_cn_map_short.get(paradigm_key, paradigm_key)
+            return {
+                "status": "unsupported",
+                "paradigm_key": paradigm_key,
+                "paradigm_label": paradigm_label,
+                "supported_paradigms": sorted(SUPPORTED_PARADIGMS_V01),
+                "message": (
+                    f"当前版本暂不支持「{paradigm_label}」范式分析。"
+                    f"v0.1 已实现 5 个范式: 高架十字迷宫 (EPM)、旷场 (OFT)、明暗箱 (LDB)、"
+                    f"强迫游泳 (FST)、零迷宫 (Zero Maze)。"
+                ),
+                "hint": (
+                    "请用 ask_clarification 告知用户当前不支持的范式名称, 并询问: "
+                    "(a) 数据是否实际属于已支持的 5 个范式之一(用户用错名称); "
+                    "(b) 还是希望等版本更新后再分析。不要尝试跑流水线、不要伪装成相近范式、不要静默 fallback。"
+                ),
+            }
 
     # build filename-derived hint for evidence
     filename_hint = None

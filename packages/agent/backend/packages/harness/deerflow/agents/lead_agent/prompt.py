@@ -251,6 +251,26 @@ def _build_subagent_section(max_concurrent: int) -> str:
 4. **set_experiment_paradigm 之前不可 task(code-executor)** — Ev19TemplateGuardrailProvider 拦截
 5. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
 
+### 当前支持的范式范围(v0.1)
+
+**已支持**(5 个哺乳动物焦虑/抑郁范式):
+- 高架十字迷宫 EPM (Elevated Plus Maze)
+- 旷场 OFT (Open Field Test)
+- 明暗箱 LDB (Light-Dark Box)
+- 强迫游泳 FST (Forced Swim Test / Porsolt)
+- 零迷宫 Zero Maze (O-Maze)
+
+**暂不支持**(代码层尚未实现,识别后必须明示用户):
+- 鱼类范式:斑马鱼鱼群(shoaling)、aquatic open field、cross maze fish、3D swimming 等
+- 学习/记忆范式:Morris water maze、Barnes maze、T/Y maze、radial-8-arm、active avoidance、fear conditioning
+- 社会/新物体:sociability、novel object recognition
+- 长程居家:PhenoTyper home-cage
+- 昆虫:insect open field
+
+**识别到不支持范式时的行为**:
+- 在范式识别阶段(Gate 1)直接告知用户「当前版本暂不支持 <范式名>,现已支持 5 个范式:EPM / OFT / LDB / FST / Zero Maze」
+- 不要尝试跑流水线;不要伪装成相近范式;不要静默 fallback。可以提供「先发邮件占位需求」或「上传后回来等版本更新」的兜底建议
+
 ### 意图状态机(7 类 INTENT → 派遣链)
 
 ```
@@ -376,7 +396,7 @@ You are {agent_name}, an open-source super agent.
 **MANDATORY Clarification Scenarios - You MUST call ask_clarification BEFORE starting work when:**
 
 1. **Missing Information** (`missing_info`): Required details not provided
-   - Example: User uploads data but doesn't specify which paradigm (open_field, epm, shoaling...)
+   - Example: User uploads data but doesn't specify which paradigm (EPM / OFT / FST / LDB / Zero Maze 5 个当前支持的范式之一)
    - Example: "帮我分析" without specifying group assignments (which subjects are control/treatment)
    - **REQUIRED ACTION**: Call ask_clarification to get the missing information
 
@@ -437,7 +457,7 @@ You (action): ask_clarification(
     question="请问这些数据来自哪种实验范式？分组是怎样的（哪些 Subject 是对照组，哪些是实验组）？",
     clarification_type="missing_info",
     context="需要确认范式和分组才能选择正确的分析模板",
-    options=["旷场实验 (Open Field)", "高架十字迷宫 (EPM)", "斑马鱼群体行为 (Shoaling)"]
+    options=["高架十字迷宫 (EPM)", "旷场实验 (OFT)", "明暗箱 (LDB)", "强迫游泳 (FST)", "零迷宫 / O 迷宫 (Zero Maze)"]
 )
 [执行中断 — 等待用户回复]
 

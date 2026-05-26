@@ -202,7 +202,9 @@ PARADIGM_KEYWORDS: dict[str, list[str]] = {
 def detect_paradigm(experiment_name: str) -> str | None:
     """Detect paradigm from experiment name string.
 
-    Returns paradigm key (e.g. "shoaling") or None if unrecognized.
+    Returns paradigm key (e.g. "forced_swim", "epm") or None if unrecognized.
+    Note: detection only — paradigms not in SUPPORTED_PARADIGMS_V01 (e.g. shoaling,
+    tail_suspension) can still be detected but code-layer pipelines are not implemented.
     """
     if not experiment_name:
         return None

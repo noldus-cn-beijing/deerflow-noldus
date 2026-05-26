@@ -22,7 +22,7 @@ _ACADEMIC_TO_FILENAME: dict[str, str] = {
 }
 
 # Catalog keys that don't need aliasing (academic name == filename stem)
-_ALREADY_ALIGNED = ["epm", "zero_maze", "shoaling"]
+_ALREADY_ALIGNED = ["epm", "zero_maze"]
 
 
 @pytest.mark.parametrize("academic,filename_stem", list(_ACADEMIC_TO_FILENAME.items()))
@@ -45,7 +45,7 @@ def test_load_catalog_still_accepts_filename_stem(academic: str, filename_stem: 
 
 @pytest.mark.parametrize("paradigm", _ALREADY_ALIGNED)
 def test_load_catalog_already_aligned_paradigms(paradigm: str) -> None:
-    """Paradigms where academic name == filename stem (epm/zero_maze/shoaling)."""
+    """Paradigms where academic name == filename stem (epm/zero_maze)."""
     cat = load_catalog(paradigm)
     assert cat.paradigm == paradigm
 

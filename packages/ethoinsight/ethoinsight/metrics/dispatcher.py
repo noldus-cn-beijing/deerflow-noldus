@@ -4,14 +4,8 @@ from __future__ import annotations
 
 
 import numpy as np
-import pandas as pd
 
 from ethoinsight.metrics._common import compute_distance_moved, compute_velocity_stats
-from ethoinsight.metrics.shoaling import (
-    compute_inter_individual_distance,
-    compute_nearest_neighbor_distance,
-    compute_group_polarity,
-)
 from ethoinsight.metrics.oft import (
     compute_center_time_ratio,
     compute_thigmotaxis_index,
@@ -63,7 +57,8 @@ def compute_paradigm_metrics(
 
     Args:
         parsed_data: Output of ``parse.parse_batch()``.
-        paradigm: Paradigm name (e.g. "shoaling", "epm", "open_field").
+        paradigm: Paradigm name (e.g. "epm", "open_field", "zero_maze",
+            "light_dark_box", "forced_swim"). v0.1 仅支持这 5 个。
         groups: Optional grouping ``{group_name: [subject_name, ...]}``.
             If None, all subjects are in a single "all" group.
         metrics: Optional list of metric names to compute.
@@ -121,41 +116,11 @@ def compute_paradigm_metrics(
             m["immobility_bout_count"] = compute_immobility_bout_count_tst(df)
         per_subject[name] = m
 
-    # Compute shoaling group-level timeseries
-    timeseries: dict[str, pd.DataFrame] = {}
-    group_level_metrics: dict[str, float | dict] = {}
-    if paradigm == "shoaling":
-        n_sub = len(subjects)
-        if n_sub >= 2:
-            iid = compute_inter_individual_distance(subjects)
-            if iid is not None:
-                timeseries["inter_individual_distance"] = iid
-                group_level_metrics["mean_iid"] = float(iid["mean_iid"].mean())
-            nnd = compute_nearest_neighbor_distance(subjects)
-            if nnd is not None:
-                timeseries["nearest_neighbor_distance"] = nnd
-                # NND is genuinely per-subject (each fish has its own nearest neighbour).
-                for name in per_subject:
-                    sub_nnd = nnd.loc[nnd["subject"] == name, "nnd"]
-                    per_subject[name]["mean_nnd"] = (
-                        float(sub_nnd.mean()) if not sub_nnd.empty else None
-                    )
-            pol = compute_group_polarity(subjects)
-            if pol is not None:
-                timeseries["group_polarity"] = pol
-                group_level_metrics["mean_polarity"] = float(pol["polarity"].mean())
-        else:
-            # Single-subject (or empty) input — IID / polarity are not applicable.
-            # These are group metrics that require ≥2 simultaneously tracked subjects.
-            # DO NOT fabricate zero-variance per-subject scalars.
-            group_level_metrics["mean_iid"] = {
-                "applicable": False,
-                "reason": "group metric requires ≥2 simultaneously tracked subjects",
-            }
-            group_level_metrics["mean_polarity"] = {
-                "applicable": False,
-                "reason": "group metric requires ≥2 simultaneously tracked subjects",
-            }
+    # Group-level timeseries / metrics — reserved for paradigms that produce group-aggregate
+    # output (e.g. shoaling IID/NND/polarity once that paradigm is re-introduced).
+    # v0.1 paradigms (epm/oft/zero_maze/ldb/fst) are all per-subject scalar, so these are empty.
+    timeseries: dict = {}
+    group_level_metrics: dict = {}
 
     # Filter metrics if requested
     if metrics:
@@ -218,17 +183,6 @@ def compute_paradigm_metrics(
                     ),
                 }
             )
-    if paradigm == "shoaling" and len(subjects) < 2:
-        data_quality_warnings.append(
-            {
-                "severity": "warning",
-                "metric": "mean_iid,mean_polarity",
-                "message": (
-                    "Shoaling group metrics (IID, polarity) are not applicable: "
-                    "only 1 subject detected. Group metrics require ≥2 simultaneously tracked subjects."
-                ),
-            }
-        )
     if paradigm == "epm":
         # Per epm.md: n < 5 per group → low statistical power
         for grp_name, grp_metrics in group_summary.items():

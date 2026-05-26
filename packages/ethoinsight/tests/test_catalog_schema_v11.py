@@ -120,11 +120,11 @@ def test_plan_chart_args_includes_paradigm_when_accepts_paradigm():
 
     1.2: 所有 chart args 统一为 --inputs <json_file> 格式 (脚本签名统一)。
     """
-    # 需要一组数据触发 fallback（让 timeseries_plot 可用）
-    # 用 shoaling — 该范式 charts: [] 会 fallback 到 common
+    # 触发 fallback 路径: fst 主路径 chart 都依赖 mobility_state*/velocity, 这里只给 x/y/trial_time
+    # → 主路径 charts 全部 skipped, fallback 命中 trajectory_plot + timeseries_plot
     pc = resolve_charts(
-        paradigm="shoaling",
-        columns=["x_center", "y_center"],
+        paradigm="fst",
+        columns=["x_center", "y_center", "trial_time"],
         raw_files=RAW_FILES_SAMPLE,
         workspace_dir="/tmp",
         total_subjects=1,
@@ -136,7 +136,7 @@ def test_plan_chart_args_includes_paradigm_when_accepts_paradigm():
         # Uniform contract: --inputs <inputs.json> + --output + --paradigm.
         assert c.args[0] == "--inputs"
         assert c.args[1] == c.input  # PlanChart.input now points to the inputs.json file
-        assert c.args[2:] == ["--output", c.output, "--paradigm", "shoaling"]
+        assert c.args[2:] == ["--output", c.output, "--paradigm", "fst"]
 
 
 def test_plan_chart_args_excludes_paradigm_otherwise():
@@ -145,8 +145,8 @@ def test_plan_chart_args_excludes_paradigm_otherwise():
     1.2: 统一 --inputs <json> 契约。
     """
     pc = resolve_charts(
-        paradigm="shoaling",
-        columns=["x_center", "y_center"],
+        paradigm="fst",
+        columns=["x_center", "y_center", "trial_time"],
         raw_files=RAW_FILES_SAMPLE,
         workspace_dir="/tmp",
         total_subjects=1,

@@ -107,7 +107,6 @@ handoff_report_writer.json schema:
   - ✅ "建议单独标注 Subject 3 并检查健康状态，是否纳入后续分析由研究员决定"
   - ❌ "建议排除 Subject 3"
   - ❌ "将 Subject 3 作为离群值剔除"
-- **群体指标数据来源**（shoaling 范式）：若 mean_iid / mean_polarity 来自 X/Y 坐标兜底计算（非 EthoVision JS Continuous 变量），在此注明，提示解读时注意
 
 ### 5. 数据质量与局限
 不是脚注，是让导师一眼看到的单独章节。

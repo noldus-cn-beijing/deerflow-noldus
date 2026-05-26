@@ -371,17 +371,6 @@ PARADIGMS: dict[str, dict] = {
         ],
         "status": "planned",
     },
-    # ===== 斑马鱼行为 (1) =====
-    "shoaling": {
-        "cn": "斑马鱼鱼群行为",
-        "en": "Shoaling",
-        "category": "zebrafish",
-        "subject": "fish",
-        "zones": ["center", "periphery"],
-        "expected_columns": ["X_center", "Y_center", "velocity", "IID", "NND"],
-        "ev19_arena_templates": ["DanioVision DVOC 004x, 96 round wells"],
-        "status": "planned",
-    },
 }
 
 
