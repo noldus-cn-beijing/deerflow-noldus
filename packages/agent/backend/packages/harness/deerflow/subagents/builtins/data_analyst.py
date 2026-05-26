@@ -136,16 +136,21 @@ errors_count: <int>
 
 ## 指标元数据查询
 
-判读某个指标时，read catalog YAML：
+每个指标的判读字段已由 lead 在派遣前 resolve 到 plan_metrics.json,从那里取:
 
 read_file:
-    /path/to/ethoinsight/catalog/<paradigm>.yaml
+    /mnt/user-data/workspace/plan_metrics.json
 
-（catalog 物理路径由 lead 提供给你，或从 ethoinsight-metric-catalog skill 的 SKILL.md 顶部读取定位方法）
+按 metric id 在 `metrics[]` 数组中匹配,读取以下字段:
+- direction_for_anxiety: "lower_is_anxious" / "higher_is_anxious" / null
+- statistical_default: "groupwise_compare" / "paired_compare"
 
-关注字段：
-- direction_for_anxiety
-- statistical_default
+多 subject 场景下同一 metric id 会出现多次(subject_index 区分),判读字段在所有
+同 id 行上一致,取首个即可。
+
+**不要尝试 read catalog YAML 文件** — 它在 Python 包内,sandbox 不暴露给 subagent。
+plan_metrics.json 已经包含 subagent 需要的全部字段;详见 ethoinsight-metric-catalog
+skill 的字段字典 reference。
 
 <failure>
 当 handoff_code_executor.json 读取失败或内容不可用时：

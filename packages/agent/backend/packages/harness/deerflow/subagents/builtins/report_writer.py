@@ -162,17 +162,21 @@ handoff_report_writer.json schema:
 
 ## 指标展示元数据查询
 
-写"Results / Discussion"段时，按 metric id read catalog YAML 取展示字段：
+每个指标的中文展示字段已下沉到 plan_metrics.json,从那里取:
 
 read_file:
-    /path/to/ethoinsight/catalog/<paradigm>.yaml
+    /mnt/user-data/workspace/plan_metrics.json
 
-按 metric id 查：
+按 metric id 在 `metrics[]` 数组中匹配,读取以下字段:
 - display_name_zh: 中文展示名
-- unit_zh: 单位
-- one_liner: 一句话解释（仅首次提及该指标时引用，不要在每段重复）
+- unit_zh: 中文单位
+- one_liner: 一句话解释(仅首次提及该指标时引用,不要在每段重复)
 
-禁止在本 prompt 内硬编码任何指标的中文名或单位 —— 全部走 catalog。
+多 subject 场景下同一 metric id 会出现多次(subject_index 区分),展示字段在所有
+同 id 行上一致,取首个即可。
+
+禁止在本 prompt 内硬编码任何指标的中文名或单位 —— 全部走 plan_metrics.json。
+**不要尝试 read catalog YAML 文件** — 它在 Python 包内,sandbox 不暴露给 subagent。
 
 <json_writing>
 handoff_report_writer.json 必须是**合法的 JSON**——下游工具会 parse 它。
