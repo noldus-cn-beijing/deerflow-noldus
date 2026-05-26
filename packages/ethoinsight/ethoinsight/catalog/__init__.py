@@ -1,10 +1,19 @@
 """ethoinsight.catalog — 范式 → 指标 catalog 模块.
 
-承载 single source of truth：每个 paradigm 一份 YAML 文件，定义默认指标清单 +
-脚本路径 + 列要求 + 展示元数据 + 判读方向性。被 lead / data-analyst /
-report-writer 多方共读、被 dispatcher / 单测 / golden-case 共消费。
+承载 single source of truth:每个 paradigm 一份 YAML 文件,定义默认指标清单 +
+脚本路径 + 列要求 + 展示元数据 + 判读方向性。
 
-设计 spec: docs/superpowers/specs/2026-05-13-metric-catalog-architecture-design.md
+运行时消费契约(2026-05-27 起):
+  - **lead agent**: 通过 deerflow first-party 工具 `prep_metric_plan` 间接消费 —
+    工具在 sandbox 外的 deerflow 进程内调 resolve_metrics(),把结果写到
+    /mnt/user-data/workspace/plan_metrics.json
+  - **subagent(data-analyst / report-writer)**: 不直接读 catalog YAML,
+    从 plan_metrics.json 取所有判读 / 展示字段
+  - **dispatcher / 单测 / golden-case**: 直接 import 使用(沙箱外环境)
+
+设计 spec:
+  - docs/superpowers/specs/2026-05-13-metric-catalog-architecture-design.md(原始架构)
+  - docs/superpowers/specs/2026-05-27-catalog-fields-into-plan-design.md(消费契约修正)
 """
 
 from __future__ import annotations
