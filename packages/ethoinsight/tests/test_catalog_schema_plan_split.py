@@ -120,3 +120,44 @@ def test_plan_charts_serialize_roundtrip():
     raw = json.dumps(d, ensure_ascii=False)
     back = json.loads(raw)
     assert back["user_intent"] == "画图"
+
+
+def test_plan_metric_accepts_interpretation_fields():
+    """W27: PlanMetric 必须能透传 catalog MetricEntry 的 5 个判读 / 展示字段。"""
+    metric = PlanMetric(
+        id="open_arm_time",
+        script="ethoinsight.scripts.epm.compute_open_arm_time",
+        input="/tmp/raw.txt",
+        output="/tmp/m.json",
+        required=True,
+        reason="paradigm.default",
+        subject_index=0,
+        display_name_zh="开放臂时间",
+        unit_zh="秒",
+        one_liner="动物在开放臂区域的累计停留时间",
+        output_unit="seconds",
+        direction_for_anxiety="lower_is_anxious",
+        statistical_default="groupwise_compare",
+    )
+    assert metric.unit_zh == "秒"
+    assert metric.one_liner == "动物在开放臂区域的累计停留时间"
+    assert metric.output_unit == "seconds"
+    assert metric.direction_for_anxiety == "lower_is_anxious"
+    assert metric.statistical_default == "groupwise_compare"
+
+
+def test_plan_metric_interpretation_fields_default_safe():
+    """PlanMetric 不传新字段时也能构造（向前兼容）。"""
+    metric = PlanMetric(
+        id="x",
+        script="s",
+        input="/i",
+        output="/o",
+        required=True,
+        reason="paradigm.default",
+    )
+    assert metric.unit_zh == ""
+    assert metric.one_liner == ""
+    assert metric.output_unit == ""
+    assert metric.direction_for_anxiety is None
+    assert metric.statistical_default == ""
