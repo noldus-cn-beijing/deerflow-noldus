@@ -32,7 +32,7 @@ def assess_results(
 
     Args:
         statistics_results: Output of ``statistics.compare_groups()``.
-        paradigm: Paradigm name (e.g. "epm", "shoaling").
+        paradigm: Paradigm name (e.g. "epm", "open_field", "forced_swim").
         metrics_result: Optional output of ``metrics.compute_paradigm_metrics()``
             (reserved for future use, e.g. subject-level effect direction).
 
@@ -147,14 +147,5 @@ def _infer_phenotype(metric_name: str, paradigm: str, comp: dict) -> str | None:
             "o_maze",
             "open_arm_time_ratio",
         ): "Anxiety-like phenotype (O-maze open area avoidance)",
-        ("shoaling", "mean_iid"): "Altered social cohesion (shoaling group spacing)",
-        (
-            "shoaling",
-            "mean_nnd",
-        ): "Altered social proximity (nearest-neighbor distance)",
-        (
-            "shoaling",
-            "mean_polarity",
-        ): "Altered group coordination (movement alignment)",
     }
     return indicators.get((paradigm, metric_name))

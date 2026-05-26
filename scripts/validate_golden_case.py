@@ -37,18 +37,19 @@ ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_DIR = ROOT / "golden-cases"
 
 VALID_PARADIGMS = {
-    "shoaling",
+    # v0.1 supported (catalog/<paradigm>.yaml exists)
     "epm",
     "open_field",
     "fst",
+    "o_maze",
+    "light_dark",
+    # planned / paradigm knowledge exists but code-layer not implemented in v0.1
     "mwm",
     "y_maze",
-    "o_maze",
     "barnes",
     "nor",
     "three_chamber",
     "social_interaction",
-    "light_dark",
     "novel_suppressed_feeding",
     "footprint",
     "fine_behavior",

@@ -64,8 +64,7 @@ EV19_TEMPLATE_PARADIGM_MAP: dict[str, list[str]] = {
     # 抑郁样行为（PRD MVP 2 个）
     "tail_suspension": ["NoTemplate"],  # TST 不需要 zone，仅活动度
     "forced_swim": ["PorsoltCylinder-AllZones", "PorsoltCylinder-NoZones"],
-    # 其他（保留，shoaling 已建成）
-    "shoaling": ["OpenFieldCircle-NoZones-Fish", "AquariumTrack3D"],
+    # 其他范式 — 知识保留, 但代码层暂未实现 (SUPPORTED_PARADIGMS_V01 之外)
     "novel_object": [
         "OpenFieldCircle-NovObjZones",
         "OpenFieldRectangle-NovObjZones",
@@ -76,6 +75,18 @@ EV19_TEMPLATE_PARADIGM_MAP: dict[str, list[str]] = {
     "sociability": ["Sociability-AllZones", "Sociability-NoZones"],
     "radial_arm_maze": ["Radial-8-arm-AllZones", "Radial-8-arm-NoZones"],
 }
+
+
+# v0.1 实际有代码层实现的 paradigm_key 白名单 (catalog/<paradigm>.yaml 存在 +
+# metrics/<paradigm>.py 存在 + scripts/<paradigm>/ 存在)。其他 paradigm_key 仍可识别
+# 但 agent 应明示「暂不支持」, 见 identify_ev19_template_tool 主流程。
+SUPPORTED_PARADIGMS_V01: frozenset[str] = frozenset({
+    "epm",
+    "open_field",
+    "zero_maze",
+    "light_dark_box",
+    "forced_swim",
+})
 
 
 # 公开函数 ---------------------------------------------------------------------

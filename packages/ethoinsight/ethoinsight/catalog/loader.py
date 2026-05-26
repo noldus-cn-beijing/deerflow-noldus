@@ -1,15 +1,18 @@
 """加载 packages/ethoinsight/ethoinsight/catalog/<paradigm>.yaml 并构造
 Catalog dataclass。校验失败一律抛 CatalogError，含 paradigm + 问题点。
 
-Canonical paradigm key policy (2026-05-25):
-  The system uses ACADEMIC NAMES as canonical paradigm keys:
-    - forced_swim (file: fst.yaml)
-    - tail_suspension (file: tst.yaml)
-    - open_field (file: oft.yaml)
+Canonical paradigm key policy (2026-05-25 → 2026-05-26):
+  The system uses ACADEMIC NAMES as canonical paradigm keys.
+  v0.1 仅支持 5 个范式 (catalog/<paradigm>.yaml 实际存在):
+    - epm           (file: epm.yaml)
+    - open_field    (file: oft.yaml)
     - light_dark_box (file: ldb.yaml)
-    - epm (file: epm.yaml)
-    - zero_maze (file: zero_maze.yaml)
-    - shoaling (file: shoaling.yaml)
+    - forced_swim   (file: fst.yaml)
+    - zero_maze     (file: zero_maze.yaml)
+
+  历史还在 _PARADIGM_ALIASES 中的 paradigm key (如 tail_suspension/shoaling) 仍能
+  通过 alias 解析路径, 但对应 YAML 文件已删除会抛 file-not-found 错误。lead 应在
+  identify_ev19_template 看到 status=unsupported 时反问用户, 不要走到 load_catalog。
 
   ``load_catalog`` accepts either the academic name (preferred) or the
   filename stem (legacy) and resolves to the correct YAML via _PARADIGM_ALIASES.
@@ -58,7 +61,6 @@ _PARADIGM_ALIASES: dict[str, str] = {
     # already aligned (no aliasing needed but listed for clarity)
     "epm": "epm",
     "zero_maze": "zero_maze",
-    "shoaling": "shoaling",
 }
 
 

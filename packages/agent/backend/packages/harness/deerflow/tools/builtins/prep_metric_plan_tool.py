@@ -75,10 +75,12 @@ def prep_metric_plan_tool(
                       PlanMetric(N 文件 × M 指标 = N×M 个调用)。单文件场景传单元素 list。
                       **请把当前 <uploaded_files> 里所有相关数据文件全传进来**,
                       不要只传第 1 个,否则其余 subject 在分析中会被静默丢失。
-      paradigm: 范式 canonical key（学术名）：
-                'epm' / 'open_field' / 'forced_swim' / 'light_dark_box' /
-                'tail_suspension' / 'zero_maze' / 'shoaling'
-                （filename-style 缩写如 'oft'/'fst'/'ldb'/'tst' 也接受，向后兼容）
+      paradigm: 范式 canonical key（学术名）, v0.1 仅支持以下 5 个:
+                'epm' / 'open_field' / 'forced_swim' / 'light_dark_box' / 'zero_maze'
+                （filename-style 缩写如 'oft'/'fst'/'ldb' 也接受，向后兼容）
+                其他 paradigm_key (如 'shoaling'/'tail_suspension'/'morris_water_maze' 等)
+                会在 catalog.resolve 阶段报错; lead 应在 identify_ev19_template 看到
+                status=unsupported 时就反问用户, 不要走到这一步
 
     Returns:
       status="ok" 时:
