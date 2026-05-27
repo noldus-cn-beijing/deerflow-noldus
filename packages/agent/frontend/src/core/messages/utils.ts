@@ -177,12 +177,13 @@ export function extractTextFromMessage(message: Message) {
 }
 
 const THINK_TAG_RE = /<think>\s*([\s\S]*?)\s*<\/think>/g;
-// Trailing unclosed <think> (no </think> yet) — captured during streaming so
-// the reasoning panel can show partial thinking before the tag closes.
-const TRAILING_UNCLOSED_THINK_RE = /<think>\s*([\s\S]*)$/;
+const THINK_OPEN_TAG = "<think>";
 
 function splitInlineReasoning(content: string) {
   const reasoningParts: string[] = [];
+
+  // First pass: strip every fully closed `<think>...</think>` pair and
+  // collect its body as reasoning.
   let cleaned = content.replace(THINK_TAG_RE, (_, reasoning: string) => {
     const normalized = reasoning.trim();
     if (normalized) {
@@ -191,23 +192,26 @@ function splitInlineReasoning(content: string) {
     return "";
   });
 
-  // After removing closed pairs, check for a trailing unclosed <think> ...
-  // (mid-stream). Route its inner text to reasoning and drop the open tag
-  // from content. Without this, the model's first <think>...</think> stream
-  // would leave the bubble blank until the closing tag arrives.
-  const trailingMatch = cleaned.match(TRAILING_UNCLOSED_THINK_RE);
-  if (trailingMatch?.index !== undefined) {
-    const partial = (trailingMatch[1] ?? "").trim();
-    if (partial) {
-      reasoningParts.push(partial);
+  // Streaming-safe pass: a `<think>` opener whose `</think>` has not arrived
+  // yet means the rest of the chunk is reasoning in flight. Route it into the
+  // reasoning slot instead of letting it render as message content (the
+  // raw-HTML markdown pipeline would otherwise paint the inner text on
+  // screen until the closing tag lands).
+  //
+  // Skip when the opener sits right after a backtick — that is the model
+  // talking about `<think>` literally inside markdown inline code, not
+  // actually streaming reasoning.
+  const openTagIndex = cleaned.indexOf(THINK_OPEN_TAG);
+  if (openTagIndex !== -1 && cleaned[openTagIndex - 1] !== "`") {
+    const tail = cleaned.slice(openTagIndex + THINK_OPEN_TAG.length).trim();
+    if (tail) {
+      reasoningParts.push(tail);
     }
-    cleaned = cleaned.slice(0, trailingMatch.index).trim();
-  } else {
-    cleaned = cleaned.trim();
+    cleaned = cleaned.slice(0, openTagIndex);
   }
 
   return {
-    content: cleaned,
+    content: cleaned.trim(),
     reasoning: reasoningParts.length > 0 ? reasoningParts.join("\n\n") : null,
   };
 }

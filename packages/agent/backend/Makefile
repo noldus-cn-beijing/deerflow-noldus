@@ -11,6 +11,9 @@ gateway:
 test:
 	PYTHONPATH=. uv run pytest tests/ -v
 
+test-blocking-io:
+	PYTHONPATH=. uv run pytest tests/blocking_io/ -v
+
 lint:
 	uvx ruff check .
 	uvx ruff format --check .

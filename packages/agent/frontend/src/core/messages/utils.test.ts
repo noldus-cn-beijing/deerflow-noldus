@@ -5,6 +5,8 @@ import {
   extractContentFromMessage,
   extractReasoningContentFromMessage,
   groupMessages,
+  hasContent,
+  hasReasoning,
 } from "./utils";
 
 function makeAIMsg(
@@ -184,5 +186,48 @@ describe("inline <think> handling — streaming TTFT", () => {
     // Open tag with nothing after it — reasoning is empty string, treat as null
     expect(extractReasoningContentFromMessage(msg)).toBeNull();
     expect(extractContentFromMessage(msg)).toBe("");
+  });
+
+  it("preamble before an unclosed <think> stays in content", () => {
+    const msg = makeAIMsg("1", {
+      content: "Here is part of the answer.<think>but wait, let me reconsider",
+    });
+    expect(extractContentFromMessage(msg)).toBe("Here is part of the answer.");
+    expect(extractReasoningContentFromMessage(msg)).toBe(
+      "but wait, let me reconsider",
+    );
+  });
+
+  it("hasReasoning recognises an unclosed <think> tag mid-stream", () => {
+    expect(hasReasoning(makeAIMsg("1", { content: "<think>thinking in progress" }))).toBe(true);
+  });
+
+  it("hasContent excludes an unclosed <think> tail when no preamble exists", () => {
+    expect(hasContent(makeAIMsg("1", { content: "<think>thinking in progress" }))).toBe(false);
+  });
+
+  it("hasContent stays true when preamble precedes an unclosed <think>", () => {
+    expect(hasContent(makeAIMsg("1", { content: "preamble<think>still thinking" }))).toBe(true);
+  });
+
+  it("a literal <think> inside markdown inline code is not treated as reasoning", () => {
+    const msg = makeAIMsg("1", {
+      content: "Use `<think>` markers to delimit reasoning sections.",
+    });
+    expect(extractContentFromMessage(msg)).toBe(
+      "Use `<think>` markers to delimit reasoning sections.",
+    );
+    expect(extractReasoningContentFromMessage(msg)).toBeNull();
+    expect(hasReasoning(msg)).toBe(false);
+  });
+
+  it("a backtick-prefixed <think> mid-stream is not split into reasoning", () => {
+    const msg = makeAIMsg("1", {
+      content: "Documentation: `<think>",
+    });
+    expect(extractContentFromMessage(msg)).toBe(
+      "Documentation: `<think>",
+    );
+    expect(extractReasoningContentFromMessage(msg)).toBeNull();
   });
 });
