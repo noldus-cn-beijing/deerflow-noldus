@@ -152,6 +152,10 @@ read_file:
 plan_metrics.json 已经包含 subagent 需要的全部字段;详见 ethoinsight-metric-catalog
 skill 的字段字典 reference。
 
+若需解释某指标在 EthoVision XT 19 中的原始计算公式（Activity 像素变化%、Mobility state 编码、
+Distance / TurnAngle / Heading 定义、Averaging Interval 缺失样本处理等），read_file:
+  /mnt/skills/ethovision-paradigm-knowledge/references/ev19-dependent-variables.md
+
 <failure>
 当 handoff_code_executor.json 读取失败或内容不可用时：
 - 仍然必须写出 handoff_data_analyst.json，status 设为 "failed"，errors 字段说明原因

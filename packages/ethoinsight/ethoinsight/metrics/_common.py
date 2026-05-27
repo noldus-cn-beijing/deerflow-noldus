@@ -97,6 +97,14 @@ def _resolve_immobile_series(
     - One-hot immobile indicator (``mobility_state_immobile``): 1=immobile → immobile_value=1
 
     Returns None when no usable column is present.
+
+    **重要假设（EV19 Mobility state 编码）**：
+    EV19 ``Mobility state`` 列实际是 2/3/4 状态多分类（参见
+    ev19-dependent-variables.md §14）。``immobile_value=0`` 只在 2-state 配置下
+    正确；3-state（0=Inactive, 1=Moderately active, 2=Highly active）或 4-state
+    下，Moderately active (1) / Active (2) 也是非 0 值，会被本函数错误归为 mobile。
+    仅当列名含 ``immobile`` 时才确认为 one-hot 列。如用户数据来自 3/4-state 配置，
+    需上游显式映射后再传入。
     """
     col = mobility_col or _find_mobility_column(df)
     if col is None or col not in df.columns:

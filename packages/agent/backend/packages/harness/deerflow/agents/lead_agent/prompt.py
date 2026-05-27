@@ -832,7 +832,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 ## skill 速查
 
 - **ethoinsight-lead-interaction**: 意图决策树 / 范式识别 / 反问 / 4-choice / 失败 / pipeline 详情
-- **ethovision-paradigm-knowledge**: EV19 模板(20大类62变体)
+- **ethovision-paradigm-knowledge**: EV19 模板(20大类62变体) + `ev19-dependent-variables.md`（因变量公式，knowledge-assistant/data-analyst 回答"EV19 如何计算 X"时引用）
 - **ethoinsight-metric-catalog**: catalog 索引(prep_metric_plan 内部使用)
 - **ethoinsight**: 输出宪法
 

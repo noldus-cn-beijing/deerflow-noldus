@@ -203,6 +203,9 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
      "open_field" → open_field.md；"zero_maze" → zero_maze.md；
      "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
    - 把文档中"报告解读语言"段的标准表述用在报告里，不要自创术语
+2.6 **若 §3 描述性统计 / §4 解读中需引用 EV19 原始公式**（如解释 Activity 百分比含义、
+   Mobility state 编码、Distance 计算方式等），read_file：
+   - `/mnt/skills/custom/ethovision-paradigm-knowledge/references/ev19-dependent-variables.md`
 
 <optional_chart_handoff>
 如果 lead 在 task prompt 中包含 handoff_chart_maker.json 路径
