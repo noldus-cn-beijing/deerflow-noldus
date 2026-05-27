@@ -302,6 +302,7 @@ def trajectory_plot(
     ax.set_ylabel("Y (position)")
     ax.set_title("Trajectory Plot")
     ax.set_aspect("equal")
+    ax.set_box_aspect(3 / 4)
     fig.tight_layout()
 
     path = _resolve_output_path(output_path, "trajectory")
@@ -683,6 +684,7 @@ def heatmap_plot(
         ax.set_xlabel("X (cm)")
         ax.set_ylabel("Y (cm)")
         ax.set_aspect("equal", adjustable="box")
+        ax.set_box_aspect(3 / 4)
         ax.set_title("Position density heatmap")
     else:
         ax.text(0.5, 0.5, "x_center/y_center missing", ha="center", va="center", transform=ax.transAxes)
