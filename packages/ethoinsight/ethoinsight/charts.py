@@ -805,20 +805,62 @@ def _invert_intervals(
 def time_progress_plot(
     per_bin_data: list[dict],
     output_path: str | None = None,
+    *,
+    group_label: str | None = None,
 ) -> str:
-    """OFT time-progress dual-line chart (5-min bins: distance + center time)."""
+    """OFT time-progress dual-line chart (5-min bins: distance + center time).
+
+    When *group_label* is provided, the line is labelled with the group name
+    and SEM shading is drawn when ``distance_sem`` / ``center_time_sem`` keys
+    are present in *per_bin_data*. Call once per group with the same *output_path*
+    to overlay multiple groups on one figure.
+
+    Args:
+        per_bin_data: List of dicts with keys ``bin_start_sec``, ``bin_end_sec``,
+            ``distance``, ``center_time``, and optionally ``distance_sem``,
+            ``center_time_sem`` for group-aggregate mode.
+        output_path: Output PNG path.
+        group_label: If set, used as legend label suffix for this line pair.
+    """
     _setup_style()
     output_path = _resolve_output_path(output_path, "time_progress")
     fig, ax_left = plt.subplots(figsize=(10, 4))
+
     bin_centers = [(b["bin_start_sec"] + b["bin_end_sec"]) / 2 / 60.0 for b in per_bin_data]
     distance = [b["distance"] for b in per_bin_data]
     center_time = [b["center_time"] for b in per_bin_data]
-    ax_left.plot(bin_centers, distance, "o-", color="#2D5F3F", label="Distance moved")
+    distance_sem = [b.get("distance_sem") for b in per_bin_data]
+    center_time_sem = [b.get("center_time_sem") for b in per_bin_data]
+    has_sem = any(s is not None for s in distance_sem)
+
+    dist_label = f"Distance ({group_label})" if group_label else "Distance moved"
+    ct_label = f"Center time ({group_label})" if group_label else "Center time"
+
+    ax_left.plot(bin_centers, distance, "o-", color="#2D5F3F", label=dist_label)
+    if has_sem:
+        dist_sem_vals = [s if s is not None else 0.0 for s in distance_sem]
+        ax_left.fill_between(
+            bin_centers,
+            [d - s for d, s in zip(distance, dist_sem_vals)],
+            [d + s for d, s in zip(distance, dist_sem_vals)],
+            color="#2D5F3F", alpha=0.15,
+        )
+
     ax_left.set_xlabel("Time bin center (min)")
     ax_left.set_ylabel("Distance moved (cm)")
+
     ax_right = ax_left.twinx()
-    ax_right.plot(bin_centers, center_time, "s--", color="#B33A3A", label="Center time")
+    ax_right.plot(bin_centers, center_time, "s--", color="#B33A3A", label=ct_label)
+    if has_sem:
+        ct_sem_vals = [s if s is not None else 0.0 for s in center_time_sem]
+        ax_right.fill_between(
+            bin_centers,
+            [c - s for c, s in zip(center_time, ct_sem_vals)],
+            [c + s for c, s in zip(center_time, ct_sem_vals)],
+            color="#B33A3A", alpha=0.15,
+        )
     ax_right.set_ylabel("Center zone time (s)")
+
     lines_l, labels_l = ax_left.get_legend_handles_labels()
     lines_r, labels_r = ax_right.get_legend_handles_labels()
     ax_left.legend(lines_l + lines_r, labels_l + labels_r, loc="upper right")
