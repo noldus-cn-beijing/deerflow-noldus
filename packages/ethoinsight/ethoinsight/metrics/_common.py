@@ -330,3 +330,81 @@ def save_to_csv(metrics_result: dict, path: str) -> str:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     df.to_csv(path, index=False)
     return path
+
+
+# ============================================================================
+# EV19 dependent variables (P3 — body elongation, head direction, turn angle)
+# ============================================================================
+
+
+def compute_body_elongation_stats(df: pd.DataFrame) -> dict | None:
+    """Descriptive statistics for Body elongation (EV19 GetElongation × 100).
+
+    EV19 Elongation column: 0–1 ratio. Converted to 0–100 per EV19 definition.
+
+    Returns dict with keys: mean, std, max, min, median.
+    Returns None when ``Elongation`` column is missing or all-NaN.
+    """
+    if "Elongation" not in df.columns:
+        return None
+    v = pd.to_numeric(df["Elongation"], errors="coerce").dropna()
+    if v.empty:
+        return None
+    v100 = v * 100
+    return {
+        "mean": float(v100.mean()),
+        "std": float(v100.std()),
+        "max": float(v100.max()),
+        "min": float(v100.min()),
+        "median": float(v100.median()),
+    }
+
+
+def compute_head_direction_stats(df: pd.DataFrame) -> dict | None:
+    """Circular statistics for Head direction (EV19 GetViewDirection, radians).
+
+    Returns dict with keys: mean_rad, circular_stdev_rad, resultant_length, n.
+    Returns None when ``Direction`` column is missing or all-NaN.
+    """
+    if "Direction" not in df.columns:
+        return None
+    v = pd.to_numeric(df["Direction"], errors="coerce").dropna()
+    if v.empty:
+        return None
+    rads = v.to_numpy(dtype=float)
+    n = len(rads)
+    sin_sum = float(np.sin(rads).sum())
+    cos_sum = float(np.cos(rads).sum())
+    R = np.sqrt(sin_sum**2 + cos_sum**2)
+    mean_rad = float(np.arctan2(sin_sum, cos_sum)) % (2 * np.pi)
+    circular_stdev = float(np.sqrt(-2 * np.log(max(min(R / n, 1.0 - 1e-12), 1e-12)))) if n > 0 and R > 0 else float("inf")
+    return {
+        "mean_rad": mean_rad,
+        "circular_stdev_rad": circular_stdev,
+        "resultant_length": float(R),
+        "n": n,
+    }
+
+
+def compute_turn_angle_stats(df: pd.DataFrame) -> dict | None:
+    """Descriptive statistics for Turn angle (EV19 TurnAngle, radians).
+
+    Reports absolute turn angle (unsigned, deg) for locomotion analysis.
+
+    Returns dict with keys: mean_abs_rad, mean_abs_deg, std_abs_rad, total_abs_rad, n.
+    Returns None when ``TurnAngle`` column is missing or all-NaN.
+    """
+    if "TurnAngle" not in df.columns:
+        return None
+    v = pd.to_numeric(df["TurnAngle"], errors="coerce").dropna()
+    if v.empty:
+        return None
+    abs_rad = v.abs().to_numpy(dtype=float)
+    n = len(abs_rad)
+    return {
+        "mean_abs_rad": float(np.mean(abs_rad)),
+        "mean_abs_deg": float(np.mean(abs_rad) * 180 / np.pi),
+        "std_abs_rad": float(np.std(abs_rad)),
+        "total_abs_rad": float(np.sum(abs_rad)),
+        "n": n,
+    }

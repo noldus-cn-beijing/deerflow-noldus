@@ -869,3 +869,47 @@ def time_progress_plot(
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
     return output_path
+
+
+def rose_plot(
+    directions: "np.ndarray",
+    n_bins: int = 12,
+    output_path: str | None = None,
+    *,
+    title: str = "Head direction distribution",
+) -> str:
+    """Polar histogram (rose plot) of angular data.
+
+    Args:
+        directions: 1D array of angles in radians.
+        n_bins: Number of angular bins (default 12 = 30° bins).
+        output_path: Output PNG path.
+        title: Plot title.
+
+    Returns:
+        Path to saved PNG.
+    """
+    _setup_style()
+    output_path = _resolve_output_path(output_path, "rose")
+    fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(6, 6))
+
+    if len(directions) == 0:
+        ax.set_title(f"{title}\n(no data)", va="bottom")
+        fig.savefig(output_path, dpi=150)
+        plt.close(fig)
+        return output_path
+
+    bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
+    counts, _ = np.histogram(directions % (2 * np.pi), bins=bin_edges)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    width = 2 * np.pi / n_bins
+
+    ax.bar(bin_centers, counts, width=width, alpha=0.7, edgecolor="black", linewidth=0.5)
+    ax.set_title(title, va="bottom")
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
