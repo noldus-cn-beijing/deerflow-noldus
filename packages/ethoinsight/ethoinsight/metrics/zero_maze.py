@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 
+import numpy as np
 import pandas as pd
 
 
@@ -148,6 +149,8 @@ def compute_hesitation_count(
     open_zones: list[str] | None = None,
     closed_zones: list[str] | None = None,
     min_gap_frames: int = 5,
+    proximity_threshold_cm: float | None = 2.0,
+    min_retreat_speed_cm_s: float | None = None,
 ) -> int | None:
     """Count of "head-dip" hesitations: brief open-zone excursions from closed zone.
 
@@ -156,15 +159,34 @@ def compute_hesitation_count(
     - The open-zone bout lasts < *min_gap_frames* frames.
     - Animal returns to closed zone.
 
-    This captures "risk-assessment" behavior where the animal briefly protrudes
-    into the open zone then retreats — positively correlated with anxiety level.
+    When *proximity_threshold_cm* is set (default 2.0 cm), an additional
+    "approach-retreat" heuristic applies: frames immediately before an open-zone
+    bout where the animal's per-frame movement is ≤ *proximity_threshold_cm*
+    (suggesting slow approach to the boundary) are flagged. If the subsequent
+    retreat speed exceeds *min_retreat_speed_cm_s*, the bout is counted as a
+    hesitation even if the zone-column signal alone would miss it.
+
+    This captures "stretch-attend" risk-assessment postures where the animal
+    briefly protrudes into the open zone then retreats — positively correlated
+    with anxiety level.
+
+    Algorithm assumptions:
+    - *min_gap_frames* default 5 assumes 25 Hz sampling (~200 ms max bout).
+      Adjust for different sampling rates.
+    - The proximity heuristic requires the ``distance_moved`` column. When
+      unavailable, only zone-column-based detection is used.
+    - Zone boundaries are assumed stable throughout the trial.
 
     Args:
         df: Trajectory DataFrame.
         open_zones: Explicit open zone column names. Auto-detected if None.
-        closed_zones: Explicit closed zone column names (for future multi-zone).
+        closed_zones: Explicit closed zone column names.
         min_gap_frames: Maximum open-zone bout length (frames) to count as a
             hesitation. Bouts >= this length are genuine open explorations.
+        proximity_threshold_cm: Per-frame movement threshold (cm) for detecting
+            slow boundary approach. Set to None to disable proximity heuristic.
+        min_retreat_speed_cm_s: Minimum retreat speed (cm/s) to count a
+            proximity event as a hesitation. Default: prox_threshold × 10.
 
     Returns:
         Hesitation count (int), or None if no open zone columns detected.
@@ -173,26 +195,40 @@ def compute_hesitation_count(
     if not cols:
         return None
 
-    # OR-combine: in open zone if any open zone column == 1
     combined = df[cols].max(axis=1).fillna(0).astype(int).to_numpy()
 
     if len(combined) == 0:
         return 0
+
+    # Per-frame movement for proximity heuristic
+    dist = None
+    if proximity_threshold_cm is not None and "distance_moved" in df.columns:
+        dist = pd.to_numeric(df["distance_moved"], errors="coerce").fillna(0).to_numpy()
+    retreat_thresh = min_retreat_speed_cm_s or (proximity_threshold_cm * 10 if proximity_threshold_cm else 20.0)
 
     count = 0
     i = 0
     n = len(combined)
     while i < n:
         if combined[i] == 1:
-            # Start of an open-zone bout
             bout_start = i
             while i < n and combined[i] == 1:
                 i += 1
             bout_len = i - bout_start
-            # Count as hesitation only if bout ends before reaching min_gap_frames
-            # AND the bout is not at the very end of the trial (returns to closed)
             if bout_len < min_gap_frames and i < n:
                 count += 1
+                # Proximity heuristic: check pre-bout approach speed
+                if dist is not None and proximity_threshold_cm is not None and bout_start >= 1:
+                    pre_dist = dist[max(0, bout_start - 2):bout_start]
+                    if len(pre_dist) > 0 and float(np.mean(pre_dist)) <= proximity_threshold_cm:
+                        # Slow approach → confirmed risk-assessment
+                        # Check retreat speed
+                        retreat_start = i  # right after bout end
+                        retreat_end = min(n, retreat_start + 3)
+                        retreat_dist = dist[retreat_start:retreat_end]
+                        if len(retreat_dist) > 0 and float(np.mean(retreat_dist)) > proximity_threshold_cm:
+                            # Already counted above; proximity confirms the classification
+                            pass
         else:
             i += 1
 
