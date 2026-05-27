@@ -61,7 +61,26 @@ default_metrics:
     direction_for_anxiety: lower_is_anxious
     statistical_default: groupwise_compare
 
-optional_metrics: []
+optional_metrics:
+  - id: body_elongation_stats
+    script: ethoinsight.scripts.oft.compute_body_elongation_stats
+    requires_columns: [Elongation]
+    output_unit: ratio
+    display_name_zh: 身体拉伸度统计
+    unit_zh: 比例
+    one_liner: 身体拉伸度的均值/标准差（EV19 GetElongation × 100）
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: turn_angle_stats
+    script: ethoinsight.scripts.oft.compute_turn_angle_stats
+    requires_columns: [TurnAngle]
+    output_unit: radians
+    display_name_zh: 转角统计
+    unit_zh: 弧度
+    one_liner: 绝对转角的均值/标准差（EV19 TurnAngle），thigmotaxis 旋转模式分析
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
 
 charts:
   - id: box_center

@@ -49,7 +49,16 @@ default_metrics:
     direction_for_anxiety: higher_is_anxious
     statistical_default: groupwise_compare
 
-optional_metrics: []
+optional_metrics:
+  - id: head_direction_stats
+    script: ethoinsight.scripts.zero_maze.compute_head_direction_stats
+    requires_columns: [Direction]
+    output_unit: radians
+    display_name_zh: 头部朝向统计
+    unit_zh: 弧度
+    one_liner: 头部朝向的 circular mean/stdev（EV19 GetViewDirection），开放区朝向分析
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
 
 charts:
   - id: box_open_zone
@@ -89,6 +98,14 @@ charts:
     requires_columns:
       - x_center
       - y_center
+
+  - id: rose
+    script: ethoinsight.scripts.zero_maze.plot_rose
+    when: total_subjects >= 1
+    confidence: optional
+    display_name_zh: "头部朝向玫瑰图"
+    requires_columns:
+      - Direction
 
 statistics:
   default:

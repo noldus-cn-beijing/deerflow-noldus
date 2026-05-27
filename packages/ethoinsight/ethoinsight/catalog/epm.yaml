@@ -60,7 +60,36 @@ default_metrics:
     direction_for_anxiety: null
     statistical_default: groupwise_compare
 
-optional_metrics: []
+optional_metrics:
+  - id: body_elongation_stats
+    script: ethoinsight.scripts.epm.compute_body_elongation_stats
+    requires_columns: [Elongation]
+    output_unit: ratio
+    display_name_zh: 身体拉伸度统计
+    unit_zh: 比例
+    one_liner: 身体拉伸度的均值/标准差/最大/最小值（EV19 GetElongation × 100），SAP 风险评估参考
+    direction_for_anxiety: higher_is_anxious
+    statistical_default: groupwise_compare
+
+  - id: head_direction_stats
+    script: ethoinsight.scripts.epm.compute_head_direction_stats
+    requires_columns: [Direction]
+    output_unit: radians
+    display_name_zh: 头部朝向统计
+    unit_zh: 弧度
+    one_liner: 头部朝向的 circular mean/stdev（EV19 GetViewDirection），用于开放臂朝向分析
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: turn_angle_stats
+    script: ethoinsight.scripts.epm.compute_turn_angle_stats
+    requires_columns: [TurnAngle]
+    output_unit: radians
+    display_name_zh: 转角统计
+    unit_zh: 弧度
+    one_liner: 绝对转角的均值/标准差（EV19 TurnAngle），thigmotaxis 旋转模式分析
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
 
 charts:
   - id: box_open_arm
@@ -103,6 +132,14 @@ charts:
     requires_columns:
       - x_center
       - y_center
+
+  - id: rose
+    script: ethoinsight.scripts.epm.plot_rose
+    when: total_subjects >= 1
+    confidence: optional
+    display_name_zh: "头部朝向玫瑰图"
+    requires_columns:
+      - Direction
 
 statistics:
   default:
