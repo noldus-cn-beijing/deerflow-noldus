@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 
+import numpy as np
 import pandas as pd
 
 
@@ -164,6 +165,8 @@ def _resolve_immobile_from_activity(
     if activity_col is None:
         return None
     activity = df[activity_col].to_numpy(dtype=float)
+    if np.all(np.isnan(activity)):
+        return None
     dt = _estimate_dt(df)
     immobile = pendulum_immobility_series(activity, dt)
     series = pd.Series(immobile, index=df.index[:len(immobile)], dtype=int)
@@ -175,8 +178,6 @@ def _runs(arr, value=0):
 
     Used for immobility bout detection.
     """
-    import numpy as np
-
     a = np.asarray(arr, dtype=int)
     if len(a) == 0:
         return []

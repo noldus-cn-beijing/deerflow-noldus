@@ -102,3 +102,14 @@ class TestResolveImmobileFromActivity:
         })
         result = _resolve_immobile_series(df, mobility_col=None)
         assert result is None
+
+    def test_returns_none_when_activity_all_nan(self):
+        """Activity column exists but is all NaN → should return None, not fabricate."""
+        from ethoinsight.metrics._common import _resolve_immobile_series
+
+        df = pd.DataFrame({
+            "trial_time": np.arange(200) * 0.04,
+            "activity": np.full(200, np.nan),
+        })
+        result = _resolve_immobile_series(df, mobility_col=None)
+        assert result is None
