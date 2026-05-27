@@ -29,6 +29,11 @@ Activity_k = (CP_k / P_k) × 100
 - Subject missing > 3 帧 → 当前 Activity state 终止，剩余 missing 帧忽略
 - Averaging interval 缺失样本处理: 缺失帧的值在 avg() 内被跳过；两个相邻缺失 → 输出 [no value]
 
+**比较陷阱**（来自 EV19 FAQ）:
+- **不应跨不同视频分辨率比较 Activity**：分辨率越高，像素变化总数越大，Activity % 的绝对值不可跨分辨率对比
+- **采样率影响 Activity**：采样率越高，相邻帧之间的像素变化越小；Activity 值与 sampling rate 负相关
+- **Acquisition 中的 Activity 阈值不会被 Analysis 复用**：在 Analysis profile 中需重新输入阈值，两处阈值独立
+
 ### Activity vs Mobility 区别
 
 | | Activity | Mobility |
@@ -163,7 +168,7 @@ IsSubjectNoseInZone(SubjectName, ZoneName)
 IsSubjectTailInZone(SubjectName, ZoneName)
 ```
 
-**重要**: EPM 进臂判定的论文金标准是 **center point in zone**，不是 nose 或 tail。如果 EthoVision 导出中包含多个 body point 的 in_zone 列，应优先使用 center point。
+**重要**: 论文惯例（Pellow et al. 1985 等）中 EPM 进臂判定的金标准是 **center point in zone**，不是 nose 或 tail。此约定非 EV19 文档定义，而是行为学领域的通用实践。如果 EthoVision 导出中包含多个 body point 的 in_zone 列，应优先使用 center point。
 
 ---
 
@@ -175,7 +180,7 @@ GetPixelChange()
 
 - 返回当前帧与前一帧的像素变化比例（0–1）
 - `Activity % = GetPixelChange() × 100`
-- 与导出文件中的 `activity_sampleRate_1` 列一致
+- 与导出文件中含 `activity` / `sample_rate` 前缀的列对应（具体列名以 EV19 实际导出为准，不同 Analysis 配置下列名可能不同）
 
 ---
 
@@ -226,5 +231,7 @@ EV19 导出的 `Mobility state` 列是**多状态分类值**，不是 0/1 二值
 | 1 | Highly active | Moderately active | Moderately active |
 | 2 | — | Highly active | Active |
 | 3 | — | — | Highly active |
+
+> **注意**: EV19 HTML 帮助文档给出了状态语义和名称（Activity state.html），但**未明确整数编码顺序**。上表的 0/1/2/3 编码是按阈值递增推断（Inactive → Moderately active → Active → Highly active），以 EV19 实际导出列名为权威（如 `mobility_state_immobile` 等 one-hot 列名后缀）。
 
 **对代码的影响**: `immobile_value = 0` 只在 2-state 配置下正确；3/4-state 下会把 Moderately active / Active 也归为 immobile。应检查列名是否含 `immobile` 关键字来判定编码方式。

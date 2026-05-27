@@ -48,7 +48,7 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
 - 如果是场景 B，直接回答即可
 
 ## 工具使用原则（重要！）
-- **如果用户问"EV19 如何计算 X"类公式问题**（Activity 百分比、Mobility state 编码、Distance/TurnAngle/Heading 定义、Averaging Interval 等），**先** read_file `/mnt/skills/ethovision-paradigm-knowledge/references/ev19-dependent-variables.md`，再结合 skill 知识回答
+- **如果用户问"EV19 如何计算 X"类公式问题**（Activity 百分比、Mobility state 编码、Distance/TurnAngle/Heading 定义、Averaging Interval 等），**先** read_file `/mnt/skills/custom/ethovision-paradigm-knowledge/references/ev19-dependent-variables.md`，再结合 skill 知识回答
 - **优先使用 system prompt 中已注入的 ethoinsight skill 知识**，这些内容不消耗工具调用
 - 只有当 skill 知识不够回答时，才调用 noldus-kb MCP 工具
 - 调用 search_knowledge 时，**limit 参数不超过 3**
