@@ -116,21 +116,50 @@ def prep_metric_plan_tool(
     # Lazy import to avoid circular dependency (sandbox.tools → agents.factory → tools.builtins → here)
     from deerflow.sandbox.tools import replace_virtual_path
 
+    # Step 1.5: expand multi-sheet XLSX files into individual sheet entries.
+    # FST-style exports pack 2 subjects in 1 XLSX via separate sheets;
+    # each sheet needs its own PlanMetric so the downstream pipeline sees
+    # N subjects rather than 1.
+    expanded_files: list[str] = []
+    for uf in uploaded_files:
+        if uf.endswith((".xlsx", ".xls")):
+            real_path = replace_virtual_path(uf, thread_data)
+            if Path(real_path).exists():
+                try:
+                    import pandas as pd
+                    xl = pd.ExcelFile(real_path)
+                    if len(xl.sheet_names) > 1:
+                        for sn in xl.sheet_names:
+                            expanded_files.append(f"{uf}::{sn}")
+                        continue
+                except Exception:
+                    pass  # fall through to single-entry
+        expanded_files.append(uf)
+    uploaded_files = expanded_files
+
     # Step 2-4: per-file validation (existence + EthoVision detect + header parse)
     # 任何文件失败立即返回,带 failed_file 字段给 lead 看是哪个文件出问题。
     # header 用第 1 个文件的(同一批次 EV 导出列结构一致;若不一致 catalog resolve 会报 columns_missing)。
+    # Supports ::sheet_name suffix for multi-sheet XLSX files (stripped before
+    # path resolution, re-attached for the detect / parse calls that consume it).
     columns: list[str] = []
     for idx, uploaded_file in enumerate(uploaded_files):
-        real_file_path = replace_virtual_path(uploaded_file, thread_data)
+        # Strip ::sheet suffix for filesystem path resolution
+        clean_virtual = uploaded_file.split("::")[0] if "::" in uploaded_file else uploaded_file
+        real_fs_path = replace_virtual_path(clean_virtual, thread_data)
+        # Effective path passed to detect_ethovision / parse_header (may include ::sheet)
+        effective_path: str = real_fs_path
+        if "::" in uploaded_file:
+            effective_path = real_fs_path + "::" + uploaded_file.split("::", 1)[1]
 
-        if not Path(real_file_path).exists():
+        if not Path(real_fs_path).exists():
             return _error_result(
                 "file_not_found",
-                f"File not found: {uploaded_file} (resolved to {real_file_path})",
-                failed_file=uploaded_file,
+                f"File not found: {clean_virtual} (resolved to {real_fs_path})",
+                failed_file=clean_virtual,
             )
 
-        if not detect_ethovision(real_file_path):
+        if not detect_ethovision(effective_path):
             return _error_result(
                 "format_unrecognized",
                 f"File {uploaded_file} is not an EthoVision XT export.",
@@ -139,7 +168,7 @@ def prep_metric_plan_tool(
 
         if idx == 0:
             try:
-                header = parse_header(real_file_path)
+                header = parse_header(effective_path)
             except Exception as e:
                 logger.warning("parse_header failed for %s: %s", uploaded_file, e)
                 return _error_result(
