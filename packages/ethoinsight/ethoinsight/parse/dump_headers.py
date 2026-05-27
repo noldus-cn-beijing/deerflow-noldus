@@ -33,31 +33,36 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    raw_path = Path(args.input)
+    raw_input = args.input
 
-    if not raw_path.is_file():
+    # Strip ::sheet_name suffix for filesystem checks (multi-sheet XLSX convention).
+    # detect_ethovision / parse_header / parse_trajectory handle ::sheet internally
+    # via _parse_path_and_sheet, so pass the full path to those.
+    fs_path = Path(raw_input.split("::")[0] if "::" in raw_input else raw_input)
+
+    if not fs_path.is_file():
         return _emit_error(
-            "file.not_found", f"Input not found: {raw_path}", {"path": str(raw_path)}
+            "file.not_found", f"Input not found: {raw_input}", {"path": str(fs_path)}
         )
 
-    if not detect_ethovision(str(raw_path)):
+    if not detect_ethovision(raw_input):
         return _emit_error(
             "format.unrecognized",
-            f"File does not look like an EthoVision export: {raw_path}",
-            {"path": str(raw_path)},
+            f"File does not look like an EthoVision export: {raw_input}",
+            {"path": raw_input},
         )
 
     try:
-        header = parse_header(str(raw_path))
+        header = parse_header(raw_input)
     except Exception as e:
         return _emit_error(
             "header.parse_failed",
             f"parse_header failed: {e}",
-            {"path": str(raw_path)},
+            {"path": raw_input},
         )
 
     try:
-        df = parse_trajectory(str(raw_path))
+        df = parse_trajectory(raw_input)
         columns = list(df.columns)
     except Exception as e:
         return _emit_error(
@@ -67,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     payload = {
-        "file": str(raw_path),
+        "file": raw_input,
         "columns": columns,
         "n_subjects": header.get("number_of_subjects"),
         "duration_s": header.get("trial_duration"),
