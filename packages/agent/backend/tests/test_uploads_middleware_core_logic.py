@@ -459,7 +459,7 @@ class TestBeforeAgent:
         assert "grep" in content
 
     def test_fallback_grep_hint_shown_when_no_md_file(self, tmp_path):
-        """Files with no sibling .md still get the grep hint (outline is empty)."""
+        """Files with no sibling .md still get a hint (data-file hint for structured types)."""
         mw = _middleware(tmp_path)
         uploads_dir = _uploads_dir(tmp_path)
         (uploads_dir / "data.csv").write_bytes(b"a,b,c\n1,2,3\n")
@@ -470,4 +470,4 @@ class TestBeforeAgent:
         assert result is not None
         content = result["messages"][-1].content
         assert "Document outline" not in content
-        assert "grep" in content
+        assert "Structured data file" in content
