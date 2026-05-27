@@ -1,0 +1,87 @@
+name: AI Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Analyze issue with NewAPI
+        id: analyze
+        run: |
+          # 构造 prompt
+          TITLE="${{ github.event.issue.title }}"
+          BODY=$(cat <<'ISSUE_BODY'
+${{ github.event.issue.body }}
+ISSUE_BODY
+          )
+
+          RESPONSE=$(curl -s --max-time 60 "${{ secrets.NEWAPI_BASE_URL }}/v1/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.NEWAPI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg title "$TITLE" --arg body "$BODY" '{
+              model: "deepseek-v4-pro",
+              temperature: 0.3,
+              messages: [{
+                role: "system",
+                content: "你是 EthoInsight 项目的 issue 分类助手。EthoInsight 是面向行为学研究员的 AI 分析助手，支持 EthoVision XT 轨迹数据分析。\n\n你的任务：\n1. 判断 issue 类型：bug（缺陷）/ feature（功能请求）/ question（使用问题）/ doc（文档）\n2. 判断优先级：critical（生产故障）/ high（阻塞开发）/ medium（正常）/ low（锦上添花）\n3. 判断涉及的模块：agent（agent 框架）/ ethoinsight（分析库）/ deploy（部署）/ docs（文档）/ frontend（前端）\n4. 如果涉及具体范式（EPM/OFT/LDB/FST/Zero Maze），标注出来\n5. 写一句简短且有帮助的初步回复（中文，不超过 100 字）\n\n输出纯 JSON，不要 markdown 代码块包裹：\n{\"type\":\"...\",\"priority\":\"...\",\"modules\":[\"...\"],\"paradigm\":\"...\",\"reply\":\"...\"}"
+              }, {
+                "role": "user",
+                "content": "标题：\($title)\n\n内容：\($body)"
+              }]
+            }')"
+
+          echo "Raw response: $RESPONSE" >&2
+
+          # 提取 JSON（处理可能的 markdown 代码块包裹）
+          CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // ""')
+          # 去掉可能的 ```json ... ``` 包裹
+          CONTENT=$(echo "$CONTENT" | sed 's/^```json\s*//;s/```\s*$//')
+
+          TYPE=$(echo "$CONTENT" | jq -r '.type // "question"')
+          PRIORITY=$(echo "$CONTENT" | jq -r '.priority // "medium"')
+          REPLY=$(echo "$CONTENT" | jq -r '.reply // ""')
+          MODULES=$(echo "$CONTENT" | jq -r '.modules // [] | join(",")')
+          PARADIGM=$(echo "$CONTENT" | jq -r '.paradigm // ""')
+
+          echo "type=$TYPE" >> $GITHUB_OUTPUT
+          echo "priority=$PRIORITY" >> $GITHUB_OUTPUT
+          echo "reply=$REPLY" >> $GITHUB_OUTPUT
+          echo "modules=$MODULES" >> $GITHUB_OUTPUT
+          echo "paradigm=$PARADIGM" >> $GITHUB_OUTPUT
+
+      - name: Apply labels and comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE=${{ github.event.issue.number }}
+
+          # 构造标签列表
+          LABELS="ai-triaged"
+          [ -n "${{ steps.analyze.outputs.type }}" ] && LABELS="$LABELS,${{ steps.analyze.outputs.type }}"
+          [ -n "${{ steps.analyze.outputs.priority }}" ] && LABELS="$LABELS,priority:${{ steps.analyze.outputs.priority }}"
+
+          # 按逗号拆分 modules 打标签
+          IFS=',' read -ra MODS <<< "${{ steps.analyze.outputs.modules }}"
+          for m in "${MODS[@]}"; do
+            m_trimmed=$(echo "$m" | xargs)
+            [ -n "$m_trimmed" ] && LABELS="$LABELS,area:$m_trimmed"
+          done
+
+          [ -n "${{ steps.analyze.outputs.paradigm }}" ] && LABELS="$LABELS,paradigm:${{ steps.analyze.outputs.paradigm }}"
+
+          gh issue edit "$ISSUE" $(echo "$LABELS" | tr ',' '\n' | sed 's/^/--add-label /' | tr '\n' ' ')
+          gh issue comment "$ISSUE" --body "🤖 **AI 初步分析**
+
+          ${{ steps.analyze.outputs.reply }}
+
+          > 类型：${{ steps.analyze.outputs.type }} | 优先级：${{ steps.analyze.outputs.priority }} | 模块：${{ steps.analyze.outputs.modules }}
+          > 这不是最终回复，团队成员会尽快跟进。"
