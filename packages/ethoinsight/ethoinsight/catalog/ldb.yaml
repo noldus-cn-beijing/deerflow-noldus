@@ -77,6 +77,14 @@ charts:
       - x_center
       - y_center
 
+  - id: zone_entry_distribution
+    script: ethoinsight.scripts.ldb.plot_zone_entry_distribution
+    when: total_subjects >= 1
+    display_name_zh: "区域进入分布图"
+    requires_columns:
+      - in_zone_light
+      - in_zone_dark
+
 statistics:
   default:
     id: groupwise_compare
