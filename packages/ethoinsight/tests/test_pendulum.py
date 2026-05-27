@@ -113,3 +113,54 @@ class TestResolveImmobileFromActivity:
         })
         result = _resolve_immobile_series(df, mobility_col=None)
         assert result is None
+
+
+class TestResolveImmobileFromVelocity:
+    def test_velocity_fallback_no_mobility_no_activity(self):
+        """When neither mobility_state nor activity column exists, use velocity."""
+        from ethoinsight.metrics._common import _resolve_immobile_series
+
+        n = 500
+        rng = np.random.default_rng(0)
+        x = np.cumsum(rng.uniform(-0.5, 0.5, n))
+        y = np.cumsum(rng.uniform(-0.5, 0.5, n))
+        # Insert 100 frames of near-zero movement at end → should be immobile
+        x[-100:] = x[-100]
+        y[-100:] = y[-100]
+
+        df = pd.DataFrame({
+            "trial_time": np.arange(n) * 0.04,
+            "x_center": x,
+            "y_center": y,
+        })
+        result = _resolve_immobile_series(df, mobility_col=None)
+        assert result is not None
+        series, immobile_value = result
+        assert immobile_value == 1
+        # Last section should have immobility detected
+        assert series.iloc[-1] == 1
+
+    def test_high_velocity_not_immobile(self):
+        """Consistently high velocity → no immobility."""
+        from ethoinsight.metrics._common import _resolve_immobile_series
+
+        n = 200
+        df = pd.DataFrame({
+            "trial_time": np.arange(n) * 0.04,
+            "x_center": np.arange(n) * 10.0,   # 10mm per frame = 250mm/s
+            "y_center": np.zeros(n),
+        })
+        result = _resolve_immobile_series(df, mobility_col=None)
+        assert result is not None
+        series, _immobile_value = result
+        # High velocity → no immobility after warm-up
+        assert series.iloc[-1] == 0
+
+    def test_returns_none_when_no_xy(self):
+        """No x_center/y_center columns → None."""
+        from ethoinsight.metrics._common import _resolve_immobile_series
+
+        df = pd.DataFrame({"trial_time": np.arange(100) * 0.04})
+        result = _resolve_immobile_series(df, mobility_col=None)
+        assert result is None
+        assert result is None

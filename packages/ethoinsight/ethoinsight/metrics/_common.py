@@ -138,11 +138,18 @@ def _resolve_immobile_series(
     """
     col = mobility_col or _find_mobility_column(df)
     if col is None or col not in df.columns:
-        # Fallback: derive immobility from raw Activity via pendulum detection
-        return _resolve_immobile_from_activity(df)
+        # Fallback 1: derive immobility from raw Activity via pendulum detection
+        result = _resolve_immobile_from_activity(df)
+        if result is not None:
+            return result
+        # Fallback 2: velocity-based (Noldus Non-movement bouts, last resort)
+        return _resolve_immobile_from_velocity(df)
     series = df[col].dropna()
     if series.empty:
-        return _resolve_immobile_from_activity(df)
+        result = _resolve_immobile_from_activity(df)
+        if result is not None:
+            return result
+        return _resolve_immobile_from_velocity(df)
     immobile_value = 1 if "immobile" in col.lower() else 0
     return series, immobile_value
 
@@ -170,6 +177,53 @@ def _resolve_immobile_from_activity(
     dt = _estimate_dt(df)
     immobile = pendulum_immobility_series(activity, dt)
     series = pd.Series(immobile, index=df.index[:len(immobile)], dtype=int)
+    return series, 1  # one-hot: 1 = immobile
+
+
+_VELOCITY_THRESHOLD_MM_S = 30.0   # Noldus default: ≤ 30 mm/s = immobile
+_VELOCITY_MIN_DURATION = 25        # Noldus default: ≥ 25 samples (1s at 25fps)
+
+
+def _resolve_immobile_from_velocity(
+    df: pd.DataFrame,
+) -> tuple[pd.Series, int] | None:
+    """Derive immobility from center-point velocity (Noldus Non-movement bouts).
+
+    Last-resort fallback when neither ``mobility_state`` nor ``activity``
+    columns are available.  Classifies a frame as immobile when the
+    center-point velocity (Euclidean distance / time delta) ≤ 30 mm/s for
+    at least 25 consecutive samples (frame-rate adaptive).
+
+    Returns None when ``x_center`` or ``y_center`` columns are missing.
+    """
+    if "x_center" not in df.columns or "y_center" not in df.columns:
+        return None
+    x = df["x_center"].to_numpy(dtype=float)
+    y = df["y_center"].to_numpy(dtype=float)
+    dt = _estimate_dt(df)
+
+    # Frame-rate adaptation: scale min-duration to match 25fps baseline
+    scale = 0.04 / dt if dt > 0 and dt != 0.04 else 1.0
+    min_dur = max(1, round(_VELOCITY_MIN_DURATION * scale))
+
+    n = len(x)
+    immobile = np.zeros(n, dtype=int)
+    counter = 0
+    for i in range(1, n):
+        if np.isnan(x[i]) or np.isnan(y[i]) or np.isnan(x[i - 1]) or np.isnan(y[i - 1]):
+            counter = 0
+            continue
+        dx = x[i] - x[i - 1]
+        dy = y[i] - y[i - 1]
+        velocity = np.sqrt(dx * dx + dy * dy) / dt
+        if velocity <= _VELOCITY_THRESHOLD_MM_S:
+            counter += 1
+        else:
+            counter = 0
+        if counter >= min_dur:
+            immobile[i] = 1
+
+    series = pd.Series(immobile, index=df.index[:n], dtype=int)
     return series, 1  # one-hot: 1 = immobile
 
 
