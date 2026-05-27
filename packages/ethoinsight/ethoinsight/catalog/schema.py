@@ -47,6 +47,9 @@ class ChartEntry:
     script: str
     when: ChartCondition  # "always" | "n_per_group >= K" | "n_groups >= K"
     display_name_zh: str = ""          # 1.1: 中文图名，必填（loader 校验）
+    confidence: str = "optional"       # "must_have" | "optional" | "rarely_used"
+                                       # must_have: 自动生成不询问；optional: 反问用户要不要出；
+                                       # rarely_used: 用户主动提才生成
     accepts_paradigm: bool = False      # 1.1: 脚本是否接受 --paradigm 参数
     output_mode: str = "per_subject"   # 1.2: "per_subject" expands to N PlanCharts (one inputs.json per file);
                                          # "aggregate" collapses to 1 PlanChart with all files in one inputs.json
@@ -136,6 +139,7 @@ class PlanChart:
     output: str
     subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
     display_name_zh: str = ""           # 1.1: 中文图名，透传自 ChartEntry
+    confidence: str = "optional"        # 透传自 ChartEntry.confidence
     args: list[str] = field(default_factory=list)  # 1.1: resolve 阶段填充的 CLI 参数数组
 
 

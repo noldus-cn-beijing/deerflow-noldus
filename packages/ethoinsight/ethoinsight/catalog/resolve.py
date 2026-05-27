@@ -607,6 +607,7 @@ def _chart_to_plan(
                 output=output_path,
                 subject_index=0,
                 display_name_zh=ch.display_name_zh,
+                confidence=ch.confidence,
                 args=args,
             )
         )
@@ -630,6 +631,7 @@ def _chart_to_plan(
                 output=output_path,
                 subject_index=idx,
                 display_name_zh=ch.display_name_zh,
+                confidence=ch.confidence,
                 args=args,
             )
         )

@@ -294,6 +294,16 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
 **仅在 fast-path 不命中时**才按 4 类归类: CALC(算/计算)、ANALYZE-EXPLICIT(解读/描述/比较 — 不含"分析"这个总称词)、VISUALIZE(可视化/出图/画图/箱线/轨迹/趋势/热图/表/列出来)、REPORT(报告/总结/汇总)。出现 VISUALIZE 类 → E2E_FULL;只 ANALYZE-EXPLICIT 一类 → E2E_FULL_ASKVIZ;只 CALC 一类 → E2E_MIN。
 
+**图表置信度分级**(catalog YAML `confidence` 字段):
+
+每个 chart 在 catalog 中标注了置信度等级，chart-maker 和 lead 按以下规则使用：
+
+- **must_have**（必出）: E2E_FULL 路径自动生成，E2E_FULL_ASKVIZ 路径在反问前自动启动
+  chart-maker（与反问并行，不浪费时间）。用户说"画图"时只画 must_have 的图。
+- **optional**（可能用到）: E2E_FULL 路径不自动画；E2E_FULL_ASKVIZ 路径在反问中列出选项。
+  用户说"出图"但对图表类型不明确时，由 lead 从 optional 中选 1-2 个最相关的投入 chart-maker。
+- **rarely_used**（很少用）: 任何路径都不自动出，用户主动点名该图种时才派遣 chart-maker。
+
 **E2E_FULL_ASKVIZ 反问模板**(data-analyst 完成后):
 
 **关键:在 ask_clarification 之前必须先输出一段汇报 message**,内容包含:

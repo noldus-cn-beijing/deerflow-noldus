@@ -67,6 +67,7 @@ charts:
   - id: box_center
     script: ethoinsight.scripts.oft.plot_box_center
     when: n_per_group >= 3
+    confidence: must_have
     display_name_zh: "中心时间箱线图"
     output_mode: aggregate
     needs_groups: true
@@ -75,18 +76,21 @@ charts:
   - id: center_time_ratio_bar
     script: ethoinsight.scripts.oft.plot_center_time_ratio_bar
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "中心时间比例柱状图"
     requires_columns:
       - in_zone*
   - id: center_entry_summary
     script: ethoinsight.scripts.oft.plot_center_entry_summary
     when: total_subjects >= 1
+    confidence: optional
     display_name_zh: "中心进入汇总图"
     requires_columns:
       - in_zone*
   - id: trajectory
     script: ethoinsight.scripts._common.plot_trajectory
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "轨迹图"
     requires_columns:
       - x_center
@@ -94,6 +98,7 @@ charts:
   - id: heatmap
     script: ethoinsight.scripts._common.plot_heatmap
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "热区图"
     requires_columns:
       - x_center
@@ -101,6 +106,7 @@ charts:
   - id: time_progress
     script: ethoinsight.scripts.oft.plot_time_progress
     when: total_duration_seconds > 300
+    confidence: optional
     display_name_zh: "时间进程图（5min bin）"
     requires_columns:
       - x_center
