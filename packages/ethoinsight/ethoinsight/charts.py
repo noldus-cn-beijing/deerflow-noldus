@@ -696,23 +696,40 @@ def activity_intensity_plot(
     df: pd.DataFrame,
     output_path: str | None = None,
 ) -> str:
-    """Activity intensity time-series (velocity as proxy).
+    """Activity intensity time-series (pixel change %, per EV19 definition).
 
-    Plots a filled area chart of velocity vs trial_time. Title labels proxy.
+    Prefers the Activity column (pixel change %) when available — this is the
+    correct signal for TST/FST where the animal is fixed and velocity ≈ 0.
+    Falls back to velocity when no Activity column is present.
     """
+    from ethoinsight.metrics._common import _find_activity_column
+
     _setup_style()
     output_path = _resolve_output_path(output_path, "activity_intensity")
     fig, ax = plt.subplots(figsize=(10, 4))
-    if "trial_time" in df.columns and "velocity" in df.columns:
+
+    activity_col = _find_activity_column(df)
+    use_activity = activity_col is not None and "trial_time" in df.columns
+
+    if use_activity:
+        v = pd.to_numeric(df[activity_col], errors="coerce").fillna(0)
+        t = pd.to_numeric(df["trial_time"], errors="coerce")
+        ax.fill_between(t, v, color="#4C9F70", alpha=0.5)
+        ax.plot(t, v, color="#2D5F3F", linewidth=0.7)
+        ax.set_xlabel("Trial time (s)")
+        ax.set_ylabel("Activity (pixel change %)")
+        ax.set_title("Activity intensity")
+    elif "trial_time" in df.columns and "velocity" in df.columns:
         v = pd.to_numeric(df["velocity"], errors="coerce").fillna(0)
         t = pd.to_numeric(df["trial_time"], errors="coerce")
         ax.fill_between(t, v, color="#4C9F70", alpha=0.5)
         ax.plot(t, v, color="#2D5F3F", linewidth=0.7)
         ax.set_xlabel("Trial time (s)")
         ax.set_ylabel("Velocity (cm/s)")
-        ax.set_title("Activity intensity (velocity proxy)")
+        ax.set_title("Activity intensity (velocity fallback — Activity column missing)")
     else:
-        ax.text(0.5, 0.5, "velocity column missing", ha="center", va="center", transform=ax.transAxes)
+        ax.text(0.5, 0.5, "no Activity or velocity column", ha="center",
+                va="center", transform=ax.transAxes)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
@@ -722,27 +739,65 @@ def activity_intensity_plot(
 def struggle_distribution_plot(
     bouts_by_subject: dict[str, list[tuple[float, float]]],
     output_path: str | None = None,
+    trial_durations: dict[str, float] | None = None,
 ) -> str:
-    """eventplot of immobility bouts per subject.
+    """Immobility vs struggle time distribution per subject.
 
-    Each subject = one row of horizontal bars marking immobility bouts.
+    Each subject = one row.  Immobility (giving-up) periods drawn in red;
+    struggle periods drawn in blue when *trial_durations* is provided
+    (struggle = complement of immobility over [0, duration]).
+
+    When *trial_durations* is None, only immobility bouts are shown
+    (backward compatible).
     """
     _setup_style()
     output_path = _resolve_output_path(output_path, "struggle_distribution")
     subjects = list(bouts_by_subject.keys())
     fig, ax = plt.subplots(figsize=(10, max(2, len(subjects) * 0.6)))
+
     for i, sub in enumerate(subjects):
         bouts = bouts_by_subject[sub]
+        # Immobility (giving-up) in red
         for start, end in bouts:
-            ax.broken_barh([(start, end - start)], (i - 0.35, 0.7), facecolors="#B33A3A")
+            ax.broken_barh([(start, end - start)], (i - 0.35, 0.7),
+                           facecolors="#B33A3A")
+        # Struggle in blue (complement of immobility)
+        if trial_durations and sub in trial_durations:
+            duration = trial_durations[sub]
+            gaps = _invert_intervals(bouts, duration)
+            for g_start, g_end in gaps:
+                ax.broken_barh([(g_start, g_end - g_start)], (i - 0.35, 0.7),
+                               facecolors="#3A6FB3", alpha=0.5)
+
     ax.set_yticks(range(len(subjects)))
     ax.set_yticklabels(subjects)
     ax.set_xlabel("Trial time (s)")
-    ax.set_title("Immobility (giving-up) bouts over time")
+    has_struggle = trial_durations is not None
+    ax.set_title("Struggle (blue) vs giving-up (red) bouts over time" if has_struggle
+                 else "Immobility (giving-up) bouts over time")
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
     return output_path
+
+
+def _invert_intervals(
+    intervals: list[tuple[float, float]],
+    end: float,
+    start: float = 0.0,
+) -> list[tuple[float, float]]:
+    """Return the gaps between intervals over [start, end]."""
+    if not intervals:
+        return [(start, end)] if end > start else []
+    gaps: list[tuple[float, float]] = []
+    cur = start
+    for s, e in sorted(intervals):
+        if s > cur:
+            gaps.append((cur, s))
+        cur = max(cur, e)
+    if cur < end:
+        gaps.append((cur, end))
+    return gaps
 
 
 def time_progress_plot(
