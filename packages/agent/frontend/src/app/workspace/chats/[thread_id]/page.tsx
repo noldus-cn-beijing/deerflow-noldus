@@ -35,7 +35,10 @@ export default function ChatPage() {
   const { threadId, isNewThread, setIsNewThread, isMock } = useThreadChat();
   const [settings, setSettings] = useThreadSettings(threadId);
   const [mounted, setMounted] = useState(false);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   useSpecificChatMode();
+
+  const isCenteredLayout = isNewThread && !welcomeDismissed;
 
   useEffect(() => {
     setMounted(true);
@@ -72,7 +75,17 @@ export default function ChatPage() {
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
-      const sendPromise = sendMessage(threadId, message);
+      if (
+        !message.text.trim() &&
+        (!message.files || message.files.length === 0)
+      ) {
+        return;
+      }
+      setWelcomeDismissed(true);
+      const sendPromise = sendMessage(threadId, message).catch((err) => {
+        setWelcomeDismissed(false);
+        throw err;
+      });
       if (message.files.length > 0) {
         return sendPromise;
       }
@@ -119,7 +132,7 @@ export default function ChatPage() {
                 messageRunIds={messageRunIds}
                 paddingBottom={messageListPaddingBottom}
                 onSelectClarificationOption={(optionText) => {
-                  void sendMessage(threadId, { text: optionText, files: [] });
+                  void handleSubmit({ text: optionText, files: [] });
                 }}
               />
             </div>
@@ -127,8 +140,8 @@ export default function ChatPage() {
               <div
                 className={cn(
                   "relative w-full",
-                  isNewThread && "-translate-y-[calc(50vh-96px)]",
-                  isNewThread
+                  isCenteredLayout && "-translate-y-[calc(50vh-96px)]",
+                  isCenteredLayout
                     ? "max-w-(--container-width-sm)"
                     : "max-w-(--container-width-md)",
                 )}
@@ -159,7 +172,7 @@ export default function ChatPage() {
                     }
                     context={settings.context}
                     extraHeader={
-                      isNewThread && <Welcome mode={settings.context.mode} />
+                      isCenteredLayout && <Welcome mode={settings.context.mode} />
                     }
                     disabled={
                       env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" ||
