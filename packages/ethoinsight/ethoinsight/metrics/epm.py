@@ -49,6 +49,30 @@ def _find_arm_zone_columns(df: pd.DataFrame) -> list[str]:
     return arm_cols
 
 
+def _prefer_center_suffix(cols: list[str]) -> list[str]:
+    """Prefer columns with ``center`` suffix (gold standard for arm entry in EPM).
+
+    Falls back to nose/tail/all variants only when no center column exists.
+    Reference: Pellow et al. 1985; ev19-dependent-variables.md §10.
+    """
+    center_cols = [c for c in cols if re.search(r"center", c, re.I)]
+    if center_cols:
+        return center_cols
+    return cols
+
+
+def _get_open_zone_cols(df: pd.DataFrame) -> list[str]:
+    """Return open-arm zone columns, preferring center-point suffix."""
+    all_cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
+    return _prefer_center_suffix(all_cols)
+
+
+def _get_closed_zone_cols(df: pd.DataFrame) -> list[str]:
+    """Return closed-arm zone columns, preferring center-point suffix."""
+    all_cols = [c for c in df.columns if re.search(r"in_zone.*closed.?arm", c, re.I)]
+    return _prefer_center_suffix(all_cols)
+
+
 def _get_frame_duration(df: pd.DataFrame) -> float | None:
     """Estimate frame duration (seconds) from trial_time column."""
     if "trial_time" not in df.columns:
@@ -79,7 +103,7 @@ def compute_open_arm_time_ratio(
     if open_arm_zones:
         cols = [c for c in open_arm_zones if c in df.columns]
     else:
-        cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
+        cols = _get_open_zone_cols(df)
 
     if not cols:
         return None
@@ -99,7 +123,7 @@ def compute_open_arm_entry_count(
     if open_arm_zones:
         cols = [c for c in open_arm_zones if c in df.columns]
     else:
-        cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
+        cols = _get_open_zone_cols(df)
     return _count_zone_entries(df, cols)
 
 
@@ -128,7 +152,7 @@ def compute_open_arm_time(
     if open_arm_zones:
         cols = [c for c in open_arm_zones if c in df.columns]
     else:
-        cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
+        cols = _get_open_zone_cols(df)
     if not cols:
         return None
     combined = df[cols].max(axis=1).dropna()
@@ -148,8 +172,8 @@ def compute_total_entry_count(df: pd.DataFrame) -> int | None:
     (each group combines its columns with OR to avoid overcounting),
     then sums across groups.
     """
-    open_cols = [c for c in df.columns if re.search(r"in_zone.*open.?arm", c, re.I)]
-    closed_cols = [c for c in df.columns if re.search(r"in_zone.*closed.?arm", c, re.I)]
+    open_cols = _get_open_zone_cols(df)
+    closed_cols = _get_closed_zone_cols(df)
     if not open_cols and not closed_cols:
         return None
     open_entries = _count_zone_entries(df, open_cols) or 0

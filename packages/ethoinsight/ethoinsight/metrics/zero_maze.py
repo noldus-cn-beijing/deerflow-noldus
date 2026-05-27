@@ -20,19 +20,33 @@ import pandas as pd
 
 
 def _get_open_zone_cols(df: pd.DataFrame, open_zones: list[str] | None) -> list[str]:
-    """Return open zone column names, auto-detecting if not provided."""
+    """Return open zone column names, preferring center-suffix columns.
+
+    Auto-detects columns matching ``in_zone.*open`` unless *open_zones* is
+    explicitly provided. When multiple body-point variants exist (center, nose,
+    tail, all), the ``center`` variant is preferred as the gold standard for
+    zone entry (Pellow et al. 1985).
+    """
     if open_zones:
         return [c for c in open_zones if c in df.columns]
-    return [c for c in df.columns if re.search(r"in_zone.*open", c, re.I)]
+    all_cols = [c for c in df.columns if re.search(r"in_zone.*open", c, re.I)]
+    center_cols = [c for c in all_cols if re.search(r"center", c, re.I)]
+    if center_cols:
+        return center_cols
+    return all_cols
 
 
 def _get_closed_zone_cols(
     df: pd.DataFrame, closed_zones: list[str] | None
 ) -> list[str]:
-    """Return closed zone column names, auto-detecting if not provided."""
+    """Return closed zone column names, preferring center-suffix columns."""
     if closed_zones:
         return [c for c in closed_zones if c in df.columns]
-    return [c for c in df.columns if re.search(r"in_zone.*closed", c, re.I)]
+    all_cols = [c for c in df.columns if re.search(r"in_zone.*closed", c, re.I)]
+    center_cols = [c for c in all_cols if re.search(r"center", c, re.I)]
+    if center_cols:
+        return center_cols
+    return all_cols
 
 
 def _get_frame_duration(df: pd.DataFrame) -> float | None:
