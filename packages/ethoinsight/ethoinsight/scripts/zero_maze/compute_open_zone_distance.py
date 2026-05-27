@@ -1,4 +1,4 @@
-"""Zero Maze: 开放区移动距离占比 (open zone distance ratio).
+"""Zero Maze: 开放区移动距离 (open zone distance, cm).
 
 CLI: python -m ethoinsight.scripts.zero_maze.compute_open_zone_distance \
        --input <轨迹文件> --output <metric.json>

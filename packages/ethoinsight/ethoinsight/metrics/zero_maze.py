@@ -105,14 +105,14 @@ def compute_open_zone_distance(
     df: pd.DataFrame,
     open_zones: list[str] | None = None,
 ) -> float | None:
-    """Ratio of distance traveled in open zones to total distance moved.
+    """Total distance traveled in open zones (cm).
 
     Requires both ``distance_moved`` column and open zone columns.
+    Uses EV19's ``distance_moved`` which is Euclidean distance per frame.
 
     Returns None when:
     - No open zone columns detected.
-    - ``distance_moved`` column missing.
-    - Total distance is zero (to avoid division by zero).
+    - ``distance_moved`` column missing or all-NaN.
     """
     cols = _get_open_zone_cols(df, open_zones)
     if not cols:
@@ -122,12 +122,11 @@ def compute_open_zone_distance(
 
     combined_open = df[cols].max(axis=1)
     dist = df["distance_moved"]
-    total = dist.dropna().sum()
-    if total == 0:
-        return None
+    if dist.dropna().sum() == 0:
+        return 0.0
 
     open_dist = dist.where(combined_open == 1, other=0).fillna(0).sum()
-    return float(open_dist / total)
+    return float(open_dist)
 
 
 def compute_hesitation_count(

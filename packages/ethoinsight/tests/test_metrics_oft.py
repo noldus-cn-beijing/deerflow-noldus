@@ -89,7 +89,7 @@ def test_compute_center_time_returns_seconds():
 
     df = pd.DataFrame(
         {
-            "time": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+            "trial_time": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
             "in_zone_center_center_point": [1, 1, 0, 0, 1, 0],
         }
     )

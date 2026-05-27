@@ -121,37 +121,45 @@ def compute_center_distance_ratio(
 ) -> float | None:
     """Ratio of distance traveled inside center zone to total distance.
 
-    Requires ``x_center`` and ``y_center`` columns for displacement calculation,
-    plus a center zone column (0/1 indicator) — resolved via
-    :func:`_find_center_zone_column`.
+    Prefers EV19's ``distance_moved`` column (Euclidean per-frame distance).
+    When missing, falls back to Euclidean displacement from ``x_center`` /
+    ``y_center`` (√(dx² + dy²)), never Manhattan.
+
+    Returns None when center zone column is unresolved or no distance data
+    is available.
     """
     col = _find_center_zone_column(df, hint=center_zone)
     if col is None:
-        return None
-    if "x_center" not in df.columns or "y_center" not in df.columns:
         return None
 
     mask = df[col] == 1
     if not mask.any():
         return 0.0
 
+    if "distance_moved" in df.columns:
+        total = df["distance_moved"].dropna().sum()
+        if total <= 0:
+            return 0.0
+        center = df.loc[mask, "distance_moved"].dropna().sum()
+        return float(center / total)
+
+    if "x_center" not in df.columns or "y_center" not in df.columns:
+        return None
+
     x = df["x_center"]
     y = df["y_center"]
 
-    # Total displacement per frame
-    dx_total = x.diff().abs().dropna()
-    dy_total = y.diff().abs().dropna()
+    dx = x.diff()
+    dy = y.diff()
+    per_frame = np.sqrt(dx**2 + dy**2).dropna()
 
-    # Center-only displacement (aligned by index)
-    common = dx_total.index.intersection(mask.index)
-    dx_center = dx_total.loc[common][mask.loc[common]]
-    dy_center = dy_total.loc[common][mask.loc[common]]
+    common = per_frame.index.intersection(mask.index)
+    total_dist = per_frame.loc[common].sum()
+    center_dist = per_frame.loc[common][mask.loc[common]].sum()
 
-    total_dist = dx_total.sum() + dy_total.sum()
     if total_dist == 0:
         return 0.0
 
-    center_dist = dx_center.sum() + dy_center.sum()
     return float(center_dist / total_dist)
 
 
@@ -187,9 +195,9 @@ def compute_center_time(df: pd.DataFrame) -> float | None:
     ratio = compute_center_time_ratio(df)
     if ratio is None:
         return None
-    if "time" not in df.columns:
+    if "trial_time" not in df.columns:
         return None
-    duration = float(df["time"].iloc[-1] - df["time"].iloc[0])
+    duration = float(df["trial_time"].iloc[-1] - df["trial_time"].iloc[0])
     return ratio * duration
 
 
