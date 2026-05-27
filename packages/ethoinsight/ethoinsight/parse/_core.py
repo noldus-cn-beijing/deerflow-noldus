@@ -1,7 +1,9 @@
 """ethoinsight.parse — EthoVision XT data file parser.
 
-Handles UTF-16 LE encoded trajectory files exported by EthoVision XT,
-as well as statistics summary files (UTF-16 LE, no header count).
+Handles EthoVision XT exported trajectory files in three formats:
+- TXT: UTF-16 LE with BOM, semicolon-delimited, "标题行数：" header
+- CSV: UTF-16 LE with BOM, semicolon-delimited
+- XLSX/XLS: Excel export with "标题行数：" in row 0, column 0
 """
 
 from __future__ import annotations
@@ -19,15 +21,17 @@ from ethoinsight.utils import detect_paradigm, normalize_columns
 def detect_ethovision(file_path: str) -> bool:
     """Detect whether a file is an EthoVision export.
 
-    Checks for UTF-16 LE BOM (\\xff\\xfe) and the presence of
-    "标题行数：" in the first line (trajectory file) or
-    semicolon-delimited quoted fields (statistics file).
+    Supports TXT/CSV (UTF-16 LE with BOM) and XLSX/XLS (Excel export
+    with "标题行数：" in row 0, column 0).
     """
-    path = Path(file_path)
+    real_path, sheet_name = _parse_path_and_sheet(file_path)
+    path = real_path
     if not path.exists() or not path.is_file():
         return False
 
     suffix = path.suffix.lower()
+    if suffix in (".xlsx", ".xls"):
+        return _detect_ethovision_xlsx(path, sheet_name)
     if suffix not in (".txt", ".csv"):
         return False
 
@@ -60,6 +64,35 @@ def detect_ethovision(file_path: str) -> bool:
     return False
 
 
+def _parse_path_and_sheet(file_path: str) -> tuple[Path, str | int]:
+    """Split file_path into (real_path, sheet_name).
+
+    Supports the ``path::SheetName`` convention for referencing a specific
+    sheet in a multi-sheet XLSX file.  If no ``::`` separator is present,
+    sheet_name defaults to 0 (first sheet).
+    """
+    if "::" in file_path:
+        path_str, sheet = file_path.rsplit("::", 1)
+        return Path(path_str), sheet
+    return Path(file_path), 0
+
+
+def _detect_ethovision_xlsx(path: Path, sheet_name: str | int = 0) -> bool:
+    """Detect whether an XLSX/XLS file (or specific sheet) is an EthoVision export.
+
+    Reads only the first cell (row 0, column 0) and checks for
+    "标题行数" — the EthoVision header-line-count marker.
+    """
+    try:
+        df = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=1)
+    except Exception:
+        return False
+    if df.empty or df.iloc[0, 0] is None:
+        return False
+    first_cell = str(df.iloc[0, 0])
+    return "标题行数" in first_cell
+
+
 def parse_header(file_path: str) -> dict:
     """Parse the header section of an EthoVision trajectory file.
 
@@ -76,7 +109,11 @@ def parse_header(file_path: str) -> dict:
         units: list[str] — unit strings
         raw_metadata: dict — all key-value pairs from header
     """
-    path = Path(file_path)
+    real_path, sheet_name = _parse_path_and_sheet(file_path)
+    path = real_path
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        return _parse_header_xlsx(path, sheet_name)
+
     with open(path, "r", encoding="utf-16-le") as f:
         lines = f.readlines()
 
@@ -141,6 +178,64 @@ def parse_header(file_path: str) -> dict:
     }
 
 
+def _parse_header_xlsx(path: Path, sheet_name: str | int = 0) -> dict:
+    """Parse the header section of an EthoVision XLSX trajectory file.
+
+    XLSX structure (rows):
+      R0:         标题行数: <N>
+      R1..R(N-3): metadata key-value pairs (col 0 = key, col 1 = value)
+      R(N-2):     column names
+      R(N-1):     units
+      RN:         data starts
+    """
+    df_header = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=None)
+    header_lines = int(df_header.iloc[0, 1])
+
+    raw_metadata: dict[str, str] = {}
+    for i in range(1, header_lines - 2):
+        if i >= len(df_header):
+            break
+        key = df_header.iloc[i, 0]
+        val = df_header.iloc[i, 1]
+        if pd.isna(key) or (isinstance(key, str) and not key.strip()):
+            continue
+        raw_metadata[str(key).strip()] = str(val).strip() if not pd.isna(val) else ""
+
+    col_line_idx = header_lines - 2
+    unit_line_idx = header_lines - 1
+
+    raw_col_names = [
+        str(c).strip() for c in df_header.iloc[col_line_idx].tolist()
+        if pd.notna(c) and str(c).strip()
+    ]
+    columns = normalize_columns(raw_col_names)
+
+    units: list[str] = []
+    if unit_line_idx < len(df_header):
+        raw_units = df_header.iloc[unit_line_idx].tolist()
+        units = [
+            str(u).strip() if pd.notna(u) else ""
+            for u in raw_units[: len(columns)]
+        ]
+
+    experiment = raw_metadata.get("实验", raw_metadata.get("Experiment", ""))
+    paradigm = detect_paradigm(experiment)
+
+    return {
+        "header_lines": header_lines,
+        "experiment": experiment,
+        "trial_name": raw_metadata.get("试验名称", raw_metadata.get("Trial Name", "")),
+        "subject": raw_metadata.get("对象名称", raw_metadata.get("Subject", "")),
+        "start_time": raw_metadata.get("开始时间", raw_metadata.get("Start Time", "")),
+        "duration": raw_metadata.get("试验持续时间", raw_metadata.get("Trial Duration", "")),
+        "arena": raw_metadata.get("观察区名称", raw_metadata.get("Arena", "")),
+        "paradigm": paradigm,
+        "columns": columns,
+        "units": units,
+        "raw_metadata": raw_metadata,
+    }
+
+
 def parse_trajectory(file_path: str) -> pd.DataFrame:
     """Parse a single EthoVision trajectory file into a DataFrame.
 
@@ -150,6 +245,11 @@ def parse_trajectory(file_path: str) -> pd.DataFrame:
     - Converts numeric columns
     - Stores metadata in df.attrs
     """
+    real_path, sheet_name = _parse_path_and_sheet(file_path)
+    path = real_path
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        return _parse_trajectory_xlsx(path, sheet_name)
+
     header = parse_header(file_path)
     header_lines = header["header_lines"]
 
@@ -204,6 +304,33 @@ def parse_trajectory(file_path: str) -> pd.DataFrame:
     return df
 
 
+def _parse_trajectory_xlsx(path: Path, sheet_name: str | int = 0) -> pd.DataFrame:
+    """Parse a single EthoVision XLSX trajectory file (or sheet) into a DataFrame.
+
+    Uses parse_header (XLSX branch) for metadata and column names,
+    then reads data rows with pd.read_excel(skiprows=header_lines).
+    """
+    header = _parse_header_xlsx(path, sheet_name)
+    header_lines = header["header_lines"]
+
+    df = pd.read_excel(path, sheet_name=sheet_name, header=None, skiprows=header_lines)
+    df.columns = header["columns"]
+
+    # Convert "-" to NaN
+    df = df.replace("-", np.nan)
+    df = df.replace("", np.nan)
+
+    # Convert numeric columns
+    for col in df.columns:
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except (ValueError, TypeError):
+            pass
+
+    df.attrs.update(_header_to_attrs(header))
+    return df
+
+
 def parse_batch(file_paths: list[str] | str) -> dict:
     """Batch-parse EthoVision trajectory files.
 
@@ -224,17 +351,18 @@ def parse_batch(file_paths: list[str] | str) -> dict:
     else:
         paths = list(file_paths)
 
-    # Filter to trajectory files only (must have header count)
+    # Filter to trajectory files only (must have header count).
+    # Supports ::sheet_name suffix for multi-sheet XLSX — strip it before
+    # filesystem checks, pass the full path to detect_ethovision.
     trajectory_paths = []
     for p in paths:
-        if not Path(p).exists():
+        clean = p.split("::")[0] if "::" in p else p
+        if not Path(clean).exists():
             continue
         try:
-            with open(p, "r", encoding="utf-16-le") as f:
-                first = f.readline().strip("\ufeff").strip()
-            if "标题行数" in first:
+            if detect_ethovision(p):
                 trajectory_paths.append(p)
-        except (OSError, UnicodeDecodeError):
+        except Exception:
             continue
 
     if not trajectory_paths:

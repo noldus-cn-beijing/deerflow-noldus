@@ -400,3 +400,146 @@ def test_parse_groups_handles_missing_field():
         subjects=[{"name": "A1"}, {"name": "A2"}],
     )
     assert result is None
+
+
+# ============================================================================
+# XLSX / Excel format tests
+# ============================================================================
+
+XLSX_DEMO_BASE = Path(
+    os.environ.get("ETHOINSIGHT_XLSX_DEMO_BASE", "/home/wangqiuyang/DemoData/newdemodata")
+)
+
+
+def _find_xlsx_files(directory: Path) -> list[str]:
+    """Find 原始数据-*.xlsx files in *directory*."""
+    if not directory.exists():
+        return []
+    return sorted(str(f) for f in directory.rglob("原始数据-*.xlsx"))
+
+
+def _require_xlsx_file() -> str:
+    """Return the path to the first available OFT XLSX file, or skip."""
+    oft_dir = XLSX_DEMO_BASE / "旷场_小鼠_三点"
+    files = _find_xlsx_files(oft_dir)
+    if not files:
+        pytest.skip(f"No XLSX demo data in {XLSX_DEMO_BASE}. Set ETHOINSIGHT_XLSX_DEMO_BASE.")
+    return files[0]
+
+
+def _require_multi_sheet_xlsx() -> str:
+    """Return path to the first multi-sheet XLSX (FST Mobility_10), or skip."""
+    fst_dir = XLSX_DEMO_BASE / "强迫游泳_大鼠" / "Mobility_10"
+    files = _find_xlsx_files(fst_dir)
+    if not files:
+        pytest.skip(f"No multi-sheet FST XLSX demo data in {fst_dir}")
+    return files[0]
+
+
+class TestDetectEthovisionXlsx:
+    """detect_ethovision() with XLSX files."""
+
+    def test_detect_xlsx_returns_true(self):
+        from ethoinsight.parse._core import detect_ethovision
+
+        path = _require_xlsx_file()
+        assert detect_ethovision(path) is True
+
+    def test_detect_txt_regression(self):
+        from ethoinsight.parse._core import detect_ethovision
+
+        txt_dir = XLSX_DEMO_BASE / "旷场_小鼠_三点"
+        txt_files = sorted(str(f) for f in txt_dir.glob("轨迹-*.txt"))
+        if not txt_files:
+            pytest.skip("No TXT files alongside XLSX for regression check")
+        assert detect_ethovision(txt_files[0]) is True
+
+    def test_detect_unsupported_suffix(self, tmp_path):
+        from ethoinsight.parse._core import detect_ethovision
+
+        p = tmp_path / "data.pdf"
+        p.write_text("not ethovision")
+        assert detect_ethovision(str(p)) is False
+
+
+class TestParseHeaderXlsx:
+    """parse_header() with XLSX files."""
+
+    def test_parse_xlsx_header(self):
+        from ethoinsight.parse._core import parse_header
+
+        path = _require_xlsx_file()
+        header = parse_header(path)
+        assert header["header_lines"] > 0
+        assert len(header["columns"]) > 0
+        assert header["paradigm"] == "open_field"
+        assert header["experiment"] == "Open Field test XT190"
+
+    def test_parse_xlsx_specific_sheet(self):
+        from ethoinsight.parse._core import parse_header
+
+        path = _require_multi_sheet_xlsx()
+        # Read second sheet via :: convention
+        header = parse_header(f"{path}::轨迹-Arena 2-Subject 1")
+        assert header["arena"] == "Arena 2"
+        assert header["subject"] == "Subject 1"
+
+
+class TestParseTrajectoryXlsx:
+    """parse_trajectory() with XLSX files."""
+
+    def test_parse_xlsx_trajectory(self):
+        from ethoinsight.parse._core import parse_trajectory
+
+        path = _require_xlsx_file()
+        df = parse_trajectory(path)
+        assert not df.empty
+        assert df.shape[1] == 18  # OFT has 18 columns
+        assert df.attrs.get("paradigm") == "open_field"
+        assert df.attrs.get("subject") == "Subject 1"
+
+    def test_parse_xlsx_multi_sheet(self):
+        from ethoinsight.parse._core import parse_trajectory
+
+        path = _require_multi_sheet_xlsx()
+        df1 = parse_trajectory(f"{path}::轨迹-Arena 1-Subject 1")
+        df2 = parse_trajectory(f"{path}::轨迹-Arena 2-Subject 1")
+        assert not df1.empty
+        assert not df2.empty
+        # Two arenas should have different data
+        assert df1.attrs.get("arena") != df2.attrs.get("arena")
+
+
+class TestParseBatchXlsx:
+    """parse_batch() with XLSX files (and mixed TXT+XLSX)."""
+
+    def test_parse_batch_xlsx_single(self):
+        from ethoinsight.parse._core import parse_batch
+
+        path = _require_xlsx_file()
+        result = parse_batch([path])
+        assert result["summary"]["total_files"] == 1
+        assert result["summary"]["paradigm"] == "open_field"
+
+    def test_parse_batch_xlsx_multi_sheet_expanded(self):
+        from ethoinsight.parse._core import parse_batch
+
+        path = _require_multi_sheet_xlsx()
+        # Simulate the prep_metric_plan expansion: one entry per sheet
+        paths = [
+            f"{path}::轨迹-Arena 1-Subject 1",
+            f"{path}::轨迹-Arena 2-Subject 1",
+        ]
+        result = parse_batch(paths)
+        assert result["summary"]["total_files"] == 2
+
+
+class TestXlsxErrorHandling:
+    """Error cases for XLSX parsing."""
+
+    def test_parse_header_nonexistent_sheet(self):
+        from ethoinsight.parse._core import parse_header
+
+        path = _require_xlsx_file()
+        with pytest.raises(Exception):
+            parse_header(f"{path}::NonExistentSheet")
