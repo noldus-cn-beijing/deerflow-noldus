@@ -54,36 +54,57 @@ _ERROR_HINTS: dict[str, str] = {
         "thread_data.workspace_path 未设置——这是基础设施 bug（ThreadDataMiddleware 应该先建好 workspace）。"
         "present_files 把错误信息呈现给用户，让他报 bug。"
     ),
+    "no_files_provided": (
+        "uploaded_files 为空。把当前 <uploaded_files> 中所有相关数据文件路径传进来再调一次。"
+    ),
 }
 
 
 @tool("prep_metric_plan", parse_docstring=True)
 def prep_metric_plan_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
-    uploaded_file: str,
+    uploaded_files: list[str],
     paradigm: str,
 ) -> dict:
     """一步生成 plan_metrics.json，无需 bash。
 
     Args:
-      uploaded_file: 虚拟路径如 /mnt/user-data/uploads/xxx.txt
-      paradigm: 范式如 'epm' / 'oft' / 'fst' / 'ldb' / 'tst' / 'zero_maze'
-                / 'shoaling'
+      uploaded_files: 虚拟路径列表如 ["/mnt/user-data/uploads/arena1.txt",
+                      "/mnt/user-data/uploads/arena2.txt"]。多文件场景每个文件
+                      代表 1 个 subject;catalog 会为每个指标 × 每个文件生成一个
+                      PlanMetric(N 文件 × M 指标 = N×M 个调用)。单文件场景传单元素 list。
+                      **请把当前 <uploaded_files> 里所有相关数据文件全传进来**,
+                      不要只传第 1 个,否则其余 subject 在分析中会被静默丢失。
+      paradigm: 范式 canonical key（学术名）, v0.1 仅支持以下 5 个:
+                'epm' / 'open_field' / 'forced_swim' / 'light_dark_box' / 'zero_maze'
+                （filename-style 缩写如 'oft'/'fst'/'ldb' 也接受，向后兼容）
+                其他 paradigm_key (如 'shoaling'/'tail_suspension'/'morris_water_maze' 等)
+                会在 catalog.resolve 阶段报错; lead 应在 identify_ev19_template 看到
+                status=unsupported 时就反问用户, 不要走到这一步
 
     Returns:
       status="ok" 时:
         {"status": "ok",
          "plan_path": "/mnt/user-data/workspace/plan_metrics.json",
-         "plan_summary": {"paradigm": "epm", "metric_count": 5,
+         "plan_summary": {"paradigm": "epm", "metric_count": 5, "subject_count": 2,
                           "metric_ids": ["open_arm_time_ratio", ...]}}
       status="error" 时:
         {"status": "error",
          "error_code": "file_not_found"|"format_unrecognized"|"parse_failed"|
                        "unknown_paradigm"|"columns_missing"|"schema_violation"|
-                       "empty_plan"|"unknown_metric"|"workspace_missing",
+                       "empty_plan"|"unknown_metric"|"workspace_missing"|
+                       "no_files_provided",
          "message": str,
-         "hint": str}
+         "hint": str,
+         "failed_file": str | None}
     """
+    # Step 0: validate inputs — must have at least one file
+    if not uploaded_files:
+        return _error_result(
+            "no_files_provided",
+            "uploaded_files is empty; provide at least one file path.",
+        )
+
     # Step 1: resolve thread_data — workspace_path is mandatory, fail fast if missing
     thread_data = runtime.state.get("thread_data") if runtime.state else None
     if not thread_data or not thread_data.get("workspace_path"):
@@ -95,45 +116,83 @@ def prep_metric_plan_tool(
     # Lazy import to avoid circular dependency (sandbox.tools → agents.factory → tools.builtins → here)
     from deerflow.sandbox.tools import replace_virtual_path
 
-    real_file_path = replace_virtual_path(uploaded_file, thread_data)
+    # Step 1.5: expand multi-sheet XLSX files into individual sheet entries.
+    # FST-style exports pack 2 subjects in 1 XLSX via separate sheets;
+    # each sheet needs its own PlanMetric so the downstream pipeline sees
+    # N subjects rather than 1.
+    expanded_files: list[str] = []
+    for uf in uploaded_files:
+        if uf.endswith((".xlsx", ".xls")):
+            real_path = replace_virtual_path(uf, thread_data)
+            if Path(real_path).exists():
+                try:
+                    import pandas as pd
+                    xl = pd.ExcelFile(real_path)
+                    if len(xl.sheet_names) > 1:
+                        for sn in xl.sheet_names:
+                            expanded_files.append(f"{uf}::{sn}")
+                        continue
+                except Exception:
+                    pass  # fall through to single-entry
+        expanded_files.append(uf)
+    uploaded_files = expanded_files
 
-    # Step 2: check file exists
-    if not Path(real_file_path).exists():
-        return _error_result(
-            "file_not_found",
-            f"File not found: {uploaded_file} (resolved to {real_file_path})",
-        )
+    # Step 2-4: per-file validation (existence + EthoVision detect + header parse)
+    # 任何文件失败立即返回,带 failed_file 字段给 lead 看是哪个文件出问题。
+    # header 用第 1 个文件的(同一批次 EV 导出列结构一致;若不一致 catalog resolve 会报 columns_missing)。
+    # Supports ::sheet_name suffix for multi-sheet XLSX files (stripped before
+    # path resolution, re-attached for the detect / parse calls that consume it).
+    columns: list[str] = []
+    for idx, uploaded_file in enumerate(uploaded_files):
+        # Strip ::sheet suffix for filesystem path resolution
+        clean_virtual = uploaded_file.split("::")[0] if "::" in uploaded_file else uploaded_file
+        real_fs_path = replace_virtual_path(clean_virtual, thread_data)
+        # Effective path passed to detect_ethovision / parse_header (may include ::sheet)
+        effective_path: str = real_fs_path
+        if "::" in uploaded_file:
+            effective_path = real_fs_path + "::" + uploaded_file.split("::", 1)[1]
 
-    # Step 3: detect EthoVision format
-    if not detect_ethovision(real_file_path):
-        return _error_result(
-            "format_unrecognized",
-            f"File {uploaded_file} is not an EthoVision XT export.",
-        )
+        if not Path(real_fs_path).exists():
+            return _error_result(
+                "file_not_found",
+                f"File not found: {clean_virtual} (resolved to {real_fs_path})",
+                failed_file=clean_virtual,
+            )
 
-    # Step 4: parse header to get column names
-    try:
-        header = parse_header(real_file_path)
-    except Exception as e:
-        logger.warning("parse_header failed for %s: %s", uploaded_file, e)
-        return _error_result(
-            "parse_failed",
-            f"Failed to parse header: {e}",
-        )
+        if not detect_ethovision(effective_path):
+            return _error_result(
+                "format_unrecognized",
+                f"File {uploaded_file} is not an EthoVision XT export.",
+                failed_file=uploaded_file,
+            )
 
-    columns = header.get("columns", [])
-    if not columns:
-        return _error_result(
-            "parse_failed",
-            "Parsed header contains no column names.",
-        )
+        if idx == 0:
+            try:
+                header = parse_header(effective_path)
+            except Exception as e:
+                logger.warning("parse_header failed for %s: %s", uploaded_file, e)
+                return _error_result(
+                    "parse_failed",
+                    f"Failed to parse header: {e}",
+                    failed_file=uploaded_file,
+                )
+            columns = header.get("columns", [])
+            if not columns:
+                return _error_result(
+                    "parse_failed",
+                    "Parsed header contains no column names.",
+                    failed_file=uploaded_file,
+                )
 
     # Step 5: resolve catalog → PlanMetrics
+    # raw_files 走虚拟路径,避免宿主机路径泄漏到 plan_metrics.json 后被 subagent
+    # 照抄进 bash --input。IO 部分(detect_ethovision / parse_header)已在 Step 2-4
+    # 完成,resolve_metrics 内部按 raw_files 展开 N 个 PlanMetric(每个 subject 一个)。
     try:
         plan = resolve_metrics(
             paradigm=paradigm,
             columns=columns,
-            raw_files=[real_file_path],
+            raw_files=list(uploaded_files),
             workspace_dir=real_workspace_path,
             virtual_workspace_dir="/mnt/user-data/workspace",
         )
@@ -161,13 +220,17 @@ def prep_metric_plan_tool(
             f"Failed to write plan_metrics.json: {e}",
         )
 
-    # Step 7: build summary (只 paradigm/metric_count/metric_ids，不含完整 plan)
-    metric_ids = [m.get("id", "") for m in plan_dict.get("metrics", [])]
+    # Step 7: build summary (paradigm/metric_count/subject_count/metric_ids,不含完整 plan)
+    metric_dicts = plan_dict.get("metrics", [])
+    metric_ids = sorted({m.get("id", "") for m in metric_dicts})
+    subject_count = len(uploaded_files)
 
     logger.info(
-        "prep_metric_plan success: paradigm=%s, metric_count=%d, plan=%s",
+        "prep_metric_plan success: paradigm=%s, subjects=%d, metric_count=%d, plan_metric_count=%d, plan=%s",
         paradigm,
+        subject_count,
         len(metric_ids),
+        len(metric_dicts),
         plan_path,
     )
 
@@ -177,12 +240,18 @@ def prep_metric_plan_tool(
         "plan_summary": {
             "paradigm": paradigm,
             "metric_count": len(metric_ids),
+            "subject_count": subject_count,
             "metric_ids": metric_ids,
         },
     }
 
 
-def _error_result(code: str, message: str, extra_details: dict | None = None) -> dict:
+def _error_result(
+    code: str,
+    message: str,
+    extra_details: dict | None = None,
+    failed_file: str | None = None,
+) -> dict:
     """Build a standardised error response dict."""
     hint = _ERROR_HINTS.get(code, "未知错误，请联系开发者。")
     result: dict = {
@@ -191,6 +260,8 @@ def _error_result(code: str, message: str, extra_details: dict | None = None) ->
         "message": message,
         "hint": hint,
     }
+    if failed_file is not None:
+        result["failed_file"] = failed_file
     if extra_details:
         result["details"] = extra_details
     return result

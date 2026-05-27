@@ -32,9 +32,24 @@ need to do any environment variable processing.
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+@lru_cache(maxsize=128)
+def _resolve_sqlite_dir(raw: str) -> str:
+    """Module-level cached resolver for sqlite_dir paths.
+
+    Uses lru_cache so each distinct sqlite_dir value is resolved exactly once
+    per process lifetime. Avoids os.getcwd() (blockbuster-flagged syscall) by
+    reading PWD from the environment when the configured value is relative.
+    """
+    if os.path.isabs(raw):
+        return raw
+    cwd = os.environ.get("PWD") or "/"
+    return os.path.normpath(os.path.join(cwd, raw))
 
 
 class DatabaseConfig(BaseModel):
@@ -68,10 +83,8 @@ class DatabaseConfig(BaseModel):
 
     @property
     def _resolved_sqlite_dir(self) -> str:
-        """Resolve sqlite_dir to an absolute path (relative to CWD)."""
-        from pathlib import Path
-
-        return str(Path(self.sqlite_dir).resolve())
+        """Resolve sqlite_dir to an absolute path (cached per distinct value)."""
+        return _resolve_sqlite_dir(self.sqlite_dir)
 
     @property
     def sqlite_path(self) -> str:

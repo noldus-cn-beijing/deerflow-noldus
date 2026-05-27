@@ -86,7 +86,7 @@ errors_count: <int>
 - `critical_count`: handoff.data_quality_warnings 中 severity=="critical" 的条目数
 - `warning_count`: severity=="warning" 的条目数
 - `critical_items`: critical 条目的 message 字段摘要（每条 <80 字，截断时用 "…" 结尾）
-- `statistical_validity`: "ok" = 统计结果可用；"warning" = 警告（如 n<5）；"failed" = 统计完全失败
+- `statistical_validity`: "ok" = 统计结果可用；"warning" = 警告（如 n<5）；"failed" = 统计完全失败；"skipped" = 单样本或 n_per_group<2,无可比组,未运行统计检验（plan.statistics.skip_reason 非空时使用）
 - `errors_count`: handoff.errors 数组长度
 
 即便所有 count 为 0，仍必须输出完整 `[gate_signals]` 块。**lead 用这个块的存在性判断是否走 gate_signals 路径**。

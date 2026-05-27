@@ -1,49 +1,33 @@
 # EV19 模板识别决策流程
 
-## 决策树（agent 严格按此流程执行）
+> **lead agent 不需要自己执行此流程中的文件读取步骤。**
+> 改为调 `identify_ev19_template` 工具（1 次 tool call），工具内部完成
+> Step 1-5 的所有证据收集和候选过滤。此文档描述工具的内部逻辑，供维护参考。
+
+## 简化流程（lead agent 执行）
 
 ```
 用户上传文件 + 提问
     ↓
-Step 1: 收集证据（不调任何工具，只看上下文）
-    - 用户消息中是否提到学术范式名（"高架十字迷宫" / "EPM" / "焦虑测试" / "斑马鱼" 等）？
-    - 上传文件名中是否带范式简写（"轨迹-EPM-Trial 1...txt" 等）？
-    - 上传文件数量？Subject 数？
+调 identify_ev19_template(uploaded_files, user_message)
     ↓
-Step 2: 推测候选 paradigm_key（snake_case 英文）
-    - 命中明确范式 → paradigm_key 确定（如 "epm"）
-    - 模糊（"焦虑测试"）→ paradigm_key 多候选（["epm", "open_field", "zero_maze", "light_dark_box"]）
-    - 完全没线索 → 进入 Step 6（必反问）
+    ├─ status="ok" (候选=1) → 直接调 set_experiment_paradigm(...)
+    ├─ status="ambiguous" (候选2-3) → 用返回的 clarification_question 调 ask_clarification
+    │      ↓ 用户回复后 → 调 set_experiment_paradigm(...)
+    └─ status="unknown" → 用返回的 clarification_question 调 ask_clarification
     ↓
-Step 3: 读 by-experiment/<paradigm_key>.md（已确定单一 paradigm 时）
-    - 看 "适用模板" 字段，得到 ev19_template 候选列表
-    - 候选 ≥ 2 → 进入 Step 4
-    - 候选 = 1 → 进入 Step 7（直接 set）
-    ↓
-Step 4: 读用户上传的第一个 raw txt（前 50 行）
-    - 用 read_file 看 meta + 列结构
-    - 单位（"毫米"/"厘米"）→ 区分鱼/啮齿
-    - 追踪点（仅 X 中心 = 单点 / X 鼻点 + X 中心 + X 尾 = 三点）→ 区分鱼/啮齿
-    - 列名是否含 "In zone(...)" → 区分 AllZones / NoZones
-    - 列名是否含 "Nose within object zone(...)" → NovObj 模板
-    - 据此把候选缩到 ≤ 3 个
-    ↓
-Step 5: 候选数判断
-    - 候选 = 1 → 进入 Step 7（直接 set）
-    - 候选 2-3 → 进入 Step 6（结构化反问）
-    ↓
-Step 6: ask_clarification（最多 1 次）
-    - 必须给 ≤3 个结构化选项
-    - 推荐项放第一位，标 "(推荐)"
-    - 每个选项标差异（"含开闭臂 + 头探出区，最常见"）
-    - 兜底说明（"如不确定，选 A，绝大多数 EPM 用这个"）
-    - 用户回复后 → 进入 Step 7
-    - 用户答 "不知道" / "随便" → 查 default-template-fallback.md → 进入 Step 7
-    ↓
-Step 7: 调 set_experiment_paradigm(paradigm=<key>, ev19_template=<选定>, ...)
-    - 工具校验白名单
-    - 通过 → 写 experiment-context.json，进入分析
-    - 失败（白名单不通过）→ 看错误的 candidates 字段重选 → 重调（这一步算入 LoopDetection 计数，避免反复）
+set_experiment_paradigm 成功后 → 调 prep_metric_plan → 派遣 subagent
+```
+
+## 工具内部逻辑（供参考，lead 不要手动执行）
+
+```
+Step 1: 从 user_message + 文件名提取范式 hint
+Step 2: parse_header → 检测列结构 (AllZones/NoZones/NovObjZones)
+Step 3: 查 EV19_TEMPLATE_PARADIGM_MAP → 候选模板列表
+Step 4: 按 zone 证据 + subject hint 交叉排除
+Step 5: 读 by-experiment/<paradigm>.md + by-template/<Category>.md
+Step 6: 候选=1 → ok; 候选2-3 → ambiguous + 反问话术; 候选=0 → unknown
 ```
 
 ## 反问质量准则

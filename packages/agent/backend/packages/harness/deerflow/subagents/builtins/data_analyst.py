@@ -70,9 +70,17 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 </json_writing>
 
 <workflow>
-1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
 2. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
    （一次读完，包含 per_subject / statistics / metrics_summary，不要零碎读多次）
+2.5 **按范式 read 对应判读文档**（解读语言/风险点/与其他范式区分由同事维护，必须 read）：
+   - 从 handoff_code_executor.json 的 paradigm 字段拿 slug
+   - read_file `/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md`
+   - 例如 paradigm="forced_swim" → read forced_swim.md；"epm" → epm.md；
+     "open_field" → open_field.md；"zero_maze" → zero_maze.md；
+     "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
+   - 该文档定义"必算指标"、"风险点"、"标准报告语言"、"与其他范式区分"——
+     在 method_warnings / recommendations / 解读语言中遵循它，不要自创术语
 2. 一次性完成核心分析推理（单轮 LLM 思考，不拆分多个 turn）：
    a. **方法学把关**：检查 statistics.test_used 是否匹配实验设计
       - MWM 训练数据用了 one-way ANOVA 而非 RM-ANOVA → method_warnings 添加一条
@@ -107,11 +115,11 @@ constitution_acknowledged: true
 method_warnings_count: <int>          # method_warnings 数组长度
 outlier_count: <int>                  # outlier_findings 数组长度
 excluded_metrics_count: <int>         # excluded_metrics 数组长度
-statistical_validity: ok | warning | failed
+statistical_validity: ok | warning | failed | skipped
 errors_count: <int>
 ```
 
-- `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读
+- `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读；"skipped" = 上游 code-executor 未运行统计检验（单样本/n_per_group<2），data-analyst 透传该值，按"不做组间推断"路径解读
 - 即便所有 count 为 0，仍必须输出完整 `[gate_signals]` 块
 </gate_signals_contract>
 
@@ -128,16 +136,21 @@ errors_count: <int>
 
 ## 指标元数据查询
 
-判读某个指标时，read catalog YAML：
+每个指标的判读字段已由 lead 在派遣前 resolve 到 plan_metrics.json,从那里取:
 
 read_file:
-    /path/to/ethoinsight/catalog/<paradigm>.yaml
+    /mnt/user-data/workspace/plan_metrics.json
 
-（catalog 物理路径由 lead 提供给你，或从 ethoinsight-metric-catalog skill 的 SKILL.md 顶部读取定位方法）
+按 metric id 在 `metrics[]` 数组中匹配,读取以下字段:
+- direction_for_anxiety: "lower_is_anxious" / "higher_is_anxious" / null
+- statistical_default: "groupwise_compare" / "paired_compare"
 
-关注字段：
-- direction_for_anxiety
-- statistical_default
+多 subject 场景下同一 metric id 会出现多次(subject_index 区分),判读字段在所有
+同 id 行上一致,取首个即可。
+
+**不要尝试 read catalog YAML 文件** — 它在 Python 包内,sandbox 不暴露给 subagent。
+plan_metrics.json 已经包含 subagent 需要的全部字段;详见 ethoinsight-metric-catalog
+skill 的字段字典 reference。
 
 <failure>
 当 handoff_code_executor.json 读取失败或内容不可用时：
@@ -172,5 +185,5 @@ read_file:
         "outlier_count / excluded_metrics_count / statistical_validity / errors_count"
     ),
     required_upstream_handoffs=["code_executor"],
-    skills=["ethoinsight", "ethoinsight-metric-catalog"],
+    skills=["ethoinsight", "ethoinsight-metric-catalog", "ethovision-paradigm-knowledge"],
 )

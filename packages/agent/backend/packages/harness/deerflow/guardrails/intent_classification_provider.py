@@ -5,6 +5,7 @@ Spec §6.1: lead 在第一个非 read_file tool call 之前必须输出
 """
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -22,11 +23,13 @@ from deerflow.guardrails.provider import (
     GuardrailRequest,
 )
 
+logger = logging.getLogger(__name__)
+
 
 _lead_messages: ContextVar[list | None] = ContextVar("_lead_messages", default=None)
 
 _VALID_INTENTS = frozenset({
-    "E2E_FULL", "E2E_MIN", "CHART", "REPORT",
+    "E2E_FULL", "E2E_FULL_ASKVIZ", "E2E_MIN", "CHART", "REPORT",
     "QA_FACT", "QA_KNOWLEDGE", "CLARIFY",
 })
 
@@ -111,7 +114,17 @@ class IntentBridgeMiddleware(AgentMiddleware[AgentState]):
         if state is not None and isinstance(state, dict):
             msgs = state.get("messages")
             if isinstance(msgs, list):
+                logger.debug(
+                    "IntentBridgeMiddleware: setting _lead_messages (%d messages); last is AIMessage=%s, has [intent]=%s",
+                    len(msgs),
+                    isinstance(msgs[-1], AIMessage) if msgs else False,
+                    bool(_INTENT_LINE_RE.search(msgs[-1].content if isinstance(msgs[-1], AIMessage) and isinstance(msgs[-1].content, str) else "")),
+                )
                 _lead_messages.set(msgs)
+            else:
+                logger.debug("IntentBridgeMiddleware: messages is not a list (type=%s)", type(msgs).__name__)
+        else:
+            logger.debug("IntentBridgeMiddleware: state is None or not a dict")
 
     @override
     def wrap_tool_call(

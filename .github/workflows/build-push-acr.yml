@@ -1,0 +1,81 @@
+name: Build and Push to ACR
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  ACR_REGISTRY: registry.cn-beijing.aliyuncs.com
+  ACR_NAMESPACE: ethoinsight
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            dockerfile: backend/Dockerfile
+            target: ""                          # default last stage (runtime)
+          - service: frontend
+            dockerfile: frontend/Dockerfile
+            target: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve ethoinsight symlink
+        working-directory: packages/agent
+        run: |
+          # backend/packages/ethoinsight → ../../../ethoinsight (outside build context)
+          # Docker COPY cannot follow symlinks that point outside the build context.
+          rm backend/packages/ethoinsight
+          cp -rL ../ethoinsight backend/packages/ethoinsight
+
+      - name: Build image
+        run: |
+          TARGET_FLAG=""
+          if [ -n "${{ matrix.target }}" ]; then
+            TARGET_FLAG="--target ${{ matrix.target }}"
+          fi
+
+          if [ "${{ matrix.service }}" = "backend" ]; then
+            docker build \
+              -f packages/agent/${{ matrix.dockerfile }} \
+              $TARGET_FLAG \
+              --build-arg APT_MIRROR=mirrors.aliyun.com \
+              --build-arg UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+              --build-arg NODE_MIRROR=mirrors.aliyun.com \
+              -t $ACR_REGISTRY/$ACR_NAMESPACE/gateway:${{ github.sha }} \
+              -t $ACR_REGISTRY/$ACR_NAMESPACE/gateway:latest \
+              -t $ACR_REGISTRY/$ACR_NAMESPACE/langgraph:${{ github.sha }} \
+              -t $ACR_REGISTRY/$ACR_NAMESPACE/langgraph:latest \
+              packages/agent
+          else
+            docker build \
+              -f packages/agent/${{ matrix.dockerfile }} \
+              $TARGET_FLAG \
+              --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+              -t $ACR_REGISTRY/$ACR_NAMESPACE/frontend:${{ github.sha }} \
+              -t $ACR_REGISTRY/$ACR_NAMESPACE/frontend:latest \
+              packages/agent
+          fi
+
+      - name: Login to ACR
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | \
+            docker login $ACR_REGISTRY -u ${{ secrets.ACR_USERNAME }} --password-stdin
+
+      - name: Push images
+        run: |
+          if [ "${{ matrix.service }}" = "backend" ]; then
+            docker push $ACR_REGISTRY/$ACR_NAMESPACE/gateway:${{ github.sha }}
+            docker push $ACR_REGISTRY/$ACR_NAMESPACE/gateway:latest
+            docker push $ACR_REGISTRY/$ACR_NAMESPACE/langgraph:${{ github.sha }}
+            docker push $ACR_REGISTRY/$ACR_NAMESPACE/langgraph:latest
+          else
+            docker push $ACR_REGISTRY/$ACR_NAMESPACE/frontend:${{ github.sha }}
+            docker push $ACR_REGISTRY/$ACR_NAMESPACE/frontend:latest
+          fi

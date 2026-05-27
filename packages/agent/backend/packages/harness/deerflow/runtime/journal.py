@@ -20,12 +20,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 if TYPE_CHECKING:
@@ -45,6 +46,8 @@ class RunJournal(BaseCallbackHandler):
         *,
         track_token_usage: bool = True,
         flush_threshold: int = 20,
+        progress_reporter: Callable[[dict], Awaitable[None]] | None = None,
+        progress_flush_interval: float = 5.0,
     ):
         super().__init__()
         self.run_id = run_id
@@ -52,10 +55,16 @@ class RunJournal(BaseCallbackHandler):
         self._store = event_store
         self._track_tokens = track_token_usage
         self._flush_threshold = flush_threshold
+        self._progress_reporter = progress_reporter
+        self._progress_flush_interval = progress_flush_interval
 
         # Write buffer
         self._buffer: list[dict] = []
         self._pending_flush_tasks: set[asyncio.Task[None]] = set()
+        self._pending_progress_task: asyncio.Task[None] | None = None
+        self._pending_progress_delayed = False
+        self._progress_dirty = False
+        self._last_progress_flush = 0.0
 
         # Token accumulators
         self._total_input_tokens = 0
@@ -71,6 +80,7 @@ class RunJournal(BaseCallbackHandler):
         # Dedup: LangChain may fire on_llm_end multiple times for the same run_id
         self._counted_llm_run_ids: set[str] = set()
         self._counted_external_source_ids: set[str] = set()
+        self._counted_message_llm_run_ids: set[str] = set()
 
         # Convenience fields
         self._last_ai_msg: str | None = None
@@ -85,6 +95,50 @@ class RunJournal(BaseCallbackHandler):
         self._seen_llm_starts: set[str] = set()  # langchain run_ids that fired on_chat_model_start
 
     # -- Lifecycle callbacks --
+
+    @staticmethod
+    def _message_text(message: BaseMessage) -> str:
+        """Extract displayable text from a message's mixed content shape."""
+        content = getattr(message, "content", None)
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, Mapping):
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+                    else:
+                        nested = block.get("content")
+                        if isinstance(nested, str):
+                            parts.append(nested)
+            return "".join(parts)
+        if isinstance(content, Mapping):
+            for key in ("text", "content"):
+                value = content.get(key)
+                if isinstance(value, str):
+                    return value
+
+        text = getattr(message, "text", None)
+        if isinstance(text, str):
+            return text
+        return ""
+
+    def _record_message_summary(self, message: BaseMessage, *, caller: str | None = None) -> None:
+        """Update run-level convenience fields for persisted run rows."""
+        self._msg_count += 1
+
+        # ``last_ai_message`` should represent the lead agent's user-facing
+        # answer. Middleware/subagent model calls and empty tool-call-only
+        # AI messages must not overwrite the last useful assistant text.
+        is_ai_message = isinstance(message, AIMessage) or getattr(message, "type", None) == "ai"
+        if is_ai_message and (caller is None or caller == "lead_agent"):
+            text = self._message_text(message).strip()
+            if text:
+                self._last_ai_msg = text[:2000]
 
     def on_chain_start(
         self,
@@ -164,6 +218,7 @@ class RunJournal(BaseCallbackHandler):
                             content=m.model_dump(),
                             metadata={"caller": caller},
                         )
+                        self._record_message_summary(m, caller=caller)
                         break
                 if self._first_human_msg:
                     break
@@ -222,6 +277,8 @@ class RunJournal(BaseCallbackHandler):
                     "llm_call_index": call_index,
                 },
             )
+            if rid not in self._counted_message_llm_run_ids:
+                self._record_message_summary(message, caller=caller)
 
             # Token accumulation (dedup by langchain run_id to avoid double-counting
             # when the callback fires more than once for the same response)
@@ -245,6 +302,11 @@ class RunJournal(BaseCallbackHandler):
                     else:
                         self._lead_agent_tokens += total_tk
 
+                    self._schedule_progress_flush()
+
+        if messages:
+            self._counted_message_llm_run_ids.add(str(run_id))
+
     def on_llm_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
         self._llm_start_times.pop(str(run_id), None)
         self._put(event_type="llm.error", category="trace", content=str(error))
@@ -260,12 +322,14 @@ class RunJournal(BaseCallbackHandler):
             if isinstance(output, ToolMessage):
                 msg = cast(ToolMessage, output)
                 self._put(event_type="llm.tool.result", category="message", content=msg.model_dump())
+                self._record_message_summary(msg)
             elif isinstance(output, Command):
                 cmd = cast(Command, output)
                 messages = cmd.update.get("messages", [])
                 for message in messages:
                     if isinstance(message, BaseMessage):
                         self._put(event_type="llm.tool.result", category="message", content=message.model_dump())
+                        self._record_message_summary(message)
                     else:
                         logger.warning(f"on_tool_end {run_id}: command update message is not BaseMessage: {type(message)}")
             else:
@@ -391,6 +455,8 @@ class RunJournal(BaseCallbackHandler):
             else:
                 self._lead_agent_tokens += total_tk
 
+            self._schedule_progress_flush()
+
     def set_first_human_message(self, content: str) -> None:
         """Record the first human message for convenience fields."""
         self._first_human_msg = content[:2000] if content else None
@@ -420,6 +486,14 @@ class RunJournal(BaseCallbackHandler):
         """Force flush remaining buffer. Called in worker's finally block."""
         if self._pending_flush_tasks:
             await asyncio.gather(*tuple(self._pending_flush_tasks), return_exceptions=True)
+        while self._pending_progress_task is not None and not self._pending_progress_task.done():
+            if self._pending_progress_delayed:
+                self._pending_progress_task.cancel()
+                await asyncio.gather(self._pending_progress_task, return_exceptions=True)
+                self._progress_dirty = False
+                self._pending_progress_delayed = False
+                break
+            await asyncio.gather(self._pending_progress_task, return_exceptions=True)
 
         while self._buffer:
             batch = self._buffer[: self._flush_threshold]
@@ -429,6 +503,57 @@ class RunJournal(BaseCallbackHandler):
             except Exception:
                 self._buffer = batch + self._buffer
                 raise
+
+    def _schedule_progress_flush(self) -> None:
+        """Best-effort throttled progress snapshot for active run visibility."""
+        if self._progress_reporter is None:
+            return
+        now = time.monotonic()
+        elapsed = now - self._last_progress_flush
+        if elapsed < self._progress_flush_interval:
+            self._progress_dirty = True
+            self._schedule_delayed_progress_flush(self._progress_flush_interval - elapsed)
+            return
+        if self._pending_progress_task is not None and not self._pending_progress_task.done():
+            self._progress_dirty = True
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._progress_dirty = False
+        self._pending_progress_task = loop.create_task(self._flush_progress_async(snapshot=self.get_completion_data()))
+
+    def _schedule_delayed_progress_flush(self, delay: float) -> None:
+        if self._pending_progress_task is not None and not self._pending_progress_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        delay = max(0.0, delay)
+        self._pending_progress_delayed = delay > 0
+        self._pending_progress_task = loop.create_task(self._flush_progress_async(delay=delay))
+
+    async def _flush_progress_async(self, *, snapshot: dict | None = None, delay: float = 0.0) -> None:
+        if self._progress_reporter is None:
+            return
+        if delay > 0:
+            self._pending_progress_delayed = True
+            await asyncio.sleep(delay)
+            self._pending_progress_delayed = False
+        dirty_before_write = self._progress_dirty
+        self._progress_dirty = False
+        snapshot_to_write = snapshot or self.get_completion_data()
+        try:
+            await self._progress_reporter(snapshot_to_write)
+            self._last_progress_flush = time.monotonic()
+        except Exception:
+            logger.warning("Failed to persist progress snapshot for run %s", self.run_id, exc_info=True)
+        if dirty_before_write or self._progress_dirty:
+            self._progress_dirty = False
+            self._pending_progress_task = None
+            self._schedule_delayed_progress_flush(self._progress_flush_interval)
 
     def get_completion_data(self) -> dict:
         """Return accumulated token and message data for run completion."""

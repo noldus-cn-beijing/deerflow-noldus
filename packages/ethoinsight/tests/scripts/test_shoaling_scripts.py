@@ -1,4 +1,9 @@
-"""Subprocess-level tests for ethoinsight.scripts.shoaling.*."""
+"""Subprocess-level tests for ethoinsight.scripts.shoaling.* — RETIRED (v0.1).
+
+2026-05-26: shoaling paradigm (zebrafish group behavior) was retired from v0.1.
+代码 (catalog/shoaling.yaml + metrics/shoaling.py + scripts/shoaling/) 已删除。
+本文件整体 skip; 待鱼类范式 v0.2 重启时, 把脚本恢复 + 把 pytestmark 去掉。
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,12 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="shoaling paradigm retired in v0.1 (2026-05-26); reinstate when fish paradigms come back online",
+)
 
 
 def _run_script(module: str, args: list[str]) -> subprocess.CompletedProcess:

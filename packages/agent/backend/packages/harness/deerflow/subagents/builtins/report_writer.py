@@ -107,7 +107,6 @@ handoff_report_writer.json schema:
   - ✅ "建议单独标注 Subject 3 并检查健康状态，是否纳入后续分析由研究员决定"
   - ❌ "建议排除 Subject 3"
   - ❌ "将 Subject 3 作为离群值剔除"
-- **群体指标数据来源**（shoaling 范式）：若 mean_iid / mean_polarity 来自 X/Y 坐标兜底计算（非 EthoVision JS Continuous 变量），在此注明，提示解读时注意
 
 ### 5. 数据质量与局限
 不是脚注，是让导师一眼看到的单独章节。
@@ -163,17 +162,21 @@ handoff_report_writer.json schema:
 
 ## 指标展示元数据查询
 
-写"Results / Discussion"段时，按 metric id read catalog YAML 取展示字段：
+每个指标的中文展示字段已下沉到 plan_metrics.json,从那里取:
 
 read_file:
-    /path/to/ethoinsight/catalog/<paradigm>.yaml
+    /mnt/user-data/workspace/plan_metrics.json
 
-按 metric id 查：
+按 metric id 在 `metrics[]` 数组中匹配,读取以下字段:
 - display_name_zh: 中文展示名
-- unit_zh: 单位
-- one_liner: 一句话解释（仅首次提及该指标时引用，不要在每段重复）
+- unit_zh: 中文单位
+- one_liner: 一句话解释(仅首次提及该指标时引用,不要在每段重复)
 
-禁止在本 prompt 内硬编码任何指标的中文名或单位 —— 全部走 catalog。
+多 subject 场景下同一 metric id 会出现多次(subject_index 区分),展示字段在所有
+同 id 行上一致,取首个即可。
+
+禁止在本 prompt 内硬编码任何指标的中文名或单位 —— 全部走 plan_metrics.json。
+**不要尝试 read catalog YAML 文件** — 它在 Python 包内,sandbox 不暴露给 subagent。
 
 <json_writing>
 handoff_report_writer.json 必须是**合法的 JSON**——下游工具会 parse 它。
@@ -188,11 +191,18 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 </json_writing>
 
 <workflow>
-1. **开工前必读输出宪法**: read_file `/mnt/skills/ethoinsight/references/output-constitution.md`
+1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
 2. read_file 两个 handoff 文件：
    - /mnt/user-data/workspace/handoff_code_executor.json（数据）
    - /mnt/user-data/workspace/handoff_data_analyst.json（解读）
    - 可选 read_file /mnt/user-data/workspace/handoff_planning.json 获取 group_semantics
+2.5 **按范式 read 判读文档**（用其"标准报告语言"作报告术语来源）：
+   - 从 handoff 的 paradigm 字段拿 slug
+   - read_file `/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md`
+   - 例：paradigm="forced_swim" → forced_swim.md；"epm" → epm.md；
+     "open_field" → open_field.md；"zero_maze" → zero_maze.md；
+     "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
+   - 把文档中"报告解读语言"段的标准表述用在报告里，不要自创术语
 
 <optional_chart_handoff>
 如果 lead 在 task prompt 中包含 handoff_chart_maker.json 路径
@@ -222,7 +232,7 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 constitution_acknowledged: true
 sections_written_count: <int>         # sections_written 数组长度（期望 6）
 sections_missing: [<str>, ...]        # 6 段骨架中未写成功的章节名（中文），为空则 []
-statistical_validity: ok | failed     # report-writer 不评估统计有效性，按 handoff_code_executor 透传
+statistical_validity: ok | failed | skipped     # report-writer 不评估统计有效性，按 handoff_code_executor 透传（含 skipped:单样本未做统计检验，报告须写"无法做组间推断"局限性段落）
 errors_count: <int>                   # handoff_report_writer.json 中 errors 数组长度
 ```
 
@@ -256,7 +266,7 @@ write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里
     model="inherit",
     max_turns=15,
     timeout_seconds=600,
-    skills=["ethoinsight", "ethoinsight-metric-catalog"],
+    skills=["ethoinsight", "ethoinsight-metric-catalog", "ethovision-paradigm-knowledge"],
     when_to_use=(
         "适合:\n"
         "- 已有 code-executor + data-analyst handoff,用户要'出报告' / '写 Discussion'\n"

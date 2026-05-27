@@ -45,7 +45,7 @@ class TestCapabilityExposure:
 
     def test_renders_intent_state_machine(self):
         section = _section()
-        for intent in ["E2E_FULL", "E2E_MIN", "CHART", "REPORT", "QA_FACT", "QA_KNOWLEDGE", "CLARIFY"]:
+        for intent in ["E2E_FULL", "E2E_FULL_ASKVIZ", "E2E_MIN", "CHART", "REPORT", "QA_FACT", "QA_KNOWLEDGE", "CLARIFY"]:
             assert intent in section, f"intent '{intent}' missing from state machine"
 
     def test_renders_role_boundary_constraints(self):

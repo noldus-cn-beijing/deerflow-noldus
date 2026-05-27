@@ -147,6 +147,7 @@ class TestComputeVelocityStats:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="shoaling paradigm retired in v0.1 (2026-05-26)")
 class TestComputeIID:
     def test_returns_dataframe(self, shoaling_parsed):
         subjects = shoaling_parsed["subjects"]
@@ -179,6 +180,7 @@ class TestComputeIID:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="shoaling paradigm retired in v0.1 (2026-05-26)")
 class TestComputeNND:
     def test_returns_dataframe(self, shoaling_parsed):
         subjects = shoaling_parsed["subjects"]
@@ -202,6 +204,7 @@ class TestComputeNND:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="shoaling paradigm retired in v0.1 (2026-05-26)")
 class TestComputeGroupPolarity:
     def test_returns_dataframe(self, shoaling_parsed):
         subjects = shoaling_parsed["subjects"]
@@ -371,6 +374,7 @@ class TestCharts:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="shoaling paradigm retired in v0.1 (2026-05-26)")
 class TestShoalingGroupMetricsNotFakedPerSubject:
     """Regression tests for the zero-variance IID/polarity bug.
 
@@ -417,6 +421,7 @@ class TestShoalingGroupMetricsNotFakedPerSubject:
         assert len(set(nnd_values)) > 1, "mean_nnd should vary across subjects"
 
 
+@pytest.mark.skip(reason="shoaling paradigm retired in v0.1 (2026-05-26)")
 class TestShoalingSingleSubjectBoundary:
     """When only 1 subject is tracked, group metrics must be flagged inapplicable."""
 

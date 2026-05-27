@@ -21,9 +21,12 @@ from typing import Any, override
 
 from langchain.agents.middleware import TodoListMiddleware
 from langchain.agents.middleware.todo import PlanningState, Todo
-from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse, hook_config
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain.agents.middleware.types import AgentState, ModelCallResult, ModelRequest, ModelResponse, hook_config
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
+from langchain.tools import InjectedToolCallId, tool
+from langgraph.types import Command
+from typing_extensions import Annotated
 
 
 def _todos_in_messages(messages: list[Any]) -> bool:
@@ -104,6 +107,21 @@ def _has_tool_call_intent_or_error(message: AIMessage) -> bool:
     return response_metadata.get("finish_reason") in _TOOL_CALL_FINISH_REASONS
 
 
+class _TodoState(AgentState):
+    """Minimal state schema for TodoMiddleware — ThreadState owns todos exclusively.
+
+    Without this, LangChain's PlanningState (which defines ``todos`` with
+    ``OmitFromInput``) and ThreadState (which defines ``todos`` with
+    ``merge_todos`` reducer) would register conflicting channel types during
+    StateGraph compilation, raising::
+
+        ValueError: Channel 'todos' already exists with a different type
+
+    This schema carries no ``todos`` field so ThreadState is the single source.
+    """
+    pass
+
+
 class TodoMiddleware(TodoListMiddleware):
     """Extends TodoListMiddleware with `write_todos` context-loss detection.
 
@@ -112,6 +130,8 @@ class TodoMiddleware(TodoListMiddleware):
     todo list. This middleware detects that gap in `before_model` / `abefore_model`
     and injects a reminder message so the model can continue tracking progress.
     """
+
+    state_schema = _TodoState
 
     @override
     def before_model(
@@ -168,6 +188,29 @@ class TodoMiddleware(TodoListMiddleware):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+
+        # Replace write_todos with a version that accepts an optional `reason`
+        # parameter. The reason value is ignored functionally but read by
+        # TodoPlanningDisciplineProvider as an explicit intent escape hatch.
+        if self.tools:
+            _original_desc = self.tools[0].description if self.tools else ""
+
+            @tool(description=_original_desc)
+            def write_todos(
+                todos: list[Todo],
+                reason: str | None = None,
+                tool_call_id: Annotated[str, InjectedToolCallId] = "",
+            ) -> Command:
+                """Create and manage a structured task list for your current work session."""
+                return Command(
+                    update={
+                        "todos": todos,
+                        "messages": [ToolMessage(f"Updated todo list to {todos}", tool_call_id=tool_call_id)],
+                    }
+                )
+
+            self.tools = [write_todos]
+
         self._lock = threading.Lock()
         self._pending_completion_reminders: dict[tuple[str, str], list[str]] = {}
         self._completion_reminder_counts: dict[tuple[str, str], int] = {}

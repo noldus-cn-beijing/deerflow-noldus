@@ -100,7 +100,13 @@ def test_task_tool_returns_error_for_unknown_subagent(monkeypatch):
         tool_call_id="tc-1",
     )
 
-    assert result == "Error: Unknown subagent type 'general-purpose'. Available: general-purpose"
+    assert result == (
+        "Error: Unknown subagent type 'general-purpose'. "
+        "Valid subagent types: general-purpose. "
+        "请改用 task(subagent_type='<上述有效名称之一>', ...) 重新派遣，"
+        "因为 'general-purpose' 不是已注册的 subagent 类型，"
+        "不支持自定义名称或通用代理。"
+    )
 
 
 def test_task_tool_rejects_bash_subagent_when_host_bash_disabled(monkeypatch):
@@ -171,7 +177,7 @@ def test_task_tool_threads_runtime_app_config_to_subagent_dependencies(monkeypat
         tool_call_id="tc-explicit-config",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert captured["names_app_config"] is app_config
     assert captured["config_lookup"] == ("bash", app_config)
     assert captured["bash_gate_app_config"] is app_config
@@ -226,7 +232,7 @@ def test_task_tool_emits_running_and_completed_events(monkeypatch):
         tool_call_id="tc-123",
     )
 
-    assert output == "Task Succeeded. Result: all done"
+    assert output == "Task Succeeded.\n\n## 进度时间线\n1/2: phase-1\n2/2: phase-2\n## 最终结果\nall done"
     assert captured["prompt"] == "collect diagnostics"
     assert captured["task_id"] == "tc-123"
     assert captured["executor_kwargs"]["thread_id"] == "thread-1"
@@ -285,7 +291,7 @@ def test_task_tool_propagates_tool_groups_to_subagent(monkeypatch):
         tool_call_id="tc-groups",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     # The key assertion: groups should be propagated from parent metadata
     get_available_tools.assert_called_once_with(model_name="ark-model", groups=parent_tool_groups, subagent_enabled=False)
 
@@ -332,7 +338,7 @@ def test_task_tool_uses_subagent_model_override_for_tool_loading(monkeypatch):
         tool_call_id="tc-issue-2543",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     get_available_tools.assert_called_once_with(
         model_name="vision-subagent-model",
         groups=None,
@@ -374,7 +380,7 @@ def test_task_tool_inherits_parent_skill_allowlist_for_default_subagent(monkeypa
         tool_call_id="tc-skills",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert captured["config"].skills == ["safe-skill"]
 
 
@@ -420,7 +426,7 @@ def test_task_tool_intersects_parent_and_subagent_skill_allowlists(monkeypatch):
         tool_call_id="tc-skills-intersection",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert captured["config"].skills == ["safe-skill"]
 
 
@@ -459,7 +465,7 @@ def test_task_tool_no_tool_groups_passes_none(monkeypatch):
         tool_call_id="tc-no-groups",
     )
 
-    assert output == "Task Succeeded. Result: ok"
+    assert output == "Task Succeeded.\n\n## 最终结果\nok"
     # No tool_groups in metadata → groups=None (default behavior preserved)
     get_available_tools.assert_called_once_with(model_name="ark-model", groups=None, subagent_enabled=False)
 
@@ -499,7 +505,7 @@ def test_task_tool_runtime_none_passes_groups_none(monkeypatch):
         tool_call_id="tc-no-runtime",
     )
 
-    assert output == "Task Succeeded. Result: ok"
+    assert output == "Task Succeeded.\n\n## 最终结果\nok"
     # runtime is None -> metadata is empty dict -> groups=None, model falls back to app default.
     get_available_tools.assert_called_once_with(
         model_name="default-model",
@@ -647,7 +653,7 @@ def test_cleanup_called_on_completed(monkeypatch):
         tool_call_id="tc-cleanup-completed",
     )
 
-    assert output == "Task Succeeded. Result: done"
+    assert output == "Task Succeeded.\n\n## 最终结果\ndone"
     assert cleanup_calls == ["tc-cleanup-completed"]
 
 
@@ -1285,3 +1291,68 @@ def test_subagent_usage_cache_is_cleared_when_polling_raises(monkeypatch):
         )
 
     assert task_tool_module.pop_cached_subagent_usage("tc-error") is None
+
+
+def test_task_tool_ainvoke_path_passes_injected_runtime_to_function_body(monkeypatch):
+    """Regression: PR-3 broke the LangChain ainvoke path by adding a custom
+    args_schema that did not declare runtime / tool_call_id, so model_validate
+    stripped them and the function body raised TypeError. This test exercises
+    the full ainvoke path that ToolNode uses in production — direct .coroutine()
+    invocations like the other tests in this file do not cover it.
+    """
+    from langgraph.prebuilt.tool_node import ToolRuntime
+
+    monkeypatch.setattr(task_tool_module, "get_subagent_config", lambda _, *, app_config=None: None)
+    monkeypatch.setattr(task_tool_module, "get_available_subagent_names", lambda *, app_config=None: ["code-executor"])
+
+    runtime = ToolRuntime(
+        state={},
+        context={},
+        config={},
+        tool_call_id="tc-regression",
+        store=None,
+        stream_writer=None,
+    )
+    tool_call = {
+        "name": "task",
+        "args": {
+            "description": "test",
+            "prompt": "do work",
+            "subagent_type": "code-executor",
+            "runtime": runtime,
+        },
+        "id": "tc-regression",
+        "type": "tool_call",
+    }
+
+    result = asyncio.run(task_tool_module.task_tool.ainvoke(tool_call, {}))
+
+    # If the bug regressed, ainvoke would raise TypeError before reaching the
+    # function body. Reaching the unknown-subagent error string proves the
+    # injected args (runtime, tool_call_id) flowed through to the function.
+    content = getattr(result, "content", result)
+    assert "Unknown subagent type" in content
+    assert "code-executor" in content
+
+
+def test_task_tool_schema_enforces_registered_subagent_literal(monkeypatch):
+    """Regression: the Literal enum constraint must survive the args_schema
+    refactor — invalid subagent_type values must be rejected at schema
+    validation, not by the runtime safety-net in the function body.
+    """
+    from pydantic import ValidationError
+
+    tool_call = {
+        "name": "task",
+        "args": {
+            "description": "test",
+            "prompt": "do work",
+            "subagent_type": "general-purpose-but-not-registered",
+        },
+        "id": "tc-bad",
+        "type": "tool_call",
+    }
+
+    with pytest.raises(ValidationError, match="subagent_type"):
+        asyncio.run(task_tool_module.task_tool.ainvoke(tool_call, {}))
+

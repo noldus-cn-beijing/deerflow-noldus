@@ -6,9 +6,17 @@ common_charts:
   - id: trajectory_plot
     script: ethoinsight.scripts._common.plot_trajectory
     when: total_subjects >= 1
+    display_name_zh: "轨迹图"
     rationale: 单被试或组间数据不全时的轨迹可视化
+    requires_columns:
+      - x_center
+      - y_center
 
   - id: timeseries_plot
     script: ethoinsight.scripts._common.plot_timeseries
     when: total_subjects >= 1
+    display_name_zh: "时间序列图"
+    accepts_paradigm: true
     rationale: 单被试或组间数据不全时的时间动态
+    requires_columns:
+      - trial_time

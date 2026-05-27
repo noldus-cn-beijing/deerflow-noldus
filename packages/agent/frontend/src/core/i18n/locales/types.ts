@@ -40,11 +40,6 @@ export interface Translations {
     exportSuccess: string;
   };
 
-  home: {
-    docs: string;
-    blog: string;
-  };
-
   // Welcome
   welcome: {
     greeting: string;
@@ -112,6 +107,7 @@ export interface Translations {
     chats: string;
     demoChats: string;
     agents: string;
+    feedback: string;
   };
 
   // Agents

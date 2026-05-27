@@ -30,7 +30,7 @@ def test_plan_metrics_dataclass_has_required_fields():
         notes=[],
     )
     assert pm.paradigm == "epm"
-    assert pm.schema_version == "1.0"
+    assert pm.schema_version == "1.1"
     assert pm.metrics == []
     assert pm.statistics is None
 
@@ -48,7 +48,7 @@ def test_plan_charts_dataclass_has_required_fields():
         notes=[],
     )
     assert pc.paradigm == "epm"
-    assert pc.schema_version == "1.0"
+    assert pc.schema_version == "1.1"
     assert pc.charts_fallback_available == []
     assert pc.user_intent is None
 
@@ -96,7 +96,7 @@ def test_plan_metrics_serialize_roundtrip():
         inputs=_sample_inputs(), metrics=[], statistics=None, skipped=[], notes=[],
     )
     d = dataclasses.asdict(pm)
-    assert d["schema_version"] == "1.0"
+    assert d["schema_version"] == "1.1"
     assert d["paradigm"] == "epm"
     assert d["inputs"]["raw_files"] == ["/tmp/raw.txt"]
     # json round-trip
@@ -113,10 +113,51 @@ def test_plan_charts_serialize_roundtrip():
         skipped=[], user_intent="画图", notes=[],
     )
     d = dataclasses.asdict(pc)
-    assert d["schema_version"] == "1.0"
+    assert d["schema_version"] == "1.1"
     assert d["user_intent"] == "画图"
     assert d["charts_fallback_available"] == []
     # json round-trip
     raw = json.dumps(d, ensure_ascii=False)
     back = json.loads(raw)
     assert back["user_intent"] == "画图"
+
+
+def test_plan_metric_accepts_interpretation_fields():
+    """W27: PlanMetric 必须能透传 catalog MetricEntry 的 5 个判读 / 展示字段。"""
+    metric = PlanMetric(
+        id="open_arm_time",
+        script="ethoinsight.scripts.epm.compute_open_arm_time",
+        input="/tmp/raw.txt",
+        output="/tmp/m.json",
+        required=True,
+        reason="paradigm.default",
+        subject_index=0,
+        display_name_zh="开放臂时间",
+        unit_zh="秒",
+        one_liner="动物在开放臂区域的累计停留时间",
+        output_unit="seconds",
+        direction_for_anxiety="lower_is_anxious",
+        statistical_default="groupwise_compare",
+    )
+    assert metric.unit_zh == "秒"
+    assert metric.one_liner == "动物在开放臂区域的累计停留时间"
+    assert metric.output_unit == "seconds"
+    assert metric.direction_for_anxiety == "lower_is_anxious"
+    assert metric.statistical_default == "groupwise_compare"
+
+
+def test_plan_metric_interpretation_fields_default_safe():
+    """PlanMetric 不传新字段时也能构造（向前兼容）。"""
+    metric = PlanMetric(
+        id="x",
+        script="s",
+        input="/i",
+        output="/o",
+        required=True,
+        reason="paradigm.default",
+    )
+    assert metric.unit_zh == ""
+    assert metric.one_liner == ""
+    assert metric.output_unit == ""
+    assert metric.direction_for_anxiety is None
+    assert metric.statistical_default == ""

@@ -14,13 +14,18 @@ author: noldus-insight
 
 | 意图 | 触发条件 | 派遣链 |
 |---|---|---|
-| `E2E_FULL` | 上传数据 + 用户语义为"分析并画图/出报告/全套" | code-executor → data-analyst → chart-maker → ask_clarification(report?) |
-| `E2E_MIN` | 上传数据 + 用户语义为"分析一下" | code-executor → data-analyst → ask_clarification(4-choice) |
+| `E2E_FULL_ASKVIZ` | 上传数据 + 模糊总称("分析"/"看看"/"研究下",未明说要图) | code → data → **ask(要不要出图?)** → [yes]chart → ask(report?) / [no] ask(report?) |
+| `E2E_FULL` | 上传数据 + 明确出图意愿("画"/"图"/"可视化"/"箱线"/"轨迹"/"表"/...) | code → data → chart → ask(report?) |
+| `E2E_MIN` | 上传数据 + 只"算"/"计算"(无解读/出图意愿) | code → ask(four-choice) |
 | `CHART` | 已有 handoff + 用户要图 | chart-maker(单派) |
 | `REPORT` | 已有 handoff + 用户要报告 | report-writer(单派) |
 | `QA_FACT` | 已有 handoff + 追问具体数据 | knowledge-assistant(授权 handoff 占位符) |
 | `QA_KNOWLEDGE` | 领域知识 / 概念问题 | knowledge-assistant(不授权 handoff) |
 | `CLARIFY` | 意图模糊 / 缺范式 / 缺数据列 | `ask_clarification`(不派 subagent) |
+
+**关键区分**:
+- `E2E_FULL_ASKVIZ` vs `E2E_FULL` = 用户是否明示出图意愿。模糊词("分析/看看/研究下")默认 ASKVIZ,跑完解读再问;明示("画/图/可视化/箱线/轨迹/表")才直接 chart。完整触发词清单见 [intent-decision-tree.md](references/intent-decision-tree.md)。
+- 这条规则是为了避免给"只想要数字 + 报告"的用户硬塞图。错判代价:ASKVIZ 多一次反问(用户可秒选 B 跳过) vs FULL 浪费 chart-maker 算力 + 污染前端展示。
 
 ## 意图分类硬规则
 
@@ -62,3 +67,11 @@ author: noldus-insight
 - ❌ 不要 read_file raw EthoVision txt 文件
 - ❌ 不要默认猜测范式(范式不明 → ask_clarification)
 - ❌ 不要替 subagent 决定"该跑哪些图/指标"
+
+## 参考资料
+
+- [意图分类决策树](references/intent-decision-tree.md)
+- [范式识别流程](references/paradigm-identification.md)
+- [反问模板](references/clarification-templates.md)
+- [质量门控点](references/quality-gates.md) — 各 Gate 触发时机、检查项、行动模板
+- [失败场景降级策略](references/failure-recovery.md) — code-executor/data-analyst/report-writer 失败应对

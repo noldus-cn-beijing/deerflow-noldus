@@ -16,6 +16,8 @@ from deerflow.utils.file_conversion import extract_outline
 logger = logging.getLogger(__name__)
 
 
+_DATA_FILE_EXTENSIONS = {".xlsx", ".xls", ".csv", ".tsv", ".txt"}
+
 _OUTLINE_PREVIEW_LINES = 5
 
 
@@ -89,6 +91,7 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
         lines.append(f"- {file['filename']} ({size_str})")
         lines.append(f"  Path: {file['path']}")
         outline = file.get("outline") or []
+        ext = (file.get("extension") or "").lower()
         if outline:
             truncated = outline[-1].get("truncated", False)
             visible = [e for e in outline if not e.get("truncated")]
@@ -97,6 +100,10 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
                 lines.append(f"    L{entry['line']}: {entry['title']}")
             if truncated:
                 lines.append(f"    ... (showing first {len(visible)} headings; use `read_file` to explore further)")
+        elif ext in _DATA_FILE_EXTENSIONS:
+            lines.append("  Structured data file — do NOT use read_file on it.")
+            lines.append("  Use bash with Python/pandas to read tabular data, or")
+            lines.append("  delegate to the appropriate data-analysis subagent.")
         else:
             preview = file.get("outline_preview") or []
             if preview:
@@ -135,12 +142,27 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
             for file in historical_files:
                 self._format_file_entry(file, lines)
 
+        all_files = (new_files or []) + (historical_files or [])
+        has_data_files = any(
+            ((f.get("extension") or "").lower() in _DATA_FILE_EXTENSIONS)
+            for f in all_files
+        )
+        has_doc_files = any(
+            ((f.get("extension") or "").lower() not in _DATA_FILE_EXTENSIONS)
+            for f in all_files
+        )
+
         lines.append("To work with these files:")
-        lines.append("- Read from the file first — use the outline line numbers and `read_file` to locate relevant sections.")
-        lines.append("- Use `grep` to search for keywords when you are not sure which section to look at")
-        lines.append("  (e.g. `grep(pattern='revenue', path='/mnt/user-data/uploads/')`).")
-        lines.append("- Use `glob` to find files by name pattern")
-        lines.append("  (e.g. `glob(pattern='**/*.md', path='/mnt/user-data/uploads/')`).")
+        if has_doc_files:
+            lines.append("- Read from the file first — use the outline line numbers and `read_file` to locate relevant sections.")
+            lines.append("- Use `grep` to search for keywords when you are not sure which section to look at")
+            lines.append("  (e.g. `grep(pattern='revenue', path='/mnt/user-data/uploads/')`).")
+            lines.append("- Use `glob` to find files by name pattern")
+            lines.append("  (e.g. `glob(pattern='**/*.md', path='/mnt/user-data/uploads/')`).")
+        if has_data_files:
+            lines.append("- Structured data files (.xlsx/.csv/.txt etc.): do NOT use `read_file` —")
+            lines.append("  it cannot parse binary or tabular formats. Use bash with Python/pandas,")
+            lines.append("  or delegate to analysis subagents with the `task` tool.")
         lines.append("- Only fall back to web search if the file content is clearly insufficient to answer the question.")
         lines.append("</uploaded_files>")
 
@@ -283,6 +305,7 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
         updated_message = HumanMessage(
             content=updated_content,
             id=last_message.id,
+            name=last_message.name,
             additional_kwargs=last_message.additional_kwargs,
         )
 

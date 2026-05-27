@@ -1,8 +1,16 @@
 # EthoInsight 阿里云部署指南
 
-**日期**: 2026-05-09
+**日期**: 2026-05-09（最后更新 2026-05-26）
 **范围**: v0.1 单机 Docker Compose，10 人内并发
 **预计时间**: 首次部署 ~90 分钟（含 PG 创建等待）
+
+> ⚠️ **当前实际部署方式已变更**（2026-05-26）
+>
+> ACR 权限暂未到位，当前走「本地 build → 镜像 tar 推送 ECS」方案，不用 ACR / watchtower。
+> **新部署 SOP 见**: [deploy-via-tar-sop.md](deploy-via-tar-sop.md)
+> **一句话操作**: `cd packages/agent && make deploy-tar`
+>
+> 本文档保留作为未来切回 ACR pipeline 时的参考，以及 ECS / 安全组 / 域名等基础设施配置的参考。
 
 ---
 

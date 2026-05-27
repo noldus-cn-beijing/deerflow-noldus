@@ -6,7 +6,7 @@ pyproject.toml）。YAML 校验由 loader.py 手工做。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 DirectionEnum = Literal["lower_is_anxious", "higher_is_anxious"] | None
@@ -46,6 +46,15 @@ class ChartEntry:
     id: str
     script: str
     when: ChartCondition  # "always" | "n_per_group >= K" | "n_groups >= K"
+    display_name_zh: str = ""          # 1.1: 中文图名，必填（loader 校验）
+    accepts_paradigm: bool = False      # 1.1: 脚本是否接受 --paradigm 参数
+    output_mode: str = "per_subject"   # 1.2: "per_subject" expands to N PlanCharts (one inputs.json per file);
+                                         # "aggregate" collapses to 1 PlanChart with all files in one inputs.json
+    needs_groups: bool = False          # 1.2: aggregate plots that compare across groups need a groups.json arg
+    requires_columns: list[str] = field(default_factory=list)
+    # 1.3: fnmatch glob 列名模式（如 "velocity"、"mobility_state*"、"in_zone*open*"）。
+    # 任一 pattern 在 columns.json 中无列匹配则该 chart 被 resolve_charts 跳过并写入 skipped。
+    # 默认 [] 表示"不依赖具体列"——兼容旧 yaml，但所有 audit 过的 catalog 都应显式声明。
 
 
 @dataclass(frozen=True)
@@ -92,6 +101,15 @@ class PlanMetric:
     output: str
     required: bool
     reason: str  # PlanReasonEnum
+    subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
+    display_name_zh: str = ""           # 1.1: 中文指标名，透传自 MetricEntry
+    # W27 (2026-05-27): catalog 判读 / 展示字段透传到 plan,subagent 直接读 plan 即可,
+    # 不再 read catalog YAML。详见 docs/superpowers/specs/2026-05-27-catalog-fields-into-plan-design.md
+    unit_zh: str = ""
+    one_liner: str = ""
+    output_unit: str = ""
+    direction_for_anxiety: str | None = None
+    statistical_default: str = ""
 
 
 @dataclass
@@ -116,6 +134,9 @@ class PlanChart:
     script: str
     input: str
     output: str
+    subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
+    display_name_zh: str = ""           # 1.1: 中文图名，透传自 ChartEntry
+    args: list[str] = field(default_factory=list)  # 1.1: resolve 阶段填充的 CLI 参数数组
 
 
 @dataclass
@@ -155,7 +176,7 @@ class PlanMetrics:
     statistics: PlanStatistics | None
     skipped: list[PlanSkipped]
     notes: list[str]
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
 
 
 @dataclass
@@ -169,4 +190,4 @@ class PlanCharts:
     skipped: list[PlanSkipped]
     user_intent: str | None
     notes: list[str]
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"

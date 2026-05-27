@@ -42,7 +42,10 @@ export default function AgentChatPage() {
   const { agent } = useAgent(agent_name);
 
   const { threadId, isNewThread, setIsNewThread } = useThreadChat();
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [settings, setSettings] = useThreadSettings(threadId);
+
+  const isCenteredLayout = isNewThread && !welcomeDismissed;
 
   const { showNotification } = useNotification();
   const [thread, sendMessage] = useThreadStream({
@@ -77,7 +80,19 @@ export default function AgentChatPage() {
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
-      const sendPromise = sendMessage(threadId, message, { agent_name });
+      if (
+        !message.text.trim() &&
+        (!message.files || message.files.length === 0)
+      ) {
+        return;
+      }
+      setWelcomeDismissed(true);
+      const sendPromise = sendMessage(threadId, message, {
+        agent_name,
+      }).catch((err) => {
+        setWelcomeDismissed(false);
+        throw err;
+      });
       if (message.files.length > 0) {
         return sendPromise;
       }
@@ -144,11 +159,7 @@ export default function AgentChatPage() {
                 thread={thread}
                 paddingBottom={messageListPaddingBottom}
                 onSelectClarificationOption={(optionText) => {
-                  void sendMessage(
-                    threadId,
-                    { text: optionText, files: [] },
-                    { agent_name },
-                  );
+                  void handleSubmit({ text: optionText, files: [] });
                 }}
               />
             </div>
@@ -157,8 +168,8 @@ export default function AgentChatPage() {
               <div
                 className={cn(
                   "relative w-full",
-                  isNewThread && "-translate-y-[calc(50vh-96px)]",
-                  isNewThread
+                  isCenteredLayout && "-translate-y-[calc(50vh-96px)]",
+                  isCenteredLayout
                     ? "max-w-(--container-width-sm)"
                     : "max-w-(--container-width-md)",
                 )}
@@ -189,7 +200,7 @@ export default function AgentChatPage() {
                   }
                   context={settings.context}
                   extraHeader={
-                    isNewThread && (
+                    isCenteredLayout && (
                       <AgentWelcome agent={agent} agentName={agent_name} />
                     )
                   }

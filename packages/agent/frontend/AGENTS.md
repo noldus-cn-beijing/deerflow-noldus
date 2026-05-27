@@ -2,7 +2,7 @@
 
 ## Overview
 
-DeerFlow is built on a sophisticated agent-based architecture using the [LangGraph SDK](https://github.com/langchain-ai/langgraph) to enable intelligent, stateful AI interactions. This document outlines the agent system architecture, patterns, and best practices for working with agents in the frontend application.
+EthoInsight's frontend is built on a sophisticated agent-based architecture using the [LangGraph SDK](https://github.com/langchain-ai/langgraph) to enable intelligent, stateful AI interactions. This document outlines the agent system architecture, patterns, and best practices for working with agents in the frontend application. (The frontend was originally forked from the DeerFlow open-source harness; see CLAUDE.md for fork-sync details.)
 
 ## Architecture Overview
 

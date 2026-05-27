@@ -62,11 +62,17 @@ class Ev19TemplateGuardrailProvider:
     def evaluate(self, request: GuardrailRequest) -> GuardrailDecision:
         # ── Lock check: set_experiment_paradigm cannot change an already-set ev19_template ──
         if request.tool_name == "set_experiment_paradigm":
+            args = request.tool_input or {}
+            # Gate 2 quality acknowledgement mode is orthogonal to template setting —
+            # it neither sets nor changes ev19_template / paradigm fields. Pass through
+            # so the existing context is preserved and only gate_completed gets updated.
+            if args.get("acknowledge_quality") and not (args.get("ev19_template") or args.get("paradigm")):
+                return GuardrailDecision(allow=True, reasons=[GuardrailReason(code="oap.allowed")])
+
             workspace = self._resolve_workspace()
             if workspace is not None:
                 ctx = self._read_context(workspace)
                 if ctx and ctx.get("ev19_template"):
-                    args = request.tool_input or {}
                     if not args.get("confirm_template_change"):
                         return GuardrailDecision(
                             allow=False,

@@ -65,7 +65,9 @@ export function MessageList({
       className={cn("flex size-full flex-col justify-center", className)}
     >
       <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-12">
-        {groupMessages(messages, (group) => {
+        {groupMessages(
+          messages,
+          (group) => {
           if (group.type === "human" || group.type === "assistant") {
             return group.messages.map((msg) => {
               return (
@@ -168,13 +170,33 @@ export function MessageList({
                 const taskId = message.tool_call_id;
                 if (taskId) {
                   const result = extractTextFromMessage(message);
-                  if (result.startsWith("Task Succeeded. Result:")) {
+                  // 任何 tool_call_id 匹配的 ToolMessage 抵达都视为终态——in_progress 是 streaming 阶段才有效。
+                  // 后端短路返回的特殊 ToolMessage（如 GateEnforcementMiddleware 写 name="gate_enforcement"
+                  // 的"数据质量检查发现 critical 问题..."消息）不带 Task* 前缀，必须显式识别才不会让卡片永远卡在 in_progress。
+                  // 真实案例: 2026-05-26 FST 端到端 — data-analyst 第一次派遣被 gate_enforcement 短路，
+                  //         由于 ToolMessage 不以 "Task Succeeded/failed/timed out" 开头，
+                  //         以前 fallback 到 in_progress 让卡片永远不结束。
+                  if (result.startsWith("Task Succeeded")) {
+                    // 兼容两种格式:
+                    // 旧: "Task Succeeded. Result: <...>"
+                    // 新 (5/22 起): "Task Succeeded.\n\n<timeline>\n## 最终结果\n<...>"
+                    const newDelim = "## 最终结果\n";
+                    const oldDelim = "Task Succeeded. Result:";
+                    let resultText: string | undefined;
+                    if (result.includes(newDelim)) {
+                      resultText = result.split(newDelim)[1]?.trim();
+                    } else if (result.startsWith(oldDelim)) {
+                      resultText = result.split(oldDelim)[1]?.trim();
+                    } else {
+                      // "Task Succeeded.\n\n" without timeline 也算成功，整体当 result
+                      resultText = result
+                        .replace(/^Task Succeeded\.\s*/u, "")
+                        .trim();
+                    }
                     updateSubtask({
                       id: taskId,
                       status: "completed",
-                      result: result
-                        .split("Task Succeeded. Result:")[1]
-                        ?.trim(),
+                      result: resultText,
                     });
                   } else if (result.startsWith("Task failed.")) {
                     updateSubtask({
@@ -188,10 +210,20 @@ export function MessageList({
                       status: "failed",
                       error: result,
                     });
-                  } else {
+                  } else if (result.startsWith("Task cancelled")) {
                     updateSubtask({
                       id: taskId,
-                      status: "in_progress",
+                      status: "failed",
+                      error: result,
+                    });
+                  } else {
+                    // 后端 middleware 短路（如 gate_enforcement）返回的 ToolMessage 不带 Task* 前缀。
+                    // ToolMessage 既已抵达 thread.messages，说明 lead 收到了，此 task 已不可能再 streaming。
+                    // 切到 completed 并把原文交给卡片展示（卡片可显示"被门拦截"的红字）。
+                    updateSubtask({
+                      id: taskId,
+                      status: "completed",
+                      result,
                     });
                   }
                 }
@@ -258,15 +290,67 @@ export function MessageList({
                 {results}
               </div>
             );
+          } else if (group.type === "assistant:processing") {
+            // Intermediate-step group: AIMessages that carry tool_calls (non-task,
+            // non-present_files) like ask_clarification / set_viz_choice /
+            // set_experiment_paradigm / prep_metric_plan / read_file. Without this
+            // branch we'd fall back to <MessageGroup>, which buries content in
+            // the CoT (thinking) collapse — that is the 2026-05-25 regression
+            // where lead's "已收到 X 的结果..." 汇报 was invisible to the user
+            // because cd512536 (5/21) packed report + ask_clarification into the
+            // same AIMessage (see thread 9f77adcc-2a18-... vs 7456611e-... where
+            // the final AIMessage had no tool_call and rendered as a main bubble).
+            //
+            // Strategy: render each AIMessage's narrative content as a main
+            // bubble; keep reasoning in its own collapsible MessageGroup (so
+            // users can still inspect thinking); tool_call results render via
+            // their own dedicated groups elsewhere (assistant:clarification,
+            // etc.).
+            const results: React.ReactNode[] = [];
+            for (const message of group.messages) {
+              if (message.type !== "ai") {
+                continue;
+              }
+              if (hasReasoning(message)) {
+                results.push(
+                  <MessageGroup
+                    key={"thinking-group-" + message.id}
+                    messages={[message]}
+                    isLoading={thread.isLoading}
+                  />,
+                );
+              }
+              if (hasContent(message)) {
+                const narrative = extractContentFromMessage(message);
+                if (narrative) {
+                  results.push(
+                    <MarkdownContent
+                      key={"narrative-" + message.id}
+                      content={narrative}
+                      isLoading={thread.isLoading}
+                    />,
+                  );
+                }
+              }
+            }
+            if (results.length === 0) {
+              return null;
+            }
+            return (
+              <div
+                key={"processing-group-" + group.id}
+                className="flex flex-col gap-2"
+              >
+                {results}
+              </div>
+            );
           }
-          return (
-            <MessageGroup
-              key={"group-" + group.id}
-              messages={group.messages}
-              isLoading={thread.isLoading}
-            />
-          );
-        })}
+          // All MessageGroup variants are handled above; this is unreachable.
+          // Returning null keeps TypeScript's exhaustive narrowing happy.
+          return null;
+        },
+        { isStreaming: thread.isLoading },
+        )}
         {thread.isLoading && <StreamingIndicator className="my-4" />}
         <div style={{ height: `${paddingBottom}px` }} />
       </ConversationContent>

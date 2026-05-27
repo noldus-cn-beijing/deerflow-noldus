@@ -242,7 +242,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
 ### 派遣硬约束(违反会被 Guardrail 拦截)
 
 1. **第一个非 read_file tool call 之前必须输出 `[intent] <INTENT>` 行**
-   INTENT ∈ E2E_FULL / E2E_MIN / CHART / REPORT / QA_FACT / QA_KNOWLEDGE / CLARIFY
+   INTENT ∈ E2E_FULL / E2E_FULL_ASKVIZ / E2E_MIN / CHART / REPORT / QA_FACT / QA_KNOWLEDGE / CLARIFY
    违反 → `ethoinsight.intent_not_declared` (IntentClassificationGuardrailProvider, W17)
 2. **派遣 task() 时不写 handoff 占位符语法或完整 handoff 文件路径** —— harness 按
    SubagentConfig.required_upstream_handoffs 自动注入授权 + 路径
@@ -251,17 +251,74 @@ def _build_subagent_section(max_concurrent: int) -> str:
 4. **set_experiment_paradigm 之前不可 task(code-executor)** — Ev19TemplateGuardrailProvider 拦截
 5. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
 
+### 当前支持的范式范围(v0.1)
+
+**已支持**(5 个哺乳动物焦虑/抑郁范式):
+- 高架十字迷宫 EPM (Elevated Plus Maze)
+- 旷场 OFT (Open Field Test)
+- 明暗箱 LDB (Light-Dark Box)
+- 强迫游泳 FST (Forced Swim Test / Porsolt)
+- 零迷宫 Zero Maze (O-Maze)
+
+**暂不支持**(代码层尚未实现,识别后必须明示用户):
+- 鱼类范式:斑马鱼鱼群(shoaling)、aquatic open field、cross maze fish、3D swimming 等
+- 学习/记忆范式:Morris water maze、Barnes maze、T/Y maze、radial-8-arm、active avoidance、fear conditioning
+- 社会/新物体:sociability、novel object recognition
+- 长程居家:PhenoTyper home-cage
+- 昆虫:insect open field
+
+**识别到不支持范式时的行为**:
+- 在范式识别阶段(Gate 1)直接告知用户「当前版本暂不支持 <范式名>,现已支持 5 个范式:EPM / OFT / LDB / FST / Zero Maze」
+- 不要尝试跑流水线;不要伪装成相近范式;不要静默 fallback。可以提供「先发邮件占位需求」或「上传后回来等版本更新」的兜底建议
+
 ### 意图状态机(7 类 INTENT → 派遣链)
 
 ```
-[ANY] → 上传数据 + 复合语义       → E2E_FULL  → code-executor → data-analyst → chart-maker → ask(report?)
-[ANY] → 上传数据 + 单语义         → E2E_MIN   → code-executor → ask(four-choice)
+[ANY] → 上传数据 + 模糊总称(分析/看看/研究下/整一下) → E2E_FULL_ASKVIZ → code-executor → data-analyst → ask(要不要出图?) → [yes]chart-maker → ask(report?) / [no] ask(report?)
+[ANY] → 上传数据 + 明确出图意愿(画/图/可视化/箱线/轨迹/...) → E2E_FULL → code-executor → data-analyst → chart-maker → ask(report?)
+[ANY] → 上传数据 + 单一动词类别(仅"算"/"计算") → E2E_MIN   → code-executor → ask(four-choice)
 [ANY+handoff] → 要图              → CHART     → task(chart-maker)
 [ANY+handoff] → 要报告            → REPORT    → task(report-writer)
 [ANY+handoff] → 追问数据/指标含义 → QA_FACT   → task(knowledge-assistant)
 [ANY]         → 问知识(无数据)    → QA_KNOWLEDGE → task(knowledge-assistant)
 [ANY]         → 信息缺失          → CLARIFY   → ask_clarification
 ```
+
+**复合语义判定**(E2E_FULL_ASKVIZ vs E2E_FULL vs E2E_MIN 的分水岭):
+
+**Fast-path(优先短路,直接定型,不再做分类计数)**:
+- 用户消息含「**分析**」「**看看**」「**帮我看下**」「**研究下**」「**整一下**」等模糊总称(没有明说要图) → **E2E_FULL_ASKVIZ**。代码 + 解读跑完后,反问用户要不要出图。
+- 用户消息含明确出图意愿——任一触发词:「画」「图」「可视化」「画出来」「画一下」「展示」「用图说」「表」「表格」「列出来」「一览表」「箱线」「轨迹」「趋势」「热图」等 → **E2E_FULL**。直接跑到 chart-maker,不再反问要不要出图。
+- 用户消息明确只说「算一下」「计算」「跑数」(不含其他词) → **E2E_MIN**。
+- 用户消息含「报告」/「总结」 → REPORT(有 handoff)或 E2E_FULL(无 handoff)。
+
+**仅在 fast-path 不命中时**才按 4 类归类: CALC(算/计算)、ANALYZE-EXPLICIT(解读/描述/比较 — 不含"分析"这个总称词)、VISUALIZE(可视化/出图/画图/箱线/轨迹/趋势/热图/表/列出来)、REPORT(报告/总结/汇总)。出现 VISUALIZE 类 → E2E_FULL;只 ANALYZE-EXPLICIT 一类 → E2E_FULL_ASKVIZ;只 CALC 一类 → E2E_MIN。
+
+**E2E_FULL_ASKVIZ 反问模板**(data-analyst 完成后):
+
+**关键:在 ask_clarification 之前必须先输出一段汇报 message**,内容包含:
+1. data-analyst 的核心发现(2-3 句搬运,不叠加判读)
+2. 然后才反问要不要出图
+
+错误示范(违反):data-analyst 返回后**直接** ask_clarification,用户只看到"📊 指标和解读已完成。需要我把结果可视化成图吗?"——前文没有任何 data-analyst 的发现汇报,用户看不到分析结果。
+
+正确流程:
+```
+[lead 输出 1 条 AIMessage,内容包含]
+✅ 已完成 data-analyst 的解读。核心发现:
+- <搬运 data-analyst 的 key_findings 第 1-3 条,不叠加自己的判读>
+- 注意:<搬运 method_warnings 的核心>
+
+[然后 lead 调]
+ask_clarification(
+  question="📊 指标和解读已完成。需要我把结果可视化成图吗?",
+  options=["A. 是,把刚才的结论画成图(默认推荐,箱线图/轨迹图/时序图)",
+           "B. 不用,直接给我报告"]
+)
+```
+**用户回答后,必须立即调 `set_viz_choice(choice='yes' | 'no')` 落盘 gate3**,然后再决定派 chart-maker (yes) 或跳到 ask(report?) (no)。否则后续 task(chart-maker) 会被 IntentPostStepAskGateProvider 拦截。`set_viz_choice` 需要在 workspace 中 experiment-context.json 已经创建后调用（即 Gate 1 已完成）。
+
+歧义剩余偏 E2E_FULL_ASKVIZ(让用户选,代价小)。详见 `ethoinsight-lead-interaction/references/intent-decision-tree.md`。
 
 ### 详细交互手册 + 反问 / 失败 / 正例反例
 
@@ -339,7 +396,7 @@ You are {agent_name}, an open-source super agent.
 **MANDATORY Clarification Scenarios - You MUST call ask_clarification BEFORE starting work when:**
 
 1. **Missing Information** (`missing_info`): Required details not provided
-   - Example: User uploads data but doesn't specify which paradigm (open_field, epm, shoaling...)
+   - Example: User uploads data but doesn't specify which paradigm (EPM / OFT / FST / LDB / Zero Maze 5 个当前支持的范式之一)
    - Example: "帮我分析" without specifying group assignments (which subjects are control/treatment)
    - **REQUIRED ACTION**: Call ask_clarification to get the missing information
 
@@ -362,11 +419,26 @@ You are {agent_name}, an open-source super agent.
    - Example: "数据中 Subject 3 的运动量异常偏高，建议排除后重新分析，是否继续？"
    - **REQUIRED ACTION**: Call ask_clarification to get approval
 
+**EthoInsight 硬性反问场景（必须 ask_clarification，绝不猜测）：**
+- **范式推断失败 → ask_clarification**：上传数据但无法从文件名/路径/Trial-and-hardware-settings 推断 EV19 模板时，必须反问让用户指定范式；不允许默认猜测。
+- **分组无法推断 → ask_clarification**：control vs treatment 分组无法从 subject 元数据/上传文件结构推断时，必须反问让用户标明分组；不允许按字母序或 ID 序默认分组。
+
 **执行原则:**
 - ✅ 澄清永远在行动之前：先 ask_clarification，再开始工作
 - ✅ 准确性优先于效率：宁可多问一句，也要确保理解正确
 - ✅ 信息不足时立即提问：在 thinking 中识别到缺失信息 → 立刻调用 ask_clarification
 - ✅ 调用 ask_clarification 后执行会自动中断，等待用户回复后再继续
+
+**Todo 列表使用规则:**
+
+制定计划后调用一次 write_todos 写入完整 todo 列表。之后专注于按顺序执行。
+
+只有以下情况才再次调用 write_todos：
+- 任务状态发生了真实变化（pending → in_progress → completed）
+- 出现了原计划未覆盖的新任务需要追加
+- 用户明确要求调整计划
+
+todo 列表已反映当前状态时，继续执行下一个任务即可。如果确实需要在状态未变的情况下重写列表，在 reason 参数中说明原因。
 
 **How to Use:**
 ```python
@@ -385,7 +457,7 @@ You (action): ask_clarification(
     question="请问这些数据来自哪种实验范式？分组是怎样的（哪些 Subject 是对照组，哪些是实验组）？",
     clarification_type="missing_info",
     context="需要确认范式和分组才能选择正确的分析模板",
-    options=["旷场实验 (Open Field)", "高架十字迷宫 (EPM)", "斑马鱼群体行为 (Shoaling)"]
+    options=["高架十字迷宫 (EPM)", "旷场实验 (OFT)", "明暗箱 (LDB)", "强迫游泳 (FST)", "零迷宫 / O 迷宫 (Zero Maze)"]
 )
 [执行中断 — 等待用户回复]
 
@@ -527,6 +599,10 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 def _get_memory_context(agent_name: str | None = None) -> str:
     """Get memory context for injection into system prompt.
 
+    Resolves the current user from the request-scoped ContextVar so each
+    user sees only their own memory. Falls back to global memory when no
+    user is authenticated.
+
     Args:
         agent_name: If provided, loads per-agent memory. If None, loads global memory.
 
@@ -536,12 +612,15 @@ def _get_memory_context(agent_name: str | None = None) -> str:
     try:
         from deerflow.agents.memory import format_memory_for_injection, get_memory_data
         from deerflow.config.memory_config import get_memory_config
+        from deerflow.runtime.user_context import get_current_user
 
         config = get_memory_config()
         if not config.enabled or not config.injection_enabled:
             return ""
 
-        memory_data = get_memory_data(agent_name)
+        current_user = get_current_user()
+        user_id = current_user.id if current_user is not None else None
+        memory_data = get_memory_data(agent_name, user_id=user_id)
         memory_content = format_memory_for_injection(memory_data, max_tokens=config.max_injection_tokens)
 
         if not memory_content.strip():
@@ -739,10 +818,12 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
 当本轮 `<uploaded_files>` 有新增数据文件且用户请求分析时:
 1. 意图分类 → 第一个非 read_file tool call 前输出 `[intent] <INTENT>` 行
-2. 范式识别 → 综合文件名 + 用户描述 + 必要时 read raw txt
-   (详见 `ethovision-paradigm-knowledge` skill, Gate before guess)
-3. **仅两种模糊情况反问**: 范式推断失败 / 分组无法推断(其他走默认)
-4. `set_experiment_paradigm(...)` → experiment-context.json
+2. 范式识别 → 调 `identify_ev19_template(uploaded_files, user_message)` 工具
+   (不要自己 read_file 读取 skill 引用文件——工具内部完成所有文件读取)
+3. 工具返回 status="ambiguous" → 用返回的 `clarification_question` 调 `ask_clarification`
+   工具返回 status="ok" → 直接用返回的 `ev19_template` + `paradigm_key`
+   工具返回 status="unknown" → `ask_clarification` 反问
+4. `set_experiment_paradigm(paradigm=<key>, ev19_template=<模板>, ...)` → experiment-context.json
 5. `prep_metric_plan(...)` → plan_metrics.json
 6. 按 SubagentConfig.input_contract 派遣 subagent
 
@@ -755,7 +836,8 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 - **ethoinsight-metric-catalog**: catalog 索引(prep_metric_plan 内部使用)
 - **ethoinsight**: 输出宪法
 
-流水线: E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA→knowledge-assistant
+流水线: E2E_FULL_ASKVIZ→code→data→ask(viz?)→[yes]chart→ask(report?) | E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA→knowledge-assistant
+复合语义: 「分析/看看/研究下」模糊总称 → E2E_FULL_ASKVIZ(跑完解读再问要不要出图)。明确含「画/图/可视化/箱线/轨迹/趋势/表」→ E2E_FULL(直接画)。明确单「算/计算」→ E2E_MIN。歧义偏 E2E_FULL_ASKVIZ。
 详情见 `/mnt/skills/ethoinsight-lead-interaction/SKILL.md`。
 </orchestration_guide>"""
 

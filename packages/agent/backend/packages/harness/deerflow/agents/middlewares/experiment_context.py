@@ -16,6 +16,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
@@ -57,22 +58,60 @@ def resolve_workspace_from_state(state: dict) -> str | None:
     return thread_data.get("workspace_path")
 
 
-def read_handoff(workspace_dir: str) -> dict | None:
-    """Read handoff_code_executor.json from host-side workspace_dir. Returns None if absent."""
+def read_handoff(workspace_dir: str, thread_data: ThreadDataState | None = None) -> dict | None:
+    """Read handoff_code_executor.json from host-side workspace_dir. Returns None if absent.
+
+    When ``thread_data`` is provided, host paths embedded in the JSON text are reverse-masked
+    back to virtual paths (e.g. ``/home/.../uploads/x.txt`` -> ``/mnt/user-data/uploads/x.txt``)
+    before parsing. This shields downstream consumers from subagents that leaked host paths
+    via ``Path.resolve()``; the masking re-uses the same helper that ``write_file_tool`` runs
+    on write.
+
+    The result is also schema-validated via :class:`CodeExecutorHandoff`; on validation
+    failure the schema errors are recorded in ``_schema_violations`` (a soft signal — the
+    raw dict is still returned so existing gate-2 checks keep working).
+    """
     path = Path(workspace_dir) / "handoff_code_executor.json"
     try:
         if not path.exists():
             return None
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, PermissionError, OSError) as e:
+        raw_text = path.read_text(encoding="utf-8")
+    except (PermissionError, OSError) as e:
         logger.warning("Failed to read handoff_code_executor.json: %s", e)
         return None
 
+    if thread_data is not None:
+        # Reverse-mask host paths embedded in the JSON text (defense in depth: write_file
+        # already masks on write, but legacy handoffs or out-of-band writers may still leak).
+        from deerflow.sandbox.tools import mask_local_paths_in_output
 
-def get_critical_warnings(workspace_dir: str) -> list[dict]:
+        raw_text = mask_local_paths_in_output(raw_text, thread_data)
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        logger.warning("Failed to parse handoff_code_executor.json: %s", e)
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    # Soft schema validation: surface violations without dropping the handoff.
+    try:
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+        CodeExecutorHandoff.model_validate(data)
+    except Exception as e:  # pragma: no cover - pydantic ValidationError
+        logger.warning("handoff_code_executor.json schema violation: %s", e)
+        violations = data.setdefault("_schema_violations", [])
+        if isinstance(violations, list):
+            violations.append(str(e))
+
+    return data
+
+
+def get_critical_warnings(workspace_dir: str, thread_data: ThreadDataState | None = None) -> list[dict]:
     """Extract severity='critical' warnings from handoff. Returns empty list if none or absent."""
-    handoff = read_handoff(workspace_dir)
+    handoff = read_handoff(workspace_dir, thread_data=thread_data)
     if not handoff:
         return []
     warnings = handoff.get("data_quality_warnings", [])
@@ -94,31 +133,81 @@ def is_quality_acknowledged(workspace_dir: str) -> bool:
 
 @tool("set_experiment_paradigm", parse_docstring=True)
 def set_experiment_paradigm_tool(
-    paradigm: str,
-    paradigm_cn: str,
-    category: str,
-    subject: str,
-    ev19_template: str,
+    paradigm: str | None = None,
+    paradigm_cn: str | None = None,
+    category: str | None = None,
+    subject: str | None = None,
+    ev19_template: str | None = None,
+    acknowledge_quality: bool = False,
     workspace_dir: str = "/mnt/user-data/workspace/",
     runtime: ToolRuntime[ContextT, ThreadState] = None,
 ) -> str:
-    """Record the user's experiment paradigm choice for the analysis pipeline.
+    """Record the user's experiment paradigm choice and/or acknowledge data quality.
 
-    Call this after the user has confirmed their experiment type via ask_clarification.
-    Writes experiment-context.json to the workspace so downstream agents know the paradigm.
+    Two usage modes:
+      1) Gate 1 paradigm confirmation:
+         set_experiment_paradigm(paradigm="forced_swim", paradigm_cn="...", category="...",
+                                 subject="...", ev19_template="...")
+         → creates experiment-context.json with gate_completed=["gate1_paradigm"]
+      2) Gate 2 quality acknowledgement:
+         set_experiment_paradigm(acknowledge_quality=True)
+         → reads existing experiment-context.json, appends "gate2_quality_acknowledged"
+           to gate_completed (preserving all other fields). Requires Gate 1 already done.
 
     Args:
-        paradigm: English paradigm name key (e.g. "shoaling", "epm", "open_field")
-        paradigm_cn: Chinese display name (e.g. "斑马鱼鱼群行为")
-        category: Category name (e.g. "zebrafish", "anxiety", "spatial_memory")
-        subject: Subject type — "rodent" | "fish" | "insect" | "other"
-        ev19_template: EthoVision 19 template variant ID (e.g. "PlusMaze-AllZones"). Must be one of the 62 known variants.
-        workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/"
+        paradigm: English paradigm name key. Required for Gate 1 mode.
+        paradigm_cn: Chinese display name. Required for Gate 1 mode.
+        category: Category name. Required for Gate 1 mode.
+        subject: Subject type — "rodent" | "fish" | "insect" | "other". Required for Gate 1 mode.
+        ev19_template: EthoVision 19 template variant ID (e.g. "PlusMaze-AllZones"). Required for Gate 1 mode.
+        acknowledge_quality: Set True to acknowledge data quality warnings (Gate 2 mode).
+                             When True, all paradigm fields may be omitted — the existing
+                             experiment-context.json is read and only gate_completed is updated.
+        workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
 
     Returns:
-        JSON confirmation with paradigm, category, subject, ev19_template, and file path.
+        JSON confirmation with the updated context.
     """
+
+    # Resolve the actual host workspace path from thread state.
+    actual_workspace = workspace_dir
+    if runtime is not None and runtime.state is not None:
+        thread_data: ThreadDataState | None = runtime.state.get("thread_data")
+        if thread_data is not None:
+            host_workspace = thread_data.get("workspace_path")
+            if host_workspace is not None:
+                actual_workspace = host_workspace
+
+    existing = read_context(actual_workspace)
+
+    # --- Gate 2: quality acknowledgement ---
+    if acknowledge_quality:
+        if existing is None:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Cannot acknowledge quality before Gate 1. Call set_experiment_paradigm with paradigm fields first.",
+                },
+                ensure_ascii=False,
+            )
+        gate_completed = existing.get("gate_completed", [])
+        if not isinstance(gate_completed, list):
+            gate_completed = []
+        if "gate2_quality_acknowledged" not in gate_completed:
+            gate_completed.append("gate2_quality_acknowledged")
+        data = {**existing, "gate_completed": gate_completed, "gate2_acknowledged_at": datetime.now(UTC).isoformat()}
+        path = Path(actual_workspace) / "experiment-context.json"
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        return json.dumps({"status": "ok", "path": str(path), "gate_completed": gate_completed}, ensure_ascii=False)
+
+    # --- Gate 1: paradigm confirmation ---
     from ethoinsight.ev19_facts import is_paradigm_template_compatible, is_valid_ev19_template, suggest_nearby_templates
+
+    required = {"paradigm": paradigm, "paradigm_cn": paradigm_cn, "category": category, "subject": subject, "ev19_template": ev19_template}
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        return json.dumps({"status": "error", "message": f"Missing required fields for Gate 1: {missing}"}, ensure_ascii=False)
 
     # Validate ev19_template against the 62-variant whitelist
     if not is_valid_ev19_template(ev19_template):
@@ -139,16 +228,11 @@ def set_experiment_paradigm_tool(
         warning = f"ev19_template {ev19_template!r} is not in the recommended list for paradigm {paradigm!r}. Proceeding anyway."
         logger.warning(warning)
 
-    # Resolve the actual host workspace path from thread state.
-    # The default workspace_dir is a sandbox virtual path; the tool runs in the
-    # lead agent host process so we must write to the host-side workspace.
-    actual_workspace = workspace_dir
-    if runtime is not None and runtime.state is not None:
-        thread_data: ThreadDataState | None = runtime.state.get("thread_data")
-        if thread_data is not None:
-            host_workspace = thread_data.get("workspace_path")
-            if host_workspace is not None:
-                actual_workspace = host_workspace
+    # Preserve gate2_quality_acknowledged if it was already set (user changing paradigm)
+    prior_gate_completed = existing.get("gate_completed", []) if isinstance(existing, dict) else []
+    gate_completed: list[str] = ["gate1_paradigm"]
+    if "gate2_quality_acknowledged" in prior_gate_completed:
+        gate_completed.append("gate2_quality_acknowledged")
 
     data = {
         "paradigm": paradigm,
@@ -157,7 +241,7 @@ def set_experiment_paradigm_tool(
         "subject": subject,
         "ev19_template": ev19_template,
         "paradigm_confirmed_at": datetime.now(UTC).isoformat(),
-        "gate_completed": ["gate1_paradigm"],
+        "gate_completed": gate_completed,
     }
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,3 +252,63 @@ def set_experiment_paradigm_tool(
     if warning is not None:
         response["warning"] = warning
     return json.dumps(response, ensure_ascii=False)
+
+
+@tool("set_viz_choice", parse_docstring=True)
+def set_viz_choice_tool(
+    choice: Literal["yes", "no"],
+    workspace_dir: str = "/mnt/user-data/workspace/",
+    runtime: ToolRuntime[ContextT, ThreadState] = None,
+) -> str:
+    """Record the user's answer to the 'do you want a chart?' clarification.
+
+    Use this AFTER ask_clarification has presented the viz question to the user
+    and the user has replied. Writes gate3_viz_acknowledged + viz_choice to
+    experiment-context.json so IntentPostStepAskGateProvider knows the user
+    has answered and the lead can proceed to dispatch chart-maker (yes) or
+    skip to report-writer (no).
+
+    Args:
+        choice: "yes" if user wants charts; "no" otherwise.
+        workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
+    """
+
+    # Resolve the actual host workspace path from thread state.
+    actual_workspace = workspace_dir
+    if runtime is not None and runtime.state is not None:
+        thread_data: ThreadDataState | None = runtime.state.get("thread_data")
+        if thread_data is not None:
+            host_workspace = thread_data.get("workspace_path")
+            if host_workspace is not None:
+                actual_workspace = host_workspace
+
+    existing = read_context(actual_workspace)
+    if existing is None:
+        return json.dumps(
+            {
+                "status": "error",
+                "message": "experiment-context.json missing; call set_experiment_paradigm first.",
+            },
+            ensure_ascii=False,
+        )
+
+    gate_completed = existing.get("gate_completed", [])
+    if not isinstance(gate_completed, list):
+        gate_completed = []
+    if "gate3_viz_acknowledged" not in gate_completed:
+        gate_completed.append("gate3_viz_acknowledged")
+
+    data = {
+        **existing,
+        "gate_completed": gate_completed,
+        "viz_choice": choice,
+        "viz_acknowledged_at": datetime.now(UTC).isoformat(),
+    }
+    path = Path(actual_workspace) / "experiment-context.json"
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+
+    return json.dumps(
+        {"status": "ok", "viz_choice": choice, "gate_completed": gate_completed},
+        ensure_ascii=False,
+    )

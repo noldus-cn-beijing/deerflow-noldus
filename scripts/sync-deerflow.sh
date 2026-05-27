@@ -28,10 +28,26 @@ UPSTREAM_HARNESS="backend/packages/harness/deerflow"
 # 本地 harness 路径（相对于 noldus-insight 根目录）
 LOCAL_HARNESS="${SUBTREE_PREFIX}/${UPSTREAM_HARNESS}"
 
+# 同步基准状态文件 — 显式记录最近一次 sync 到的上游 commit
+# 5-25 教训：subtree squash 不一定有（5-21 sync 也没做 squash），LAST_SYNC_COMMIT
+# 仅依赖 git log --grep 会失效；用 .deerflow-sync-state 显式覆盖。
+SYNC_STATE_FILE=".deerflow-sync-state"
+
 REPORT_DIR="/tmp/deerflow-sync-report"
 
 # 受保护文件列表（相对于 UPSTREAM_HARNESS）
 # 这些是你修改过的上游文件，同步时需要人工判断
+#
+# ⚠️ 添加规则（5-25 sync 教训）：
+#   1. 注册类文件（含 BUILTIN_TOOLS / BUILTIN_SUBAGENTS / __all__ 集合字面量 /
+#      聚合 import 块）一旦含本地添加项必须保护。哪怕脚本判断"本地未改"也不能让
+#      它整文件覆盖，否则会洗掉注册项 — 5-21 PR #23 翻车根因。
+#   2. 飞轮 / 训练数据相关 schema 文件（feedback/sql.py 含 verdict 三分类 +
+#      revised_text + message_id 四元组主键）— 上游模型在升级时不会带这些字段。
+#   3. 任何文件 grep set_experiment_paradigm | identify_ev19 | prep_metric_plan |
+#      shared_path | /mnt/shared | ethoinsight | extra_env | ArchivingSummarization |
+#      ThinkTag | TrainingData | GateEnforcement | HandoffIsolation | Ev19Template |
+#      verdict | revised_text | message_id 命中 → 必须保护。
 PROTECTED_FILES=(
     # 高侵入 - Noldus 核心业务逻辑
     "agents/lead_agent/prompt.py"
@@ -49,6 +65,20 @@ PROTECTED_FILES=(
     "sandbox/sandbox.py"
     "agents/thread_state.py"
     "agents/middlewares/thread_data_middleware.py"
+    # 注册类文件（5-25 PR #36 / 5-21 PR #23 教训）— 含 BUILTIN_TOOLS / __all__ / BUILTIN_SUBAGENTS
+    "tools/tools.py"
+    "tools/builtins/__init__.py"
+    "agents/__init__.py"
+    "agents/factory.py"
+    "subagents/registry.py"
+    # 飞轮 / 训练数据 schema（5-25 PR #36 教训）— 含 verdict 三分类 + revised_text + message_id
+    "persistence/feedback/sql.py"
+    # Loop detection 中文 + ethoinsight 提示 + tool freq 3/5 阈值（5-25 PR #35）
+    "agents/middlewares/loop_detection_middleware.py"
+    # Setup agent tool — Noldus 定制（5-06 教训：上游脚本误标为安全文件）
+    "tools/builtins/setup_agent_tool.py"
+    # Guardrail middleware — Noldus 加了 name kwarg 解决 langchain unique-name 限制
+    "guardrails/middleware.py"
 )
 
 # ---- 颜色 ----
@@ -100,9 +130,9 @@ is_protected() {
 echo -e "${BOLD}=== DeerFlow 上游选择性同步 ===${NC}"
 echo ""
 
-# 确认在项目根目录
-if [[ ! -d "$LOCAL_HARNESS" ]] || [[ ! -d ".git" ]]; then
-    echo -e "${RED}错误: 请在 noldus-insight 项目根目录运行此脚本${NC}"
+# 确认在项目根目录（兼容 worktree — .git 可以是文件指向真实仓库）
+if [[ ! -d "$LOCAL_HARNESS" ]] || { [[ ! -d ".git" ]] && [[ ! -f ".git" ]]; }; then
+    echo -e "${RED}错误: 请在 noldus-insight 项目根目录或 worktree 中运行此脚本${NC}"
     exit 1
 fi
 
@@ -125,21 +155,35 @@ echo "  上游最新: ${UPSTREAM_HEAD:0:7}"
 
 echo -e "${BLUE}[2/5] 查找上次同步点...${NC}"
 
-# 从 git log 中找最近的 squash subtree commit
-LAST_SYNC_MSG=$(git log --oneline --all --grep="Squashed '${SUBTREE_PREFIX}/' changes from" -1 2>/dev/null || true)
+LAST_SYNC_COMMIT=""
 
-if [[ -z "$LAST_SYNC_MSG" ]]; then
-    echo -e "${YELLOW}  未找到 subtree squash 记录，将对比上游所有文件${NC}"
-    LAST_SYNC_COMMIT=""
-else
-    # 提取 "from XXXXX..YYYYY" 中的 YYYYY（上次同步到的上游 commit）
-    LAST_SYNC_TO=$(echo "$LAST_SYNC_MSG" | grep -oP '\.\.([a-f0-9]+)' | sed 's/\.\.//')
-    if [[ -n "$LAST_SYNC_TO" ]]; then
-        echo "  上次同步到: ${LAST_SYNC_TO}"
-        LAST_SYNC_COMMIT="$LAST_SYNC_TO"
+# 优先级 1: DEERFLOW_LAST_SYNC 环境变量（手动一次性覆盖）
+if [[ -n "${DEERFLOW_LAST_SYNC:-}" ]]; then
+    LAST_SYNC_COMMIT="$DEERFLOW_LAST_SYNC"
+    echo -e "  ${CYAN}使用环境变量 DEERFLOW_LAST_SYNC=${LAST_SYNC_COMMIT:0:7}${NC}"
+# 优先级 2: .deerflow-sync-state 文件（持久化记录）
+elif [[ -f "$SYNC_STATE_FILE" ]]; then
+    LAST_SYNC_COMMIT=$(grep -E '^last_sync_commit:' "$SYNC_STATE_FILE" 2>/dev/null | head -1 | awk '{print $2}')
+    if [[ -n "$LAST_SYNC_COMMIT" ]]; then
+        echo "  ${SYNC_STATE_FILE} 记录: ${LAST_SYNC_COMMIT:0:7}"
+    fi
+fi
+
+# 优先级 3: subtree squash commit message (fallback)
+if [[ -z "$LAST_SYNC_COMMIT" ]]; then
+    LAST_SYNC_MSG=$(git log --oneline --all --grep="Squashed '${SUBTREE_PREFIX}/' changes from" -1 2>/dev/null || true)
+
+    if [[ -z "$LAST_SYNC_MSG" ]]; then
+        echo -e "${YELLOW}  未找到 subtree squash 记录 + 无 ${SYNC_STATE_FILE}，将对比上游所有文件${NC}"
     else
-        echo -e "${YELLOW}  无法解析同步点，将对比所有文件${NC}"
-        LAST_SYNC_COMMIT=""
+        # 提取 "from XXXXX..YYYYY" 中的 YYYYY（上次同步到的上游 commit）
+        LAST_SYNC_TO=$(echo "$LAST_SYNC_MSG" | grep -oP '\.\.([a-f0-9]+)' | sed 's/\.\.//')
+        if [[ -n "$LAST_SYNC_TO" ]]; then
+            echo "  subtree squash 提取: ${LAST_SYNC_TO}"
+            LAST_SYNC_COMMIT="$LAST_SYNC_TO"
+        else
+            echo -e "${YELLOW}  无法解析 subtree squash，将对比所有文件${NC}"
+        fi
     fi
 fi
 
@@ -313,7 +357,12 @@ if [[ ${#PROTECTED_CHANGED[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}处理完受保护文件后，记得:${NC}"
     echo "  1. cd packages/agent/backend && make test"
-    echo "  2. git add -A && git commit -m 'sync deerflow upstream to ${UPSTREAM_HEAD:0:7}'"
+    echo "  2. 更新 ${SYNC_STATE_FILE}: echo 'last_sync_commit: ${UPSTREAM_HEAD}' > ${SYNC_STATE_FILE}"
+    echo "  3. git add -A && git commit -m 'sync deerflow upstream to ${UPSTREAM_HEAD:0:7}'"
+else
+    echo ""
+    echo -e "${GREEN}提示: 合入后更新 ${SYNC_STATE_FILE} 推进同步基准:${NC}"
+    echo "  echo 'last_sync_commit: ${UPSTREAM_HEAD}' > ${SYNC_STATE_FILE}"
 fi
 
 if [[ "$DRY_RUN" == true ]]; then

@@ -1,8 +1,8 @@
 # Excel 文件解析支持 — 技术规格
 
 - **创建日期**：2026-05-11
-- **状态**：待实施
-- **关联 plan**：`/home/wangqiuyang/.claude/plans/radiant-honking-snowflake.md`
+- **状态**：已完成（PR #58，2026-05-27 合入 dev）
+- **关联 PR**：https://github.com/noldus-cn-beijing/noldus-insight/pull/58
 
 ## 背景
 
@@ -16,47 +16,52 @@
 
 ## 设计决策
 
-### 检测策略：扩展名 + 内容验证
+### 实际实现与原始规格的差异
 
-- `.xlsx/.xls/.xlsm` 扩展名 → 读前 20 行扫描已知轨迹列名标记（如 "试用时间"、"X 中心"、"trial_time"、"x_center"）
-- >= 2 个标记命中 → 识别为 EthoVision 轨迹 Excel
-- `.txt/.csv` → 保持现有 UTF-16 BOM + "标题行数" 检测
+| 原规格 | 实际实现 | 原因 |
+|--------|----------|------|
+| 列名标记扫描检测（读 20 行匹配 "试用时间" 等） | 首单元格 "标题行数" 检测 | 所有真实 Excel 导出的 R0C0 均是"标题行数："，更简洁可靠 |
+| 自动检测表头行（前 30 行评分） | 固定布局：header_lines 来自 R0C1 | 真实数据布局固定，无需自适应 |
+| 仅 sheet 0 | 完整多 sheet 支持（`::sheet` 后缀约定） | FST 一个 xlsx 含 2 个 sheet = 2 subject |
+| `parse.py` | `parse/_core.py` | 代码已按模块重构 |
 
-### 表头行定位：自动检测
+### 检测策略：扩展名 + 首单元格验证
 
-不硬编码行号。扫描前 30 行，对每行按已知列名标记匹配数评分，取最高分行。>= 2 分才认，否则回退到第 0 行。
+- `.xlsx/.xls` 扩展名 → `pd.read_excel(nrows=1)` 读 R0C0 → 检查是否包含"标题行数"
+- `.txt/.csv` → 保持现有 UTF-16 BOM + "标题行数" 检测（不变）
 
-### 元数据提取：尽力而为
+### 表头布局：固定偏移
 
-表头行上方恰好 2 个非空单元格的行视为 key-value 对，匹配已知键名（"实验"/"Experiment"、"对象名称"/"Subject" 等）。匹配不到则回退为空字符串/文件名推断。
+基于真实数据（5 范式 14 文件）验证的固定布局：
+- R0C0 = "标题行数：", R0C1 = N
+- R1..R(N-3): key-value 元数据（col 0 = key, col 1 = value）
+- R(N-2): 列名
+- R(N-1): 单位
+- RN+: 数据
 
-### 多 Sheet：仅 sheet 0
+### 元数据提取
 
-EthoVision 轨迹数据在第一个 sheet。多 sheet 场景后续按需扩展。
+表头区域逐行读 col 0 + col 1 作为 key-value，跳过空行。与 TXT 共用 `normalize_columns()` + `detect_paradigm()`。
 
-## 实施范围
+### 多 Sheet：`::sheet_name` 后缀约定
+
+`prep_metric_plan_tool` 的 Step 1.5 自动检测多 sheet XLSX 并展开：
+- 单 sheet：行为不变
+- 多 sheet（如 FST）：上传列表自动展开为 `file.xlsx::Sheet1`, `file.xlsx::Sheet2` ……
+- `_parse_path_and_sheet()` 在所有入口函数中统一拆解 `::` 分隔符
+- 下游 metric 脚本调用 `parse_trajectory(args.input)` 无需改动
+
+## 实施范围（已完成）
 
 | 文件 | 改动 |
 |------|------|
-| `packages/ethoinsight/pyproject.toml` | 加 `openpyxl>=3.0` |
-| `packages/ethoinsight/ethoinsight/parse.py` | 新增 4 个函数，修改 2 个现有函数 |
-| `packages/ethoinsight/tests/test_parse.py` | 新增 ~20 个 Excel 测试 |
+| `packages/ethoinsight/pyproject.toml` | 加 `openpyxl>=3.1` |
+| `packages/ethoinsight/ethoinsight/parse/_core.py` | 新增 `_parse_path_and_sheet`、`_detect_ethovision_xlsx`、`_parse_header_xlsx`、`_parse_trajectory_xlsx` 四个函数，修改 `detect_ethovision`/`parse_header`/`parse_trajectory`/`parse_batch` 加格式分派 |
+| `packages/ethoinsight/tests/test_parse.py` | 新增 5 测试类 10 用例（35 passed 0 failed） |
+| `packages/agent/backend/.../prep_metric_plan_tool.py` | Step 1.5 多 sheet XLSX 自动展开 + `::sheet` 路径处理 |
+| `packages/agent/backend/.../uploads_middleware.py` | 按文件扩展名区分数据文件 vs 文档文件，数据文件不再被 `read_file`/`grep` 误导 |
 
-### 新增函数
-
-| 函数 | 职责 |
-|------|------|
-| `_detect_ethovision_excel(path)` | Excel 文件检测：读前 20 行，扫描轨迹列名标记 |
-| `_find_header_row(df_raw)` | 自动定位表头行：按列名标记匹配数评分 |
-| `_extract_excel_metadata(df_raw, header_row)` | 从表头上方提取 key-value 元数据 |
-| `_parse_trajectory_excel(file_path)` | 核心解析：读 Excel → DataFrame，签名对齐 `parse_trajectory()` |
-
-### 修改函数
-
-| 函数 | 改动 |
-|------|------|
-| `detect_ethovision()` | 在 BOM 检查前插入 Excel 扩展名分支 |
-| `parse_batch()` | 文件过滤和解析循环中加 Excel 后缀路由 |
+总计 ~270 行，6 文件。
 
 ## 不改变的部分
 

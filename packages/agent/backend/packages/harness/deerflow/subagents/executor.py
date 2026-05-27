@@ -15,6 +15,7 @@ from enum import Enum
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain.tools import BaseTool
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -27,6 +28,49 @@ from deerflow.subagents.token_collector import SubagentTokenCollector
 logger = logging.getLogger(__name__)
 
 
+# Hook pairs (sync, async) on AgentMiddleware. Each pair becomes a graph node
+# in langchain.agents.create_agent if EITHER sync or async is overridden.
+# See langchain.agents.factory ~L1198-1290 for the wiring.
+_BEFORE_AGENT_HOOKS = (("before_agent", "abefore_agent"),)
+_BEFORE_MODEL_HOOKS = (("before_model", "abefore_model"),)
+_AFTER_MODEL_HOOKS = (("after_model", "aafter_model"),)
+_AFTER_AGENT_HOOKS = (("after_agent", "aafter_agent"),)
+
+
+def _middleware_implements(m: AgentMiddleware, sync_name: str, async_name: str) -> bool:
+    """Return True if middleware ``m`` overrides either the sync or async hook."""
+    base = AgentMiddleware
+    return getattr(m.__class__, sync_name) is not getattr(base, sync_name) or getattr(m.__class__, async_name) is not getattr(base, async_name)
+
+
+def calculate_subagent_recursion_limit(middlewares: list[AgentMiddleware], max_turns: int) -> int:
+    """Compute LangGraph recursion_limit for a subagent run from its middleware chain.
+
+    LangGraph counts node steps. ``langchain.agents.create_agent`` adds one node
+    per overridden middleware hook (before_agent / before_model / after_model /
+    after_agent), plus the fixed ``model`` and ``tools`` nodes. Per turn:
+
+        before_model_hooks + 1 (model) + after_model_hooks + 1 (tools)
+
+    before_agent / after_agent fire exactly once at entry / exit.
+
+    Adds +3 margin so an extra middleware hook landing during sync does not
+    immediately re-break the limit.
+    """
+    if max_turns <= 0:
+        raise ValueError(f"max_turns must be positive, got {max_turns}")
+
+    before_agent = sum(1 for m in middlewares if _middleware_implements(m, *_BEFORE_AGENT_HOOKS[0]))
+    before_model = sum(1 for m in middlewares if _middleware_implements(m, *_BEFORE_MODEL_HOOKS[0]))
+    after_model = sum(1 for m in middlewares if _middleware_implements(m, *_AFTER_MODEL_HOOKS[0]))
+    after_agent = sum(1 for m in middlewares if _middleware_implements(m, *_AFTER_AGENT_HOOKS[0]))
+
+    per_turn = before_model + 1 + after_model + 1
+    one_off = before_agent + after_agent
+    margin = 3
+    return max_turns * per_turn + one_off + margin
+
+
 class SubagentStatus(Enum):
     """Status of a subagent execution."""
 
@@ -36,6 +80,16 @@ class SubagentStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     TIMED_OUT = "timed_out"
+
+    @property
+    def is_terminal(self) -> bool:
+        """True for statuses that mark a subagent as done (success or failure).
+
+        Compares by ``.value`` (string) rather than enum identity so this stays
+        correct across ``importlib.reload`` boundaries — under reload, the enum
+        class identity changes but ``.value`` is stable.
+        """
+        return self.value in {"completed", "failed", "cancelled", "timed_out"}
 
 
 @dataclass
@@ -64,11 +118,61 @@ class SubagentResult:
     token_usage_records: list[dict[str, int | str]] = field(default_factory=list)
     usage_reported: bool = False
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    _state_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self):
         """Initialize mutable defaults."""
         if self.ai_messages is None:
             self.ai_messages = []
+
+    def try_set_terminal(
+        self,
+        status: SubagentStatus,
+        *,
+        result: str | None = None,
+        error: str | None = None,
+        completed_at: datetime | None = None,
+        ai_messages: list[dict[str, Any]] | None = None,
+        token_usage_records: list[dict[str, int | str]] | None = None,
+    ) -> bool:
+        """Set a terminal status exactly once (CAS — first writer wins).
+
+        Background timeout/cancellation and the execution worker can race on
+        the same result holder. The first terminal transition wins; late
+        terminal writes are silently ignored and return False (so callers can
+        detect they were beaten to the punch).
+
+        Borrowed from upstream deer-flow.
+
+        Args:
+            status: A terminal status (COMPLETED/FAILED/CANCELLED/TIMED_OUT).
+            result/error/ai_messages/token_usage_records: Optional payload
+                fields to set atomically with the status transition.
+            completed_at: Override for the completion timestamp. Defaults to
+                ``datetime.now()`` when omitted.
+
+        Returns:
+            True if the transition was applied, False if the status was
+            already terminal.
+        """
+        if not status.is_terminal:
+            raise ValueError(f"Status {status} is not terminal")
+
+        with self._state_lock:
+            if self.status.is_terminal:
+                return False
+
+            if result is not None:
+                self.result = result
+            if error is not None:
+                self.error = error
+            if ai_messages is not None:
+                self.ai_messages = ai_messages
+            if token_usage_records is not None:
+                self.token_usage_records = token_usage_records
+            self.completed_at = completed_at or datetime.now()
+            self.status = status
+            return True
 
 
 # Global storage for background task results
@@ -139,6 +243,18 @@ def _shutdown_isolated_subagent_loop() -> None:
 
 
 atexit.register(_shutdown_isolated_subagent_loop)
+
+
+# Module reload safety: if a previous version of this module also registered
+# _shutdown_isolated_subagent_loop with atexit (e.g. via importlib.reload in
+# tests, or hot-reload), the old callback would still fire on process exit
+# referencing a stale loop reference. Unregister the previous version so we
+# only ever have one active shutdown hook per process. Borrowed from upstream
+# deer-flow e19bec1.
+_previous_shutdown_isolated_subagent_loop = globals().get("_previous_shutdown_isolated_subagent_loop")
+if callable(_previous_shutdown_isolated_subagent_loop) and _previous_shutdown_isolated_subagent_loop is not _shutdown_isolated_subagent_loop:
+    atexit.unregister(_previous_shutdown_isolated_subagent_loop)
+_previous_shutdown_isolated_subagent_loop = _shutdown_isolated_subagent_loop
 
 
 def _get_isolated_subagent_loop() -> asyncio.AbstractEventLoop:
@@ -303,16 +419,13 @@ class SubagentExecutor:
         )
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
-    def _create_agent(self, tools: list[BaseTool] | None = None):
-        """Create the agent instance.
+    def _build_middlewares(self) -> list[AgentMiddleware]:
+        """Build the subagent's middleware chain.
 
-        Args:
-            tools: Optional tool list to override ``self.tools`` (e.g., after
-                applying skill-allowed-tools filtering in ``_build_initial_state``).
+        Split out from ``_create_agent`` so callers can inspect the chain (e.g.,
+        to size ``recursion_limit`` based on the actual hook count) without
+        instantiating the LLM model.
         """
-        model_name = _get_model_name(self.config, self.parent_model)
-        model = create_chat_model(name=model_name, thinking_enabled=False)
-
         from deerflow.agents.middlewares.tool_error_handling_middleware import build_subagent_runtime_middlewares
 
         # Reuse shared middleware composition with lead agent.
@@ -343,6 +456,26 @@ class SubagentExecutor:
             provider=ScriptInvocationOnlyProvider(),
             passport=f"subagent:{self.config.name}",
         ))
+
+        return middlewares
+
+    def _create_agent(self, tools: list[BaseTool] | None = None):
+        """Create the agent instance.
+
+        Args:
+            tools: Optional tool list to override ``self.tools`` (e.g., after
+                applying skill-allowed-tools filtering in ``_build_initial_state``).
+
+        Side effect: caches the built middleware chain on ``self._last_middlewares``
+        so ``_aexecute`` can size LangGraph's ``recursion_limit`` against the actual
+        hook count without rebuilding (or, when tests ``patch.object`` this method
+        wholesale, fall back to a legacy formula).
+        """
+        model_name = _get_model_name(self.config, self.parent_model)
+        model = create_chat_model(name=model_name, thinking_enabled=False)
+
+        middlewares = self._build_middlewares()
+        self._last_middlewares = middlewares
 
         # A-10: system_prompt is injected as a SystemMessage in the initial
         # state (see _build_initial_state), merged with any skill content into
@@ -425,6 +558,7 @@ class SubagentExecutor:
         try:
             state, filtered_tools = self._build_initial_state(task)
             agent = self._create_agent(filtered_tools)
+            middlewares = getattr(self, "_last_middlewares", None)
 
             # Token collector for subagent LLM calls — records flow into
             # SubagentResult.token_usage_records and are reported to the
@@ -432,12 +566,22 @@ class SubagentExecutor:
             collector_caller = f"subagent:{self.config.name}"
             collector = SubagentTokenCollector(caller=collector_caller)
 
-            # Build config with thread_id for sandbox access and recursion limit
-            # LangGraph counts node steps (model=1 + tools=1 per turn), so multiply
-            # max_turns by 2 (+1 for margin) to set a reasonable recursion ceiling.
-            # The actual turn limit is enforced by AI message counting below.
+            # LangGraph recursion_limit counts node steps. With the current
+            # middleware chain each turn dispatches: before_model hooks + model +
+            # after_model hooks + tools. The actual turn limit is still enforced
+            # by AI message counting below; this just keeps LangGraph from
+            # tripping before we get to ``max_turns`` AI messages.
+            #
+            # ``middlewares`` is cached by ``_create_agent``. When tests mock
+            # ``_create_agent`` wholesale, the cache is empty and we fall back
+            # to the legacy 2x formula (which never triggers because the mock
+            # path doesn't go through real LangGraph either).
+            if middlewares is not None:
+                recursion_limit = calculate_subagent_recursion_limit(middlewares, self.config.max_turns)
+            else:
+                recursion_limit = self.config.max_turns * 2 + 1
             run_config: RunnableConfig = {
-                "recursion_limit": self.config.max_turns * 2 + 1,
+                "recursion_limit": recursion_limit,
                 "callbacks": [collector],
                 "tags": [collector_caller],
             }
@@ -446,7 +590,9 @@ class SubagentExecutor:
                 run_config["configurable"] = {"thread_id": self.thread_id}
                 context["thread_id"] = self.thread_id
 
-            logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} starting async execution with max_turns={self.config.max_turns}")
+            logger.info(
+                f"[trace={self.trace_id}] Subagent {self.config.name} starting async execution with max_turns={self.config.max_turns} (recursion_limit={recursion_limit}, middlewares={len(middlewares) if middlewares is not None else 'unknown'})"
+            )
 
             # Use stream instead of invoke to get real-time updates
             # This allows us to collect AI messages as they are generated
@@ -456,10 +602,7 @@ class SubagentExecutor:
             if result.cancel_event.is_set():
                 logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} cancelled before streaming")
                 with _background_tasks_lock:
-                    if result.status == SubagentStatus.RUNNING:
-                        result.status = SubagentStatus.CANCELLED
-                        result.error = "Cancelled by user"
-                        result.completed_at = datetime.now()
+                    result.try_set_terminal(SubagentStatus.CANCELLED, error="Cancelled by user")
                 if collector is not None:
                     result.token_usage_records = collector.snapshot_records()
                 return result
@@ -472,10 +615,7 @@ class SubagentExecutor:
                 if result.cancel_event.is_set():
                     logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} cancelled by parent")
                     with _background_tasks_lock:
-                        if result.status == SubagentStatus.RUNNING:
-                            result.status = SubagentStatus.CANCELLED
-                            result.error = "Cancelled by user"
-                            result.completed_at = datetime.now()
+                        result.try_set_terminal(SubagentStatus.CANCELLED, error="Cancelled by user")
                     result.token_usage_records = collector.snapshot_records()
                     return result
 
@@ -580,14 +720,11 @@ class SubagentExecutor:
                     logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} no messages in final state")
                     result.result = "No response generated"
 
-            result.status = SubagentStatus.COMPLETED
-            result.completed_at = datetime.now()
+            result.try_set_terminal(SubagentStatus.COMPLETED)
 
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} async execution failed")
-            result.status = SubagentStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.now()
+            result.try_set_terminal(SubagentStatus.FAILED, error=str(e))
             if collector is not None:
                 result.token_usage_records = collector.snapshot_records()
 
@@ -645,14 +782,15 @@ class SubagentExecutor:
             if result_holder is not None:
                 result = result_holder
             else:
+                # Initialise as RUNNING so try_set_terminal can transition it
+                # to FAILED; if we initialised as FAILED directly, the CAS
+                # guard would reject the error/completed_at write.
                 result = SubagentResult(
                     task_id=str(uuid.uuid4())[:8],
                     trace_id=self.trace_id,
-                    status=SubagentStatus.FAILED,
+                    status=SubagentStatus.RUNNING,
                 )
-            result.status = SubagentStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.now()
+            result.try_set_terminal(SubagentStatus.FAILED, error=str(e))
             return result
 
     def execute_async(self, task: str, task_id: str | None = None) -> str:
@@ -707,27 +845,31 @@ class SubagentExecutor:
                     # Wait for execution with timeout
                     exec_result = execution_future.result(timeout=self.config.timeout_seconds)
                     with _background_tasks_lock:
-                        _background_tasks[task_id].status = exec_result.status
-                        _background_tasks[task_id].result = exec_result.result
-                        _background_tasks[task_id].error = exec_result.error
-                        _background_tasks[task_id].completed_at = datetime.now()
-                        _background_tasks[task_id].ai_messages = exec_result.ai_messages
+                        # exec_result already set terminal status via try_set_terminal
+                        # inside _aexecute. Mirror its final fields into the
+                        # shared _background_tasks entry. We use try_set_terminal
+                        # so the timeout path (if it raced) wins instead of being
+                        # overwritten.
+                        _background_tasks[task_id].try_set_terminal(
+                            exec_result.status,
+                            result=exec_result.result,
+                            error=exec_result.error,
+                            ai_messages=exec_result.ai_messages,
+                        )
                 except FuturesTimeoutError:
                     logger.error(f"[trace={self.trace_id}] Subagent {self.config.name} execution timed out after {self.config.timeout_seconds}s")
                     with _background_tasks_lock:
-                        if _background_tasks[task_id].status == SubagentStatus.RUNNING:
-                            _background_tasks[task_id].status = SubagentStatus.TIMED_OUT
-                            _background_tasks[task_id].error = f"Execution timed out after {self.config.timeout_seconds} seconds"
-                            _background_tasks[task_id].completed_at = datetime.now()
+                        _background_tasks[task_id].try_set_terminal(
+                            SubagentStatus.TIMED_OUT,
+                            error=f"Execution timed out after {self.config.timeout_seconds} seconds",
+                        )
                     # Signal cooperative cancellation and cancel the future
                     result_holder.cancel_event.set()
                     execution_future.cancel()
             except Exception as e:
                 logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} async execution failed")
                 with _background_tasks_lock:
-                    _background_tasks[task_id].status = SubagentStatus.FAILED
-                    _background_tasks[task_id].error = str(e)
-                    _background_tasks[task_id].completed_at = datetime.now()
+                    _background_tasks[task_id].try_set_terminal(SubagentStatus.FAILED, error=str(e))
 
         _scheduler_pool.submit(run_task)
         return task_id

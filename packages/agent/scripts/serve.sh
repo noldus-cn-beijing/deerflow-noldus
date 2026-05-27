@@ -150,7 +150,7 @@ fi
 # Extra flags for uvicorn/langgraph
 LANGGRAPH_EXTRA_FLAGS="--no-reload"
 if $DEV_MODE && ! $DAEMON_MODE; then
-    GATEWAY_EXTRA_FLAGS="--reload --reload-dir='app' --reload-dir='packages/harness' --reload-include='*.yaml' --reload-include='.env' --reload-exclude='*.pyc' --reload-exclude='__pycache__' --reload-exclude='sandbox/**' --reload-exclude='.deer-flow/**'"
+    GATEWAY_EXTRA_FLAGS="--reload --reload-dir=app --reload-dir=packages/harness --reload-include=\*.yaml --reload-include=.env --reload-exclude=\*.pyc --reload-exclude=__pycache__ --reload-exclude=sandbox/\*\* --reload-exclude=.deer-flow/\*\*"
 else
     GATEWAY_EXTRA_FLAGS=""
 fi
@@ -282,7 +282,7 @@ if ! $GATEWAY_MODE; then
     fi
     run_service "LangGraph" \
         "cd backend && NO_COLOR=1 BG_JOB_ISOLATED_LOOPS=true uv run langgraph dev --no-browser --host 127.0.0.1 --port $LANGGRAPH_PORT $LANGGRAPH_ALLOW_BLOCKING_FLAG --n-jobs-per-worker $LANGGRAPH_JOBS_PER_WORKER --server-log-level $LANGGRAPH_LOG_LEVEL $LANGGRAPH_EXTRA_FLAGS > ../logs/langgraph.log 2>&1" \
-        $LANGGRAPH_PORT 60
+        $LANGGRAPH_PORT 120
 else
     echo "⏩ Skipping LangGraph (Gateway mode — runtime embedded in Gateway)"
 fi
@@ -290,7 +290,7 @@ fi
 # 2. Gateway API
 run_service "Gateway" \
     "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port $GATEWAY_PORT $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
-    $GATEWAY_PORT 90
+    $GATEWAY_PORT 180
 
 # 3. Frontend
 run_service "Frontend" \

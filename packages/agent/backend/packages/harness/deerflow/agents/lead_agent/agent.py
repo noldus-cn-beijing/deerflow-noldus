@@ -1,3 +1,23 @@
+"""Lead agent factory.
+
+INVARIANT — tracing callback placement
+======================================
+
+Tracing callbacks (Langfuse, LangSmith) are attached at the **graph
+invocation root** in :func:`make_lead_agent` (see the
+``build_tracing_callbacks()`` block that appends to ``config["callbacks"]``).
+Every ``create_chat_model(...)`` call inside this module — and inside any
+middleware reachable from this graph (e.g. ``TitleMiddleware``) — MUST pass
+``attach_tracing=False``.
+
+Forgetting that flag emits duplicate spans (one rooted at the graph, one at
+the model) AND prevents the Langfuse handler's ``propagate_attributes``
+path from firing, so ``session_id`` / ``user_id`` never reach the trace.
+The four current sites are: bootstrap agent, default agent, summarization
+middleware, and the async path inside ``TitleMiddleware``. Any new in-graph
+``create_chat_model`` call must add to this list and pass the flag.
+"""
+
 import logging
 
 from langchain.agents import create_agent
@@ -9,6 +29,7 @@ from deerflow.agents.middlewares.archiving_summarization import ArchivingSummari
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
+from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 from deerflow.agents.middlewares.think_tag_middleware import ThinkTagMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
@@ -21,8 +42,10 @@ from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config, validate_agent_name
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
+from deerflow.guardrails.middleware import GuardrailMiddleware
 from deerflow.models import create_chat_model
 from deerflow.runtime.user_context import set_current_user
+from deerflow.tracing import build_tracing_callbacks
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +97,16 @@ def _create_summarization_middleware() -> ArchivingSummarizationMiddleware | Non
     keep = config.keep.to_tuple()
 
     # Prepare model parameter
+    # attach_tracing=False because the graph-level RunnableConfig (set in
+    # ``make_lead_agent``) already carries tracing callbacks; binding them
+    # again at the model level would emit duplicate spans and break
+    # ``session_id`` / ``user_id`` propagation.
     if config.model_name:
-        model = create_chat_model(name=config.model_name, thinking_enabled=False)
+        model = create_chat_model(name=config.model_name, thinking_enabled=False, attach_tracing=False)
     else:
         # Use a lightweight model for summarization to save costs
         # Falls back to default model if not explicitly specified
-        model = create_chat_model(thinking_enabled=False)
+        model = create_chat_model(thinking_enabled=False, attach_tracing=False)
 
     # Prepare kwargs
     kwargs = {
@@ -250,7 +277,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     Returns:
         List of middleware instances.
     """
-    middlewares = build_lead_runtime_middlewares(lazy_init=True)
+    middlewares = build_lead_runtime_middlewares(app_config=get_app_config(), lazy_init=True)
 
     # LoopDetectionMiddleware — detect and break repetitive tool call loops.
     # Created early so it can be passed to summarization middleware for reset-on-compact.
@@ -319,7 +346,6 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
             Ev19TemplateGuardrailProvider,
             Ev19WorkspaceBridgeMiddleware,
         )
-        from deerflow.guardrails.middleware import GuardrailMiddleware
 
         provider = Ev19TemplateGuardrailProvider()
         middlewares.append(Ev19WorkspaceBridgeMiddleware())
@@ -334,6 +360,18 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         middlewares.append(IntentBridgeMiddleware())
         middlewares.append(GuardrailMiddleware(
             provider=IntentClassificationGuardrailProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
+        # W20: IntentPostStepAskGate — 拦截 ASKVIZ 流程中跳过 ask(viz?) 直接派 chart-maker
+        from deerflow.guardrails.intent_post_step_ask_gate_provider import (
+            IntentPostStepAskGateBridge,
+            IntentPostStepAskGateProvider,
+        )
+
+        middlewares.append(IntentPostStepAskGateBridge())
+        middlewares.append(GuardrailMiddleware(
+            provider=IntentPostStepAskGateProvider(),
             fail_closed=guardrails_cfg.fail_closed,
         ))
 
@@ -359,21 +397,20 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
             fail_closed=guardrails_cfg.fail_closed,
         ))
 
-    # StepwiseGateMiddleware — in manual / data-flywheel mode, pause the
-    # graph after each subagent completion so the user can leave feedback
-    # before the lead dispatches the next subagent. Uses LangGraph's native
-    # Command(goto=END) — same mechanism as ClarificationMiddleware. Only
-    # attaches when workflow_mode == "manual" (the "数据飞轮" UI mode); auto
-    # mode behavior is unchanged.
-    workflow_mode_value = config.get("configurable", {}).get("workflow_mode", "auto")
-    if workflow_mode_value == "manual":
-        from deerflow.agents.middlewares.stepwise_gate_middleware import StepwiseGateMiddleware
-
-        middlewares.append(StepwiseGateMiddleware(enabled=True))
-
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
+
+    # TodoPlanningDisciplineProvider — rate-limit write_todos after initial planning.
+    # Bridge middleware must be placed BEFORE the GuardrailMiddleware so the
+    # contextvar is set when the provider evaluates the tool call.
+    from deerflow.guardrails.todo_planning_discipline_provider import (
+        TodoDisciplineBridgeMiddleware,
+        TodoPlanningDisciplineProvider,
+    )
+
+    middlewares.append(TodoDisciplineBridgeMiddleware())
+    middlewares.append(GuardrailMiddleware(provider=TodoPlanningDisciplineProvider(), fail_closed=False, name="GuardrailMiddleware[todo-planning-discipline]"))
 
     # GateEnforcementMiddleware — block task() before Gate 1 in manual mode
     workflow_mode = config.get("configurable", {}).get("workflow_mode", "auto")
@@ -381,6 +418,16 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         from deerflow.agents.middlewares.gate_enforcement_middleware import GateEnforcementMiddleware
 
         middlewares.append(GateEnforcementMiddleware(enabled=True))
+
+    # SafetyFinishReasonMiddleware — suppress tool execution when the provider
+    # safety-terminates the response (OpenAI content_filter / Anthropic refusal /
+    # Gemini SAFETY). Appended near the end so LangChain's reverse-order
+    # after_model dispatch lets it strip stale tool_calls *first*; downstream
+    # Loop / Subagent accounting then sees a clean AIMessage. See
+    # safety_finish_reason_middleware.py docstring.
+    safety_config = app_config.safety_finish_reason
+    if safety_config.enabled:
+        middlewares.append(SafetyFinishReasonMiddleware.from_config(safety_config))
 
     # ClarificationMiddleware should always be last
     middlewares.append(ClarificationMiddleware())
@@ -407,6 +454,37 @@ def make_lead_agent(config: RunnableConfig):
 
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
+
+    # Downgrade reasoning_effort based on Gate completion phase.
+    # Gate 1 done → step down once (high→medium); Gate 2 done → step down twice (high→low).
+    # This avoids wasting reasoning tokens on dispatch tasks that don't need deep thinking.
+    def _step_down(effort: str | None) -> str | None:
+        if effort == "high":
+            return "medium"
+        if effort == "medium":
+            return "low"
+        return effort  # "low", None, or unknown → keep
+
+    thread_id = cfg.get("thread_id")
+    if thread_id and reasoning_effort:
+        try:
+            from deerflow.agents.middlewares.experiment_context import read_context
+            from deerflow.runtime.user_context import get_effective_user_id
+
+            user_id = get_effective_user_id()
+            app_config = get_app_config()
+            workspace = app_config.paths.sandbox_work_dir(thread_id, user_id=user_id)
+            ctx = read_context(str(workspace))
+            if ctx:
+                gate_completed = ctx.get("gate_completed", [])
+                if isinstance(gate_completed, list):
+                    if "gate2_quality_acknowledged" in gate_completed:
+                        reasoning_effort = _step_down(_step_down(reasoning_effort))
+                    elif "gate1_paradigm" in gate_completed:
+                        reasoning_effort = _step_down(reasoning_effort)
+        except Exception:
+            pass  # fail-safe: keep configured reasoning_effort
+
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
     is_plan_mode = cfg.get("is_plan_mode", False)
     workflow_mode = cfg.get("workflow_mode", "auto")  # "manual" | "auto"
@@ -457,10 +535,23 @@ def make_lead_agent(config: RunnableConfig):
         }
     )
 
+    # Inject tracing callbacks at the graph invocation root so a single LangGraph
+    # run produces one trace with all node / LLM / tool calls as child spans,
+    # AND so the Langfuse handler sees ``on_chain_start(parent_run_id=None)`` and
+    # actually propagates ``langfuse_session_id`` / ``langfuse_user_id`` from
+    # ``config["metadata"]`` onto the trace. Without root-level attachment the
+    # model is a nested observation and the handler strips ``langfuse_*`` keys.
+    tracing_callbacks = build_tracing_callbacks()
+    if tracing_callbacks:
+        existing = config.get("callbacks") or []
+        if not isinstance(existing, list):
+            existing = list(existing)
+        config["callbacks"] = [*existing, *tracing_callbacks]
+
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
         return create_agent(
-            model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
+            model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False),
             tools=get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent],
             middleware=_build_middlewares(config, model_name=model_name),
             system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"])),
@@ -489,7 +580,7 @@ def make_lead_agent(config: RunnableConfig):
     )
 
     return create_agent(
-        model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
+        model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, attach_tracing=False),
         tools=filtered_lead_tools,
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(

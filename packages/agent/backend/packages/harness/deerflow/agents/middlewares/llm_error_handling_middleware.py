@@ -8,7 +8,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from email.utils import parsedate_to_datetime
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
@@ -18,6 +18,9 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 from langchain_core.messages import AIMessage
+
+if TYPE_CHECKING:
+    from deerflow.config.app_config import AppConfig
 from langgraph.errors import GraphBubbleUp
 
 from deerflow.config import get_app_config
@@ -77,14 +80,17 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
     circuit_failure_threshold: int = 5
     circuit_recovery_timeout_sec: int = 60
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, *, app_config: "AppConfig | None" = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
 
-        # Load Circuit Breaker configs from app config if available, fall back to defaults
+        # Load Circuit Breaker configs from app config — prefer the explicit
+        # argument (passed by build_lead_runtime_middlewares so tests can
+        # inject a stub), fall back to get_app_config() for legacy callers,
+        # and finally to class defaults if neither path resolves.
         try:
-            app_config = get_app_config()
-            self.circuit_failure_threshold = app_config.circuit_breaker.failure_threshold
-            self.circuit_recovery_timeout_sec = app_config.circuit_breaker.recovery_timeout_sec
+            cfg = app_config if app_config is not None else get_app_config()
+            self.circuit_failure_threshold = cfg.circuit_breaker.failure_threshold
+            self.circuit_recovery_timeout_sec = cfg.circuit_breaker.recovery_timeout_sec
         except (FileNotFoundError, RuntimeError, AttributeError):
             # Gracefully fall back to class defaults in test environments
             pass

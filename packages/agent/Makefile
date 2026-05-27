@@ -1,6 +1,6 @@
 # DeerFlow - Unified Development Environment
 
-.PHONY: help config config-upgrade check install dev dev-pro dev-daemon dev-daemon-pro start start-pro start-daemon start-daemon-pro stop up up-pro down clean docker-init docker-start docker-start-pro docker-stop docker-logs docker-logs-frontend docker-logs-gateway
+.PHONY: help config config-upgrade check install dev dev-pro dev-daemon dev-daemon-pro start start-pro start-daemon start-daemon-pro stop up up-pro down clean docker-init docker-start docker-start-pro docker-stop docker-logs docker-logs-frontend docker-logs-gateway deploy-tar
 
 BASH ?= bash
 
@@ -34,6 +34,8 @@ help:
 	@echo "  make up              - Build and start production Docker services (localhost:2026)"
 	@echo "  make up-pro          - Build and start production Docker in Gateway mode (experimental)"
 	@echo "  make down            - Stop and remove production Docker containers"
+	@echo "  make deploy-tar      - Build locally, ship image tar to remote (no registry)"
+	@echo "                         requires DEPLOY_HOST/DEPLOY_PATH/DEPLOY_CONFIG/DEPLOY_EXTENSIONS"
 	@echo ""
 	@echo "Docker Development Commands:"
 	@echo "  make docker-init     - Pull the sandbox image"
@@ -233,3 +235,10 @@ up-pro:
 # Stop and remove production containers
 down:
 	@./scripts/deploy.sh down
+
+# Build images locally and ship them as a tar to a remote host (no registry needed).
+# Required env vars: DEPLOY_HOST, DEPLOY_PATH, DEPLOY_CONFIG, DEPLOY_EXTENSIONS.
+# Optional: DEPLOY_TAG (defaults to git short hash), SKIP_BUILD=1, SKIP_SHIP=1, KEEP_TAR=1.
+# See scripts/deploy-via-tar.sh for the full env reference.
+deploy-tar:
+	@./scripts/deploy-via-tar.sh

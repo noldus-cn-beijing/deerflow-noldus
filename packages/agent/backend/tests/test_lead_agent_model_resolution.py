@@ -87,7 +87,7 @@ def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkey
 
     captured: dict[str, object] = {}
 
-    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None):
+    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None, attach_tracing=True):
         captured["name"] = name
         captured["thinking_enabled"] = thinking_enabled
         captured["reasoning_effort"] = reasoning_effort
@@ -135,8 +135,9 @@ def test_build_middlewares_uses_resolved_model_name_for_vision(monkeypatch):
     middlewares = lead_agent_module._build_middlewares({"configurable": {"model_name": "stale-model", "is_plan_mode": False, "subagent_enabled": False}}, model_name="vision-model", custom_middlewares=[MagicMock()])
 
     assert any(isinstance(m, lead_agent_module.ViewImageMiddleware) for m in middlewares)
-    # verify the custom middleware is injected correctly
-    assert len(middlewares) > 0 and isinstance(middlewares[-2], MagicMock)
+    # verify the custom middleware is injected (position varies depending on
+    # guardrail/gate middlewares appended after custom_middlewares)
+    assert any(isinstance(m, MagicMock) for m in middlewares)
 
 
 def test_create_summarization_middleware_uses_configured_model_alias(monkeypatch):
@@ -149,7 +150,7 @@ def test_create_summarization_middleware_uses_configured_model_alias(monkeypatch
     captured: dict[str, object] = {}
     fake_model = object()
 
-    def _fake_create_chat_model(*, name=None, thinking_enabled, reasoning_effort=None):
+    def _fake_create_chat_model(*, name=None, thinking_enabled, reasoning_effort=None, attach_tracing=True):
         captured["name"] = name
         captured["thinking_enabled"] = thinking_enabled
         captured["reasoning_effort"] = reasoning_effort

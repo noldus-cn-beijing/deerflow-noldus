@@ -378,7 +378,7 @@ def test_cli_happy_path(tmp_path):
     assert rc == 0, f"stderr: {stderr}"
     plan = json.loads(output.read_text())
     assert plan["paradigm"] == "epm"
-    assert plan["schema_version"] == "1.0"
+    assert plan["schema_version"] == "1.1"
     assert len(plan["metrics"]) == 5
 
 
@@ -441,7 +441,7 @@ def test_cli_user_include_unknown_exit1(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "paradigm", ["epm", "oft", "fst", "tst", "ldb", "zero_maze", "shoaling"]
+    "paradigm", ["epm", "oft", "fst", "tst", "ldb", "zero_maze"]
 )
 def test_all_catalog_scripts_are_importable(paradigm):
     """catalog 里声明的 script dotted path 必须真的能 import 到一个有 main() 的模块。"""

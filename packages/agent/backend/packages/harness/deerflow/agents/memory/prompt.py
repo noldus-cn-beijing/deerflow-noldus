@@ -146,7 +146,7 @@ Important Rules:
   durable user attributes that stay true across threads.
 
   INCORRECT examples (DO NOT record): "已上传 EPM 数据，等待分组信息",
-  "刚完成 shoaling 分析，发现 Subject 3 异常" — these are session events
+  "刚完成 FST 分析，发现 Subject 3 异常" — these are session events
   that will leak into and confuse future threads.
 
 Return ONLY valid JSON, no explanation or markdown."""

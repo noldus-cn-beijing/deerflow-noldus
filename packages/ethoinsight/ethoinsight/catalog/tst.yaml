@@ -42,6 +42,35 @@ charts:
   - id: box_immobility
     script: ethoinsight.scripts.tst.plot_box_immobility
     when: n_per_group >= 3
+    display_name_zh: "不动时间箱线图"
+    output_mode: aggregate
+    needs_groups: true
+    requires_columns:
+      - mobility_state*
+
+  - id: bar_immobility
+    script: ethoinsight.scripts.tst.plot_bar_immobility
+    when: total_subjects >= 1
+    display_name_zh: "不动行为柱状图（均值±SEM）"
+    output_mode: aggregate
+    needs_groups: true
+    requires_columns:
+      - mobility_state*
+
+  - id: activity_intensity
+    script: ethoinsight.scripts.tst.plot_activity_intensity
+    when: total_subjects >= 1
+    display_name_zh: "活动强度图"
+    requires_columns:
+      - velocity
+
+  - id: struggle_distribution
+    script: ethoinsight.scripts.tst.plot_struggle_distribution
+    when: total_subjects >= 1
+    display_name_zh: "放弃挣扎分布图"
+    output_mode: aggregate
+    requires_columns:
+      - mobility_state*
 
 statistics:
   default:

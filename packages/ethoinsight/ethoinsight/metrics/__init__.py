@@ -2,7 +2,6 @@
 
 物理路径:
   - _common.py: 范式无关（distance / velocity / zone 列查找 / csv 导出 / immobility 通用函数）
-  - shoaling.py: 群体游动指标
   - oft.py: Open Field 指标
   - epm.py: 高架十字迷宫指标
   - zero_maze.py: Zero Maze 环形迷宫指标
@@ -20,11 +19,6 @@ from ethoinsight.metrics._common import (
     compute_distance_moved,
     compute_velocity_stats,
     save_to_csv,
-)
-from ethoinsight.metrics.shoaling import (
-    compute_inter_individual_distance,
-    compute_nearest_neighbor_distance,
-    compute_group_polarity,
 )
 from ethoinsight.metrics.oft import (
     compute_center_time_ratio,
@@ -66,9 +60,6 @@ __all__ = [
     "compute_distance_moved",
     "compute_velocity_stats",
     "save_to_csv",
-    "compute_inter_individual_distance",
-    "compute_nearest_neighbor_distance",
-    "compute_group_polarity",
     "compute_center_time_ratio",
     "compute_thigmotaxis_index",
     "compute_center_distance_ratio",

@@ -14,14 +14,10 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-# 仓库内相对路径（不依赖 deerflow runtime / app context）
-_FACTS_JSON_PATH = (
-    Path(__file__).parent.parent.parent.parent
-    / "docs"
-    / "review-packages"
-    / "2026-04-29-ev19-templates"
-    / "_facts.json"
-)
+# 包内自包含路径（与 ev19_facts.py 同目录）。
+# 不依赖仓库根目录结构，Docker 容器内 COPY backend/ 时也能正常解析。
+# _facts.json 由 docs/review-packages/2026-04-29-ev19-templates/_facts.json 同步过来。
+_FACTS_JSON_PATH = Path(__file__).parent / "_facts.json"
 
 
 @lru_cache(maxsize=1)
@@ -64,8 +60,7 @@ EV19_TEMPLATE_PARADIGM_MAP: dict[str, list[str]] = {
     # 抑郁样行为（PRD MVP 2 个）
     "tail_suspension": ["NoTemplate"],  # TST 不需要 zone，仅活动度
     "forced_swim": ["PorsoltCylinder-AllZones", "PorsoltCylinder-NoZones"],
-    # 其他（保留，shoaling 已建成）
-    "shoaling": ["OpenFieldCircle-NoZones-Fish", "AquariumTrack3D"],
+    # 其他范式 — 知识保留, 但代码层暂未实现 (SUPPORTED_PARADIGMS_V01 之外)
     "novel_object": [
         "OpenFieldCircle-NovObjZones",
         "OpenFieldRectangle-NovObjZones",
@@ -76,6 +71,18 @@ EV19_TEMPLATE_PARADIGM_MAP: dict[str, list[str]] = {
     "sociability": ["Sociability-AllZones", "Sociability-NoZones"],
     "radial_arm_maze": ["Radial-8-arm-AllZones", "Radial-8-arm-NoZones"],
 }
+
+
+# v0.1 实际有代码层实现的 paradigm_key 白名单 (catalog/<paradigm>.yaml 存在 +
+# metrics/<paradigm>.py 存在 + scripts/<paradigm>/ 存在)。其他 paradigm_key 仍可识别
+# 但 agent 应明示「暂不支持」, 见 identify_ev19_template_tool 主流程。
+SUPPORTED_PARADIGMS_V01: frozenset[str] = frozenset({
+    "epm",
+    "open_field",
+    "zero_maze",
+    "light_dark_box",
+    "forced_swim",
+})
 
 
 # 公开函数 ---------------------------------------------------------------------

@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import datetime as dt
 import fnmatch
+import json
 from pathlib import Path
+from typing import Any
 
 from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.schema import (
@@ -33,7 +35,7 @@ from ethoinsight.catalog.schema import (
     StatisticsEntry,
 )
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 class ResolveError(Exception):
@@ -187,7 +189,7 @@ def resolve_metrics(
                     "available_columns": columns,
                 },
             )
-        plan_metrics.append(
+        plan_metrics.extend(
             _metric_to_plan(
                 m, raw_files, workspace_dir, required=True, reason="paradigm.default",
                 virtual_workspace_dir=virtual_workspace_dir,
@@ -218,7 +220,7 @@ def resolve_metrics(
                 )
             )
             continue
-        plan_metrics.append(
+        plan_metrics.extend(
             _metric_to_plan(
                 m, raw_files, workspace_dir, required=False, reason="user.include",
                 virtual_workspace_dir=virtual_workspace_dir,
@@ -286,7 +288,9 @@ def resolve_charts(
     total_subjects: int | None = None,
     n_per_group: int | None = None,
     n_groups: int | None = None,
+    total_duration_seconds: float | None = None,
     groups_file: str | None = None,
+    groups: dict[str, Any] | None = None,
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
@@ -295,6 +299,15 @@ def resolve_charts(
 
     主路径：for ch in cat.charts: if _evaluate_when → charts.append
     Fallback 触发：if len(charts)==0 → load_common_catalog() → for ch in common_charts: if _evaluate_when → fallback.append
+
+    1.2: ``groups`` (canonical {arena: group_name} or {group_name: [subject, ...]}) is
+    threaded into ``_chart_to_plan`` so aggregate plots with ``needs_groups: true`` get a
+    materialised groups.json passed via --groups.
+
+    1.2: ``user_intent`` is now consulted to narrow catalog charts when the user uses
+    common chart-type names (e.g. "箱线图" -> id contains "box", "时序图" -> id contains
+    "activity" / "timeseries" / "time"). Filter is opt-in: when no recognised keyword
+    is found, all catalog charts are returned unchanged.
     """
     try:
         cat = load_catalog(paradigm)
@@ -314,10 +327,31 @@ def resolve_charts(
             details={"paradigm": paradigm},
         ) from e
 
+    # Apply user_intent filter — keep entries whose id matches the intent keyword(s).
+    candidate_charts = _filter_charts_by_user_intent(cat.charts, user_intent)
+
     charts: list[PlanChart] = []
-    for ch in cat.charts:
-        if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
-            charts.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+    skipped: list[PlanSkipped] = []
+    for ch in candidate_charts:
+        missing = _missing_columns(ch.requires_columns, columns)
+        if missing:
+            skipped.append(
+                PlanSkipped(
+                    id=ch.id,
+                    reason="columns.missing",
+                    detail=(
+                        f"Chart {ch.id} skipped: missing columns {missing} "
+                        f"(available: {sorted(columns)[:8]}{'...' if len(columns) > 8 else ''})."
+                    ),
+                )
+            )
+            continue
+        if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
+            charts.extend(_chart_to_plan(
+                ch, raw_files, workspace_dir, paradigm=cat.paradigm,
+                virtual_workspace_dir=virtual_workspace_dir,
+                groups=groups,
+            ))
 
     fallback: list[PlanChart] = []
     if not charts:
@@ -325,9 +359,28 @@ def resolve_charts(
             common = load_common_catalog()
         except CatalogError:
             common = CommonCatalog(common_charts=[])
-        for ch in common.common_charts:
-            if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects):
-                fallback.append(_chart_to_plan(ch, raw_files, workspace_dir, virtual_workspace_dir=virtual_workspace_dir))
+        # Fallback also respects user_intent so "轨迹图" prefers trajectory over heatmap.
+        candidate_fallback = _filter_charts_by_user_intent(common.common_charts, user_intent)
+        for ch in candidate_fallback:
+            missing = _missing_columns(ch.requires_columns, columns)
+            if missing:
+                skipped.append(
+                    PlanSkipped(
+                        id=ch.id,
+                        reason="columns.missing",
+                        detail=(
+                            f"Fallback chart {ch.id} skipped: missing columns {missing} "
+                            f"(available: {sorted(columns)[:8]}{'...' if len(columns) > 8 else ''})."
+                        ),
+                    )
+                )
+                continue
+            if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
+                fallback.extend(_chart_to_plan(
+                    ch, raw_files, workspace_dir, paradigm=cat.paradigm,
+                    virtual_workspace_dir=virtual_workspace_dir,
+                    groups=groups,
+                ))
 
     notes: list[str] = []
     if charts:
@@ -336,6 +389,13 @@ def resolve_charts(
         notes.append(f"Fallback path: {len(fallback)} common charts available")
     else:
         notes.append("No charts matched; chart-maker should ask user")
+    if skipped:
+        notes.append(
+            f"Skipped {len(skipped)} chart(s) due to missing columns: "
+            f"{', '.join(s.id for s in skipped)}"
+        )
+    if user_intent:
+        notes.append(f"user_intent filter applied: {user_intent!r}")
 
     return PlanCharts(
         paradigm=cat.paradigm,
@@ -344,7 +404,7 @@ def resolve_charts(
         inputs=PlanInputs(raw_files=list(raw_files), groups_file=groups_file, columns_file=columns_file),
         charts=charts,
         charts_fallback_available=fallback,
-        skipped=[],
+        skipped=skipped,
         user_intent=user_intent,
         notes=notes,
     )
@@ -372,31 +432,208 @@ def _metric_to_plan(
     required: bool,
     reason: str,
     virtual_workspace_dir: str | None = None,
-) -> PlanMetric:
-    input_path = raw_files[0]
+) -> list[PlanMetric]:
+    """Expand one MetricEntry into N PlanMetric (one per raw_file).
+
+    Fix 2026-05-20 (FST E2E): 之前只生成单个 PlanMetric 且 input=raw_files[0],
+    用户上传多文件时除第一个外的 subject 全部丢失。现在按 raw_files 展开,
+    每个 subject 一个 PlanMetric,output 用 subject_index 后缀避免覆盖。
+    单文件(len==1)保持 output 名 m_<id>.json 兼容现有产物。
+
+    W27 (2026-05-27): 透传 catalog 判读 / 展示字段到 PlanMetric,subagent 不再 read catalog YAML。
+    详见 docs/superpowers/specs/2026-05-27-catalog-fields-into-plan-design.md
+    """
+    if not raw_files:
+        return []
     effective_workspace = virtual_workspace_dir or workspace_dir
-    output_path = str(Path(effective_workspace) / f"m_{m.id}.json")
-    return PlanMetric(
-        id=m.id,
-        script=m.script,
-        input=input_path,
-        output=output_path,
-        required=required,
-        reason=reason,
-    )
+    multi = len(raw_files) > 1
+    plans: list[PlanMetric] = []
+    for idx, raw_file in enumerate(raw_files):
+        suffix = f"_s{idx}" if multi else ""
+        output_path = str(Path(effective_workspace) / f"m_{m.id}{suffix}.json")
+        plans.append(
+            PlanMetric(
+                id=m.id,
+                script=m.script,
+                input=raw_file,
+                output=output_path,
+                required=required,
+                reason=reason,
+                subject_index=idx,
+                display_name_zh=m.display_name_zh,
+                unit_zh=m.unit_zh,
+                one_liner=m.one_liner,
+                output_unit=m.output_unit,
+                direction_for_anxiety=m.direction_for_anxiety,
+                statistical_default=m.statistical_default,
+            )
+        )
+    return plans
+
+
+def _filter_charts_by_user_intent(charts: list[ChartEntry], user_intent: str | None) -> list[ChartEntry]:
+    """Narrow the candidate chart list when user_intent contains a recognised chart-type keyword.
+
+    Maps user-spoken chart-type names (Chinese & English) to substring patterns on chart id:
+
+      箱线图 / box plot         -> 'box'
+      柱状图 / bar              -> 'bar'
+      轨迹图 / trajectory       -> 'trajectory'
+      热力图 / heatmap          -> 'heatmap'
+      时序图 / timeseries / time-series / 时间进程 -> 'time' or 'activity_intensity'
+      分布图 / distribution     -> 'distribution'
+
+    Multi-keyword intents (e.g. "箱线图、轨迹图、时序图") accumulate matches across all hits.
+    Filter is *additive*: when no keyword matches, all charts pass through (no-op). This keeps
+    the legacy behaviour for ASKVIZ "A. 画图" choices that don't pin a specific chart type.
+    """
+    if not user_intent:
+        return list(charts)
+    intent_lower = user_intent.lower()
+    # Each rule maps {keyword fragments} -> {id substrings to match}.
+    rules: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+        (("箱线图", "box plot", "box-plot"), ("box",)),
+        (("柱状图", "bar chart", "bar plot", "bar-plot"), ("bar",)),
+        (("轨迹图", "轨迹", "trajectory"), ("trajectory",)),
+        (("热力图", "heatmap", "heat map"), ("heatmap",)),
+        (("时序图", "时间进程", "timeseries", "time-series", "time series"), ("time", "activity_intensity", "timeseries")),
+        (("分布图", "distribution", "分布"), ("distribution",)),
+    ]
+    wanted_id_fragments: set[str] = set()
+    for keywords, id_fragments in rules:
+        if any(kw in user_intent or kw in intent_lower for kw in keywords):
+            wanted_id_fragments.update(id_fragments)
+    if not wanted_id_fragments:
+        return list(charts)
+    filtered = [ch for ch in charts if any(frag in ch.id for frag in wanted_id_fragments)]
+    # Don't strip everything to zero — if the intent maps to nothing in this paradigm's catalog,
+    # fall back to the full list so user still sees something (better than an empty plan).
+    return filtered if filtered else list(charts)
 
 
 def _chart_to_plan(
     ch: ChartEntry, raw_files: list[str], workspace_dir: str,
+    paradigm: str = "",                          # 1.1: 范式名，用于 --paradigm
     virtual_workspace_dir: str | None = None,
-) -> PlanChart:
+    virtual_outputs_dir: str | None = None,       # 1.1: outputs 虚拟路径
+    groups: dict[str, Any] | None = None,         # 1.2: optional group labels for aggregate plots
+) -> list[PlanChart]:
+    """Build PlanCharts from a ChartEntry, materializing inputs.json (and optional groups.json).
+
+    1.2: Uniform CLI contract — every plot script is invoked with ``--inputs <json_file>``,
+    never ``--input <single_file>``. The catalog yaml decides how many PlanCharts are
+    produced and what gets written into each inputs.json:
+
+      - ``output_mode: per_subject`` (default): expand to N PlanCharts (one per raw_file).
+        Each PlanChart materializes its own ``inputs_<chart_id>_s<idx>.json`` with a
+        single-element array. Scripts read ``paths[0]`` via ``resolve_per_subject_input``.
+
+      - ``output_mode: aggregate``: collapse to one PlanChart with ``inputs_<chart_id>.json``
+        containing all raw_files. Used for cross-subject comparisons (box / bar /
+        struggle distribution).
+
+    When ``ch.needs_groups`` is True and groups are available, ``groups_<chart_id>.json`` is
+    materialised alongside and added to args as ``--groups <path>``. The group JSON is in the
+    canonical ``{group_name: [subject_path, ...]}`` shape expected by ``read_groups_json``.
+    """
+    if not raw_files:
+        return []
+    effective_outputs = virtual_outputs_dir or "/mnt/user-data/outputs"
     effective_workspace = virtual_workspace_dir or workspace_dir
-    return PlanChart(
-        id=ch.id,
-        script=ch.script,
-        input=raw_files[0],
-        output=str(Path(effective_workspace) / f"plot_{ch.id}.png"),
-    )
+    # Physical paths for files we actually write (the virtual variants go into args).
+    physical_workspace = Path(workspace_dir)
+    physical_workspace.mkdir(parents=True, exist_ok=True)
+
+    def _materialise_inputs(json_name: str, paths: list[str]) -> str:
+        """Write inputs JSON to physical workspace, return its virtual path for args."""
+        physical_path = physical_workspace / json_name
+        physical_path.write_text(json.dumps(paths, ensure_ascii=False), encoding="utf-8")
+        return str(Path(effective_workspace) / json_name)
+
+    def _materialise_groups(json_name: str, mapping: dict[str, list[str]]) -> str:
+        physical_path = physical_workspace / json_name
+        physical_path.write_text(json.dumps(mapping, ensure_ascii=False), encoding="utf-8")
+        return str(Path(effective_workspace) / json_name)
+
+    def _build_groups_payload(paths: list[str]) -> dict[str, list[str]] | None:
+        """Reshape catalog/groups dict into {group_name: [subject_path, ...]}.
+
+        Accepts two upstream shapes:
+          - {arena_key: group_name}: assigns each raw_file to its group via arena_key match.
+          - {group_name: [subject_id, ...]}: passed through verbatim (legacy).
+        Returns None when groups can't be confidently mapped (avoids guessing).
+        """
+        if not groups:
+            return None
+        # Detect shape: values are str → {arena: group_name}; values are list → already final.
+        if all(isinstance(v, str) for v in groups.values()):
+            mapping: dict[str, list[str]] = {}
+            # Heuristic: each raw_file path likely contains the arena key (e.g. "Arena 1").
+            for arena_key, group_name in groups.items():
+                bucket = mapping.setdefault(group_name, [])
+                for p in paths:
+                    if arena_key in Path(p).name:
+                        bucket.append(p)
+            # If nothing matched, fall back to None to avoid silent miscategorisation.
+            if not any(mapping.values()):
+                return None
+            # Trim empty groups (defensive).
+            return {k: v for k, v in mapping.items() if v}
+        if all(isinstance(v, list) for v in groups.values()):
+            return {k: [str(x) for x in v] for k, v in groups.items()}
+        return None
+
+    plans: list[PlanChart] = []
+
+    if ch.output_mode == "aggregate":
+        # One PlanChart aggregating all raw_files.
+        inputs_name = f"inputs_{ch.id}.json"
+        inputs_virtual = _materialise_inputs(inputs_name, raw_files)
+        output_path = str(Path(effective_outputs) / f"plot_{ch.id}.png")
+        args = ["--inputs", inputs_virtual]
+        if ch.needs_groups:
+            groups_payload = _build_groups_payload(raw_files)
+            if groups_payload:
+                groups_virtual = _materialise_groups(f"groups_{ch.id}.json", groups_payload)
+                args.extend(["--groups", groups_virtual])
+        args.extend(["--output", output_path])
+        if ch.accepts_paradigm and paradigm:
+            args.extend(["--paradigm", paradigm])
+        plans.append(
+            PlanChart(
+                id=ch.id,
+                script=ch.script,
+                input=str(Path(effective_workspace) / inputs_name),
+                output=output_path,
+                subject_index=0,
+                display_name_zh=ch.display_name_zh,
+                args=args,
+            )
+        )
+        return plans
+
+    # per_subject: expand to N PlanCharts, one inputs.json per file.
+    multi = len(raw_files) > 1
+    for idx, raw_file in enumerate(raw_files):
+        suffix = f"_s{idx}" if multi else ""
+        inputs_name = f"inputs_{ch.id}{suffix}.json"
+        inputs_virtual = _materialise_inputs(inputs_name, [raw_file])
+        output_path = str(Path(effective_outputs) / f"plot_{ch.id}{suffix}.png")
+        args = ["--inputs", inputs_virtual, "--output", output_path]
+        if ch.accepts_paradigm and paradigm:
+            args.extend(["--paradigm", paradigm])
+        plans.append(
+            PlanChart(
+                id=ch.id,
+                script=ch.script,
+                input=str(Path(effective_workspace) / inputs_name),
+                output=output_path,
+                subject_index=idx,
+                display_name_zh=ch.display_name_zh,
+                args=args,
+            )
+        )
+    return plans
 
 
 def _stats_to_plan(
@@ -416,6 +653,7 @@ def _stats_to_plan(
 def _evaluate_when(
     condition: str, *, n_per_group: int | None, n_groups: int | None,
     total_subjects: int | None = None,
+    total_duration_seconds: float | None = None,
 ) -> bool:
     cond = condition.strip()
     if cond == "always":
@@ -424,6 +662,7 @@ def _evaluate_when(
     for part in parts:
         if not _evaluate_atomic_when(
             part, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects,
+            total_duration_seconds=total_duration_seconds,
         ):
             return False
     return True
@@ -432,23 +671,26 @@ def _evaluate_when(
 def _evaluate_atomic_when(
     part: str, *, n_per_group: int | None, n_groups: int | None,
     total_subjects: int | None = None,
+    total_duration_seconds: float | None = None,
 ) -> bool:
     tokens = part.split()
     if len(tokens) != 3:
         return False
     var, op, val_str = tokens
-    if op != ">=":
+    if op not in (">=", ">"):
         return False
     try:
-        val = int(val_str)
+        val = float(val_str)
     except ValueError:
         return False
     if var == "n_per_group":
-        return n_per_group is not None and n_per_group >= val
+        return n_per_group is not None and (n_per_group >= val if op == ">=" else n_per_group > val)
     if var == "n_groups":
-        return n_groups is not None and n_groups >= val
+        return n_groups is not None and (n_groups >= val if op == ">=" else n_groups > val)
     if var == "total_subjects":
-        return total_subjects is not None and total_subjects >= val
+        return total_subjects is not None and (total_subjects >= val if op == ">=" else total_subjects > val)
+    if var == "total_duration_seconds":
+        return total_duration_seconds is not None and (total_duration_seconds >= val if op == ">=" else total_duration_seconds > val)
     return False
 
 
@@ -481,6 +723,14 @@ def plan_to_dict(plan: Plan) -> dict:
                 "output": m.output,
                 "required": m.required,
                 "reason": m.reason,
+                "subject_index": m.subject_index,
+                "display_name_zh": m.display_name_zh,
+                # W27 (2026-05-27): 透传 catalog 判读 / 展示字段
+                "unit_zh": m.unit_zh,
+                "one_liner": m.one_liner,
+                "output_unit": m.output_unit,
+                "direction_for_anxiety": m.direction_for_anxiety,
+                "statistical_default": m.statistical_default,
             }
             for m in plan.metrics
         ],
@@ -496,7 +746,7 @@ def plan_to_dict(plan: Plan) -> dict:
             }
         ),
         "charts": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            {"id": c.id, "script": c.script, "input": c.input, "output": c.output, "subject_index": c.subject_index}
             for c in plan.charts
         ],
         "skipped": [
@@ -526,6 +776,14 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
                 "output": m.output,
                 "required": m.required,
                 "reason": m.reason,
+                "subject_index": m.subject_index,
+                "display_name_zh": m.display_name_zh,
+                # W27 (2026-05-27): 透传 catalog 判读 / 展示字段
+                "unit_zh": m.unit_zh,
+                "one_liner": m.one_liner,
+                "output_unit": m.output_unit,
+                "direction_for_anxiety": m.direction_for_anxiety,
+                "statistical_default": m.statistical_default,
             }
             for m in pm.metrics
         ],
@@ -560,11 +818,21 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
             "columns_file": pc.inputs.columns_file,
         },
         "charts": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            {
+                "id": c.id, "script": c.script, "input": c.input, "output": c.output,
+                "subject_index": c.subject_index,
+                "display_name_zh": c.display_name_zh,
+                "args": c.args,
+            }
             for c in pc.charts
         ],
         "charts_fallback_available": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output}
+            {
+                "id": c.id, "script": c.script, "input": c.input, "output": c.output,
+                "subject_index": c.subject_index,
+                "display_name_zh": c.display_name_zh,
+                "args": c.args,
+            }
             for c in pc.charts_fallback_available
         ],
         "skipped": [

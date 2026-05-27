@@ -1,6 +1,6 @@
-# DeerFlow Frontend
+# EthoInsight Frontend
 
-Like the original DeerFlow 1.0, we would love to give the community a minimalistic and easy-to-use web interface with a more modern and flexible architecture.
+The Next.js web interface for **EthoInsight** — an AI assistant for behavioral researchers analyzing EthoVision XT trajectory data. The codebase started as a fork of the DeerFlow open-source harness and is being progressively rebranded for product launch.
 
 ## Tech Stack
 

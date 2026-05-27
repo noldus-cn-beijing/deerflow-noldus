@@ -1,8 +1,13 @@
 import type { Message } from "@langchain/langgraph-sdk";
-import { FileIcon, Loader2Icon } from "lucide-react";
+import { ChevronUp, FileIcon, LightbulbIcon, Loader2Icon } from "lucide-react";
 import { useParams } from "next/navigation";
 import { memo, useMemo, useState, type ImgHTMLAttributes } from "react";
 
+import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtStep,
+} from "@/components/ai-elements/chain-of-thought";
 import { Loader } from "@/components/ai-elements/loader";
 import {
   Message as AIElementMessage,
@@ -10,14 +15,10 @@ import {
   MessageResponse as AIElementMessageResponse,
   MessageToolbar,
 } from "@/components/ai-elements/message";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning";
 import { Task, TaskTrigger } from "@/components/ai-elements/task";
 import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -397,20 +398,12 @@ function RichFileCard({
 const MessageContent = memo(MessageContent_);
 
 /**
- * Local wrapper around ai-elements/Reasoning to keep the panel expanded by
- * default and skip the upstream "auto-close 1s after streaming ends" behavior.
+ * Lead Agent 思考块 — 使用与 MessageGroup 中"思考"块同款 ChainOfThought 风格,
+ * 并打上 "Lead Agent" 徽章,与 SubtaskCard 内 subagent 名字标识对齐。
  *
- * Why: Upstream Vercel AI Elements assumes "users only care about the answer."
- * For EthoInsight (a research assistant for behavioral scientists), users need
- * to inspect the full reasoning trace to trust the conclusion.
- *
- * Implementation: We don't modify ai-elements/reasoning.tsx (it's generated
- * from upstream and CLAUDE.md forbids manual edits). Instead we drive
- * `defaultOpen={false}` (which gates the auto-close useEffect at
- * ai-elements/reasoning.tsx:84) combined with controlled `open` state — the
- * Radix useControllableState contract guarantees that internal setIsOpen() is
- * a no-op while controlled, so the panel stays open until the user clicks the
- * trigger to collapse it.
+ * 历史: 早期用 `ai-elements/Reasoning`(Shimmer 闪烁版),与 MessageGroup 的
+ * ChainOfThought 风格不一致,用户反馈"两套 thinking 让人困惑"。2026-05-21
+ * 统一为单一 layout + 角色徽章。
  */
 function ReasoningPanel({
   isStreaming,
@@ -419,17 +412,47 @@ function ReasoningPanel({
   isStreaming: boolean;
   reasoningContent: string;
 }) {
-  const [open, setOpen] = useState(true);
+  const { t } = useI18n();
+  const [showThinking, setShowThinking] = useState(true);
 
   return (
-    <Reasoning
-      isStreaming={isStreaming}
-      defaultOpen={false}
-      open={open}
-      onOpenChange={setOpen}
+    <ChainOfThought
+      className="w-full gap-2 rounded-lg border p-0.5"
+      open={true}
     >
-      <ReasoningTrigger />
-      <ReasoningContent>{reasoningContent}</ReasoningContent>
-    </Reasoning>
+      <Button
+        className="w-full items-start justify-start text-left"
+        variant="ghost"
+        onClick={() => setShowThinking(!showThinking)}
+      >
+        <div className="flex w-full items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ChainOfThoughtStep
+              className="font-normal"
+              label={t.common.thinking}
+              icon={LightbulbIcon}
+            />
+            <Badge variant="secondary" className="text-xs font-normal">
+              Lead Agent
+            </Badge>
+          </div>
+          <ChevronUp
+            className={cn(
+              "text-muted-foreground size-4",
+              showThinking ? "" : "rotate-180",
+            )}
+          />
+        </div>
+      </Button>
+      {showThinking && (
+        <ChainOfThoughtContent className="px-4 pb-2">
+          <ChainOfThoughtStep
+            label={
+              <MarkdownContent content={reasoningContent} isLoading={isStreaming} />
+            }
+          />
+        </ChainOfThoughtContent>
+      )}
+    </ChainOfThought>
   );
 }

@@ -131,11 +131,14 @@ def bar_chart(
     error_type: str = "sem",
     significance: dict | None = None,
     output_path: str | None = None,
+    suppress_errorbars: bool | None = None,
 ) -> str:
     """Bar chart with error bars comparing groups.
 
     Args:
         error_type: "sem" (standard error) or "std" (standard deviation).
+        suppress_errorbars: None = auto (suppress when any group n<3, annotate values);
+            True = always suppress; False = always show.
     """
     _setup_style()
     n = len(metrics_to_plot)
@@ -148,6 +151,7 @@ def bar_chart(
         groups = []
         means = []
         errors = []
+        ns = []
         for grp_name, grp_metrics in group_summary.items():
             if mname in grp_metrics:
                 groups.append(grp_name)
@@ -155,6 +159,7 @@ def bar_chart(
                 means.append(info["mean"])
                 std = info.get("std", 0)
                 nn = info.get("n", 1)
+                ns.append(nn)
                 if error_type == "sem" and nn > 0:
                     errors.append(std / np.sqrt(nn))
                 else:
@@ -164,11 +169,16 @@ def bar_chart(
             ax.set_title(mname)
             continue
 
+        # Determine whether to show error bars
+        do_suppress = suppress_errorbars
+        if do_suppress is None:
+            do_suppress = any(nn < 3 for nn in ns)
+
         x = np.arange(len(groups))
-        bars = ax.bar(
+        ax.bar(
             x,
             means,
-            yerr=errors,
+            yerr=None if do_suppress else errors,
             capsize=4,
             width=0.6,
             color=[PALETTE[i % len(PALETTE)] for i in range(len(groups))],
@@ -180,6 +190,11 @@ def bar_chart(
         ax.set_xticklabels(groups)
         ax.set_title(mname.replace("_", " ").title())
         ax.set_ylabel(mname)
+
+        # Annotate bar tops with values when error bars are suppressed
+        if do_suppress:
+            for xi, mean_val in zip(x, means):
+                ax.text(xi, mean_val, f"{mean_val:.2f}", ha="center", va="bottom", fontsize=8)
 
         if significance:
             _add_significance_from_stats(ax, groups, mname, significance)
@@ -650,3 +665,108 @@ def _add_significance_from_stats(
             )
     if markers:
         add_significance_markers(ax, markers)
+
+
+def heatmap_plot(
+    df: pd.DataFrame,
+    output_path: str | None = None,
+) -> str:
+    """2D KDE heatmap of x_center/y_center positions. Aspect ratio fixed 4:3."""
+    _setup_style()
+    output_path = _resolve_output_path(output_path, "heatmap")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    if "x_center" in df.columns and "y_center" in df.columns:
+        x = pd.to_numeric(df["x_center"], errors="coerce").dropna()
+        y = pd.to_numeric(df["y_center"], errors="coerce").dropna()
+        hb = ax.hexbin(x, y, gridsize=40, cmap="YlOrRd", mincnt=1)
+        fig.colorbar(hb, ax=ax, label="Frame count")
+        ax.set_xlabel("X (cm)")
+        ax.set_ylabel("Y (cm)")
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_title("Position density heatmap")
+    else:
+        ax.text(0.5, 0.5, "x_center/y_center missing", ha="center", va="center", transform=ax.transAxes)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def activity_intensity_plot(
+    df: pd.DataFrame,
+    output_path: str | None = None,
+) -> str:
+    """Activity intensity time-series (velocity as proxy).
+
+    Plots a filled area chart of velocity vs trial_time. Title labels proxy.
+    """
+    _setup_style()
+    output_path = _resolve_output_path(output_path, "activity_intensity")
+    fig, ax = plt.subplots(figsize=(10, 4))
+    if "trial_time" in df.columns and "velocity" in df.columns:
+        v = pd.to_numeric(df["velocity"], errors="coerce").fillna(0)
+        t = pd.to_numeric(df["trial_time"], errors="coerce")
+        ax.fill_between(t, v, color="#4C9F70", alpha=0.5)
+        ax.plot(t, v, color="#2D5F3F", linewidth=0.7)
+        ax.set_xlabel("Trial time (s)")
+        ax.set_ylabel("Velocity (cm/s)")
+        ax.set_title("Activity intensity (velocity proxy)")
+    else:
+        ax.text(0.5, 0.5, "velocity column missing", ha="center", va="center", transform=ax.transAxes)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def struggle_distribution_plot(
+    bouts_by_subject: dict[str, list[tuple[float, float]]],
+    output_path: str | None = None,
+) -> str:
+    """eventplot of immobility bouts per subject.
+
+    Each subject = one row of horizontal bars marking immobility bouts.
+    """
+    _setup_style()
+    output_path = _resolve_output_path(output_path, "struggle_distribution")
+    subjects = list(bouts_by_subject.keys())
+    fig, ax = plt.subplots(figsize=(10, max(2, len(subjects) * 0.6)))
+    for i, sub in enumerate(subjects):
+        bouts = bouts_by_subject[sub]
+        for start, end in bouts:
+            ax.broken_barh([(start, end - start)], (i - 0.35, 0.7), facecolors="#B33A3A")
+    ax.set_yticks(range(len(subjects)))
+    ax.set_yticklabels(subjects)
+    ax.set_xlabel("Trial time (s)")
+    ax.set_title("Immobility (giving-up) bouts over time")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def time_progress_plot(
+    per_bin_data: list[dict],
+    output_path: str | None = None,
+) -> str:
+    """OFT time-progress dual-line chart (5-min bins: distance + center time)."""
+    _setup_style()
+    output_path = _resolve_output_path(output_path, "time_progress")
+    fig, ax_left = plt.subplots(figsize=(10, 4))
+    bin_centers = [(b["bin_start_sec"] + b["bin_end_sec"]) / 2 / 60.0 for b in per_bin_data]
+    distance = [b["distance"] for b in per_bin_data]
+    center_time = [b["center_time"] for b in per_bin_data]
+    ax_left.plot(bin_centers, distance, "o-", color="#2D5F3F", label="Distance moved")
+    ax_left.set_xlabel("Time bin center (min)")
+    ax_left.set_ylabel("Distance moved (cm)")
+    ax_right = ax_left.twinx()
+    ax_right.plot(bin_centers, center_time, "s--", color="#B33A3A", label="Center time")
+    ax_right.set_ylabel("Center zone time (s)")
+    lines_l, labels_l = ax_left.get_legend_handles_labels()
+    lines_r, labels_r = ax_right.get_legend_handles_labels()
+    ax_left.legend(lines_l + lines_r, labels_l + labels_r, loc="upper right")
+    ax_left.set_title("Time-progress: distance + center time per 5-min bin")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path

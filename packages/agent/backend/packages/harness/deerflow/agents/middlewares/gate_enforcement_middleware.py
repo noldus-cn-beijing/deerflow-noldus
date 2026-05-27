@@ -59,12 +59,17 @@ class GateEnforcementMiddleware(AgentMiddleware[GateEnforcementMiddlewareState])
             return False
         return not context_exists(workspace_dir)
 
+    def _get_thread_data(self, state: dict) -> dict | None:
+        """Extract thread_data dict from state for handoff path masking."""
+        thread_data = state.get("thread_data")
+        return thread_data if isinstance(thread_data, dict) else None
+
     def _check_gate2(self, state: dict) -> bool:
         """Check whether task(data-analyst) should be blocked (critical warnings unacknowledged)."""
         workspace_dir = resolve_workspace_from_state(state)
         if workspace_dir is None:
             return False
-        critical_warnings = get_critical_warnings(workspace_dir)
+        critical_warnings = get_critical_warnings(workspace_dir, thread_data=self._get_thread_data(state))
         if not critical_warnings:
             return False
         return not is_quality_acknowledged(workspace_dir)
@@ -96,8 +101,8 @@ class GateEnforcementMiddleware(AgentMiddleware[GateEnforcementMiddlewareState])
                 f"{warning_lines}\n\n"
                 f"请调用 ask_clarification 告知用户这些问题，提供以下选项：\n"
                 f"(a) 排除异常个体并重算 (b) 保留并继续 (c) 查看详情\n\n"
-                f"用户确认后，调用 write_file 更新 experiment-context.json，"
-                f"在 gate_completed 中添加 'gate2_quality_acknowledged'，然后重新调用 task(data-analyst)。"
+                f"用户确认后，调用 set_experiment_paradigm(acknowledge_quality=True) 记录确认，"
+                f"然后重新调用 task(data-analyst)。"
             ),
             tool_call_id=request.tool_call.get("id", ""),
             name="gate_enforcement",
@@ -130,7 +135,7 @@ class GateEnforcementMiddleware(AgentMiddleware[GateEnforcementMiddlewareState])
 
         if subagent_type == "data-analyst":
             if self._check_gate2(state):
-                critical_warnings = get_critical_warnings(workspace_dir)
+                critical_warnings = get_critical_warnings(workspace_dir, thread_data=self._get_thread_data(state))
                 logger.info(
                     "gate_check | gate=gate2_quality | thread=%s | result=blocked | detail=%d critical warning(s), not acknowledged",
                     state.get("thread_id", "unknown"),
@@ -177,7 +182,7 @@ class GateEnforcementMiddleware(AgentMiddleware[GateEnforcementMiddlewareState])
 
         if subagent_type == "data-analyst":
             if self._check_gate2(state):
-                critical_warnings = get_critical_warnings(workspace_dir)
+                critical_warnings = get_critical_warnings(workspace_dir, thread_data=self._get_thread_data(state))
                 logger.info(
                     "gate_check | gate=gate2_quality | thread=%s | result=blocked | detail=%d critical warning(s), not acknowledged",
                     state.get("thread_id", "unknown"),

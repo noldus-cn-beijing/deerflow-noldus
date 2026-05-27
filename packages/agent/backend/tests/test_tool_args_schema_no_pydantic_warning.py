@@ -55,7 +55,7 @@ _TOOL_CASES = [
     (str_replace_tool, {"description": "replace", "path": "/tmp/x", "old_str": "a", "new_str": "b"}),
     (present_file_tool, {"filepaths": ["/tmp/x"], "tool_call_id": "call-1"}),
     (view_image_tool, {"image_path": "/tmp/img.png", "tool_call_id": "call-1"}),
-    (task_tool, {"description": "do", "prompt": "go", "subagent_type": "general-purpose", "tool_call_id": "call-1"}),
+    (task_tool, {"description": "do", "prompt": "go", "subagent_type": "data-analyst", "tool_call_id": "call-1"}),
     (skill_manage_tool, {"action": "list", "name": "demo"}),
     (setup_agent, {"soul": "s", "description": "d"}),
 ]

@@ -6,7 +6,7 @@
 
 **EthoInsight** — 面向行为学研究员的 AI 分析助手。研究员上传 EthoVision XT 导出的轨迹数据，Agent 自动完成统计分析、专业解读、APA 格式报告生成。
 
-- **当前状态**：端到端流水线可用，`shoaling` 范式完整（仅作为骨架验证，不再投入工程优化）；**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）；EPM/OFT 等 6 个 PRD MVP 范式分析模板待补全（依赖行为学同事 review PR）；**范式体系正在从「学术范式」迁移到「EV19 模板 + 学术范式」双层（详见第 10 条）**
+- **当前状态**：端到端流水线可用，v0.1 已支持 5 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场、TST 等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）
 - **愿景**：从"数据分析工具"演进为"全生命周期行为学研究助手"（实验指导 → 数据分析 → 追问 → 知识问答 → 跨范式证据链）
 - **关键里程碑**：2026 年 9 月 v0.1 可用版本
 - **路线图**：见 [docs/roadmap.md](docs/roadmap.md)
@@ -26,12 +26,12 @@ noldus-insight/
 │   │   └── extensions_config.json  # MCP 服务器 + skill 启用状态
 │   └── ethoinsight/        # 行为学数据分析库（Python）
 │       ├── ethoinsight/
-│       │   ├── parse.py          # EthoVision XT 文件解析
+│       │   ├── parse/             # EthoVision XT 文件解析（支持 TXT/CSV/XLSX/XLS）
 │       │   ├── metrics.py        # 行为指标计算
 │       │   ├── statistics.py     # 统计决策树（Shapiro-Wilk → 自动选择参数/非参数）
 │       │   ├── charts.py         # 发表级图表生成
 │       │   ├── assess.py         # 领域阈值判断（正常/异常）
-│       │   └── templates/        # 范式模板（shoaling.py 等）
+│       │   └── templates/        # 范式模板
 │       └── tests/
 ├── docs/
 │   ├── roadmap.md          # 12 个月产品路线图
@@ -189,14 +189,36 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 ### Git
 
-- 主分支：`dev`（当前工作分支）
+- 分支模型：
+  - `main` — 生产分支。PR merge 到 main 触发 GitHub Actions 自动 build & push 镜像到 ACR（`.github/workflows/build-push-acr.yml`）
+  - `dev` — 日常开发分支。所有 commit 先进 dev
+  - Sprint/feature 完成后从 dev 提 PR 到 main
 - 提交前跑 `make test` 和 `make lint`
 - commit message 用中文，简洁描述改动意图
+
+### CI/CD
+
+**当前实际部署方式（ACR 到位前）**: 本地 build → 镜像 tar 推送 ECS → docker compose up
+
+- **触发**: 开发者在本地跑 `cd packages/agent && make deploy-tar`
+- **构建**: 本地 `docker compose build`（linux/amd64），导出两个镜像（frontend + backend）为 gzip tar
+- **传输**: rsync 镜像 tar + docker-compose.yaml + nginx.conf + skills + config 到 ECS `/opt/ethoinsight/`
+- **部署**: 远程 `docker load` + `docker compose up -d`（frontend / gateway / langgraph / nginx 四个服务）
+- **反代**: ECS 上 1Panel + OpenResty，80/443 → 内部 127.0.0.1:2026
+- **配置文件**: `config.yaml` / `extensions_config.json` / `.env` 存在开发者本地 `~/ethoinsight-prod/`，不进 git，部署时 rsync 到 ECS
+- **SOP**: 见 [docs/sop/deploy-via-tar-sop.md](docs/sop/deploy-via-tar-sop.md)
+- **所需 env vars**: `DEPLOY_HOST` / `DEPLOY_PATH` / `DEPLOY_CONFIG` / `DEPLOY_EXTENSIONS` / `DEPLOY_AGENT_ENV`
+
+**未来 ACR pipeline（暂未启用）**: 待 ACR 权限到位后启用 `.github/workflows/build-push-acr.yml`：
+- PR merge 到 `main` → GitHub Actions build & push 到 ACR `registry.cn-beijing.aliyuncs.com/ethoinsight/`
+- ECS watchtower poll 检测新镜像 → `docker compose pull && up -d`
+- 届时 `make deploy-tar` 退役，`deploy-via-tar.sh` 中 `docker load` 换 `docker compose pull`
 
 ### 文档
 
 - 代码改动后同步更新相关 `docs/` 下文档
 - 重要会话结束后在 `docs/handoffs/` 写交接文档（文件名 `YYYY-MM-DD-<topic>-handoff.md`）
+- **写 handoff 时判断**：本次会话是否让某个 feature track 到达了 checkpoint（完成/阶段切换/阻塞解除）？如果是，在 handoff 末尾加 `## milestone 建议` 段，列出应创建/更新的 milestone 和关键摘要。下一 agent 读到后执行。用户也可随时说"为 XX 写 milestone"手动触发
 
 ## 重要注意事项
 
@@ -232,8 +254,9 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 1. 本文档 — 了解全貌
 2. [docs/roadmap.md](docs/roadmap.md) — 了解 12 个月规划和 v0.1 里程碑
-3. `docs/handoffs/` 下最新月份目录中最新日期的文档 — 了解上次会话到哪了
-4. 根据当前 Phase 的优先级开始工作
+3. [docs/milestone/README.md](docs/milestone/README.md) — 项目地图，每个 feature 当前状态一目了然（2 分钟）
+4. 具体 feature 的 milestone — 深入了解某个 track 的全貌（5 分钟）
+5. `docs/handoffs/` 下具体 handoff — 最细粒度的操作细节（按需）
 
 ## 相关文档
 
@@ -250,4 +273,5 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 - [docs/specs/llm-finetuning-strategy.md](docs/specs/llm-finetuning-strategy.md) — 微调策略
 - [docs/plans/2026-04-13-fine-tuning-small-model-design.md](docs/plans/2026-04-13-fine-tuning-small-model-design.md) — 微调设计
 - [docs/sop/deerflow-sync-sop.md](docs/sop/deerflow-sync-sop.md) — DeerFlow 同步 SOP
+- [docs/refs/2026-05-22-mousegpt-paper-review.md](docs/refs/2026-05-22-mousegpt-paper-review.md) — MouseGPT 论文借鉴分析（2026-05-22）
 - [packages/agent/backend/CLAUDE.md](packages/agent/backend/CLAUDE.md) — DeerFlow 后端架构细节

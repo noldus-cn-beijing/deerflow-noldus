@@ -5,9 +5,10 @@ import logging
 import re
 import uuid
 from dataclasses import replace
-from typing import TYPE_CHECKING, Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from langchain.tools import InjectedToolCallId, tool
+from langchain_core.callbacks import BaseCallbackManager
 from langgraph.config import get_stream_writer
 
 from deerflow.config import get_app_config
@@ -42,6 +43,61 @@ def _resolve_placeholders(prompt: str) -> str:
     This keeps prompts minimal and avoids inflating token usage.
     """
     return _SHARED_PLACEHOLDER_RE.sub(lambda m: f"/mnt/shared/{m.group(1)}", prompt)
+
+
+def _build_progress_timeline(ai_messages: list[dict[str, Any]]) -> str:
+    """Build a one-line-per-step progress timeline from subagent AI messages.
+
+    Extracts a short milestone label from each message so the lead agent can
+    quickly understand what the subagent did without reading the full result.
+    """
+    if not ai_messages:
+        return ""
+
+    lines: list[str] = []
+    total = len(ai_messages)
+
+    for i, msg in enumerate(ai_messages):
+        label = _extract_milestone_label(msg)
+        if not label:
+            continue
+        lines.append(f"{i + 1}/{total}: {label}")
+
+    if not lines:
+        return ""
+
+    return "## 进度时间线\n" + "\n".join(lines)
+
+
+def _extract_milestone_label(msg: dict[str, Any]) -> str:
+    """Extract a short milestone description from a single AI message dict."""
+    # Prefer tool calls as the clearest progress signal
+    tool_calls = msg.get("tool_calls") or msg.get("additional_kwargs", {}).get("tool_calls", [])
+    if tool_calls:
+        names = [tc.get("name", "?") for tc in tool_calls if isinstance(tc, dict)]
+        if names:
+            return "调用 " + ", ".join(names[:3]) + ("..." if len(names) > 3 else "")
+
+    # Fall back to content — extract first sentence
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        text_parts = []
+        for block in content:
+            if isinstance(block, str):
+                text_parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+        content = " ".join(text_parts)
+    if not isinstance(content, str) or not content.strip():
+        return ""
+
+    # Take the first sentence or first 60 chars
+    content = content.strip()
+    for end_char in ("。", "\n", "."):
+        idx = content.find(end_char)
+        if idx > 0:
+            return content[:idx + 1]
+    return content[:60] + ("..." if len(content) > 60 else "")
 
 
 # Handoff-file placeholder registry: subagent name → handoff filename.
@@ -193,21 +249,30 @@ def _schedule_deferred_subagent_cleanup(task_id: str, trace_id: str, max_polls: 
 def _find_usage_recorder(runtime: Any) -> Any | None:
     """Find a callback handler with ``record_external_llm_usage_records`` in the runtime config.
 
-    LangGraph's runtime ``config["callbacks"]`` may be either a ``list`` of handlers OR a
-    ``BaseCallbackManager`` instance (e.g. ``AsyncCallbackManager`` on async paths). The
-    manager class has no ``__iter__``; iterating it directly raises ``TypeError``. Normalize
-    both shapes by reading ``.handlers`` when given a manager.
+    LangChain may pass ``config["callbacks"]`` in three different shapes:
+
+    - ``None`` (no callbacks registered): no recorder.
+    - A plain ``list[BaseCallbackHandler]``: iterate it directly.
+    - A ``BaseCallbackManager`` instance (e.g. ``AsyncCallbackManager`` on async
+      tool runs): managers are not iterable, so we unwrap ``.handlers`` first.
+
+    Any other shape (e.g. a single handler object accidentally passed without a
+    list wrapper) cannot be iterated safely; treat it as "no recorder" rather
+    than raise.
     """
     if runtime is None:
         return None
     config = getattr(runtime, "config", None)
     if not isinstance(config, dict):
         return None
-    callbacks = config.get("callbacks", [])
-    handlers = getattr(callbacks, "handlers", callbacks) if not isinstance(callbacks, list) else callbacks
-    if not handlers:
+    callbacks = config.get("callbacks")
+    if isinstance(callbacks, BaseCallbackManager):
+        callbacks = callbacks.handlers
+    if not callbacks:
         return None
-    for cb in handlers:
+    if not isinstance(callbacks, list):
+        return None
+    for cb in callbacks:
         if hasattr(cb, "record_external_llm_usage_records"):
             return cb
     return None
@@ -265,12 +330,31 @@ def _merge_skill_allowlists(parent: list[str] | None, child: list[str] | None) -
     return [skill for skill in child if skill in parent_set]
 
 
+def _make_subagent_literal():
+    """Dynamically construct a Literal type from the available subagent names.
+
+    Called at module load time so the JSON Schema enum is baked into the
+    tool's auto-inferred schema.  Falls back to BUILTIN_SUBAGENTS keys if the
+    full registry (which may require config.yaml) is not yet available.
+    """
+    try:
+        names = tuple(get_available_subagent_names())
+    except Exception:
+        from deerflow.subagents.builtins import BUILTIN_SUBAGENTS
+
+        names = tuple(BUILTIN_SUBAGENTS.keys())
+    return Literal[names]
+
+
+_SubagentLiteral = _make_subagent_literal()
+
+
 @tool("task", parse_docstring=True)
 async def task_tool(
     runtime: Runtime,
     description: str,
     prompt: str,
-    subagent_type: str,
+    subagent_type: _SubagentLiteral,
     tool_call_id: Annotated[str, InjectedToolCallId],
     max_turns: int | None = None,
 ) -> str:
@@ -318,7 +402,13 @@ async def task_tool(
     config = get_subagent_config(subagent_type, app_config=runtime_app_config) if runtime_app_config is not None else get_subagent_config(subagent_type)
     if config is None:
         available = ", ".join(available_subagent_names)
-        return f"Error: Unknown subagent type '{subagent_type}'. Available: {available}"
+        return (
+            f"Error: Unknown subagent type '{subagent_type}'. "
+            f"Valid subagent types: {available}. "
+            f"请改用 task(subagent_type='<上述有效名称之一>', ...) 重新派遣，"
+            f"因为 '{subagent_type}' 不是已注册的 subagent 类型，"
+            f"不支持自定义名称或通用代理。"
+        )
     if subagent_type == "bash":
         host_bash_allowed = is_host_bash_allowed(runtime_app_config) if runtime_app_config is not None else is_host_bash_allowed()
         if not host_bash_allowed:
@@ -473,7 +563,9 @@ async def task_tool(
                 writer({"type": "task_completed", "task_id": task_id, "result": result.result, "usage": usage})
                 logger.info(f"[trace={trace_id}] Task {task_id} completed after {poll_count} polls")
                 cleanup_background_task(task_id)
-                return f"Task Succeeded. Result: {result.result}"
+                timeline = _build_progress_timeline(result.ai_messages or [])
+                header = f"Task Succeeded.\n\n{timeline}\n" if timeline else "Task Succeeded.\n\n"
+                return f"{header}## 最终结果\n{result.result}"
             elif result.status == SubagentStatus.FAILED:
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 _report_subagent_usage(runtime, result)
@@ -513,6 +605,13 @@ async def task_tool(
                 usage = _summarize_usage(getattr(result, "token_usage_records", None))
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 writer({"type": "task_timed_out", "task_id": task_id, "usage": usage})
+                # The task may still be running in the background. Signal cooperative
+                # cancellation and schedule deferred cleanup to remove the entry from
+                # _background_tasks once the background thread reaches a terminal state.
+                # Without this, the background task continues consuming resources and
+                # the entry leaks in _background_tasks (upstream e19bec14).
+                request_cancel_background_task(task_id)
+                _schedule_deferred_subagent_cleanup(task_id, trace_id, max_poll_count)
                 return f"Task polling timed out after {timeout_minutes} minutes. This may indicate the background task is stuck. Status: {result.status.value}"
     except asyncio.CancelledError:
         # Signal the background subagent thread to stop cooperatively.
