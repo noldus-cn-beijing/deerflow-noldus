@@ -64,6 +64,10 @@ def _find_mobility_column(df: pd.DataFrame) -> str | None:
     Checks common EthoVision column names in order:
     Mobility_State, Activity_State, mobility_state, activity_state.
     Returns the first match.
+
+    Only matches **state** (categorical / one-hot) columns — skips continuous
+    columns like ``mobility_continuous`` or ``activity_continuous`` to avoid
+    misinterpreting raw values as state labels.
     """
     candidates = [
         "Mobility_State",
@@ -80,11 +84,35 @@ def _find_mobility_column(df: pd.DataFrame) -> str | None:
         cl = col.lower()
         if ("mobility_state" in cl or "activity_state" in cl) and "immobile" in cl:
             return col
-    # Fallback: any column whose name contains mobility or activity.
+    return None
+
+
+def _find_activity_column(df: pd.DataFrame) -> str | None:
+    """Find a continuous activity column (0–100%) for pendulum detection.
+
+    Skips ``*_state*`` columns (categorical) and ``mobility*`` columns.
+    Targets columns like ``activity``, ``Activity``, ``activity_sampleRate_1``.
+    """
     for col in df.columns:
-        if "mobility" in col.lower() or "activity" in col.lower():
+        cl = col.lower()
+        if "activity" not in cl:
+            continue
+        if "state" in cl or "mobility" in cl:
+            continue
+        # Must be numeric/continuous (not a categorical state column)
+        if pd.api.types.is_numeric_dtype(df[col]):
             return col
     return None
+
+
+def _estimate_dt(df: pd.DataFrame) -> float:
+    """Estimate frame interval (seconds) from trial_time column."""
+    if "trial_time" not in df.columns:
+        return 0.04
+    tt = df["trial_time"].dropna()
+    if len(tt) < 2:
+        return 0.04
+    return float(tt.diff().median())
 
 
 def _resolve_immobile_series(
@@ -109,12 +137,37 @@ def _resolve_immobile_series(
     """
     col = mobility_col or _find_mobility_column(df)
     if col is None or col not in df.columns:
-        return None
+        # Fallback: derive immobility from raw Activity via pendulum detection
+        return _resolve_immobile_from_activity(df)
     series = df[col].dropna()
     if series.empty:
-        return None
+        return _resolve_immobile_from_activity(df)
     immobile_value = 1 if "immobile" in col.lower() else 0
     return series, immobile_value
+
+
+def _resolve_immobile_from_activity(
+    df: pd.DataFrame,
+) -> tuple[pd.Series, int] | None:
+    """Derive immobility labels from raw Activity via pendulum detection.
+
+    Used as fallback when no ``mobility_state`` / ``activity_state`` column
+    exists in the export.  Runs the autocorrelation-based pendulum detector on
+    the continuous Activity column (pixel change %) and returns a one-hot
+    immobility series (1=immobile, 0=mobile).
+
+    Returns None when no usable Activity column is present.
+    """
+    from ethoinsight.metrics._pendulum import pendulum_immobility_series
+
+    activity_col = _find_activity_column(df)
+    if activity_col is None:
+        return None
+    activity = df[activity_col].to_numpy(dtype=float)
+    dt = _estimate_dt(df)
+    immobile = pendulum_immobility_series(activity, dt)
+    series = pd.Series(immobile, index=df.index[:len(immobile)], dtype=int)
+    return series, 1  # one-hot: 1 = immobile
 
 
 def _runs(arr, value=0):
