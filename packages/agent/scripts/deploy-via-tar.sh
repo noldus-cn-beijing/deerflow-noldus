@@ -25,6 +25,7 @@
 #   SKIP_BUILD=1      — skip docker build (reuse last build)
 #   SKIP_SHIP=1       — skip rsync (build only, useful for testing)
 #   KEEP_TAR=1        — keep the .tar.gz on local /tmp after deploy
+#   SKIP_PRUNE=1      — skip local docker image + build cache prune after deploy
 #
 # Examples:
 #   DEPLOY_HOST=deploy@my-ecs DEPLOY_PATH=/opt/ethoinsight \
@@ -224,6 +225,12 @@ info "Image tar kept at: $TAR_PATH"
 if [ "${KEEP_TAR:-0}" != "1" ]; then
     rm -f "$TAR_PATH"
     info "Local tar removed (set KEEP_TAR=1 to retain)"
+fi
+
+if [ "${SKIP_PRUNE:-0}" != "1" ]; then
+    info "Pruning unused local images and build cache"
+    docker image prune -af >/dev/null 2>&1 || true
+    docker builder prune -f >/dev/null 2>&1 || true
 fi
 
 echo ""
