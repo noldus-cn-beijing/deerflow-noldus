@@ -27,6 +27,7 @@ from langgraph_sdk import Auth
 from app.gateway.auth.errors import TokenError
 from app.gateway.auth.jwt import decode_token
 from app.gateway.deps import get_local_provider
+from app.gateway.internal_auth import INTERNAL_AUTH_HEADER_NAME, get_internal_user, is_valid_internal_auth_token
 
 auth = Auth()
 
@@ -71,6 +72,11 @@ async def authenticate(request):
     # CSRF check before authentication so forged cross-site requests
     # are rejected early, even if the cookie carries a valid JWT.
     _check_csrf(request)
+
+    # Internal auth: channel → LangGraph calls bypass JWT (shared token)
+    internal_token = request.headers.get(INTERNAL_AUTH_HEADER_NAME)
+    if is_valid_internal_auth_token(internal_token):
+        return get_internal_user().id
 
     token = request.cookies.get("access_token")
     if not token:
