@@ -26,7 +26,7 @@ noldus-insight/
 │   │   └── extensions_config.json  # MCP 服务器 + skill 启用状态
 │   └── ethoinsight/        # 行为学数据分析库（Python）
 │       ├── ethoinsight/
-│       │   ├── parse.py          # EthoVision XT 文件解析
+│       │   ├── parse/             # EthoVision XT 文件解析（支持 TXT/CSV/XLSX/XLS）
 │       │   ├── metrics.py        # 行为指标计算
 │       │   ├── statistics.py     # 统计决策树（Shapiro-Wilk → 自动选择参数/非参数）
 │       │   ├── charts.py         # 发表级图表生成
