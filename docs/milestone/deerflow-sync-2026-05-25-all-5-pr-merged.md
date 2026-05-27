@@ -1,14 +1,25 @@
-# DeerFlow upstream sync (e19bec14 → f9b70713)
+# DeerFlow upstream sync (e19bec14 → 162fb214)
 
-**状态**：done
-**时间跨度**：2026-05-18 ~ 2026-05-25
-**dev HEAD**：`37bcbba4`（2989 passed / 19 skipped / 0 failed）
+**状态**：ongoing
+**时间跨度**：2026-05-18 ~ 2026-05-27
+**dev HEAD**：`4df35f44`（全量 3000+ passed，blocking_io 4 passed / 1 skipped）
 
 ## 做了什么
 
-DeerFlow 上游 15 个新 commit 全部以 surgical merge 方式合入 Noldus dev 分支，保留所有 Noldus 定制（中文 prompt、5 ethoinsight subagent、4 工具注册、EV19+Intent guardrails、shared workspace、TrainingDataMiddleware、ThinkTagMiddleware、MCP 4096 截断、sandbox extra_env、loop_detection 中文化、verdict 三分类等）。
+DeerFlow 上游 23 个 commit 以 surgical merge 方式合入 Noldus dev 分支，保留所有 Noldus 定制。
 
-5 个 PR 分批合入，覆盖 sandbox async polling、MCP session pool、SafetyFinishReasonMiddleware、Langfuse 完整集成、Tier 4 persistence 整文件升级、loop_detection defer warning injection 等模块。每次合入后跑全量测试验证无回归。
+### Round 1-5（2026-05-25 前，15 commit，5 PR）
+
+sandbox async polling、MCP session pool、SafetyFinishReasonMiddleware、Langfuse 完整集成、Tier 4 persistence、loop_detection 等。
+
+### Round 6（2026-05-27，8 commit 中取 2 PR）
+
+| PR | 内容 | 类型 |
+|----|------|------|
+| #3229 | async_provider SQLite path offload + Blockbuster runtime gate + CI | surgical merge |
+| #3218 | think tag backtick guard（`<think>` 反引号防护） | surgical merge |
+
+跳过 6 个 PR：PR template、blocking IO inventory（诊断工具）、auth token、clipboard guard、todo ThreadState、MCP session pooling（评估为低风险但非紧急，留后续）。
 
 ## 关键节点
 
@@ -22,11 +33,13 @@ DeerFlow 上游 15 个新 commit 全部以 surgical merge 方式合入 Noldus de
 | 5/25 | 全部 5 PR 合入，dev HEAD `37bcbba4` | [all-5-pr-merged](../handoffs/2026-05/2026-05-25-deerflow-sync-all-prs-merged-handoff.md) |
 | 5/25 | sync 善后：PROTECTED_FILES 13→22，sync-state 机制就位 | [cleanup-pr-pending](../handoffs/2026-05/2026-05-25-deerflow-sync-cleanup-pr-pending-handoff.md) |
 
+| 5/27 | PR #3229 + #3218 合入，sync 基准 f9b70713→162fb214 | [issue57-fix-sync-3229-3218](../handoffs/2026-05/2026-05-27-issue57-fix-sync-3229-3218-handoff.md) |
+
 ## 当前状态
 
-- 完成项：上游 15 commit 全部合入，5 PR (#33 #34 #35 #36 #38) 已合，0 test regression
-- 遗留项：sync 善后 PR（chore/sync-protected-files-and-sop）push 完待合；sync 基准 + SOP 教训更新
-- 下一 milestone：无（本 track 完成）
+- 完成项：上游 23 commit 全合入，7 PR 已合，0 test regression
+- 遗留项：sync state 文件待更新（`.deerflow-sync-state` 仍指 f9b70713）；sync 善后 PR 待合
+- 下一 milestone：评估剩余 6 个低风险 PR（PR template / blocking IO inventory / auth token / clipboard / todo / MCP session pooling）并按需合入
 
 ## 相关 handoff
 
