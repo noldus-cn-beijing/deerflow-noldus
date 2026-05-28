@@ -64,13 +64,15 @@ class MetricStat(BaseModel):
         default=None,
         description="Present when applicable=False; explains why.",
     )
-    parameters_used: dict[str, float | int | str] = Field(
+    parameters_used: dict[str, float | int | str | None] = Field(
         default_factory=dict,
         description=(
             "Actual parameters used to compute this metric, e.g. "
             "{'velocity_threshold': 30.0, 'velocity_min_duration': 25}. "
             "Populated by Sprint 2b execution pipeline. "
-            "Sprint 0 only defines the field; defaults to empty dict."
+            "Sprint 0 only defines the field; defaults to empty dict. "
+            "None is allowed for individual values when the param is not "
+            "applicable to this metric (e.g. pendulum params on EPM)."
         ),
     )
 
@@ -116,8 +118,11 @@ class DataQualityWarning(BaseModel):
         head = v.split(".", 1)[0] if "." in v else ""
         if head not in allowed:
             raise ValueError(
-                f"warning code must start with one of {allowed}.*, got {v!r}. "
-                "See Sprint 1 for code taxonomy."
+                f"warning code must use literal DOT '.' as separator, e.g. "
+                f"'SAMPLE.TOO_SMALL', 'MOTOR.LOW_VELOCITY', 'SIGNAL.TRACKING_LOST', "
+                f"'METHOD.SHAPIRO_INAPPLICABLE'. NOT underscore-separated ('SAMPLE_X' is INVALID). "
+                f"First segment must be one of {sorted(allowed)} followed by '.'. "
+                f"Got {v!r}."
             )
         return v
 

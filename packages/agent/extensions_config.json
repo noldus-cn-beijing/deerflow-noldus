@@ -44,6 +44,9 @@
     },
     "ethovision-paradigm-knowledge": {
       "enabled": true
+    },
+    "ethoinsight-grouping": {
+      "enabled": true
     }
   }
 }
