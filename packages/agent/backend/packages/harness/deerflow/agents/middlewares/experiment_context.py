@@ -14,6 +14,7 @@ Robustness: file-not-found returns None (never raises).
 
 import json
 import logging
+import enum
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -27,6 +28,34 @@ logger = logging.getLogger(__name__)
 
 # Container-side path — used by lead agent prompt instructions and code-executor
 CONTAINER_CONTEXT_PATH = "/mnt/user-data/workspace/experiment-context.json"
+
+_EMERGENCY_DOWNGRADE_FILE = "/tmp/disable_strict_handoff"
+
+
+class HandoffStrictMode(str, enum.Enum):
+    OFF = "off"
+    WARN = "warn"
+    FAIL_CLOSED = "fail_closed"
+
+
+class HandoffSchemaError(Exception):
+    """Raised in FAIL_CLOSED mode when handoff schema validation fails."""
+
+
+def _get_strict_mode() -> HandoffStrictMode:
+    """读 config + 紧急降级文件。"""
+    if Path(_EMERGENCY_DOWNGRADE_FILE).exists():
+        logger.warning("emergency downgrade file present, forcing WARN mode")
+        return HandoffStrictMode.WARN
+    from deerflow.config import get_app_config
+
+    cfg = get_app_config()
+    mode_str = getattr(cfg, "handoff_strict_mode", "warn")
+    try:
+        return HandoffStrictMode(mode_str)
+    except ValueError:
+        logger.warning("invalid handoff_strict_mode %r, falling back to WARN", mode_str)
+        return HandoffStrictMode.WARN
 
 
 def read_context(workspace_dir: str) -> dict | None:
@@ -96,12 +125,22 @@ def read_handoff(workspace_dir: str, thread_data: ThreadDataState | None = None)
     if not isinstance(data, dict):
         return None
 
-    # Soft schema validation: surface violations without dropping the handoff.
+    # Three-tier strict mode validation
+    mode = _get_strict_mode()
+    if mode == HandoffStrictMode.OFF:
+        return data
+
     try:
         from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+
         CodeExecutorHandoff.model_validate(data)
-    except Exception as e:  # pragma: no cover - pydantic ValidationError
-        logger.warning("handoff_code_executor.json schema violation: %s", e)
+    except Exception as e:
+        if mode == HandoffStrictMode.FAIL_CLOSED:
+            raise HandoffSchemaError(
+                f"handoff_code_executor.json schema violation (FAIL_CLOSED): {e}"
+            ) from e
+        # WARN mode
+        logger.warning("handoff_code_executor.json schema violation (WARN mode): %s", e)
         violations = data.setdefault("_schema_violations", [])
         if isinstance(violations, list):
             violations.append(str(e))
