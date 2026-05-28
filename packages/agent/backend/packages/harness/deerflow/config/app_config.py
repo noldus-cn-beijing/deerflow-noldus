@@ -3,7 +3,7 @@ import os
 from collections.abc import Mapping
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 import yaml
 from dotenv import load_dotenv
@@ -109,6 +109,16 @@ class AppConfig(BaseModel):
     run_events: RunEventsConfig = Field(default_factory=RunEventsConfig, description="Run event storage configuration")
     checkpointer: CheckpointerConfig | None = Field(default=None, description="Checkpointer configuration")
     stream_bridge: StreamBridgeConfig | None = Field(default=None, description="Stream bridge configuration")
+    handoff_strict_mode: Literal["off", "warn", "fail_closed"] = Field(
+        default="warn",
+        description=(
+            "Handoff schema validation strictness. "
+            "'warn' (default) logs violations but returns dict; "
+            "'fail_closed' raises HandoffSchemaError; "
+            "'off' restores legacy behavior. "
+            "Override at runtime by creating /tmp/disable_strict_handoff (forces 'warn')."
+        ),
+    )
 
     @classmethod
     def resolve_config_path(cls, config_path: str | None = None) -> Path:

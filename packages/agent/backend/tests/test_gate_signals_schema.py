@@ -62,7 +62,7 @@ def test_code_executor_handoff_has_optional_gate_signals():
     """CodeExecutorHandoff must accept gate_signals=None (optional in file)."""
     from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
 
-    h = CodeExecutorHandoff(status="completed", summary="ok")
+    h = CodeExecutorHandoff(status="completed", summary="ok", paradigm="fst", analysis_config_id="test-config-id")
     assert h.gate_signals is None
 
 
@@ -72,6 +72,8 @@ def test_code_executor_handoff_accepts_gate_signals():
     h = CodeExecutorHandoff(
         status="completed",
         summary="ok",
+        paradigm="fst",
+        analysis_config_id="test-config-id",
         gate_signals=GateSignals(statistical_validity="warning"),
     )
     assert h.gate_signals.statistical_validity == "warning"

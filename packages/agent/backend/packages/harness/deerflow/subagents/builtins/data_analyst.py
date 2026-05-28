@@ -99,8 +99,10 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
         写入 excluded_metrics
    d. **给研究者的行动建议**：样本量扩充、检查异常个体健康状态、方法学修正等
       → 写入 recommendations
-3. write_file /mnt/user-data/workspace/handoff_data_analyst.json —— 按上面 schema
-   写入所有字段。如果没有相应发现，用空数组 `[]`，不要省略字段
+3. **封存 handoff**: 调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/method_warnings/recommendations/errors/gate_signals，
+   工具会自动写入 /mnt/user-data/workspace/handoff_data_analyst.json 并落 manifest hash。
+   **严禁直接 write_file 写 handoff_data_analyst.json，必须走本 tool。**
+   如果没有相应发现，用空数组 `[]`，不要省略字段
 4. 最终 AIMessage：用自然语言写 2-3 段关键发现摘要给 lead agent，重点是 key_findings
    和最重要的 outlier_findings；不要复述 handoff JSON 的全部字段
 </workflow>
