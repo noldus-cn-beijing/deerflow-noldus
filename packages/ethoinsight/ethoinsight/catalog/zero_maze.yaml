@@ -112,3 +112,11 @@ statistics:
     id: groupwise_compare
     script: ethoinsight.scripts.zero_maze.run_groupwise_stats
     when: n_per_group >= 2 and n_groups >= 2
+
+paradigm_parameters:
+  zm_low_distance_threshold:
+    default: 10.0
+    unit: cm
+    description: "Zero maze: subject 总移动距离 < 此值时,触发 MOTOR.LOW_DISTANCE 警告 (运动抑制嫌疑)。"
+    tunable_by_user: true
+    valid_range: [0.1, 200.0]

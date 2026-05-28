@@ -28,6 +28,36 @@ ALLOWED_STAT_DEFAULTS: frozenset[str] = frozenset(
 )
 
 
+# ============================================================================
+# Sprint 2a: parameter specs — catalog 端参数下沉
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class ParamSpec:
+    """单个参数的定义。"""
+
+    default: float | int | str
+    unit: str
+    description: str
+    tunable_by_user: bool
+    valid_range: list[float | int] | None  # [min, max] for numeric; None for str
+
+
+@dataclass(frozen=True)
+class SharedParameters:
+    """跨范式共享的参数集合 (_common.yaml.shared_parameters)。"""
+
+    parameters: dict[str, ParamSpec]
+
+
+@dataclass(frozen=True)
+class ParadigmParameters:
+    """范式级共用参数 (各 <paradigm>.yaml 的 paradigm_parameters 段)。"""
+
+    parameters: dict[str, ParamSpec] = field(default_factory=dict)
+
+
 @dataclass(frozen=True)
 class MetricEntry:
     id: str
@@ -39,6 +69,8 @@ class MetricEntry:
     one_liner: str
     direction_for_anxiety: str | None  # validated against ALLOWED_DIRECTIONS
     statistical_default: str  # validated against ALLOWED_STAT_DEFAULTS
+    parameters: dict[str, ParamSpec] = field(default_factory=dict)
+    parameters_ref: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -75,6 +107,19 @@ class Catalog:
     optional_metrics: list[MetricEntry]
     charts: list[ChartEntry]
     statistics_default: StatisticsEntry | None
+    paradigm_parameters: ParadigmParameters = field(
+        default_factory=ParadigmParameters
+    )
+
+
+@dataclass(frozen=True)
+class CommonCatalog:
+    """Paradigm-agnostic fallback resources."""
+
+    common_charts: list[ChartEntry]
+    shared_parameters: SharedParameters = field(
+        default_factory=lambda: SharedParameters(parameters={})
+    )
 
 
 # ============================================================================
@@ -113,6 +158,7 @@ class PlanMetric:
     output_unit: str = ""
     direction_for_anxiety: str | None = None
     statistical_default: str = ""
+    parameters_in_use: dict[str, float | int | str] = field(default_factory=dict)
 
 
 @dataclass

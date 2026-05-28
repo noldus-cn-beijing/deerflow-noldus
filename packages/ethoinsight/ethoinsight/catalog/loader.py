@@ -20,7 +20,6 @@ Canonical paradigm key policy (2026-05-25 → 2026-05-26):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +30,11 @@ from ethoinsight.catalog.schema import (
     ALLOWED_STAT_DEFAULTS,
     Catalog,
     ChartEntry,
+    CommonCatalog,
     MetricEntry,
+    ParamSpec,
+    ParadigmParameters,
+    SharedParameters,
     StatisticsEntry,
 )
 
@@ -118,6 +121,8 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
     charts = _parse_chart_list(raw, source)
     statistics_default = _parse_statistics(raw, source)
 
+    paradigm_params_block = _parse_param_block(raw, "paradigm_parameters", source)
+
     return Catalog(
         paradigm=paradigm,
         ev19_templates=ev19_templates,
@@ -125,7 +130,68 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
         optional_metrics=optional_metrics,
         charts=charts,
         statistics_default=statistics_default,
+        paradigm_parameters=ParadigmParameters(parameters=paradigm_params_block),
     )
+
+
+def _parse_param_spec(item: dict, where: str, source: Path) -> ParamSpec:
+    """解析单个 ParamSpec yaml 字段。"""
+    def req(field_name: str, expected_type: type | tuple) -> Any:
+        if field_name not in item:
+            raise CatalogError(f"{source} {where}: missing '{field_name}'")
+        v = item[field_name]
+        if not isinstance(v, expected_type):
+            raise CatalogError(
+                f"{source} {where}: '{field_name}' must be {expected_type}, "
+                f"got {type(v).__name__}"
+            )
+        return v
+
+    default = req("default", (int, float, str))
+    unit = req("unit", str)
+    description = req("description", str)
+    tunable = req("tunable_by_user", bool)
+
+    valid_range = item.get("valid_range", None)
+    if valid_range is not None:
+        if not isinstance(valid_range, list) or len(valid_range) != 2:
+            raise CatalogError(
+                f"{source} {where}: 'valid_range' must be [min, max] or null"
+            )
+        lo, hi = valid_range
+        if not all(isinstance(x, (int, float)) for x in [lo, hi]):
+            raise CatalogError(
+                f"{source} {where}: 'valid_range' members must be numeric"
+            )
+        if lo > hi:
+            raise CatalogError(
+                f"{source} {where}: 'valid_range' min ({lo}) > max ({hi})"
+            )
+        if isinstance(default, (int, float)) and not (lo <= default <= hi):
+            raise CatalogError(
+                f"{source} {where}: default {default} outside valid_range [{lo}, {hi}]"
+            )
+
+    return ParamSpec(
+        default=default,
+        unit=unit,
+        description=description,
+        tunable_by_user=tunable,
+        valid_range=valid_range,
+    )
+
+
+def _parse_param_block(raw: dict, key: str, source: Path) -> dict[str, ParamSpec]:
+    """解析 parameters / shared_parameters / paradigm_parameters 这类 dict 块。"""
+    block = raw.get(key, {}) or {}
+    if not isinstance(block, dict):
+        raise CatalogError(f"{source}: '{key}' must be a mapping")
+    result: dict[str, ParamSpec] = {}
+    for pname, pdict in block.items():
+        if not isinstance(pdict, dict):
+            raise CatalogError(f"{source}: '{key}.{pname}' must be a mapping")
+        result[pname] = _parse_param_spec(pdict, where=f"{key}.{pname}", source=source)
+    return result
 
 
 def _parse_metric_list(raw: dict, key: str, source: Path) -> list[MetricEntry]:
@@ -185,6 +251,11 @@ def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
             f"{sorted(ALLOWED_STAT_DEFAULTS)}, got {stat_default!r}"
         )
 
+    parameters = _parse_param_block(item, "parameters", source) if "parameters" in item else {}
+    parameters_ref = item.get("parameters_ref", []) or []
+    if not isinstance(parameters_ref, list) or not all(isinstance(x, str) for x in parameters_ref):
+        raise CatalogError(f"{source} {where}: 'parameters_ref' must be list[str]")
+
     return MetricEntry(
         id=mid,
         script=script,
@@ -195,6 +266,8 @@ def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
         one_liner=one_liner,
         direction_for_anxiety=direction,
         statistical_default=stat_default,
+        parameters=parameters,
+        parameters_ref=list(parameters_ref),
     )
 
 
@@ -275,13 +348,6 @@ def _require_list_of_str(raw: dict, key: str, source: Path) -> list[str]:
 # ============================================================================
 
 
-@dataclass(frozen=True)
-class CommonCatalog:
-    """Paradigm-agnostic fallback resources."""
-
-    common_charts: list[ChartEntry]
-
-
 def load_common_catalog(catalog_dir: str | Path | None = None) -> CommonCatalog:
     """Load _common.yaml from catalog directory."""
     catalog_dir = Path(catalog_dir) if catalog_dir else _DEFAULT_CATALOG_DIR
@@ -301,7 +367,11 @@ def load_common_catalog(catalog_dir: str | Path | None = None) -> CommonCatalog:
         )
 
     common_charts = _parse_chart_list_under_key(raw, "common_charts", yaml_path)
-    return CommonCatalog(common_charts=common_charts)
+    shared_params = _parse_param_block(raw, "shared_parameters", yaml_path)
+    return CommonCatalog(
+        common_charts=common_charts,
+        shared_parameters=SharedParameters(parameters=shared_params),
+    )
 
 
 def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[ChartEntry]:
@@ -347,3 +417,82 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
             )
         )
     return out
+
+
+# ============================================================================
+# Sprint 2a: cross-catalog consistency validation
+# ============================================================================
+
+
+def validate_catalog_consistency(
+    common: CommonCatalog,
+    paradigm_catalogs: list[tuple[str, Catalog]],
+) -> None:
+    """跨范式 catalog 一致性校验。Sprint 2a 引入。
+
+    校验项:
+    1. parameters_ref 中所有 ID 在 _common.yaml.shared_parameters 中存在
+    2. 重复参数检测: 同名 + 相同 default 出现在 2+ paradigm yaml 的
+       paradigm_parameters 中 → 应提到 _common.yaml, raise CatalogError
+
+    Raises:
+        CatalogError: 校验失败
+    """
+    # 1. 验 parameters_ref 引用合法
+    shared_keys = set(common.shared_parameters.parameters.keys())
+    for paradigm_name, cat in paradigm_catalogs:
+        for m in cat.default_metrics + cat.optional_metrics:
+            for ref in m.parameters_ref:
+                if ref not in shared_keys:
+                    raise CatalogError(
+                        f"{paradigm_name}.yaml: metric '{m.id}' parameters_ref includes "
+                        f"'{ref}' which is not in _common.yaml.shared_parameters. "
+                        f"Available shared parameters: {sorted(shared_keys)}"
+                    )
+
+    # 2. 跨范式重复参数检测 (paradigm_parameters 层)
+    occurrences: dict[tuple[str, Any], list[str]] = {}
+    for paradigm_name, cat in paradigm_catalogs:
+        for pname, pspec in cat.paradigm_parameters.parameters.items():
+            key = (pname, pspec.default)
+            occurrences.setdefault(key, []).append(paradigm_name)
+
+    duplicates = [
+        (pname, default, paradigms)
+        for (pname, default), paradigms in occurrences.items()
+        if len(paradigms) >= 2
+    ]
+    if duplicates:
+        msgs = [
+            f"  - '{pname}' (default={default}) appears in: {paradigms}; "
+            f"should be promoted to _common.yaml.shared_parameters"
+            for pname, default, paradigms in duplicates
+        ]
+        raise CatalogError(
+            "Duplicate parameters detected across paradigm yamls "
+            "(same name + same default → should be shared):\n"
+            + "\n".join(msgs)
+        )
+
+
+def load_all_catalogs(
+    catalog_dir: str | Path | None = None,
+) -> tuple[CommonCatalog, list[tuple[str, Catalog]]]:
+    """加载 _common.yaml + 全部 paradigm yaml, 跑一致性校验。"""
+    common = load_common_catalog(catalog_dir)
+    paradigm_names = [
+        "epm", "open_field", "light_dark_box",
+        "forced_swim", "tail_suspension", "zero_maze",
+    ]
+    paradigm_catalogs: list[tuple[str, Catalog]] = []
+    for pname in paradigm_names:
+        try:
+            cat = load_catalog(pname, catalog_dir)
+            paradigm_catalogs.append((pname, cat))
+        except CatalogError as e:
+            if "not found" in str(e).lower():
+                continue
+            raise
+
+    validate_catalog_consistency(common, paradigm_catalogs)
+    return common, paradigm_catalogs

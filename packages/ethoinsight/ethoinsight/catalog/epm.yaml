@@ -156,3 +156,11 @@ statistics:
     id: groupwise_compare
     script: ethoinsight.scripts.epm.run_groupwise_stats
     when: n_per_group >= 2 and n_groups >= 2
+
+paradigm_parameters:
+  motor_low_entries_threshold:
+    default: 8
+    unit: count
+    description: "EPM: subject 总进臂次数 < 此值时,触发 MOTOR.LOW_ENTRIES 警告 (运动抑制嫌疑)。"
+    tunable_by_user: true
+    valid_range: [1, 50]
