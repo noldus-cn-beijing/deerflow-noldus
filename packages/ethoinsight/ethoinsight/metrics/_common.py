@@ -574,15 +574,25 @@ def compute_velocity_bins(
 ) -> dict | None:
     """Bin per-frame velocity into ranges and return time-ratio per bin.
 
+    When invoked via the catalog, only the ``velocity`` column is exposed.
+    The ``distance_moved`` fallback is available via direct API call.
+
     Args:
         df: DataFrame with ``velocity`` or ``distance_moved`` column.
-        bin_edges: Velocity thresholds in mm/s. Default: [0, 50, 100, 200, 400].
+        bin_edges: Velocity thresholds. Default: [0, 50, 100, 200, 400].
+            Must have at least 2 elements. Values below the first edge
+            are captured in a ``<{first}`` bin.
 
     Returns:
         Dict mapping bin label to ratio (0–1), or None when no velocity data.
+        Bin labels: ``"<{first}"``, ``"{lo}-{hi}"``, ``"{last}+"``.
+        Ratios always sum to 1.
     """
     if bin_edges is None:
         bin_edges = [0, 50, 100, 200, 400]
+
+    if len(bin_edges) < 2:
+        raise ValueError(f"bin_edges must have at least 2 elements, got {len(bin_edges)}")
 
     if "velocity" in df.columns:
         v = pd.to_numeric(df["velocity"], errors="coerce").dropna()
@@ -598,6 +608,11 @@ def compute_velocity_bins(
         return None
 
     result: dict[str, float] = {}
+
+    # Leading bin for values below the first edge
+    under_mask = v < bin_edges[0]
+    result[f"<{bin_edges[0]}"] = float(under_mask.mean())
+
     for i in range(len(bin_edges) - 1):
         lo, hi = bin_edges[i], bin_edges[i + 1]
         mask = (v >= lo) & (v < hi)
@@ -663,7 +678,11 @@ def compute_acceleration_stats(
     """Smoothed acceleration statistics.
 
     SMA-smooths velocity (window = *smooth_window*), then differentiates
-    to get acceleration (mm/s²).
+    to get acceleration. Output unit matches the input velocity unit per
+    second (e.g. mm/s² when velocity is in mm/s, cm/s² when in cm/s).
+
+    When invoked via the catalog, only the ``velocity`` column is exposed.
+    The ``distance_moved`` fallback is available via direct API call.
 
     Args:
         df: DataFrame with ``velocity`` or ``distance_moved`` column.
@@ -736,7 +755,7 @@ def compute_body_length(df: pd.DataFrame) -> dict | None:
 
     return {
         "mean": float(valid.mean()),
-        "std": float(valid.std()),
+        "std": float(valid.std()) if len(valid) > 1 else 0.0,
         "min": float(valid.min()),
         "max": float(valid.max()),
         "median": float(valid.median()),
@@ -755,7 +774,9 @@ def compute_heading_smoothed(
     """Circular SMA on Direction (heading) column.
 
     Unwraps angles to handle the ±180° boundary, applies SMA, then re-wraps
-    to [0, 2π).
+    to [0, 2π). NaN gaps are forward-filled before unwrapping so they do not
+    corrupt the angular continuity; only originally-valid frames contribute
+    to the output statistics.
 
     Args:
         df: DataFrame with ``Direction`` column (radians).
@@ -767,18 +788,25 @@ def compute_heading_smoothed(
     """
     if "Direction" not in df.columns:
         return None
-    d = pd.to_numeric(df["Direction"], errors="coerce").dropna()
-    if d.empty:
+    d = pd.to_numeric(df["Direction"], errors="coerce")
+    valid_mask = d.notna()
+    if not valid_mask.any():
         return None
 
-    rads = d.to_numpy(dtype=float)
-    unwrapped = np.unwrap(rads)
+    # Forward-fill NaN gaps so unwrap sees continuous angles
+    d_filled = d.ffill().to_numpy(dtype=float)
+    unwrapped = np.unwrap(d_filled)
     smoothed = pd.Series(unwrapped).rolling(window=window, min_periods=1).mean()
     smoothed_wrapped = smoothed % (2 * np.pi)
 
-    n = len(smoothed_wrapped)
-    sin_sum = float(np.sin(smoothed_wrapped).sum())
-    cos_sum = float(np.cos(smoothed_wrapped).sum())
+    # Only keep frames that were originally valid
+    valid_smoothed = smoothed_wrapped[valid_mask.values]
+    n = len(valid_smoothed)
+    if n == 0:
+        return None
+
+    sin_sum = float(np.sin(valid_smoothed).sum())
+    cos_sum = float(np.cos(valid_smoothed).sum())
     R = np.sqrt(sin_sum**2 + cos_sum**2)
     mean_rad = float(np.arctan2(sin_sum, cos_sum)) % (2 * np.pi)
     circular_stdev = (

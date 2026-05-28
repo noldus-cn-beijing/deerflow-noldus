@@ -534,9 +534,25 @@ def test_velocity_bins_custom_edges():
     df = pd.DataFrame({"velocity": [5, 15, 25]})
     result = compute_velocity_bins(df, bin_edges=[0, 10, 20])
     assert result is not None
+    assert "<0" in result
     assert "0-10" in result
     assert "10-20" in result
     assert "20+" in result
+    ratios = list(result.values())
+    assert sum(ratios) == pytest.approx(1.0)
+
+
+def test_velocity_bins_negative_values():
+    """Values below the first bin edge go into the <{first} bin."""
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_velocity_bins
+
+    df = pd.DataFrame({"velocity": [-5.0, -2.0, 10.0, 60.0]})
+    result = compute_velocity_bins(df)
+    assert result is not None
+    assert result["<0"] == pytest.approx(0.5)  # 2 of 4 frames
+    ratios = list(result.values())
+    assert sum(ratios) == pytest.approx(1.0)
 
 
 def test_velocity_bins_missing_column():
