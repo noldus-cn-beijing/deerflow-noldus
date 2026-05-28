@@ -6,28 +6,12 @@ import re
 
 import pandas as pd
 
+from ethoinsight.metrics._common import _count_zone_entries
+
 
 # ============================================================================
 # EPM helpers
 # ============================================================================
-
-
-def _count_zone_entries(df: pd.DataFrame, zone_cols: list[str]) -> int | None:
-    """Count 0→1 transitions across zone columns (combined with OR).
-
-    Returns None when no matching columns exist, 0 when no entries detected.
-    """
-    if not zone_cols:
-        return None
-    # Combine multiple zone columns: in zone if ANY column == 1
-    combined = df[zone_cols].max(axis=1).dropna()
-    if combined.empty:
-        return 0
-    vals = combined.to_numpy(dtype=int)
-    # Entry: 0→1 transition. First frame being 1 also counts as an entry.
-    entries = 1 if vals[0] == 1 else 0
-    transitions = (vals[1:] == 1) & (vals[:-1] == 0)
-    return entries + int(transitions.sum())
 
 
 def _find_arm_zone_columns(df: pd.DataFrame) -> list[str]:
@@ -118,13 +102,14 @@ def compute_open_arm_time_ratio(
 def compute_open_arm_entry_count(
     df: pd.DataFrame,
     open_arm_zones: list[str] | None = None,
+    min_duration_frames: int = 0,
 ) -> int | None:
     """Number of entries into open arms (0→1 transitions)."""
     if open_arm_zones:
         cols = [c for c in open_arm_zones if c in df.columns]
     else:
         cols = _get_open_zone_cols(df)
-    return _count_zone_entries(df, cols)
+    return _count_zone_entries(df, cols, min_duration_frames=min_duration_frames)
 
 
 def compute_open_arm_entry_ratio(
@@ -165,7 +150,10 @@ def compute_open_arm_time(
     return float(n_frames)
 
 
-def compute_total_entry_count(df: pd.DataFrame) -> int | None:
+def compute_total_entry_count(
+    df: pd.DataFrame,
+    min_duration_frames: int = 0,
+) -> int | None:
     """Total entries into all arm zones (open + closed, excluding center).
 
     Counts entries into open-arm and closed-arm zone groups separately
@@ -176,6 +164,6 @@ def compute_total_entry_count(df: pd.DataFrame) -> int | None:
     closed_cols = _get_closed_zone_cols(df)
     if not open_cols and not closed_cols:
         return None
-    open_entries = _count_zone_entries(df, open_cols) or 0
-    closed_entries = _count_zone_entries(df, closed_cols) or 0
+    open_entries = _count_zone_entries(df, open_cols, min_duration_frames=min_duration_frames) or 0
+    closed_entries = _count_zone_entries(df, closed_cols, min_duration_frames=min_duration_frames) or 0
     return open_entries + closed_entries

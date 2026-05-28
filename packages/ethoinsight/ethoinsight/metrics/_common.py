@@ -54,6 +54,42 @@ def _find_zone_column(df: pd.DataFrame, pattern: str) -> str | None:
     return None
 
 
+def _count_zone_entries(
+    df: pd.DataFrame,
+    zone_cols: list[str],
+    min_duration_frames: int = 0,
+) -> int | None:
+    """Count 0→1 transitions across zone columns (combined with OR).
+
+    Args:
+        df: DataFrame with zone indicator columns (0/1).
+        zone_cols: Column names to combine with OR.
+        min_duration_frames: Minimum consecutive frames in zone for a bout
+            to count as an entry. 0 = disabled (backward compatible).
+
+    Returns:
+        Entry count, or None when no matching columns exist.
+    """
+    if not zone_cols:
+        return None
+    combined = df[zone_cols].max(axis=1).dropna()
+    if combined.empty:
+        return 0
+    vals = combined.to_numpy(dtype=int)
+
+    if min_duration_frames <= 0:
+        entries = 1 if vals[0] == 1 else 0
+        transitions = (vals[1:] == 1) & (vals[:-1] == 0)
+        return entries + int(transitions.sum())
+
+    bouts = _runs(combined, value=1)
+    count = 0
+    for start, end in bouts:
+        if end - start + 1 >= min_duration_frames:
+            count += 1
+    return count
+
+
 # ============================================================================
 # Immobility analysis (shared by FST / TST)
 # ============================================================================
@@ -460,5 +496,300 @@ def compute_turn_angle_stats(df: pd.DataFrame) -> dict | None:
         "mean_abs_deg": float(np.mean(abs_rad) * 180 / np.pi),
         "std_abs_rad": float(np.std(abs_rad)),
         "total_abs_rad": float(np.sum(abs_rad)),
+        "n": n,
+    }
+
+
+def compute_turn_angle_filtered(
+    df: pd.DataFrame,
+    min_displacement_mm: float = 1.0,
+) -> dict | None:
+    """Turn angle with distance-moved filter (Noldus "Turn Angle with Distance moved filter").
+
+    Sliding window of 3 center-points. A new point is only added when its
+    displacement from the previous point exceeds *min_displacement_mm*,
+    filtering out jitter when the animal is stationary.
+
+    Args:
+        df: DataFrame with ``x_center``, ``y_center`` columns.
+        min_displacement_mm: Minimum displacement (in coordinate units) for
+            a point to enter the 3-point window. Noldus JS default: 1.0.
+
+    Returns:
+        Dict with keys mean_abs_rad, mean_abs_deg, std_abs_rad, n, or None
+        when required columns are missing or fewer than 3 valid points exist.
+    """
+    if "x_center" not in df.columns or "y_center" not in df.columns:
+        return None
+    x = df["x_center"].to_numpy(dtype=float)
+    y = df["y_center"].to_numpy(dtype=float)
+    n = len(x)
+
+    points: list[tuple[float, float]] = []
+    angles: list[float] = []
+
+    for i in range(n):
+        if np.isnan(x[i]) or np.isnan(y[i]):
+            continue
+        pt = (float(x[i]), float(y[i]))
+        if points:
+            last = points[-1]
+            d = np.sqrt((pt[0] - last[0]) ** 2 + (pt[1] - last[1]) ** 2)
+            if d <= min_displacement_mm:
+                continue
+        points.append(pt)
+        if len(points) > 3:
+            points.pop(0)
+        if len(points) == 3:
+            v1 = (points[1][0] - points[0][0], points[1][1] - points[0][1])
+            v2 = (points[2][0] - points[1][0], points[2][1] - points[1][1])
+            dot = v1[0] * v2[0] + v1[1] * v2[1]
+            norm1 = np.sqrt(v1[0] ** 2 + v1[1] ** 2)
+            norm2 = np.sqrt(v2[0] ** 2 + v2[1] ** 2)
+            if norm1 > 0 and norm2 > 0:
+                cos_angle = max(-1.0, min(1.0, dot / (norm1 * norm2)))
+                angle = float(np.arccos(cos_angle))
+                angles.append(angle)
+
+    if len(angles) == 0:
+        return None
+
+    arr = np.array(angles)
+    return {
+        "mean_abs_rad": float(np.mean(arr)),
+        "mean_abs_deg": float(np.mean(arr) * 180 / np.pi),
+        "std_abs_rad": float(np.std(arr)),
+        "n": len(angles),
+    }
+
+
+# ============================================================================
+# B4 — velocity bins (Noldus "Split the track in bins based on velocity")
+# ============================================================================
+
+
+def compute_velocity_bins(
+    df: pd.DataFrame,
+    bin_edges: list[float] | None = None,
+) -> dict | None:
+    """Bin per-frame velocity into ranges and return time-ratio per bin.
+
+    Args:
+        df: DataFrame with ``velocity`` or ``distance_moved`` column.
+        bin_edges: Velocity thresholds in mm/s. Default: [0, 50, 100, 200, 400].
+
+    Returns:
+        Dict mapping bin label to ratio (0–1), or None when no velocity data.
+    """
+    if bin_edges is None:
+        bin_edges = [0, 50, 100, 200, 400]
+
+    if "velocity" in df.columns:
+        v = pd.to_numeric(df["velocity"], errors="coerce").dropna()
+    elif "distance_moved" in df.columns:
+        dt = _estimate_dt(df)
+        if dt <= 0:
+            return None
+        v = pd.to_numeric(df["distance_moved"], errors="coerce").dropna() / dt
+    else:
+        return None
+
+    if v.empty:
+        return None
+
+    result: dict[str, float] = {}
+    for i in range(len(bin_edges) - 1):
+        lo, hi = bin_edges[i], bin_edges[i + 1]
+        mask = (v >= lo) & (v < hi)
+        result[f"{lo}-{hi}"] = float(mask.mean())
+
+    over_mask = v >= bin_edges[-1]
+    result[f"{bin_edges[-1]}+"] = float(over_mask.mean())
+
+    return result
+
+
+# ============================================================================
+# B7 — cumulative distance (Noldus "Distance moved - Cumulative in last k samples")
+# ============================================================================
+
+
+def compute_cumulative_distance(
+    df: pd.DataFrame,
+    window_samples: int = 25,
+) -> dict | None:
+    """Cumulative distance moved over a sliding window (rolling sum).
+
+    Frame-rate adaptive: *window_samples* is scaled from the 25-fps Noldus
+    baseline to the actual frame rate via :func:`_estimate_dt`.
+
+    Args:
+        df: DataFrame with ``distance_moved`` column.
+        window_samples: Window size in samples at 25 fps. Default 25 (= 1 s).
+
+    Returns:
+        Dict with keys mean, max, min, median, or None.
+    """
+    if "distance_moved" not in df.columns:
+        return None
+
+    dt = _estimate_dt(df)
+    scale = 0.04 / dt if dt > 0 and dt != 0.04 else 1.0
+    window = max(1, round(window_samples * scale))
+
+    d = pd.to_numeric(df["distance_moved"], errors="coerce").fillna(0)
+    cum = d.rolling(window=window, min_periods=1).sum()
+    valid = cum.dropna()
+    if valid.empty:
+        return None
+
+    return {
+        "mean": float(valid.mean()),
+        "max": float(valid.max()),
+        "min": float(valid.min()),
+        "median": float(valid.median()),
+    }
+
+
+# ============================================================================
+# B8 — acceleration stats (Noldus "Acceleration - Smoothed")
+# ============================================================================
+
+
+def compute_acceleration_stats(
+    df: pd.DataFrame,
+    smooth_window: int = 5,
+) -> dict | None:
+    """Smoothed acceleration statistics.
+
+    SMA-smooths velocity (window = *smooth_window*), then differentiates
+    to get acceleration (mm/s²).
+
+    Args:
+        df: DataFrame with ``velocity`` or ``distance_moved`` column.
+        smooth_window: SMA window size for velocity smoothing.
+
+    Returns:
+        Dict with keys mean, std, max, min, or None.
+    """
+    if "velocity" in df.columns:
+        v = pd.to_numeric(df["velocity"], errors="coerce").dropna()
+    elif "distance_moved" in df.columns:
+        dt = _estimate_dt(df)
+        if dt <= 0:
+            return None
+        v = pd.to_numeric(df["distance_moved"], errors="coerce").dropna() / dt
+    else:
+        return None
+
+    if len(v) < 2:
+        return None
+
+    v_smooth = v.rolling(window=smooth_window, min_periods=1).mean()
+    dt = _estimate_dt(df)
+    if dt <= 0:
+        return None
+    acc = v_smooth.diff() / dt
+    acc = acc.dropna()
+    if acc.empty:
+        return None
+
+    return {
+        "mean": float(acc.mean()),
+        "std": float(acc.std()),
+        "max": float(acc.max()),
+        "min": float(acc.min()),
+    }
+
+
+# ============================================================================
+# B5 — body length (Noldus "Body Length - Sum of segments")
+# ============================================================================
+
+
+def compute_body_length(df: pd.DataFrame) -> dict | None:
+    """Body length as sum of Nose→Center + Center→Tail Euclidean distances.
+
+    Requires all 6 body-point columns. Returns None when any column is
+    missing (not all paradigms have multi-point body tracking).
+
+    Returns:
+        Dict with keys mean, std, min, max, median (same unit as
+        coordinate columns, typically cm), or None.
+    """
+    required = ["x_nose", "y_nose", "x_center", "y_center", "x_tail", "y_tail"]
+    if not all(c in df.columns for c in required):
+        return None
+
+    nose_to_center = np.sqrt(
+        (df["x_nose"] - df["x_center"]) ** 2
+        + (df["y_nose"] - df["y_center"]) ** 2
+    )
+    center_to_tail = np.sqrt(
+        (df["x_center"] - df["x_tail"]) ** 2
+        + (df["y_center"] - df["y_tail"]) ** 2
+    )
+    body_length = pd.to_numeric(nose_to_center + center_to_tail, errors="coerce")
+    valid = body_length.dropna()
+    if valid.empty:
+        return None
+
+    return {
+        "mean": float(valid.mean()),
+        "std": float(valid.std()),
+        "min": float(valid.min()),
+        "max": float(valid.max()),
+        "median": float(valid.median()),
+    }
+
+
+# ============================================================================
+# B10 — heading smoothed (Noldus "Heading - Smoothed")
+# ============================================================================
+
+
+def compute_heading_smoothed(
+    df: pd.DataFrame,
+    window: int = 5,
+) -> dict | None:
+    """Circular SMA on Direction (heading) column.
+
+    Unwraps angles to handle the ±180° boundary, applies SMA, then re-wraps
+    to [0, 2π).
+
+    Args:
+        df: DataFrame with ``Direction`` column (radians).
+        window: SMA window size. Default 5.
+
+    Returns:
+        Dict with keys mean_rad, circular_stdev_rad, resultant_length, n,
+        or None when ``Direction`` column is missing or all-NaN.
+    """
+    if "Direction" not in df.columns:
+        return None
+    d = pd.to_numeric(df["Direction"], errors="coerce").dropna()
+    if d.empty:
+        return None
+
+    rads = d.to_numpy(dtype=float)
+    unwrapped = np.unwrap(rads)
+    smoothed = pd.Series(unwrapped).rolling(window=window, min_periods=1).mean()
+    smoothed_wrapped = smoothed % (2 * np.pi)
+
+    n = len(smoothed_wrapped)
+    sin_sum = float(np.sin(smoothed_wrapped).sum())
+    cos_sum = float(np.cos(smoothed_wrapped).sum())
+    R = np.sqrt(sin_sum**2 + cos_sum**2)
+    mean_rad = float(np.arctan2(sin_sum, cos_sum)) % (2 * np.pi)
+    circular_stdev = (
+        float(np.sqrt(-2 * np.log(max(min(R / n, 1.0 - 1e-12), 1e-12))))
+        if n > 0 and R > 0
+        else float("inf")
+    )
+
+    return {
+        "mean_rad": mean_rad,
+        "circular_stdev_rad": circular_stdev,
+        "resultant_length": float(R),
         "n": n,
     }

@@ -91,6 +91,16 @@ optional_metrics:
     direction_for_anxiety: null
     statistical_default: groupwise_compare
 
+  - id: body_length
+    script: ethoinsight.scripts.epm.compute_body_length
+    requires_columns: [x_nose, y_nose, x_center, y_center, x_tail, y_tail]
+    output_unit: cm
+    display_name_zh: 身体长度（分段求和）
+    unit_zh: cm
+    one_liner: Nose→Center + Center→Tail 欧氏距离求和，基于 Noldus Body Length - Sum of segments
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
 charts:
   - id: box_open_arm
     script: ethoinsight.scripts.epm.plot_box_open_arm

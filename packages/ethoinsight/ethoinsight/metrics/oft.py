@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ethoinsight.metrics._common import _find_zone_column
+from ethoinsight.metrics._common import _count_zone_entries, _find_zone_column
 
 
 # ============================================================================
@@ -166,6 +166,7 @@ def compute_center_distance_ratio(
 def compute_center_entry_count(
     df: pd.DataFrame,
     center_zone: str = "in_zone_center",
+    min_duration_frames: int = 0,
 ) -> int | None:
     """Number of entries into the center zone (0→1 transitions).
 
@@ -174,15 +175,7 @@ def compute_center_entry_count(
     col = _find_center_zone_column(df, hint=center_zone)
     if col is None:
         return None
-
-    series = df[col].dropna()
-    if series.empty:
-        return 0
-
-    vals = series.to_numpy(dtype=int)
-    entries = 1 if vals[0] == 1 else 0
-    transitions = (vals[1:] == 1) & (vals[:-1] == 0)
-    return entries + int(transitions.sum())
+    return _count_zone_entries(df, [col], min_duration_frames=min_duration_frames)
 
 
 def compute_center_time(df: pd.DataFrame) -> float | None:

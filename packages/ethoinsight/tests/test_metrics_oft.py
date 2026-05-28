@@ -135,3 +135,33 @@ def test_find_center_zone_still_finds_explicit_center_columns():
 
     df = pd.DataFrame({"time": [0.0], "in_zone_center_center_point": [1]})
     assert _find_center_zone_column(df) == "in_zone_center_center_point"
+
+
+# ============================================================================
+# B6 — zone min_duration_frames
+# ============================================================================
+
+
+def test_center_entry_min_duration_filters_short_bouts():
+    """Bouts shorter than min_duration_frames should not count as entries."""
+    from ethoinsight.metrics.oft import compute_center_entry_count
+
+    # 3 frames in center, 3 out, 1 in, 4 out — the second "entry" is 1 frame (fly-through)
+    df = pd.DataFrame({
+        "trial_time": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        "in_zone_center_center_point": [1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+    })
+    # Without filter: starts in center (1) + transition at frame 6 = 2 entries
+    assert compute_center_entry_count(df) == 2
+    # With filter: the 1-frame bout at frame 6 is too short → only 1 entry
+    assert compute_center_entry_count(df, min_duration_frames=2) == 1
+
+
+def test_center_entry_min_duration_zero_backward_compat():
+    """min_duration_frames=0 should behave identically to old code."""
+    from ethoinsight.metrics.oft import compute_center_entry_count
+
+    df = pd.DataFrame({
+        "in_zone_center_center_point": [1, 1, 0, 1, 1],
+    })
+    assert compute_center_entry_count(df, min_duration_frames=0) == compute_center_entry_count(df)

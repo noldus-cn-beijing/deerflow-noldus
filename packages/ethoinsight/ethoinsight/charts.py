@@ -697,12 +697,17 @@ def heatmap_plot(
 def activity_intensity_plot(
     df: pd.DataFrame,
     output_path: str | None = None,
+    smooth_window: int | None = None,
 ) -> str:
     """Activity intensity time-series (pixel change %, per EV19 definition).
 
     Prefers the Activity column (pixel change %) when available — this is the
     correct signal for TST/FST where the animal is fixed and velocity ≈ 0.
     Falls back to velocity when no Activity column is present.
+
+    Args:
+        smooth_window: If set, apply SMA smoothing with this window size
+            before plotting (Noldus JS default: 10).
     """
     from ethoinsight.metrics._common import _find_activity_column
 
@@ -716,6 +721,8 @@ def activity_intensity_plot(
     if use_activity:
         v = pd.to_numeric(df[activity_col], errors="coerce").fillna(0)
         t = pd.to_numeric(df["trial_time"], errors="coerce")
+        if smooth_window and smooth_window > 0:
+            v = v.rolling(window=smooth_window, min_periods=1).mean()
         ax.fill_between(t, v, color="#4C9F70", alpha=0.5)
         ax.plot(t, v, color="#2D5F3F", linewidth=0.7)
         ax.set_xlabel("Trial time (s)")
@@ -724,6 +731,8 @@ def activity_intensity_plot(
     elif "trial_time" in df.columns and "velocity" in df.columns:
         v = pd.to_numeric(df["velocity"], errors="coerce").fillna(0)
         t = pd.to_numeric(df["trial_time"], errors="coerce")
+        if smooth_window and smooth_window > 0:
+            v = v.rolling(window=smooth_window, min_periods=1).mean()
         ax.fill_between(t, v, color="#4C9F70", alpha=0.5)
         ax.plot(t, v, color="#2D5F3F", linewidth=0.7)
         ax.set_xlabel("Trial time (s)")

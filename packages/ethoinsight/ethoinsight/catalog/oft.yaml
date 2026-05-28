@@ -82,6 +82,56 @@ optional_metrics:
     direction_for_anxiety: null
     statistical_default: groupwise_compare
 
+  - id: turn_angle_filtered
+    script: ethoinsight.scripts.oft.compute_turn_angle_filtered
+    requires_columns: [x_center, y_center]
+    output_unit: radians
+    display_name_zh: 过滤转角统计
+    unit_zh: 弧度
+    one_liner: 带位移过滤的转角统计（排除静止抖动），基于 Noldus Turn Angle with Distance moved filter
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: velocity_bins
+    script: ethoinsight.scripts.oft.compute_velocity_bins
+    requires_columns: [velocity]
+    output_unit: ratio
+    display_name_zh: 速度分箱分布
+    unit_zh: 比例
+    one_liner: 速度按预设边界分箱的时间占比分布，基于 Noldus Split track in bins based on velocity
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: cumulative_distance
+    script: ethoinsight.scripts.oft.compute_cumulative_distance
+    requires_columns: [distance_moved]
+    output_unit: cm
+    display_name_zh: 滑动窗口累计距离
+    unit_zh: cm
+    one_liner: 滑动窗口内累计移动距离，用于习惯化分析，基于 Noldus Distance moved - Cumulative in last k samples
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: acceleration_stats
+    script: ethoinsight.scripts.oft.compute_acceleration_stats
+    requires_columns: [velocity]
+    output_unit: mm_s2
+    display_name_zh: 加速度统计
+    unit_zh: mm/s²
+    one_liner: 平滑后的加速度统计（均值/标准差/最大/最小），基于 Noldus Acceleration - Smoothed
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: body_length
+    script: ethoinsight.scripts.oft.compute_body_length
+    requires_columns: [x_nose, y_nose, x_center, y_center, x_tail, y_tail]
+    output_unit: cm
+    display_name_zh: 身体长度（分段求和）
+    unit_zh: cm
+    one_liner: Nose→Center + Center→Tail 欧氏距离求和，基于 Noldus Body Length - Sum of segments
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
 charts:
   - id: box_center
     script: ethoinsight.scripts.oft.plot_box_center

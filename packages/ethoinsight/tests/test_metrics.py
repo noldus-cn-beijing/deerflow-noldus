@@ -509,3 +509,107 @@ class TestSmallSampleWarning:
         assert "small" in m["group_summary"]
         assert "distance_moved" in m["group_summary"]["small"]
         assert m["group_summary"]["small"]["distance_moved"]["n"] == 2
+
+
+# ============================================================================
+# B4 — velocity_bins
+# ============================================================================
+
+
+def test_velocity_bins_basic():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_velocity_bins
+
+    df = pd.DataFrame({"velocity": [10, 30, 60, 80, 150, 250, 500]})
+    result = compute_velocity_bins(df)
+    assert result is not None
+    ratios = list(result.values())
+    assert sum(ratios) == pytest.approx(1.0)
+
+
+def test_velocity_bins_custom_edges():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_velocity_bins
+
+    df = pd.DataFrame({"velocity": [5, 15, 25]})
+    result = compute_velocity_bins(df, bin_edges=[0, 10, 20])
+    assert result is not None
+    assert "0-10" in result
+    assert "10-20" in result
+    assert "20+" in result
+
+
+def test_velocity_bins_missing_column():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_velocity_bins
+
+    df = pd.DataFrame({"x_center": [1, 2, 3]})
+    assert compute_velocity_bins(df) is None
+
+
+def test_velocity_bins_from_distance_moved():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_velocity_bins
+
+    df = pd.DataFrame({"distance_moved": [0.5, 1.0, 2.0, 4.0], "trial_time": [0.0, 0.04, 0.08, 0.12]})
+    result = compute_velocity_bins(df)
+    assert result is not None
+    ratios = list(result.values())
+    assert sum(ratios) == pytest.approx(1.0)
+
+
+# ============================================================================
+# B7 — cumulative_distance
+# ============================================================================
+
+
+def test_cumulative_distance_basic():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_cumulative_distance
+
+    df = pd.DataFrame({"distance_moved": [1.0] * 100, "trial_time": [i * 0.04 for i in range(100)]})
+    result = compute_cumulative_distance(df, window_samples=25)
+    assert result is not None
+    assert "mean" in result
+    assert result["mean"] > 0
+
+
+def test_cumulative_distance_missing_column():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_cumulative_distance
+
+    df = pd.DataFrame({"velocity": [1, 2, 3]})
+    assert compute_cumulative_distance(df) is None
+
+
+# ============================================================================
+# B8 — acceleration_stats
+# ============================================================================
+
+
+def test_acceleration_stats_basic():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_acceleration_stats
+
+    df = pd.DataFrame({"velocity": [0, 10, 20, 30, 40, 50], "trial_time": [i * 0.04 for i in range(6)]})
+    result = compute_acceleration_stats(df)
+    assert result is not None
+    assert "mean" in result
+    assert result["mean"] > 0
+
+
+def test_acceleration_stats_missing_column():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_acceleration_stats
+
+    df = pd.DataFrame({"x_center": [1, 2, 3]})
+    assert compute_acceleration_stats(df) is None
+
+
+def test_acceleration_stats_short_series():
+    import pandas as pd
+    from ethoinsight.metrics._common import compute_acceleration_stats
+
+    df = pd.DataFrame({"velocity": [1.0], "trial_time": [0.0]})
+    result = compute_acceleration_stats(df)
+    assert result is None
