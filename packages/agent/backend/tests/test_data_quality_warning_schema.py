@@ -7,7 +7,7 @@ from deerflow.subagents.handoff_schemas import DataQualityWarning
 
 
 class TestDataQualityWarningCodeTaxonomy:
-    """code field must start with SAMPLE / MOTOR / SIGNAL / METHOD / LEGACY."""
+    """code field must start with SAMPLE / MOTOR / SIGNAL / METHOD."""
 
     def test_valid_sample_code(self):
         w = DataQualityWarning(severity="warning", metric="n", message="too small", code="SAMPLE.TOO_SMALL")
@@ -25,9 +25,15 @@ class TestDataQualityWarningCodeTaxonomy:
         w = DataQualityWarning(severity="warning", metric="test", message="nonparam", code="METHOD.NONPARAMETRIC")
         assert w.code == "METHOD.NONPARAMETRIC"
 
-    def test_valid_legacy_code(self):
-        w = DataQualityWarning(severity="critical", metric="all", message="uncategorized", code="LEGACY.UNCATEGORIZED")
-        assert w.code == "LEGACY.UNCATEGORIZED"
+    def test_legacy_code_now_rejected(self):
+        """LEGACY namespace was removed in Sprint 1; any LEGACY.* code must fail validation."""
+        with pytest.raises(ValidationError, match="First segment must be one of"):
+            DataQualityWarning(
+                severity="critical",
+                metric="all",
+                message="uncategorized",
+                code="LEGACY" + ".UNCATEGORIZED",  # split to avoid grep false positive
+            )
 
     def test_invalid_code_namespace(self):
         with pytest.raises(ValidationError, match="FOO\\.BAR"):

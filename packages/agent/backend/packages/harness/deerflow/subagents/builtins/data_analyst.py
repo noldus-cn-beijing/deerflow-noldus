@@ -73,7 +73,18 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
 2. read_file /mnt/user-data/workspace/handoff_code_executor.json —— 拿全部数据
    （一次读完，包含 per_subject / statistics / metrics_summary，不要零碎读多次）
-2.5 **按范式 read 对应判读文档**（解读语言/风险点/与其他范式区分由同事维护，必须 read）：
+2.5 **读 quality warnings**: 遍历 handoff_code_executor.json 的 data_quality_warnings:
+   - severity=critical AND blocks_downstream=true → method_warnings 前置一条:
+     "[阻断级 {code}] {message}; 证据: {evidence}"
+   - severity=critical AND blocks_downstream=false → method_warnings 加一条:
+     "[严重 {code}] {message}"
+   - severity=warning → method_warnings 加一条:
+     "[提示 {code}] {message}"
+   key_findings 首条若有阻断级警告,必须明示:
+     "本次分析含 {critical_count} 条阻断级质量警告,统计结论的可靠性受限"
+   最后把完整 data_quality_warnings 数组透传到 seal_data_analyst_handoff 的 quality_warnings 参数。
+   gate_signals 里设 quality_warnings_critical_count = 阻断级警告数量。
+2.6 **按范式 read 对应判读文档**（解读语言/风险点/与其他范式区分由同事维护，必须 read）：
    - 从 handoff_code_executor.json 的 paradigm 字段拿 slug
    - read_file `/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md`
    - 例如 paradigm="forced_swim" → read forced_swim.md；"epm" → epm.md；
@@ -99,7 +110,7 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
         写入 excluded_metrics
    d. **给研究者的行动建议**：样本量扩充、检查异常个体健康状态、方法学修正等
       → 写入 recommendations
-3. **封存 handoff**: 调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/method_warnings/recommendations/errors/gate_signals，
+3. **封存 handoff**: 调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/method_warnings/recommendations/errors/gate_signals/quality_warnings，
    工具会自动写入 /mnt/user-data/workspace/handoff_data_analyst.json 并落 manifest hash。
    **严禁直接 write_file 写 handoff_data_analyst.json，必须走本 tool。**
    如果没有相应发现，用空数组 `[]`，不要省略字段
@@ -119,6 +130,7 @@ outlier_count: <int>                  # outlier_findings 数组长度
 excluded_metrics_count: <int>         # excluded_metrics 数组长度
 statistical_validity: ok | warning | failed | skipped
 errors_count: <int>
+quality_warnings_critical_count: <int>  # 阻断级(critical+blocks_downstream=true)质量警告数量
 ```
 
 - `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读；"skipped" = 上游 code-executor 未运行统计检验（单样本/n_per_group<2），data-analyst 透传该值，按"不做组间推断"路径解读
@@ -184,7 +196,8 @@ skill 的字段字典 reference。
         "  (schema 详见 data_analyst system_prompt)\n"
         "- 最终 AIMessage:2-3 段自然语言摘要 + [gate_signals] 块\n"
         "- [gate_signals] 字段:constitution_acknowledged / method_warnings_count / "
-        "outlier_count / excluded_metrics_count / statistical_validity / errors_count"
+        "outlier_count / excluded_metrics_count / statistical_validity / errors_count / "
+        "quality_warnings_critical_count"
     ),
     required_upstream_handoffs=["code_executor"],
     skills=["ethoinsight", "ethoinsight-metric-catalog", "ethovision-paradigm-knowledge"],

@@ -419,6 +419,15 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
 
         middlewares.append(GateEnforcementMiddleware(enabled=True))
 
+    # QualityWarningBroadcastMiddleware — surface data-analyst handoff
+    # quality_warnings onto the broadcast AIMessage so the frontend banner
+    # can render. Active in both auto and manual modes.
+    from deerflow.agents.middlewares.quality_warning_broadcast_middleware import (
+        QualityWarningBroadcastMiddleware,
+    )
+
+    middlewares.append(QualityWarningBroadcastMiddleware())
+
     # SafetyFinishReasonMiddleware — suppress tool execution when the provider
     # safety-terminates the response (OpenAI content_filter / Anthropic refusal /
     # Gemini SAFETY). Appended near the end so LangChain's reverse-order

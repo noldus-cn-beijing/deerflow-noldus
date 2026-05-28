@@ -506,3 +506,32 @@ export function parseUploadedFiles(content: string): FileInMessage[] {
 
   return files;
 }
+
+/**
+ * Extract quality warnings from message additional_kwargs.
+ * These are set by data-analyst handoff for structured rendering.
+ */
+export interface QualityWarning {
+  severity: "critical" | "warning" | "info";
+  code: string;
+  metric: string;
+  message: string;
+  evidence?: Record<string, unknown>;
+  blocks_downstream?: boolean;
+}
+
+export function extractQualityWarnings(
+  message: Record<string, unknown>,
+): QualityWarning[] {
+  const warnings = (
+    message as unknown as { additional_kwargs?: Record<string, unknown> }
+  ).additional_kwargs?.quality_warnings;
+  if (!Array.isArray(warnings)) return [];
+  return warnings as QualityWarning[];
+}
+
+export function hasQualityWarnings(
+  message: Record<string, unknown>,
+): boolean {
+  return extractQualityWarnings(message).length > 0;
+}

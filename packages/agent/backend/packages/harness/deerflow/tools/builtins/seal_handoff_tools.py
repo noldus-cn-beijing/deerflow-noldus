@@ -181,13 +181,6 @@ def seal_code_executor_handoff(
         inputs: 输入信息: {raw_files: [...], groups: {...}}
         gate_signals: 决策信号
     """
-    # Sprint 0/1 过渡兜底（Sprint 1 完工时务必删除整块，grep "LEGACY.UNCATEGORIZED" 定位）
-    if data_quality_warnings:
-        for w in data_quality_warnings:
-            w.setdefault("code", "LEGACY.UNCATEGORIZED")
-            w.setdefault("evidence", {})
-            w.setdefault("blocks_downstream", w.get("severity") == "critical")
-
     payload = {
         "status": status,
         "summary": summary,
@@ -216,6 +209,7 @@ def seal_data_analyst_handoff(
     recommendations: list[str] | None = None,
     errors: list[str] | None = None,
     gate_signals: dict[str, Any] | None = None,
+    quality_warnings: list[dict[str, Any]] | None = None,
     runtime: Runtime = None,
 ) -> str:
     """Data-analyst 完成分析后，封存 handoff_data_analyst.json。
@@ -231,6 +225,7 @@ def seal_data_analyst_handoff(
         recommendations: 建议后续操作
         errors: 错误信息
         gate_signals: 决策信号
+        quality_warnings: 从 handoff_code_executor.json 透传的 data_quality_warnings
     """
     payload = {
         "status": status,
@@ -241,6 +236,7 @@ def seal_data_analyst_handoff(
         "recommendations": recommendations or [],
         "errors": errors or [],
         "gate_signals": gate_signals,
+        "quality_warnings": quality_warnings or [],
     }
     return _seal_handoff(DataAnalystHandoff, "handoff_data_analyst.json", payload, runtime)
 

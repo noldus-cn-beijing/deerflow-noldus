@@ -314,6 +314,8 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 - auto：true → 红字 / false → 橙字
 - manual：true → guardrail 拦 / false → 不拦
 
+**避免双重提示（Sprint 1 dogfood 教训）**：当前 manual 模式下，`GateEnforcementMiddleware` 已经在 `task(data-analyst)` 派遣前用粗粒度 ToolMessage 列出 critical message 触发 ask_clarification；Sprint 1 又给 lead 播报 AIMessage 注入 `additional_kwargs.quality_warnings`，前端结构化 banner 二次展示同一批 warning。用户因此在 EPM n=1 dogfood thread 里**看到两次同源数据**（粗粒度中断 + 后续 banner 详情）。Sprint 5 重构 `DataQualityGuardrailProvider` 替换 `GateEnforcementMiddleware` 的 gate2 拦截路径时，**拒绝消息应直接包含结构化 warning payload**（code/evidence/blocks_downstream），让前端用同一个 banner 组件渲染——guardrail 拦截只贡献"中断状态"，UI 信息源仍是 banner，不再产生第二条粗粒度文字。
+
 **改动**：
 
 - `packages/agent/backend/packages/harness/deerflow/guardrails/data_quality_provider.py` 新建 — pre-tool-call 拦截：

@@ -176,11 +176,18 @@ def compute_paradigm_metrics(
             data_quality_warnings.append(
                 {
                     "severity": "critical",
+                    "code": "SAMPLE.TOO_SMALL",
                     "metric": "all",
                     "message": (
                         f"Group '{grp_name}' has n={sample_n} (<3). "
                         "Statistical inference will be unreliable; descriptive statistics only."
                     ),
+                    "evidence": {
+                        "n": sample_n,
+                        "threshold": 3,
+                        "group": grp_name,
+                    },
+                    "blocks_downstream": True,
                 }
             )
     if paradigm == "epm":
@@ -193,25 +200,40 @@ def compute_paradigm_metrics(
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
                             f"Group '{grp_name}' has n={sample_n} (<5). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": 5,
+                            "paradigm": "epm",
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
-        # Per epm.md: total entries < 8 → motor suppression confound
         for name, m in per_subject.items():
             te = m.get("total_entry_count")
             if te is not None and isinstance(te, (int, float)) and te < 8:
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "MOTOR.LOW_ENTRIES",
                         "metric": "total_entry_count",
                         "message": (
                             f"Subject '{name}' 总进臂次数={int(te)} (<8)。"
                             "开臂指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
                         ),
+                        "evidence": {
+                            "subject": name,
+                            "total_entry_count": int(te),
+                            "threshold": 8,
+                            "paradigm": "epm",
+                        },
+                        "blocks_downstream": False,
                     }
                 )
     if paradigm == "zero_maze":
@@ -224,11 +246,19 @@ def compute_paradigm_metrics(
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
                             f"Group '{grp_name}' has n={sample_n} (<5). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": 5,
+                            "paradigm": "zero_maze",
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
         # Per zero_maze.md: total distance too low → motor suppression confound
@@ -243,11 +273,19 @@ def compute_paradigm_metrics(
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "MOTOR.LOW_DISTANCE",
                         "metric": "distance_moved",
                         "message": (
                             f"Subject '{name}' 总移动距离={td:.2f} (<{_ZM_LOW_DISTANCE_THRESHOLD})。"
                             "开放区指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
                         ),
+                        "evidence": {
+                            "subject": name,
+                            "distance_moved": td,
+                            "threshold": _ZM_LOW_DISTANCE_THRESHOLD,
+                            "paradigm": "zero_maze",
+                        },
+                        "blocks_downstream": False,
                     }
                 )
     if paradigm == "light_dark_box":
@@ -260,11 +298,19 @@ def compute_paradigm_metrics(
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
                             f"Group '{grp_name}' has n={sample_n} (<5). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": 5,
+                            "paradigm": "light_dark_box",
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
         # Per ldb.md: transitions < 4 → insufficient exploration motivation
@@ -274,11 +320,19 @@ def compute_paradigm_metrics(
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SIGNAL.LOW_TRANSITION_COUNT",
                         "metric": "transition_count",
                         "message": (
                             f"Subject '{name}' 穿梭次数={int(tc)} (<4)。"
                             "明箱时间百分比的下降可能为探索动机不足而非焦虑增加，需标注警告。"
                         ),
+                        "evidence": {
+                            "subject": name,
+                            "transition_count": int(tc),
+                            "threshold": 4,
+                            "paradigm": "light_dark_box",
+                        },
+                        "blocks_downstream": False,
                     }
                 )
     if paradigm in ("forced_swim", "tail_suspension"):
@@ -291,11 +345,19 @@ def compute_paradigm_metrics(
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
                             f"Group '{grp_name}' has n={sample_n} (<5). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": 5,
+                            "paradigm": paradigm,
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
 

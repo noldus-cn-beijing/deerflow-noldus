@@ -148,35 +148,6 @@ class TestManifestSha256:
         assert entry["analysis_config_id"] == "test-config-id"
 
 
-class TestSealLegacyWarningFallback:
-    """Sprint 0/1 transition: auto-inject LEGACY.UNCATEGORIZED for warnings without code."""
-
-    def test_auto_injects_legacy_code(self, tmp_path):
-        ws = _make_workspace(tmp_path)
-        runtime = _make_runtime(str(ws))
-
-        result = _seal_handoff(
-            CodeExecutorHandoff,
-            "handoff_code_executor.json",
-            {
-                "status": "completed",
-                "summary": "s",
-                "paradigm": "fst",
-                "data_quality_warnings": [
-                    {"severity": "critical", "metric": "all", "message": "sample too small", "code": "LEGACY.UNCATEGORIZED", "evidence": {}, "blocks_downstream": True},
-                ],
-            },
-            runtime,
-        )
-        assert result.startswith("OK:")
-
-        data = json.loads((ws / "handoff_code_executor.json").read_text(encoding="utf-8"))
-        w = data["data_quality_warnings"][0]
-        assert w["code"] == "LEGACY.UNCATEGORIZED"
-        assert w["evidence"] == {}
-        assert w["blocks_downstream"] is True
-
-
 class TestSealPendingConfigId:
     def test_no_context_file_uses_pending(self, tmp_path):
         ws = tmp_path / "workspace"

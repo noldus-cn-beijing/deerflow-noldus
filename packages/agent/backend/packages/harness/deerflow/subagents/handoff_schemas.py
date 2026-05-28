@@ -88,8 +88,7 @@ class DataQualityWarning(BaseModel):
     code: str = Field(
         description=(
             "Warning code in dotted form, e.g. 'SAMPLE.TOO_SMALL', 'MOTOR.LOW_VELOCITY'. "
-            "First segment must be one of: SAMPLE / MOTOR / SIGNAL / METHOD / LEGACY. "
-            "LEGACY is a Sprint 0/1 transition whitelist entry; remove after Sprint 1. "
+            "First segment must be one of: SAMPLE / MOTOR / SIGNAL / METHOD. "
             "See Sprint 1 spec for full code taxonomy."
         ),
     )
@@ -114,7 +113,7 @@ class DataQualityWarning(BaseModel):
     @field_validator("code")
     @classmethod
     def _validate_code_namespace(cls, v: str) -> str:
-        allowed = {"SAMPLE", "MOTOR", "SIGNAL", "METHOD", "LEGACY"}
+        allowed = {"SAMPLE", "MOTOR", "SIGNAL", "METHOD"}
         head = v.split(".", 1)[0] if "." in v else ""
         if head not in allowed:
             raise ValueError(
@@ -148,6 +147,13 @@ class GateSignals(BaseModel):
     )
     statistical_validity: Literal["ok", "warning", "failed", "skipped"] = "ok"
     errors_count: int = 0
+    quality_warnings_critical_count: int = Field(
+        default=0,
+        description=(
+            "data-analyst 看到的 critical + blocks_downstream=true 警告数, "
+            "lead 据此判断是否需要 ask_clarification (Sprint 5 in manual mode)。"
+        ),
+    )
 
 
 class CodeExecutorInputs(BaseModel):
@@ -352,6 +358,13 @@ class DataAnalystHandoff(BaseModel):
     errors: list[str] = Field(default_factory=list)
     gate_signals: GateSignals | None = Field(default=None)
     analysis_config_id: str = Field(description="Inherited from CodeExecutorHandoff.")
+    quality_warnings: list[DataQualityWarning] = Field(
+        default_factory=list,
+        description=(
+            "从 handoff_code_executor.json 透传的 data_quality_warnings, "
+            "保留完整结构供下游(report-writer / lead UI / 假设面板)按 code 分组渲染。"
+        ),
+    )
 
 
 class ReportWriterHandoff(BaseModel):

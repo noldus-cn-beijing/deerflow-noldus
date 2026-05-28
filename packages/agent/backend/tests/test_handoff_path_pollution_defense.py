@@ -190,7 +190,7 @@ class TestReadHandoffReverseMask:
             [f"{td['uploads_path']}/trial.txt"],
             extras={
                 "data_quality_warnings": [
-                    {"severity": "critical", "metric": "all", "message": "n=1", "code": "LEGACY.UNCATEGORIZED"}
+                    {"severity": "critical", "metric": "all", "message": "n=1", "code": "SAMPLE.TOO_SMALL", "blocks_downstream": True}
                 ]
             },
         )

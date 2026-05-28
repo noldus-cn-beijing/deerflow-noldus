@@ -92,13 +92,14 @@ class TestCodeExecutorHandoffSchema:
             "paradigm": "fst",
             "analysis_config_id": "test-config-id",
             "data_quality_warnings": [
-                {"severity": "critical", "metric": "all", "message": "n<3 in group control", "code": "LEGACY.UNCATEGORIZED"},
-                {"severity": "warning", "metric": "iid", "message": "zero variance", "code": "LEGACY.UNCATEGORIZED"},
+                {"severity": "critical", "metric": "all", "message": "n<3 in group control", "code": "SAMPLE.TOO_SMALL", "blocks_downstream": True},
+                {"severity": "warning", "metric": "iid", "message": "zero variance", "code": "SIGNAL.TRACKING_LOST"},
             ],
         }
         h = CodeExecutorHandoff(**payload)
         assert len(h.data_quality_warnings) == 2
         assert h.data_quality_warnings[0].severity == "critical"
+        assert h.data_quality_warnings[0].code == "SAMPLE.TOO_SMALL"
 
     def test_rejects_invalid_confidence(self):
         with pytest.raises(Exception):
@@ -168,4 +169,4 @@ class TestReportWriterHandoffSchema:
 class TestDataQualityWarning:
     def test_rejects_unknown_severity(self):
         with pytest.raises(Exception):
-            DataQualityWarning(severity="meh", metric="iid", message="x", code="LEGACY.UNCATEGORIZED")  # type: ignore[arg-type]
+            DataQualityWarning(severity="meh", metric="iid", message="x", code="SAMPLE.TOO_SMALL")  # type: ignore[arg-type]

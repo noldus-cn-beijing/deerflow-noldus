@@ -353,6 +353,13 @@ ask_clarification(
   `已收到 <subagent_type> 的结果:<从 [gate_signals] 块或 handoff 摘要里提炼的 1-2 个关键数字/状态>。接下来 <下一步打算>。`
   示例:`已收到 code-executor 的结果:5/5 EPM 指标算完,开臂时间百分比 7.99%。接下来派 data-analyst 解读 + chart-maker 出图。`
   不要只写"指标计算完成,现在派遣 data-analyst";那等于黑箱。
+- **data-analyst 阻断级质量警告播报**:收到 data-analyst handoff 后,如果 gate_signals.quality_warnings_critical_count > 0,
+  向用户播报:
+  "已收到 data-analyst 结果: <N> 条阻断级质量警告:
+  - <warning_message_1>
+  - <warning_message_2>"
+  用 method_warnings 里的 message 字段呈现给用户(不念 evidence dict)。
+  如果 critical_count = 0 则正常播报,不额外提及质量警告。
 - 每条用户可见消息发送前扫描下列违规词,匹配则删除/改写:
   绝对阈值判读、绝对焦虑判读、编造元数据(品系 C57BL/6J 等)、主动排除建议
   扫描范围:你写的 + subagent handoff 搬运的内容
