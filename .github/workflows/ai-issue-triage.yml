@@ -1,8 +1,7 @@
 name: AI Issue Triage
 
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
 
 permissions:
   issues: write
