@@ -18,6 +18,9 @@ jobs:
           fetch-depth: 0
 
       - name: AI Code Review
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           PR=${{ github.event.pull_request.number }}
 
@@ -29,14 +32,10 @@ jobs:
             exit 0
           fi
 
-          # 同时获取 PR 标题和描述作为上下文
-          TITLE="${{ github.event.pull_request.title }}"
-          BODY="${{ github.event.pull_request.body }}"
-
           REVIEW=$(curl -s --max-time 120 "${{ secrets.NEWAPI_BASE_URL }}/v1/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.NEWAPI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n --arg diff "$DIFF" --arg title "$TITLE" --arg pr_body "$BODY" '{
+            -d "$(jq -n --arg diff "$DIFF" --arg title "$PR_TITLE" --arg pr_body "$PR_BODY" '{
               model: "deepseek-v4-pro",
               temperature: 0.3,
               messages: [{
@@ -50,18 +49,9 @@ jobs:
 
           REVIEW_TEXT=$(echo "$REVIEW" | jq -r '.choices[0].message.content // "AI review unavailable (API error)"')
 
-          # 构造 comment body
-          COMMENT_BODY=$(cat <<EOF
-          ## 🤖 AI Code Review
+          # 写到文件避免 heredoc 解析问题
+          printf '%s\n' "## 🤖 AI Code Review" "" "$REVIEW_TEXT" "" "---" "> 此评论由 AI 自动生成，仅供参考。请结合人工 review 做最终判断。" > /tmp/review-comment.md
 
-          ${REVIEW_TEXT}
-
-          ---
-          > 此评论由 AI 自动生成，仅供参考。请结合人工 review 做最终判断。
-          EOF
-          )
-
-          # 首次 review 用 comment，后续用 review-comment
-          gh pr comment "$PR" --body "$COMMENT_BODY"
+          gh pr comment "$PR" --body-file /tmp/review-comment.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
