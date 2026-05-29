@@ -27,8 +27,8 @@ from langgraph.types import Command
 from deerflow.agents.middlewares.experiment_context import read_context
 from deerflow.guardrails.path_registry import (
     ASK_GATE_MAP,
+    ASK_GATE_SETTER_TOOL,
     PATHS,
-    Step,
     ensure_dispatch_targets_validated,
     to_handoff_name,
 )
@@ -68,6 +68,35 @@ def _extract_latest_intent(messages: list | None) -> str | None:
         for match in _INTENT_LINE_RE.finditer(content):
             return match.group(1)
     return None
+
+
+def _current_batch_tool_names(messages: list | None) -> set[str]:
+    """Tool-call names in the most recent AIMessage (the current dispatch batch).
+
+    When the lead emits parallel tool_calls in one AIMessage (e.g. set_viz_choice
+    + task(chart-maker)), that AIMessage is already appended to state['messages']
+    by the time each tool_call is evaluated. This returns the names of all
+    tool_calls in that latest AIMessage so the gate check can recognise an
+    in-flight gate-setter sibling and avoid a false deny (race fix).
+
+    Returns an empty set when there is no AIMessage or it has no tool_calls.
+    """
+    if not messages:
+        return set()
+    for msg in reversed(messages):
+        if not isinstance(msg, AIMessage):
+            continue
+        tool_calls = getattr(msg, "tool_calls", None)
+        if not tool_calls:
+            return set()
+        names: set[str] = set()
+        for tc in tool_calls:
+            if isinstance(tc, dict):
+                name = tc.get("name")
+                if name:
+                    names.add(str(name))
+        return names
+    return set()
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +206,15 @@ class IntentPostStepAskGateProvider:
             if not immediate_dispatch_done:
                 # Preceding dispatches haven't all completed — not our concern
                 # (PathSequenceProvider handles that)
+                continue
+
+            # Race fix: the lead may emit the gate-setter (e.g. set_viz_choice)
+            # and this task() as parallel tool_calls in the SAME AIMessage. The
+            # gate-setter's write may not have landed yet when we evaluate task().
+            # If the current batch already contains the gate-setter for this ask
+            # step, the gate IS being acknowledged in-flight → don't false-deny.
+            setter_tool = ASK_GATE_SETTER_TOOL.get(ask_key)
+            if setter_tool and setter_tool in _current_batch_tool_names(messages):
                 continue
 
             # This ask step's gate is NOT acknowledged but all preceding

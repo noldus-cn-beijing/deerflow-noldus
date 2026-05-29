@@ -153,6 +153,66 @@ def test_blocks_chart_maker_when_askviz_skip(tmp_path):
     assert "chart-maker" in reason.message
 
 
+# ── same-batch race: set_viz_choice + task(chart-maker) in one AIMessage ──────
+# Regression for the FST dogfood bug (thread 87edb29b): the lead emitted
+# set_viz_choice(choice='yes') AND task(chart-maker) as parallel tool_calls in
+# the SAME AIMessage. The guardrail evaluated task() before set_viz_choice's
+# write landed → false deny. The fix: if the current AIMessage's tool_calls
+# already contain the gate-setter for this ask step, treat it as satisfied.
+
+
+def _ai_message_with_tool_calls(content: str, tool_call_names: list[str]):
+    """Build an AIMessage whose tool_calls include the given tool names."""
+    from langchain_core.messages import AIMessage
+
+    tool_calls = [
+        {"name": name, "args": {}, "id": f"call_{i}", "type": "tool_call"}
+        for i, name in enumerate(tool_call_names)
+    ]
+    return AIMessage(content=content, tool_calls=tool_calls)
+
+
+def test_allows_when_set_viz_choice_in_same_batch(tmp_path):
+    """Race fix: gate3 not yet on disk, but set_viz_choice is a sibling tool_call
+    in the SAME AIMessage → allow (the gate write is in-flight, deny would be false)."""
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    (tmp_path / "handoff_data_analyst.json").write_text('{"status":"completed"}')
+
+    # The lead's AIMessage carries BOTH set_viz_choice and task(chart-maker)
+    msg = _ai_message_with_tool_calls(
+        "[intent] E2E_FULL_ASKVIZ\n分析完成，记录选择并出图",
+        ["set_viz_choice", "task"],
+    )
+    _lead_messages.set([msg])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    decision = provider.evaluate(_make_request())
+    assert decision.allow is True
+
+
+def test_still_blocks_when_no_set_viz_choice_in_batch(tmp_path):
+    """Race fix must NOT over-allow: gate3 not on disk AND set_viz_choice NOT in
+    the current batch → still deny (the genuine skip the guardrail must catch)."""
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    (tmp_path / "handoff_data_analyst.json").write_text('{"status":"completed"}')
+
+    # Only task(chart-maker), no set_viz_choice → genuine skip
+    msg = _ai_message_with_tool_calls(
+        "[intent] E2E_FULL_ASKVIZ\n直接出图",
+        ["task"],
+    )
+    _lead_messages.set([msg])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    decision = provider.evaluate(_make_request())
+    assert decision.allow is False
+    assert decision.reasons[0].code == "ethoinsight.viz_choice_not_acknowledged"
+
+
 # ── A2 generalized ask gate tests ────────────────────────────────────────────
 
 
