@@ -1,6 +1,6 @@
 # Sprint 3 设计骨架 — data-analyst 参数审计
 
-**类型**：设计骨架版（非代码核验版——实施前需按 §核验清单升级）
+**类型**：可实施版（2026-05-29 从骨架升级——锚点已对 dev HEAD `599ec558` 核验，见 §3.5；实施前 git pull 复核行号）
 **对应**：[roadmap v2](../../plans/2026-05-28-sota-agent-7-sprint-roadmap-v2.md) Sprint 3 + 2026-05-29 grill 复审
 **估期**：1 周
 **前置**：Sprint 2a（catalog 参数）+ 2b（参数管线，`parameters_used` 字段）**均已实施** ✅
@@ -62,14 +62,79 @@ Sprint **3 / 5 / 5.8 / 6** 都改 `data_analyst.py` 的 workflow 或 handoff 路
 
 ---
 
-## 4. 验收（骨架）
+## 3.5 实施锚点（已对 dev HEAD `599ec558` 核验 — 本节把骨架升级为可实施）
 
-1. 跑 velocity 中位数远低于阈值的 case → handoff `parameter_audit` 出现该 mismatch 条目，gate_signals.parameter_audit_findings_count > 0
-2. **agent 只警告未改参**（参数仍是 catalog default / 用户 override，没被 data-analyst 偷改）
-3. 加 workflow step 后 grep 编号唯一（防 seal bug 复发）
-4. 全量测试不退化
+**上面 §3 的核验清单已由本节代为完成。实施 agent 仍应 `git pull` 后复核行号（会漂）。**
 
-## 5. 不在范围
+### 3.5.1 data_analyst.py workflow 插入点
+`subagents/builtins/data_analyst.py` 的 `<workflow>` 段（约 line 72-119）现有编号：
+```
+1. 读输出宪法          (line 73)
+2. read handoff_code_executor.json  (line 74)
+2.5 读 quality warnings (line 76)
+2.6 按范式 read 判读文档 (line 87)
+2.7 一次性完成核心分析推理 (line 95)   ← 参数审计是"分析"的一部分，并入此步思考
+3. 封存 handoff: 调 seal_data_analyst_handoff (line 113)
+4. 最终 AIMessage 摘要  (line 117)
+```
+**插入点**：新增 `2.8 参数适配性审计`，**插在 2.7 之后、step 3 之前**。
+**🔴 编号纪律（5.7 seal bug 教训，[[feedback_single_source_of_truth]]）**：插入后必须 `grep -nE "^[0-9]+\.|^[0-9]+\.[0-9]+" data_analyst.py` 确认编号唯一、连续（2/2.5/2.6/2.7/2.8/3），不得与 line 29 input 说明段的 `2.` 混淆（那是另一段，不算 workflow 步骤）。
+
+### 3.5.2 数据来源（参数审计读什么、和什么比）
+- **用了什么参数**：`MetricStat.parameters_used`（`handoff_schemas.py:67`，dict 如 `{"velocity_threshold": 30.0}`），从 `handoff_code_executor.json` 的 `metrics_summary`（`:204`，`dict[str, dict[str, MetricStat]]`）逐条取
+- **数据实际分布**：`MetricStat` 自身已含统计量（`:47-56`，mean 等；注释 `:51` 说 median/IQR 可加）+ `per_subject`（`:208`，`dict[str, dict[str, Any]]`）取各 subject 的实际值
+- 比对：参数值 vs 数据分布统计量 → 生成 `ParameterAuditFinding`
+
+### 3.5.3 mismatch 判据（关键：分两类，一类现成不卡同事，一类用保守默认）
+
+**这是本 sprint 最容易误判"全卡同事"的地方。实测核验结论：判据分两类。**
+
+| 参数类 | 判据现状 | 实施怎么做 |
+|---|---|---|
+| **FST/TST 的 pendulum 8 参数** | ✅ **同事已写，不卡** | 直接照 `docs/review-packages/2026-0521-feedbacks/tstYoyo/tst-pendulum-algorithm.md` §3/§4：如 `periodicity` 钟摆段 >0.5 / 挣扎段 <0.3；`ANALYSIS_WINDOW` 覆盖 3~5 个钟摆周期；§7.3 品系/体重差异影响 PERIOD_MIN/MAX。把这些写进比对逻辑 |
+| **`velocity_threshold` + 焦虑范式独有阈值** | ❌ 精确判据缺（issue #63 等同事 @Qukoyk） | **用保守数学默认兜底先跑**：`threshold_too_high` = 数据 velocity 中位数 < 参数值 ÷ 3；`threshold_too_low` = 中位数 > 参数值 × 3。在 finding 的 suggestion 里标注"判据为保守默认，精确物种判据待 issue #63"。**不阻塞实施** |
+
+**严禁**：工程为 velocity 编造"鱼类该是 5"这种领域数字（issue #63 归同事）。保守数学判据只判"分布与参数严重背离"这个**统计事实**，不替同事下"该调到多少"的领域结论。
+
+### 3.5.4 schema 改动锚点
+- `handoff_schemas.py`：`DataAnalystHandoff`（`:323`）加 `parameter_audit_findings: list[ParameterAuditFinding]`（新子模型，参数名/实际值/当前阈值/mismatch_kind 5元枚举/suggestion/blocks_downstream）；`GateSignals`（`:129`）加 `parameter_audit_findings_count` + `parameter_audit_critical_count`
+- `seal_data_analyst_handoff` tool（`tools/builtins/seal_handoff_tools.py`）加 `parameter_audit_findings` 参数
+- **正交确认**：与 5.5（key_findings 非空校验）/5.8（seal-resume）改的字段不撞——它们改 executor 的校验/补轮路径，本 sprint 加 DataAnalystHandoff 新字段，正交
+
+---
+
+## 4. 验收（可实施版）
+
+- [ ] `ParameterAuditFinding` schema：5 字段 + 5元枚举 mismatch_kind + Pydantic 校验
+- [ ] `DataAnalystHandoff.parameter_audit_findings` + `GateSignals` 两个计数字段
+- [ ] `seal_data_analyst_handoff` 透传 findings 到 handoff JSON（atomic write）
+- [ ] data_analyst.py 加 step 2.8（pendulum 用同事判据 + velocity 用保守默认）+ **grep 编号唯一**（防 seal bug）
+- [ ] **pendulum case**：FST/TST 数据 periodicity 异常 → finding 引用同事文档判据
+- [ ] **velocity case**：velocity 中位数 5、阈值 30 → `threshold_too_high` finding（保守判据），suggestion 标注"精确判据待 #63"
+- [ ] **只警告未改参**：参数仍是 catalog default/override，data-analyst 没偷改
+- [ ] 全量测试不退化（基线实施前 `make test` 取真值）
+- [ ] `git grep "parameter_audit"` 在 handoff_schemas / seal_handoff_tools / data_analyst.py 三处就位
+
+## 5. 实施顺序（TDD task 拆分）
+
+| Task | 内容 | 估时 |
+|---|---|---|
+| T1 | `ParameterAuditFinding` schema + DataAnalystHandoff/GateSignals 字段 + 6 个 schema 测试 | 0.5 天 |
+| T2 | `seal_data_analyst_handoff` 加 parameter_audit_findings 参数 + 3 个 seal 测试 | 0.25 天 |
+| T3 | data_analyst.py 加 step 2.8（pendulum 判据照同事文档 + velocity 保守默认）+ grep 编号唯一 | 1 天 |
+| T4 | 集成测试：pendulum case + velocity case + "只警告未改参" | 0.5 天 |
+| T5 | dogfood + 全量回归 | 0.5 天 |
+| **合计** | | **~2.75 天** |
+
+## 6. 与其他工作的关系（实施 agent 必读）
+
+- **issue #63（@Qukoyk）**：velocity + 焦虑范式独有参数的精确判据/物种值在此。本 sprint 用保守默认先跑，#63 回来后再调精度。**不等 #63 也能实施**
+- **Sprint 4（调参指南）**：本 sprint 的 finding.suggestion 会指向"参考调参指南"。Sprint 4 未做时，suggestion 文字仍合理（只是用户找不到指南内容）。**3 和 4 是一对，建议协调；demo 若不触发参数审计则两者皆可缺**
+- **编排路径 SSOT 阶段 A**：若该 agent 在并发改 `lead_agent/prompt.py`，本 sprint **不碰 lead prompt**（只在 §2.6 的 lead 播报段加一句参数审计播报——若与编排 SSOT agent 撞，留 `# TODO(orchestration-ssot)` 标记，谁先合谁后 rebase）
+- **demo 影响**：本 sprint 是"旁支增强"，不在端到端主干。缺它 demo 主流程照常跑通（5-29 FST dogfood 已证）
+
+## 7. 不在范围
 - ❌ 自动调参（铁律：只警告）
-- ❌ mismatch 阈值的领域判据由工程定义（应来自 review-packages / 同事）
-- ❌ 改 data_analyst.py 以外的 subagent
+- ❌ 工程为 velocity 编造领域数字（归 issue #63 / 同事）
+- ❌ 改 data_analyst.py 以外的 subagent（lead prompt 播报段除外，且最小改动）
+- ❌ 前端 banner 渲染 parameter_audit（Sprint 7 假设面板做）
