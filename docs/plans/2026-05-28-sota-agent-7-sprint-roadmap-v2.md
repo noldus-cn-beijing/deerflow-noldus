@@ -115,7 +115,27 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 
 - **`data_analyst.py` 是改动热点**：Sprint 3 / 5 / 5.8 / 6 都改它的 workflow 或 handoff 路径。实施顺序需串行协调，且每次加 workflow step 必须 grep 编号唯一性（防 5.7 seal bug 复发）。
 - **依赖时序**：很多 sprint 依赖尚未实施项的产出（5 依赖 1、5.5 依赖 0+4.5+2b、7 依赖 2b+3+5.5）。**写"代码核验版"spec 前需确认依赖已落地**，否则核验的是不存在的代码状态。当前已实施：0/1/2a/2b/5.7。
-- **战略提醒（未决）**：5.5（hash）/6（跨会话）/7（假设面板）属"主人哲学上层建筑"，PRD 公测标准是"6 范式跑得准、不翻车、端到端"。golden-cases 仍为空、OFT/LDB/Zero Maze 无端到端 dogfood——若 v0.1 资源紧张，这几个应让位于"范式端到端验证 + golden-case"。本复审不擅自重排优先级，仅标记。
+- **战略提醒（已落地为下方"优先级重排"）**：5.5（已降级）/6（跨会话）/7（假设面板）属"主人哲学上层建筑"，PRD 公测标准是"6 范式跑得准、不翻车、端到端"。2026-05-29 已据此**正式重排优先级**（见下方"2026-05-29 优先级重排"段），不再是"仅标记"。
+
+### 2026-05-29 优先级重排（编排路径 SSOT 诊断 + PRD 公测标准对齐）
+
+**触发**：2026-05-29 关于 Claude Code Dynamic Workflows 的架构深挖，核实出一个贯穿性根因——[编排路径 SSOT 诊断](../superpowers/specs/2026-05-29-orchestration-path-ssot-diagnosis-design.md)：范式/指标/图表知识已是 catalog SSOT（正面范例），但**编排路径**（INTENT 选定后 subagent 按什么顺序派、何时 ask 用户）仍只活在 `lead_agent/prompt.py` 的自然语言箭头图里，运行时只有零星打补丁式的 provider 校验，三层无 SSOT 桥接。这是这一个月所有鲁棒性 bug（seal 漏调、lead 不读 handoff、意图误判、ask 漏问）的统一结构根因。
+
+**重排原则**：roadmap 只排**工程 sprint**。端到端 dogfood 是**每个 sprint 收尾的验证纪律**（不进 sprint 序列）；golden-cases 优先级低（只影响 skill/数值微调，非公测承重点）。
+
+**三档优先级**（取代原线性 sprint 序列的隐含优先级）：
+
+| 档 | 内容 | 服务的公测标准 |
+|---|---|---|
+| **P0** | ① **编排路径 SSOT 阶段 A**（最前：path SSOT + 派遣顺序 provider + ask 点从 SSOT 生成，不碰 interrupt）→ ② Sprint 3（参数审计）→ ③ Sprint 4（调参指南）→ ④ Sprint 5（数据质量门） | 跑得准 + 不翻车。SSOT-A 放最前的理由：先把编排地基捋顺，Sprint 5 的 quality gate provider 才能**从 SSOT 生成**而非又一块手写补丁（见诊断 §3.2 + Sprint 5 spec 迁移注记） |
+| **P1** | Sprint 5.5（handoff 内容非空校验）、Sprint 4.5（analysis_config_id） | 不翻车（鲁棒性补强） |
+| **P2（v0.2，公测后）** | Sprint 6（跨会话记忆）、Sprint 7（假设面板）、Sprint 8（feedback 回流）、**编排路径 SSOT 阶段 B**（interrupt 根治，依赖阶段 A） | 主人哲学质变能力，非公测标准 |
+
+**关键变化**：
+- 🆕 **编排路径 SSOT 阶段 A 提到 P0 最前**——它是鲁棒性根因，地基先行
+- **6/7/8 从主线降到 P2（v0.2）**——上层建筑让位于公测标准
+- **编排路径 SSOT 拆两阶段**：A（低成本缓解，P0）/ B（interrupt 根治，P2）。interrupt 地基已核实：deerflow 有 checkpointer 但从未用过 `interrupt()` 原语，根治是中等改造非配置开关（见诊断 §3.3）
+- **dogfood 纪律化 + golden 降级**（按 2026-05-29 用户决策）
 
 ### 复审后 spec 编写策略
 

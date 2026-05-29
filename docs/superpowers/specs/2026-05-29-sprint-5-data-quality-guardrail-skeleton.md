@@ -11,6 +11,13 @@
 
 code-executor 生成 warning 后 data-analyst 照样跑。有 `severity=critical AND blocks_downstream=true` 时，manual 模式必须先让用户确认再继续。用 DeerFlow 已有 GuardrailMiddleware 拦截下游 subagent 派遣。
 
+> ### 🟡 迁移注记（2026-05-29 编排路径 SSOT 诊断引入，不阻塞本 sprint）
+> 本 sprint 会**再手写一个孤立 provider**（DataQualityGuardrailProvider）。这正是 [编排路径 SSOT 诊断](2026-05-29-orchestration-path-ssot-diagnosis-design.md) §2.2 批评的"打补丁式 provider"模式——目前 8 条路径的拦截规则散落在多个各管一段的 provider 里，无 SSOT 桥接。
+> **本 sprint 仍按原计划先实现**（quality gate 是真实需求，不阻塞）。但实现时请：
+> 1. 把"在什么 INTENT/什么 step 之后该拦什么"写成**数据驱动的判定**（读 gate_completed / handoff 状态），而非把路径逻辑硬编码进 provider 类
+> 2. 在 spec/代码注释里标注：**未来编排路径 SSOT 落地后，本 provider 的拦截规则应迁移为从 path SSOT 生成**，而不是长期作为独立手写补丁
+> 这样将来 SSOT 化时，本 provider 是"可迁移的样板"而非"又一块要拆的债"。
+
 ---
 
 ## 1. grill 复审发现（实施前必读）
