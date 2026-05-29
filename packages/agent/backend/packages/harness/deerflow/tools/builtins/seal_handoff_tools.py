@@ -210,6 +210,7 @@ def seal_data_analyst_handoff(
     errors: list[str] | None = None,
     gate_signals: dict[str, Any] | None = None,
     quality_warnings: list[dict[str, Any]] | None = None,
+    parameter_audit_findings: list[dict[str, Any]] | None = None,
     runtime: Runtime = None,
 ) -> str:
     """Data-analyst 完成分析后，封存 handoff_data_analyst.json。
@@ -226,6 +227,9 @@ def seal_data_analyst_handoff(
         errors: 错误信息
         gate_signals: 决策信号
         quality_warnings: 从 handoff_code_executor.json 透传的 data_quality_warnings
+        parameter_audit_findings: Sprint 3 新增。参数适配性审计发现列表，
+            每条含 parameter/metric/severity/used_value/observed_distribution/
+            mismatch_kind/suggestion/blocks_downstream
     """
     payload = {
         "status": status,
@@ -237,6 +241,7 @@ def seal_data_analyst_handoff(
         "errors": errors or [],
         "gate_signals": gate_signals,
         "quality_warnings": quality_warnings or [],
+        "parameter_audit_findings": parameter_audit_findings or [],
     }
     return _seal_handoff(DataAnalystHandoff, "handoff_data_analyst.json", payload, runtime)
 
