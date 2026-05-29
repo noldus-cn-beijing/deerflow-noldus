@@ -15,6 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 
 # 包内自包含路径（与 ev19_facts.py 同目录）。
+# 包内自包含路径（与 ev19_facts.py 同目录）。
 # 不依赖仓库根目录结构，Docker 容器内 COPY backend/ 时也能正常解析。
 # _facts.json 由 docs/review-packages/2026-04-29-ev19-templates/_facts.json 同步过来。
 _FACTS_JSON_PATH = Path(__file__).parent / "_facts.json"
