@@ -91,6 +91,49 @@ _HANDOFF_EMISSION_REQUIRED: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Sprint 5.5: 各 subagent handoff 的「核心字段非空」判据。
+# 判据语义对应 handoff_schemas.py 的字段（single-source：字段含义以 schema 为准，
+# 此处只编码"哪个字段必须非空"，不复制 schema 定义）：
+#   code-executor : metrics_summary 非空 dict（CodeExecutorHandoff.metrics_summary）
+#   data-analyst  : key_findings 非空 list（DataAnalystHandoff.key_findings）
+#   chart-maker   : chart_files 非空 list 或 failed_charts 有说明（ChartMakerHandoff）
+#   report-writer : report_path 非空 str（ReportWriterHandoff.report_path）
+# 每个检查函数收 parsed handoff dict，返回 None=通过 / str=缺失字段说明。
+# ---------------------------------------------------------------------------
+def _check_code_executor_content(d: dict) -> str | None:
+    if not d.get("metrics_summary"):
+        return "metrics_summary is empty"
+    return None
+
+
+def _check_data_analyst_content(d: dict) -> str | None:
+    if not d.get("key_findings"):
+        return "key_findings is empty"
+    return None
+
+
+def _check_chart_maker_content(d: dict) -> str | None:
+    # chart_files 空但 failed_charts 有说明 = 合法（图表确实没生成但记录了原因）
+    if not d.get("chart_files") and not d.get("failed_charts"):
+        return "both chart_files and failed_charts are empty"
+    return None
+
+
+def _check_report_writer_content(d: dict) -> str | None:
+    if not d.get("report_path"):
+        return "report_path is empty"
+    return None
+
+
+_HANDOFF_CONTENT_CHECKS: dict[str, Callable[[dict], str | None]] = {
+    "code-executor": _check_code_executor_content,
+    "data-analyst": _check_data_analyst_content,
+    "chart-maker": _check_chart_maker_content,
+    "report-writer": _check_report_writer_content,
+}
+
+
 # Sprint 5.8: seal-resume 只补 1 轮。这是深思过的决策，不是任意值。
 # 理由：补轮失败的主因更可能是【系统性】(分析结论本身残缺 / LLM 卡在理解错误)
 # 而非【随机】——再补一轮多半是同样结果。补不上时，交给 5.7 兜底重派【整个
@@ -104,17 +147,20 @@ def _validate_handoff_emitted(
     subagent_name: str,
     workspace_path: str | None,
 ) -> str | None:
-    """Return None if the subagent's handoff file is present, else a diagnostic.
+    """Return None if the subagent's handoff file is present AND has non-empty core content.
 
     Called just before set_terminal(COMPLETED). If subagent_name is in
     _HANDOFF_EMISSION_REQUIRED but its handoff file is absent in workspace,
     returns an error string explaining the failure (used as
-    try_set_terminal(FAILED, error=...)). Otherwise returns None (pass / N/A).
+    try_set_terminal(FAILED, error=...)). If the file exists but its core
+    content fields are empty (Sprint 5.5), returns a diagnostic string
+    explaining the incompleteness. Otherwise returns None (pass / N/A).
 
-    ROBUSTNESS (Sprint 5.7 spec §1 C3): this function MUST NOT raise. The call
-    site sits inside executor's try/except — any exception here would be caught
-    and mis-attributed as a generic FAILED, clobbering our diagnostic. So all
-    filesystem access is wrapped; on unexpected error we fail-open (return None).
+    ROBUSTNESS (Sprint 5.7 spec §1 C3 + Sprint 5.5): this function MUST NOT
+    raise. The call site sits inside executor's try/except — any exception
+    here would be caught and mis-attributed as a generic FAILED, clobbering
+    our diagnostic. So all filesystem access is wrapped; on unexpected error
+    we fail-open (return None).
 
     Args:
         subagent_name: SubagentConfig.name, e.g. "data-analyst".
@@ -122,9 +168,9 @@ def _validate_handoff_emitted(
             None when ThreadDataMiddleware didn't set it (old threads / dev paths).
 
     Returns:
-        None  -> validation passes, or subagent not in white-list, or
-                 unresolvable workspace (fail-open).
-        str   -> diagnostic explaining the missing handoff.
+        None  -> validation passes (file present + core content non-empty),
+                 or subagent not in white-list, or unresolvable workspace (fail-open).
+        str   -> diagnostic explaining the missing or empty handoff.
     """
     expected_filename = _HANDOFF_EMISSION_REQUIRED.get(subagent_name)
     if expected_filename is None:
@@ -144,7 +190,35 @@ def _validate_handoff_emitted(
     try:
         handoff_path = Path(workspace_path) / expected_filename
         if handoff_path.exists():
-            return None
+            # Sprint 5.5: 文件存在 → 再查核心字段非空。空内容 handoff（调了 seal
+            # 但字段残缺）会静默通过下游产垃圾，比漏调更隐蔽。判据见 _HANDOFF_CONTENT_CHECKS。
+            content_check = _HANDOFF_CONTENT_CHECKS.get(subagent_name)
+            if content_check is None:
+                return None  # 无内容判据（理论上白名单内都有）→ 仅凭存在性放行
+            try:
+                import json
+
+                parsed = json.loads(handoff_path.read_text(encoding="utf-8"))
+            except Exception:
+                # 读/解析失败 → 无法判定内容 → fail-open 放行（保守，不阻断正常 task）
+                logger.warning(
+                    "[handoff_content] Subagent %s: cannot parse %s for content check; "
+                    "passing on existence only.",
+                    subagent_name,
+                    expected_filename,
+                )
+                return None
+            missing = content_check(parsed) if isinstance(parsed, dict) else "handoff is not a JSON object"
+            if missing is None:
+                return None  # 文件存在 + 核心字段非空 → 通过
+            # 文件存在但核心字段空 → 返回诊断（fall through to diagnostic below）
+            seal_tool = f"seal_{subagent_name.replace('-', '_')}_handoff"
+            return (
+                f"Subagent '{subagent_name}' sealed '{expected_filename}' but its "
+                f"core content is incomplete: {missing}. The handoff exists but is "
+                f"unusable by downstream subagents. Lead should re-dispatch this task "
+                f"reminding it to fill the {seal_tool} arguments with actual results."
+            )
     except Exception:  # noqa: BLE001 — must never raise; see docstring ROBUSTNESS.
         logger.exception(
             "[handoff_emission] Subagent %s: error while checking %s; "
@@ -936,15 +1010,11 @@ class SubagentExecutor:
                 )
                 if _resumed_state is not None:
                     final_state = _resumed_state
-                # 补轮后重新校验。
-                # ⚠️ 已知未覆盖失败模式（grill 2026-05-29 锁定 B，已立案后续修复）：
-                # _validate_handoff_emitted 只查【文件存在】，不查内容。补轮是"被催着
-                # 调 seal"的场景，LLM 极小概率会调了 seal 但 args 残缺/空(key_findings=[]
-                # 等)→ 文件产出 → 此处判 COMPLETED → 但下游读到空内容 handoff，一路绿灯
-                # 产垃圾。探针实证补轮 args 完整(概率低)，且"空内容 handoff"是 seal tool
-                # 的【普遍】问题(正常调用也可能偶发，非补轮引入)，在补轮里单独堵不治本。
-                # 5.8 不处理；留给独立的「handoff 内容非空/schema 完整性校验」后续 fix
-                # (见 spec §8)。
+                # 补轮后重新校验（含 Sprint 5.5 内容非空检查）。
+                # Sprint 5.5 已覆盖：_validate_handoff_emitted 现在不仅查文件存在，
+                # 还查核心字段非空（metrics_summary / key_findings / chart_files /
+                # report_path）。补轮调了 seal 但 args 残缺 → 文件产出但内容空 →
+                # 此处判 FAILED → 走 lead ask_clarification 规则。
                 _handoff_error = _validate_handoff_emitted(self.config.name, _workspace)
                 # Sprint 5.8 §3.4: 补轮 token 计入 collector snapshot
                 if collector is not None:

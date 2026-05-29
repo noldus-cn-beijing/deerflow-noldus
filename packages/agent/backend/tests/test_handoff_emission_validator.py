@@ -11,12 +11,10 @@ under test without triggering the circular import chain.
 from __future__ import annotations
 
 import importlib.util
-import sys
 from pathlib import Path
 from types import ModuleType
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Load the REAL executor module source (bypassing conftest's sys.modules mock)
@@ -76,7 +74,16 @@ def _make_workspace(tmp_path: Path, *, with_file: str | None = None) -> str:
     ws = tmp_path / "workspace"
     ws.mkdir()
     if with_file:
-        (ws / with_file).write_text("{}", encoding="utf-8")
+        # Sprint 5.5: handoff file must have non-empty core content to pass
+        # validation. Write minimal valid content per subagent type.
+        _VALID_CONTENT: dict[str, str] = {
+            "handoff_data_analyst.json": '{"key_findings": ["ok"]}',
+            "handoff_code_executor.json": '{"metrics_summary": {"g": {"m": {}}}}',
+            "handoff_chart_maker.json": '{"chart_files": ["/mnt/user-data/outputs/x.png"], "failed_charts": []}',
+            "handoff_report_writer.json": '{"report_path": "/mnt/user-data/outputs/report.md"}',
+        }
+        content = _VALID_CONTENT.get(with_file, "{}")
+        (ws / with_file).write_text(content, encoding="utf-8")
     return str(ws)
 
 
