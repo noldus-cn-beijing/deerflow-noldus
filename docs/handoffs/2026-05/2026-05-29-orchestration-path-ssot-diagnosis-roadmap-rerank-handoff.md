@@ -116,12 +116,17 @@
 
 ### A. 可立即派的 agent（spec 就绪，文件交集已分析）
 1. **Sprint 5.5**（核验版，最干净）：handoff 内容非空校验，挂 executor.py:146，独立不卡任何人，可直接 TDD
-2. **Sprint 3**（可实施版）：参数审计，用保守判据 + pendulum 现成判据，不卡同事
+2. **Sprint 3**（可实施版）：参数审计，用保守判据 + pendulum 现成判据，不卡同事。**⚠️ 实施 agent 必读 2026-05-28 原始 spec**（`2026-05-28-sprint-3-data-analyst-parameter-audit-design.md`）作为 schema 权威——5-29 这份是增量升级版，`ParameterAuditFinding` 完整定义（mismatch_kind 5 值 = threshold_too_high/low + window_too_wide/narrow + category_mismatch；severity 由受影响 subject 比例定义非由类型定义；判据阈值 p90×3 等）在原始 spec，5-29 spec §3.5.4 已补指引。只读增量版会凭推断踩偏（本会话实施 agent 已踩过一次，已修）
 3. **编排 SSOT 阶段 A**：已在跑（worktree `orchestration-path-ssot-phase-a`）
 - **并发前务必 head-to-head 验文件交集**（SOP §3）：Sprint 3 改 data_analyst.py + handoff_schemas.py + lead prompt 播报段；编排 SSOT 改 lead prompt 意图状态机段 + path_registry + provider。**两者都碰 lead prompt 但不同片区**——约定谁先合、Sprint 3 在播报段留 `# TODO(orchestration-ssot)`
 
-### B. 待同事（不阻塞）
-- issue #63：velocity 物种判据（Sprint 3 精度）+ 6 范式调参指南（Sprint 4）。同事回后：Sprint 3 升级判据精度 + Sprint 4 搬运内容
+### B. 待同事答复 issue #63 后再修补（修补 = 换判据数字，不动结构）
+issue #63（@Qukoyk，OPEN）：velocity 物种判据（Sprint 3 精度）+ 6 范式调参指南（Sprint 4 内容）。
+
+**工作节奏（已与用户确认）**：现在全速做 Sprint 3/4 的**结构**（不等同事），#63 答复后只做**精度修补**，因为修补是"换数字不重做"：
+- **Sprint 3**：step 2.8 里的 velocity/焦虑保守判据阈值（`p90×3` 等）→ 换成同事的精确物种值。schema/workflow/seal/gate_signals **全不动**
+- **Sprint 4**：md 里占位的 `## 参数调整指南` 段 → 搬入同事写的内容。工程通路（grep 逻辑）本就已做好
+- 关键：**现在做结构不浪费**——一次到位，#63 回来只提精度，不返工。等同事会阻塞结构开发，保守默认让结构先落地、精度异步补
 
 ### C. 可选补
 - ~~Sprint 8 spec~~ ✅ 已补（骨架版，`2026-05-29-sprint-8-feedback-reflow-skeleton.md`）。**至此 0-8 + 4.5 + 编排 SSOT 全部有 spec**
