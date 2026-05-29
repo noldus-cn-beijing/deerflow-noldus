@@ -370,6 +370,24 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 2. `.lineage/violations.log` 出现一行 audit 记录（含 timestamp/file/expected_sha/actual_sha）
 3. 正常流程下，所有下游派遣放行
 
+### Sprint 5.7（0.5 周）：Handoff Emission Validator ← ★ 新增（兜底 LLM 漏调 seal tool，dogfood 实证驱动）
+
+**动机**：2026-05-28 EPM dogfood 实证——data-analyst 的 LLM 最后一轮只输出 thinking（"现在封存分析结果："）但**没 emit `seal_data_analyst_handoff` tool_call**，executor 见无新 tool_call → 静默标 COMPLETED → handoff 文件根本不存在 → 下游断链，仅靠 lead 事后 read_file 探测 + 运气自救。根因是 Sprint 1 在 data_analyst.py 留下"两个 step 2"编号冲突（已 prompt 修复 commit `2df10880`，但 prompt fix 不能根治 LLM 随机性）。
+
+**本质**：把"概率性的静默断链"转化为"确定性的可恢复失败"。LLM 漏调这一随机事件消不掉（留给后训练/prompt），但其破坏性后果（静默断链）被 harness 层拦死。
+
+**设计原则**：harness 强约束 > prompt 配方（[[feedback_deny_messages_must_direct]] / [[project_2026-05-18_lead_not_reading_handoff]] 教训）。正交于 Sprint 5.5 lineage 封印——5.7 管"handoff 是否存在"，5.5 管"handoff 内容一致性"，前者是后者前提。
+
+**改动**：
+
+- `subagents/executor.py` — 加 `_HANDOFF_EMISSION_REQUIRED` 白名单字典（4 个 ethoinsight subagent，连字符 key）+ `_validate_handoff_emitted` helper（异常安全 fail-open）+ 改 `executor.py:723` 的 `try_set_terminal(COMPLETED)` 为 validate-first：handoff 文件不存在 → 标 FAILED + 明确诊断（含 "terminated without emitting" 关键字）
+- `agents/lead_agent/prompt.py` — 加自动 retry 规则：error 含 "terminated without emitting" → 不询问用户，直接 re-dispatch 同 subagent + 末尾追加 seal 强化提示；最多 2 次
+- white-list 而非 black-list：general-purpose / bash / knowledge-assistant 不验证（无 seal contract）
+
+**验收**：dogfood 临时削弱 data_analyst step 2.7 复现漏调 → 第一次派遣 task FAILED → lead 自动 retry → 第二次（带 reminder）成功 → 整链跑通且用户无感。
+
+**spec + 实施文档**：[Sprint 5.7 spec](../superpowers/specs/2026-05-28-sprint-5.7-handoff-emission-validator-design.md) / [实施文档（代码核验版）](../superpowers/plans/2026-05-29-sprint-5.7-handoff-emission-validator-impl.md)
+
 ### Sprint 6（0.5 周）：跨会话范式 memory ← 修正（复用 deerflow facts 通道，砍掉新顶层结构）
 
 **动机**：这是"主人"的质变能力。用户上周做 EPM、这周做 OFT——agent 应能跨会话汇聚证据。审计发现 MemoryMiddleware 的 LLM 抽取通道会把数字漂移成字符串——但**不需要新建顶层 ExperimentSummary 结构**，复用 deerflow 现有的 facts 通道即可。
@@ -488,6 +506,7 @@ S0 → S1 → ─ ─ ─ ─ ─ ─ → S5 → S5.5 → S7
 S0 → S2a → S2b → S3 → S4 ↗
 S0 → S4.5 → S5.5 ↗
 S0 → S4.5 → S6
+S5.7（独立，兜底 seal 漏调，正交于 5/5.5，dogfood 实证后任意时点启动）
 S8（独立）
 ```
 
