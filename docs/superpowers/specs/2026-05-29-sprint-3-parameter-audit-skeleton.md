@@ -101,6 +101,27 @@ Sprint **3 / 5 / 5.8 / 6** 都改 `data_analyst.py` 的 workflow 或 handoff 路
 - `seal_data_analyst_handoff` tool（`tools/builtins/seal_handoff_tools.py`）加 `parameter_audit_findings` 参数
 - **正交确认**：与 5.5（key_findings 非空校验）/5.8（seal-resume）改的字段不撞——它们改 executor 的校验/补轮路径，本 sprint 加 DataAnalystHandoff 新字段，正交
 
+> #### ⚠️ schema 细节的权威来源 = 5-28 原始 spec（实施 agent 必读，勿凭推断）
+> 本 spec 是增量升级版（补锚点 + 判据分类 + TDD）；`ParameterAuditFinding` 的**完整 schema 定义在原始 spec** [`2026-05-28-sprint-3-data-analyst-parameter-audit-design.md`](2026-05-28-sprint-3-data-analyst-parameter-audit-design.md) §2.1，**以它为准**。关键已定义值（不要自己发明）：
+>
+> **`mismatch_kind` = 5 元 Literal（原始 spec §2.1 line 68-73）**：
+> 1. `threshold_too_high` — 阈值远高于数据上限/中位数
+> 2. `threshold_too_low` — 阈值远低于数据下限/中位数
+> 3. `window_too_wide` — 窗口超出 trial 时长
+> 4. `window_too_narrow` — 窗口过窄无法捕捉事件
+> 5. `category_mismatch` — 离散参数取值与 paradigm 不符
+>
+> 注意：**不是** agent 可能推断的 `window_too_short`/`periodicity_mismatch`/`parameter_inapplicable`。pendulum 的窗口问题归 `window_too_wide/narrow`；periodicity 阈值偏移归 `threshold_too_high/low`；枚举参数不符归 `category_mismatch`。首发只这 5 类，扩枚举需显式改 Literal。
+>
+> **`severity` = `Literal["critical","warning","info"]`（原始 spec §2.5 line 199-202）**：
+> - `critical`（且 `blocks_downstream=true`）：**所有 subject** 的某指标都受影响
+> - `warning`：**≥50% subject** 受影响
+> - `info`：单纯阈值落在边界值附近
+>
+> 即 critical 由**受影响 subject 比例（全部）**定义，**不是**由 mismatch_kind 类型定义。`parameter_audit_critical_count = sum(severity==critical AND blocks_downstream==true)`（原始 spec §2.5 line 211）。
+>
+> **数学判据阈值（原始 spec §2.5 line 192-197，velocity/窗口的保守默认）**：threshold_too_high = `used > p90×3`；threshold_too_low = `used < p10÷3`；window_too_wide = `window > trial_dur×0.9`；window_too_narrow = `window < trial_dur×0.05`。这些是工程保守默认（统计背离判据），velocity 的**精确物种判据**待 issue #63。
+
 ---
 
 ## 4. 验收（可实施版）
