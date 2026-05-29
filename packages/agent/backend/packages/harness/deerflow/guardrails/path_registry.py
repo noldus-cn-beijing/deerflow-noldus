@@ -99,6 +99,22 @@ ASK_GATE_MAP: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# §1.3 ask key → 落盘该 gate 的工具名（gate-setter）
+#
+# 用于消除「同一轮并行发 set_X + task(下游)」的竞态误拦：当 lead 在同一个
+# AIMessage 里同时调 gate-setter 和下游 task 时，guardrail 可能在 gate-setter
+# 落盘前就评估 task → 误判 gate 未完成。provider 检测到同批 tool_calls 已含
+# 对应 gate-setter 时，视该 ask 点已满足（落盘 in-flight，deny 是假阳性）。
+#
+# 仅登记真实存在的 setter 工具。viz 有 set_viz_choice；report / four_choice
+# 暂无专用 setter 工具（ASK_GATE_MAP 已声明 gate 名，待 setter 工具落地后补这里）。
+# ---------------------------------------------------------------------------
+ASK_GATE_SETTER_TOOL: dict[str, str] = {
+    "viz": "set_viz_choice",
+}
+
+
+# ---------------------------------------------------------------------------
 # §1.1 dispatch target 校验（lazy，避免 circular import）
 #
 # 不能在 module import-time 调用，因为 deerflow.subagents.builtins 的
