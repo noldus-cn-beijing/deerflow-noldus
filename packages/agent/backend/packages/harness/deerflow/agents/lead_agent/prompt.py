@@ -250,6 +250,15 @@ def _build_subagent_section(max_concurrent: int) -> str:
 3. **Gate before guess**:范式不明确必须 ask_clarification (`ethovision-paradigm-knowledge` skill §Gate before guess)
 4. **set_experiment_paradigm 之前不可 task(code-executor)** — Ev19TemplateGuardrailProvider 拦截
 5. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
+6. **subagent 漏调 seal tool 的自动重试规则**（Sprint 5.7 harness 兜底）:
+   当收到 task failed 且 error message 含 "terminated without emitting" 关键字时,
+   这是 harness 层检测到 subagent 的 LLM 完成了推理但漏调 seal_*_handoff tool 的
+   明确信号,**不需要询问用户**,直接重新派遣同一个 subagent。在新派遣的 prompt
+   末尾追加一句强化提示:
+     "提醒:你必须在完成分析后调用 seal_<subagent_type>_handoff tool 才能落库
+      handoff JSON,不能只在 thinking 里写'封存'或'已完成'。"
+   同一 subagent 最多自动重试 2 次;若 2 次后仍报同样错误,向用户报告:
+     "<subagent> 多次未能正确封存结果,可能是 prompt 配置问题,建议人工检查。"
 
 ### 当前支持的范式范围(v0.1)
 
