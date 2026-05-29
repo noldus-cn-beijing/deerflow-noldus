@@ -126,6 +126,66 @@ class DataQualityWarning(BaseModel):
         return v
 
 
+class ParameterAuditFinding(BaseModel):
+    """Single parameter-vs-data-distribution mismatch finding from data-analyst.
+
+    Sprint 3: data-analyst compares MetricStat.parameters_used against
+    per_subject data distribution to detect mismatches (e.g. velocity_threshold=30
+    but data median=5). This is distinct from DataQualityWarning (which flags
+    data-level problems); ParameterAuditFinding flags parameter-vs-data mismatches.
+    """
+
+    parameter: str = Field(
+        description=(
+            "Parameter name as it appears in MetricStat.parameters_used, "
+            "e.g. 'velocity_threshold', 'total_entry_threshold'."
+        ),
+    )
+    metric: str = Field(
+        description="Affected metric slug, e.g. 'immobility_time', 'total_entry_count'."
+    )
+    severity: Literal["critical", "warning", "info"]
+    used_value: float | int | str = Field(
+        description="Parameter value actually used in the run (from MetricStat.parameters_used)."
+    )
+    observed_distribution: dict[str, float | int] = Field(
+        description=(
+            "Snapshot of the data distribution that triggered the finding, e.g. "
+            "{'median': 5.0, 'p90': 12.0, 'max': 25.0, 'n_subjects': 12}. "
+            "Used by the report writer and the hypothesis panel (Sprint 7)."
+        ),
+    )
+    mismatch_kind: Literal[
+        "threshold_too_high",  # 阈值远高于数据上限/中位数
+        "threshold_too_low",  # 阈值远低于数据下限/中位数
+        "window_too_wide",  # 窗口超出 trial 时长
+        "window_too_narrow",  # 窗口过窄无法捕捉事件
+        "category_mismatch",  # 离散参数取值与 paradigm 不符
+    ]
+    suggestion: str = Field(
+        description=(
+            "Plain-Chinese guidance for the researcher. e.g. "
+            "'当前阈值 30 mm/s 高于本批中位数 5 mm/s 的 6 倍，建议改至 ≤10 mm/s 后重跑'. "
+            "MUST NOT include exact override values — that's Sprint 4 paradigm md's job."
+        ),
+    )
+    blocks_downstream: bool = Field(
+        default=False,
+        description=(
+            "When True, chart-maker / report-writer should annotate the affected "
+            "metric as 'parameter-suspect'. Sprint 5 GuardrailProvider may also "
+            "block downstream subagent dispatch in manual mode."
+        ),
+    )
+
+    @field_validator("parameter")
+    @classmethod
+    def _validate_parameter(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("parameter must be a non-empty identifier")
+        return v
+
+
 class GateSignals(BaseModel):
     """Structured decision signals from subagent to lead.
 
@@ -152,6 +212,21 @@ class GateSignals(BaseModel):
         description=(
             "data-analyst 看到的 critical + blocks_downstream=true 警告数, "
             "lead 据此判断是否需要 ask_clarification (Sprint 5 in manual mode)。"
+        ),
+    )
+    parameter_audit_findings_count: int = Field(
+        default=0,
+        description=(
+            "Sprint 3 新增。data-analyst 看到的 parameter_audit_findings 总数 "
+            "(critical+warning+info 合计)。lead 据此决定是否在播报模板中提及。"
+        ),
+    )
+    parameter_audit_critical_count: int = Field(
+        default=0,
+        description=(
+            "Sprint 3 新增。parameter_audit_findings 中 severity=='critical' 且 "
+            "blocks_downstream=True 的条目数。Sprint 5 manual 模式下 guardrail "
+            "可据此拦截下游 subagent。"
         ),
     )
 
@@ -365,6 +440,15 @@ class DataAnalystHandoff(BaseModel):
             "保留完整结构供下游(report-writer / lead UI / 假设面板)按 code 分组渲染。"
         ),
     )
+    parameter_audit_findings: list[ParameterAuditFinding] = Field(
+        default_factory=list,
+        description=(
+            "Sprint 3 新增。data-analyst 比对 MetricStat.parameters_used 与 "
+            "handoff_code_executor 中的 per_subject 数据分布后产出的不匹配清单。"
+            "下游 report-writer 会读此字段写入'数据质量与局限'段；前端 "
+            "QualityWarningBanner 不读这个字段（它只显示 quality_warnings）。"
+        ),
+    )
 
 
 class ReportWriterHandoff(BaseModel):
@@ -393,5 +477,6 @@ __all__ = [
     "GateSignals",
     "MetricStat",
     "OutlierFinding",
+    "ParameterAuditFinding",
     "ReportWriterHandoff",
 ]

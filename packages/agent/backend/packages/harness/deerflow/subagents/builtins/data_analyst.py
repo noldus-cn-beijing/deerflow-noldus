@@ -110,7 +110,49 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
         写入 excluded_metrics
    d. **给研究者的行动建议**：样本量扩充、检查异常个体健康状态、方法学修正等
       → 写入 recommendations
-3. **封存 handoff**: 调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/method_warnings/recommendations/errors/gate_signals/quality_warnings，
+	2.8 **参数适配性审计**（Sprint 3 新增 — 只警告不调参，铁律）：
+	   从 handoff_code_executor.json 取 metrics_summary，逐条比对每个 metric 的
+	   parameters_used 与 per_subject 数据分布。跳过 parameters_used 为空 `{}` 的 metric。
+
+	   a. **遍历每个有 parameters_used 的 metric**：
+	      对 parameters_used 里的每个参数，从 per_subject 收集该 metric 的各 subject 值，
+	      计算分布统计量（median / p10 / p90 / max / n_subjects）。
+
+	   b. **判定 mismatch_kind（5 类，严禁自发明新值）**：
+	      - `threshold_too_high`：used_value > p90 × 3（如 velocity_threshold=30 但 p90=10）
+	      - `threshold_too_low`：used_value < p10 ÷ 3（如 threshold=0.5 但 p10=5）
+	      - `window_too_wide`：window 参数值 > trial_duration × 0.9
+	      - `window_too_narrow`：window 参数值 < trial_duration × 0.05
+	      - `category_mismatch`：离散参数（如 body_point）取值与当前 paradigm 标准不符
+
+	      **FST/TST pendulum 参数**（有同事判据，不卡）：
+	      按判读文档 `tst-pendulum-algorithm.md` 的 §3/§4：
+	      - periodicity：pendulum 段应 >0.5 / 挣扎段应 <0.3
+	      - ANALYSIS_WINDOW：应覆盖 3~5 个钟摆周期
+	      - PERIOD_MIN/MAX 受品系/体重差异影响（§7.3）
+	      这些领域判据优先于上面的保守数学默认。
+
+	      **velocity / 焦虑范式参数**（精确判据缺，用保守默认）：
+	      用上面的 p90×3 / p10÷3 保守数学判据。在 finding 的 suggestion 里标注
+	      "判据为保守默认，精确物种判据待 issue #63"。
+
+	   c. **severity 判定**（按受影响 subject 比例，不按 mismatch_kind 类型）：
+	      - `critical`（blocks_downstream=true）：**所有** subject 的某指标都受影响
+	      - `warning`：≥50% subject 受影响
+	      - `info`：单纯参数落在边界值附近
+
+	   d. **suggestion 字段**：
+	      - 描述偏差量（如"阈值 30 mm/s 高于本批中位数 5 mm/s 的 6 倍"）
+	      - 提示用户参考 paradigm md 的"参数调整指南"段（Sprint 4 产出）
+	      - **严禁自己给出具体调到多少的数字** — 那是 paradigm md 的职责
+
+	   e. **写结果**：
+	      - 每个 finding 是一个 ParameterAuditFinding 对象（parameter / metric / severity /
+	        used_value / observed_distribution / mismatch_kind / suggestion / blocks_downstream）
+	      - gate_signals.parameter_audit_findings_count = findings 总数
+	      - gate_signals.parameter_audit_critical_count = sum(severity=="critical" AND blocks_downstream==True)
+	      - 透传到 seal_data_analyst_handoff 的 parameter_audit_findings 参数
+3. **封存 handoff**: 调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/method_warnings/recommendations/errors/gate_signals/quality_warnings/parameter_audit_findings，
    工具会自动写入 /mnt/user-data/workspace/handoff_data_analyst.json 并落 manifest hash。
    **严禁直接 write_file 写 handoff_data_analyst.json，必须走本 tool。**
    如果没有相应发现，用空数组 `[]`，不要省略字段
@@ -131,6 +173,8 @@ excluded_metrics_count: <int>         # excluded_metrics 数组长度
 statistical_validity: ok | warning | failed | skipped
 errors_count: <int>
 quality_warnings_critical_count: <int>  # 阻断级(critical+blocks_downstream=true)质量警告数量
+parameter_audit_findings_count: <int>   # Sprint 3 新增。参数审计发现总数
+parameter_audit_critical_count: <int>   # Sprint 3 新增。参数审计 critical+blocks_downstream 数量
 ```
 
 - `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读；"skipped" = 上游 code-executor 未运行统计检验（单样本/n_per_group<2），data-analyst 透传该值，按"不做组间推断"路径解读
@@ -197,7 +241,8 @@ skill 的字段字典 reference。
         "- 最终 AIMessage:2-3 段自然语言摘要 + [gate_signals] 块\n"
         "- [gate_signals] 字段:constitution_acknowledged / method_warnings_count / "
         "outlier_count / excluded_metrics_count / statistical_validity / errors_count / "
-        "quality_warnings_critical_count"
+        "quality_warnings_critical_count / parameter_audit_findings_count / "
+        "parameter_audit_critical_count"
     ),
     required_upstream_handoffs=["code_executor"],
     skills=["ethoinsight", "ethoinsight-metric-catalog", "ethovision-paradigm-knowledge"],
