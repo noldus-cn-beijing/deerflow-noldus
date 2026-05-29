@@ -1,8 +1,8 @@
 # 2026-05-29 编排路径 SSOT 诊断 + roadmap 三档重排 + 剩余 sprint spec 补齐 + stash 事故清理 — handoff
 
-**会话主体**：Dynamic Workflows 文章引发的架构深挖（编排路径 SSOT）→ 诊断 + 阶段 A 实施 spec → roadmap 三档重排 → 补齐 6/7 骨架 + Sprint 3 升可实施版 → Sprint 4 卡点修正 → 给同事提 issue #63 → 处理一起 stash pop 残留事故 + 清理 8→3 worktree → 写多 agent 纪律 SOP
+**会话主体**：Dynamic Workflows 文章引发的架构深挖（编排路径 SSOT）→ 诊断 + 阶段 A 实施 spec → roadmap 三档重排 → 补齐 6/7/8 骨架 + Sprint 3 升可实施版 → Sprint 4 卡点修正 → 给同事提 issue #63（+ Sprint 3 优先级追评）→ 处理一起 stash pop 残留事故 + 清理 8→3 worktree → 写多 agent 纪律 SOP → 写 handoff → 补 Sprint 8 spec → 处理实施 agent 关于 Sprint 3 schema 的疑问（纠正"只读增量 spec 凭推断"偏差）+ 确认 #63 答复后的修补节奏
 **触发分支**：dev
-**dev HEAD**：`625a47f5`（本地 = origin/dev，已同步 push）
+**dev HEAD**：`d6086bd3`（本地 = origin/dev，已同步 push）
 **本会话 commit 链**（接手点 `e9f694a5` 之后）：
 - `8a8f77b7` roadmap grill 复审修订 + 补齐 5.5/3/4/5 spec（前一 agent 故障接手后补完）
 - `e7724e5b` 编排路径 SSOT 诊断 + roadmap 三档重排 + Sprint 5 迁移注记
@@ -10,6 +10,10 @@
 - `1501ca65` 解决 ev19_facts stash pop 残留冲突
 - `6c86162a` Sprint 3 spec 升级为可实施版
 - `625a47f5` 多 agent worktree 纪律 SOP
+- `a2b95dd1` 本 handoff（首版）
+- `d3be6091` 补 Sprint 8 feedback 回流 spec（骨架版）+ handoff 更新
+- `8e1db3f8` Sprint 3 补明 schema 权威来源（5-28 原始 spec）+ 列全 mismatch_kind 5 值 + critical 定义
+- `d6086bd3` handoff 补 Sprint 3 schema 权威指引 + #63 答复后修补节奏
 
 **测试基线**：未跑（本会话纯 docs + 一处 1 行冲突解决，无代码逻辑改动）。主仓权威基线沿用：backend 3145 / ethoinsight 504 / frontend tsc 0。
 
