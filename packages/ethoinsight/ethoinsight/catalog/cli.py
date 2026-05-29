@@ -38,6 +38,7 @@ import os
 import sys
 from pathlib import Path
 
+from ethoinsight.catalog.loader import load_common_catalog
 from ethoinsight.catalog.resolve import ResolveError, plan_charts_to_dict, plan_metrics_to_dict, resolve_charts, resolve_metrics
 
 
@@ -97,6 +98,10 @@ def _build_parser() -> argparse.ArgumentParser:
                         "or {group_name: [subject_path, ...]}. Threaded to aggregate plots that need "
                         "group labels (chart entries with needs_groups: true).")
     p.add_argument("--ev19-template", default=None)
+    p.add_argument("--overrides-file", default=None,
+                   help="Optional JSON file with parameter overrides (Sprint 2b). "
+                        "Content must be a JSON dict, e.g. "
+                        "{\"velocity_threshold\": 5.0, \"pendulum_periodicity_threshold\": 0.6}.")
     p.add_argument("--output", required=True)
     return p
 
@@ -169,6 +174,32 @@ def main(argv: list[str] | None = None) -> int:
             )
         groups = groups_data
 
+    # === Sprint 2b: load overrides ===
+    overrides: dict[str, float | int | str] = {}
+    if args.overrides_file:
+        try:
+            overrides_data = json.loads(Path(args.overrides_file).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            return _emit_error(
+                "schema_violation",
+                f"Cannot read overrides-file: {e}",
+                {"path": args.overrides_file},
+            )
+        if not isinstance(overrides_data, dict):
+            return _emit_error(
+                "schema_violation",
+                f"overrides-file content must be a JSON dict, got {type(overrides_data).__name__}",
+                {"path": args.overrides_file},
+            )
+        overrides = overrides_data
+
+    # === Sprint 2b: load common catalog for shared_parameters ===
+    common_catalog = None
+    try:
+        common_catalog = load_common_catalog()
+    except Exception:
+        pass  # _common.yaml missing → no shared params, that's OK
+
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -222,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
                 columns_file=args.columns_file,
                 ev19_template=args.ev19_template,
                 virtual_workspace_dir=virtual_workspace_dir,
+                overrides=overrides,
+                common_catalog=common_catalog,
             )
         except ResolveError as e:
             return _emit_error(e.code, str(e), e.details)
