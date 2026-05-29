@@ -70,7 +70,7 @@
 | 4 调参指南 | ✅ 骨架版 | **内容卡同事**（issue #63）；工程只做通路 |
 | 5 数据质量门 | ✅ 骨架版 + 迁移注记 | `workflow_mode` 已验通（per-run configurable，GateEnforcement 已示范 manual 挂载）；撞编排悖论建议等 SSOT-A |
 | 4.5 / 6 / 7 | ✅ spec 在（4.5 是 5-28，6/7 骨架） | 6/7 是 P2 上层建筑 |
-| **8 feedback 回流** | ❌ **无 spec** | roadmap 标"最低优先、最后写"，一直没写。**不阻塞**，留着 |
+| **8 feedback 回流** | ✅ 骨架版（本会话补写） | 最低优先 P2（v0.2）；自标短期补丁，微调到位后收益减半；前置 feedback 表加 paradigm 字段（Alembic migration） |
 
 ---
 
@@ -124,8 +124,8 @@
 - issue #63：velocity 物种判据（Sprint 3 精度）+ 6 范式调参指南（Sprint 4）。同事回后：Sprint 3 升级判据精度 + Sprint 4 搬运内容
 
 ### C. 可选补
-- Sprint 8 spec（feedback 回流，最低优先，roadmap 已有设计段可参照）
-- 清理：/tmp/probe_*.py（旧）、/tmp/sprint*-*.md（本会话临时正文）
+- ~~Sprint 8 spec~~ ✅ 已补（骨架版，`2026-05-29-sprint-8-feedback-reflow-skeleton.md`）。**至此 0-8 + 4.5 + 编排 SSOT 全部有 spec**
+- 清理：/tmp/probe_*.py（旧）、/tmp/sprint*-*.md + /tmp/issue63-*.md（本会话临时正文）
 
 ### D. demo 判断（用户关心）
 - **缺 Sprint 4 不影响 demo 端到端**：主干（上传→算→解读→图→报告）不依赖 3/4（5-28 FST dogfood 已证）。唯一风险=demo 用"参数不匹配数据"触发 Sprint 3 警告、警告指向空的 Sprint 4 调参指南。**demo 用标准匹配数据（小鼠标准范式）即可全程绕开**。建议 3+4 当一对处理
