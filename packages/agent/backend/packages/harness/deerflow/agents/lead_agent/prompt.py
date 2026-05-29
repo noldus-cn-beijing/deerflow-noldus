@@ -222,6 +222,8 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
     noldus_rules = ""
     if has_noldus_agents:
+        # Render intent state machine from SSOT before the f-string consumes it
+        intent_state_machine = _render_intent_state_machine()
         noldus_rules = f"""
 
 ## EthoInsight 调度规则
@@ -271,17 +273,10 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 在范式识别阶段(Gate 1)直接告知用户「当前版本暂不支持 <范式名>,现已支持 5 个范式:EPM / OFT / LDB / FST / Zero Maze」
 - 不要尝试跑流水线;不要伪装成相近范式;不要静默 fallback。可以提供「先发邮件占位需求」或「上传后回来等版本更新」的兜底建议
 
-### 意图状态机(7 类 INTENT → 派遣链)
+### 意图状态机(INTENT → 派遣链)
 
 ```
-[ANY] → 上传数据 + 模糊总称(分析/看看/研究下/整一下) → E2E_FULL_ASKVIZ → code-executor → data-analyst → ask(要不要出图?) → [yes]chart-maker → ask(report?) / [no] ask(report?)
-[ANY] → 上传数据 + 明确出图意愿(画/图/可视化/箱线/轨迹/...) → E2E_FULL → code-executor → data-analyst → chart-maker → ask(report?)
-[ANY] → 上传数据 + 单一动词类别(仅"算"/"计算") → E2E_MIN   → code-executor → ask(four-choice)
-[ANY+handoff] → 要图              → CHART     → task(chart-maker)
-[ANY+handoff] → 要报告            → REPORT    → task(report-writer)
-[ANY+handoff] → 追问数据/指标含义 → QA_FACT   → task(knowledge-assistant)
-[ANY]         → 问知识(无数据)    → QA_KNOWLEDGE → task(knowledge-assistant)
-[ANY]         → 信息缺失          → CLARIFY   → ask_clarification
+{intent_state_machine}
 ```
 
 **复合语义判定**(E2E_FULL_ASKVIZ vs E2E_FULL vs E2E_MIN 的分水岭):
@@ -768,6 +763,37 @@ def _build_custom_mounts_section() -> str:
 
     mounts_list = "\n".join(lines)
     return f"\n**Custom Mounted Directories:**\n{mounts_list}\n- If the user needs files outside `/mnt/user-data`, use these absolute container paths directly when they match the requested directory"
+
+
+def _render_step(step) -> str:  # type: ignore[type-arg]
+    """Render a single Step from path_registry into the arrow-diagram text form.
+
+    - dispatch → target name (e.g. "code-executor")
+    - dispatch with condition → [condition]target (e.g. "[viz==yes]chart-maker")
+    - ask → ask(key?) (e.g. "ask(viz?)")
+    """
+    if step.kind == "dispatch":
+        if step.condition:
+            return f"[{step.condition}]{step.target}"
+        return step.target
+    elif step.kind == "ask":
+        return f"ask({step.target}?)"
+    return str(step.target)
+
+
+def _render_intent_state_machine() -> str:
+    """从 path_registry.PATHS 渲染意图状态机箭头图段。
+
+    替代原 prompt.py 手写 markdown。只渲染 INTENT→路径链；
+    触发词描述(分类规则)保留在「复合语义判定」自然语言段。
+    """
+    from deerflow.guardrails.path_registry import PATHS
+
+    lines = []
+    for intent, steps in PATHS.items():
+        chain = " → ".join(_render_step(s) for s in steps)
+        lines.append(f"{intent} → {chain}")
+    return "\n".join(lines)
 
 
 def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:

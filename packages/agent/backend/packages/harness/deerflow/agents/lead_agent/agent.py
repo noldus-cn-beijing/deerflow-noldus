@@ -387,6 +387,19 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
 
         middlewares.append(HandoffPlaceholderInjectionMiddleware())
 
+        # W18a: Path sequence — 校验 task(X) 按路径顺序派遣(前序 dispatch 已完成)
+        # 在 W18 之前: 顺序校验先于占位符校验,给出更早更具体的反馈
+        from deerflow.guardrails.path_sequence_provider import (
+            PathSequenceBridge,
+            PathSequenceProvider,
+        )
+
+        middlewares.append(PathSequenceBridge())
+        middlewares.append(GuardrailMiddleware(
+            provider=PathSequenceProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
         # W18: Task handoff authorization — 校验 task(subagent_type=X) prompt 含必需 {{handoff://X}} 占位符
         from deerflow.guardrails.task_handoff_authorization_provider import (
             TaskHandoffAuthorizationProvider,
