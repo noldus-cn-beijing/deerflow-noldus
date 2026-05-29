@@ -64,6 +64,17 @@ class MetricStat(BaseModel):
         default=None,
         description="Present when applicable=False; explains why.",
     )
+    parameters_used: dict[str, float | int | str | None] = Field(
+        default_factory=dict,
+        description=(
+            "Actual parameters used to compute this metric, e.g. "
+            "{'velocity_threshold': 30.0, 'velocity_min_duration': 25}. "
+            "Populated by Sprint 2b execution pipeline. "
+            "Sprint 0 only defines the field; defaults to empty dict. "
+            "None is allowed for individual values when the param is not "
+            "applicable to this metric (e.g. pendulum params on EPM)."
+        ),
+    )
 
 
 class DataQualityWarning(BaseModel):
@@ -74,6 +85,45 @@ class DataQualityWarning(BaseModel):
         description="Metric name, or 'all' / 'pipeline' when warning applies broadly.",
     )
     message: str
+    code: str = Field(
+        description=(
+            "Warning code in dotted form, e.g. 'SAMPLE.TOO_SMALL', 'MOTOR.LOW_VELOCITY'. "
+            "First segment must be one of: SAMPLE / MOTOR / SIGNAL / METHOD. "
+            "See Sprint 1 spec for full code taxonomy."
+        ),
+    )
+    evidence: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Structured numeric evidence, e.g. "
+            "{'velocity_median_mm_s': 5.2, 'threshold_mm_s': 30.0}. "
+            "Frontend / data-analyst should not parse `message` for numbers."
+        ),
+    )
+    blocks_downstream: bool = Field(
+        default=False,
+        description=(
+            "True = downstream subagents (data-analyst, chart-maker, report-writer) "
+            "should not be dispatched without user acknowledgement. "
+            "Used by Sprint 5 DataQualityGuardrailProvider (manual mode) "
+            "and Sprint 1 frontend (red vs orange rendering)."
+        ),
+    )
+
+    @field_validator("code")
+    @classmethod
+    def _validate_code_namespace(cls, v: str) -> str:
+        allowed = {"SAMPLE", "MOTOR", "SIGNAL", "METHOD"}
+        head = v.split(".", 1)[0] if "." in v else ""
+        if head not in allowed:
+            raise ValueError(
+                f"warning code must use literal DOT '.' as separator, e.g. "
+                f"'SAMPLE.TOO_SMALL', 'MOTOR.LOW_VELOCITY', 'SIGNAL.TRACKING_LOST', "
+                f"'METHOD.SHAPIRO_INAPPLICABLE'. NOT underscore-separated ('SAMPLE_X' is INVALID). "
+                f"First segment must be one of {sorted(allowed)} followed by '.'. "
+                f"Got {v!r}."
+            )
+        return v
 
 
 class GateSignals(BaseModel):
@@ -97,6 +147,13 @@ class GateSignals(BaseModel):
     )
     statistical_validity: Literal["ok", "warning", "failed", "skipped"] = "ok"
     errors_count: int = 0
+    quality_warnings_critical_count: int = Field(
+        default=0,
+        description=(
+            "data-analyst 看到的 critical + blocks_downstream=true 警告数, "
+            "lead 据此判断是否需要 ask_clarification (Sprint 5 in manual mode)。"
+        ),
+    )
 
 
 class CodeExecutorInputs(BaseModel):
@@ -175,6 +232,64 @@ class CodeExecutorHandoff(BaseModel):
             "but recommended to include for audit/replay."
         ),
     )
+    paradigm: str = Field(
+        description=(
+            "Experiment paradigm (e.g. 'fst', 'epm'). Redundant with "
+            "experiment-context.json so handoff is self-contained for replay."
+        ),
+    )
+    ev19_template: str | None = Field(
+        default=None,
+        description="EV19 template ID, or None for paradigms not mapped to EV19.",
+    )
+    analysis_config_id: str = Field(
+        description=(
+            "16-char hex hash of (catalog_default + parameter_overrides). "
+            "Populated by seal_code_executor_handoff tool (Sprint 4.5)."
+        ),
+    )
+
+
+class FailedChart(BaseModel):
+    """One failed chart entry."""
+
+    chart_id: str = Field(description="Chart ID from catalog, e.g. 'trajectory_heatmap'.")
+    reason: str = Field(description="Free-text failure reason.")
+
+
+class ChartMakerHandoff(BaseModel):
+    """Handoff JSON produced by chart-maker subagent.
+
+    Fields align with the schema currently declared in chart-maker subagent prompt
+    (subagents/builtins/chart_maker.py <handoff_schema> section).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    status: Literal["completed", "partial", "failed"] = "completed"
+    paradigm: str = Field(description="Experiment paradigm.")
+    chart_files: list[str] = Field(
+        default_factory=list,
+        description="Virtual paths under /mnt/user-data/outputs/.",
+    )
+    failed_charts: list[FailedChart] = Field(default_factory=list)
+    summary: str = Field(description="One-liner describing generated charts.")
+    gate_signals: GateSignals | None = None
+    analysis_config_id: str = Field(description="Inherited from CodeExecutorHandoff.")
+
+    @field_validator("chart_files")
+    @classmethod
+    def _validate_chart_paths(cls, v: list[str]) -> list[str]:
+        if not v:
+            return v
+        prefix = "/mnt/user-data/outputs/"
+        offenders = [p for p in v if not p.startswith(prefix)]
+        if offenders:
+            raise ValueError(
+                f"chart_files must be under {prefix!r}, "
+                f"got: {offenders}. Outputs must be in outputs/, not workspace/."
+            )
+        return v
 
 
 class OutlierFinding(BaseModel):
@@ -242,6 +357,14 @@ class DataAnalystHandoff(BaseModel):
     )
     errors: list[str] = Field(default_factory=list)
     gate_signals: GateSignals | None = Field(default=None)
+    analysis_config_id: str = Field(description="Inherited from CodeExecutorHandoff.")
+    quality_warnings: list[DataQualityWarning] = Field(
+        default_factory=list,
+        description=(
+            "从 handoff_code_executor.json 透传的 data_quality_warnings, "
+            "保留完整结构供下游(report-writer / lead UI / 假设面板)按 code 分组渲染。"
+        ),
+    )
 
 
 class ReportWriterHandoff(BaseModel):
@@ -257,13 +380,16 @@ class ReportWriterHandoff(BaseModel):
     )
     errors: list[str] = Field(default_factory=list)
     gate_signals: GateSignals | None = Field(default=None)
+    analysis_config_id: str = Field(description="Inherited from CodeExecutorHandoff.")
 
 
 __all__ = [
+    "ChartMakerHandoff",
     "CodeExecutorHandoff",
     "CodeExecutorInputs",
     "DataAnalystHandoff",
     "DataQualityWarning",
+    "FailedChart",
     "GateSignals",
     "MetricStat",
     "OutlierFinding",

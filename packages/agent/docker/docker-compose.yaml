@@ -104,6 +104,8 @@ services:
       - DEER_FLOW_EXTENSIONS_CONFIG_PATH=/app/backend/extensions_config.json
       - DEER_FLOW_CHANNELS_LANGGRAPH_URL=${DEER_FLOW_CHANNELS_LANGGRAPH_URL:-http://langgraph:2024}
       - DEER_FLOW_CHANNELS_GATEWAY_URL=${DEER_FLOW_CHANNELS_GATEWAY_URL:-http://gateway:8001}
+      # Shared token for Gateway → LangGraph internal auth (channel calls)
+      - DEERFLOW_INTERNAL_AUTH_TOKEN=${DEERFLOW_INTERNAL_AUTH_TOKEN:-C2g1ZcLvQVJwBwYxAj541lMaMl9vy1ipEm4bKK5pPRM}
       # DooD path/network translation
       - DEER_FLOW_HOST_BASE_DIR=${DEER_FLOW_HOME}
       - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_REPO_ROOT}/skills
@@ -165,6 +167,8 @@ services:
       - DEER_FLOW_HOST_BASE_DIR=${DEER_FLOW_HOME}
       - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_REPO_ROOT}/skills
       - DEER_FLOW_SANDBOX_HOST=host.docker.internal
+      # Shared token for internal auth (must match gateway container)
+      - DEERFLOW_INTERNAL_AUTH_TOKEN=${DEERFLOW_INTERNAL_AUTH_TOKEN:-C2g1ZcLvQVJwBwYxAj541lMaMl9vy1ipEm4bKK5pPRM}
       # Mirrors backend/Makefile `dev` — runs each background job in its own event
       # loop so blocking calls (allowed by --allow-blocking) don't tie up siblings.
       - BG_JOB_ISOLATED_LOOPS=true

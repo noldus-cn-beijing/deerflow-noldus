@@ -98,3 +98,21 @@ def compute_light_latency(
     if "trial_time" in df.columns:
         return float(df["trial_time"].iloc[idx])
     return float(idx)
+
+
+def compute_light_entry_count(
+    df: pd.DataFrame,
+    light_zone: str = "in_zone_light",
+) -> int | None:
+    """Number of entries into the light zone (0→1 transitions).
+
+    Returns None when the light zone column is missing.
+    """
+    if light_zone not in df.columns:
+        return None
+    vals = df[light_zone].dropna().to_numpy(dtype=int)
+    if len(vals) == 0:
+        return 0
+    entries = 1 if vals[0] == 1 else 0
+    transitions = (vals[1:] == 1) & (vals[:-1] == 0)
+    return entries + int(transitions.sum())

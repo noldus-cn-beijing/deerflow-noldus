@@ -21,6 +21,30 @@ from app.gateway.internal_auth import create_internal_auth_headers
 
 logger = logging.getLogger(__name__)
 
+# Magic-byte signatures for common EthoVision export formats
+_MAGIC_SIGNATURES: list[tuple[bytes, str]] = [
+    (b"\x50\x4b\x03\x04", ".xlsx"),   # ZIP-based (xlsx, docx, etc.)
+    (b"\xd0\xcf\x11\xe0", ".xls"),    # OLE2 (legacy Excel)
+    (b"\x89\x50\x4e\x47", ".png"),    # PNG
+    (b"\xff\xd8\xff", ".jpg"),         # JPEG
+]
+
+
+def _detect_extension(data: bytes) -> str:
+    """Guess file extension from magic bytes."""
+    for sig, ext in _MAGIC_SIGNATURES:
+        if data[: len(sig)] == sig:
+            return ext
+    # Text-like data heuristic: if first 512 bytes are valid UTF-8 with common
+    # separators, assume .txt (covers CSV/TSV/EthoVision tab-delimited exports)
+    try:
+        sample = data[:512].decode("utf-8")
+        if sample and any(c in sample for c in ("\t", ",", "\n")):
+            return ".txt"
+    except UnicodeDecodeError:
+        pass
+    return ".bin"
+
 DEFAULT_LANGGRAPH_URL = "http://localhost:2024"
 DEFAULT_GATEWAY_URL = "http://localhost:8001"
 DEFAULT_ASSISTANT_ID = "lead_agent"
@@ -433,6 +457,8 @@ async def _ingest_inbound_files(thread_id: str, msg: InboundMessage) -> list[dic
                 ext = ".bin"
                 if ftype == "image":
                     ext = ".png"
+                elif data and len(data) >= 4:
+                    ext = _detect_extension(data)
                 filename = f"{msg.thread_ts or 'msg'}_{idx}{ext}"
 
             try:

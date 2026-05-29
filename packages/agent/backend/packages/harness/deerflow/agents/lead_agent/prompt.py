@@ -250,6 +250,15 @@ def _build_subagent_section(max_concurrent: int) -> str:
 3. **Gate before guess**:范式不明确必须 ask_clarification (`ethovision-paradigm-knowledge` skill §Gate before guess)
 4. **set_experiment_paradigm 之前不可 task(code-executor)** — Ev19TemplateGuardrailProvider 拦截
 5. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
+6. **subagent 漏调 seal tool 的自动重试规则**（Sprint 5.7 harness 兜底）:
+   当收到 task failed 且 error message 含 "terminated without emitting" 关键字时,
+   这是 harness 层检测到 subagent 的 LLM 完成了推理但漏调 seal_*_handoff tool 的
+   明确信号,**不需要询问用户**,直接重新派遣同一个 subagent。在新派遣的 prompt
+   末尾追加一句强化提示:
+     "提醒:你必须在完成分析后调用 seal_<subagent_type>_handoff tool 才能落库
+      handoff JSON,不能只在 thinking 里写'封存'或'已完成'。"
+   同一 subagent 最多自动重试 2 次;若 2 次后仍报同样错误,向用户报告:
+     "<subagent> 多次未能正确封存结果,可能是 prompt 配置问题,建议人工检查。"
 
 ### 当前支持的范式范围(v0.1)
 
@@ -293,6 +302,16 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 用户消息含「报告」/「总结」 → REPORT(有 handoff)或 E2E_FULL(无 handoff)。
 
 **仅在 fast-path 不命中时**才按 4 类归类: CALC(算/计算)、ANALYZE-EXPLICIT(解读/描述/比较 — 不含"分析"这个总称词)、VISUALIZE(可视化/出图/画图/箱线/轨迹/趋势/热图/表/列出来)、REPORT(报告/总结/汇总)。出现 VISUALIZE 类 → E2E_FULL;只 ANALYZE-EXPLICIT 一类 → E2E_FULL_ASKVIZ;只 CALC 一类 → E2E_MIN。
+
+**图表置信度分级**(catalog YAML `confidence` 字段):
+
+每个 chart 在 catalog 中标注了置信度等级，chart-maker 和 lead 按以下规则使用：
+
+- **must_have**（必出）: E2E_FULL 路径自动生成，E2E_FULL_ASKVIZ 路径在反问前自动启动
+  chart-maker（与反问并行，不浪费时间）。用户说"画图"时只画 must_have 的图。
+- **optional**（可能用到）: E2E_FULL 路径不自动画；E2E_FULL_ASKVIZ 路径在反问中列出选项。
+  用户说"出图"但对图表类型不明确时，由 lead 从 optional 中选 1-2 个最相关的投入 chart-maker。
+- **rarely_used**（很少用）: 任何路径都不自动出，用户主动点名该图种时才派遣 chart-maker。
 
 **E2E_FULL_ASKVIZ 反问模板**(data-analyst 完成后):
 
@@ -343,6 +362,13 @@ ask_clarification(
   `已收到 <subagent_type> 的结果:<从 [gate_signals] 块或 handoff 摘要里提炼的 1-2 个关键数字/状态>。接下来 <下一步打算>。`
   示例:`已收到 code-executor 的结果:5/5 EPM 指标算完,开臂时间百分比 7.99%。接下来派 data-analyst 解读 + chart-maker 出图。`
   不要只写"指标计算完成,现在派遣 data-analyst";那等于黑箱。
+- **data-analyst 阻断级质量警告播报**:收到 data-analyst handoff 后,如果 gate_signals.quality_warnings_critical_count > 0,
+  向用户播报:
+  "已收到 data-analyst 结果: <N> 条阻断级质量警告:
+  - <warning_message_1>
+  - <warning_message_2>"
+  用 method_warnings 里的 message 字段呈现给用户(不念 evidence dict)。
+  如果 critical_count = 0 则正常播报,不额外提及质量警告。
 - 每条用户可见消息发送前扫描下列违规词,匹配则删除/改写:
   绝对阈值判读、绝对焦虑判读、编造元数据(品系 C57BL/6J 等)、主动排除建议
   扫描范围:你写的 + subagent handoff 搬运的内容
@@ -832,7 +858,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 ## skill 速查
 
 - **ethoinsight-lead-interaction**: 意图决策树 / 范式识别 / 反问 / 4-choice / 失败 / pipeline 详情
-- **ethovision-paradigm-knowledge**: EV19 模板(20大类62变体)
+- **ethovision-paradigm-knowledge**: EV19 模板(20大类62变体) + `ev19-dependent-variables.md`（因变量公式，knowledge-assistant/data-analyst 回答"EV19 如何计算 X"时引用）
 - **ethoinsight-metric-catalog**: catalog 索引(prep_metric_plan 内部使用)
 - **ethoinsight**: 输出宪法
 

@@ -29,6 +29,8 @@ def _make_handoff_dict(raw_files: list[str], extras: dict | None = None) -> dict
     base = {
         "status": "completed",
         "summary": "OK",
+        "paradigm": "fst",
+        "analysis_config_id": "test-config-id",
         "inputs": {"raw_files": raw_files, "groups": {"Arena 1": "Treatment"}},
     }
     if extras:
@@ -89,7 +91,7 @@ class TestCodeExecutorHandoffFullDoc:
 
     def test_handoff_without_inputs_is_legal(self):
         """Backward compatibility — older handoffs omit inputs altogether."""
-        handoff = CodeExecutorHandoff.model_validate({"status": "completed", "summary": "OK"})
+        handoff = CodeExecutorHandoff.model_validate({"status": "completed", "summary": "OK", "paradigm": "fst", "analysis_config_id": "test-config-id"})
         assert handoff.inputs is None
 
     def test_handoff_with_host_paths_rejected(self):
@@ -125,12 +127,15 @@ class TestReadHandoffReverseMask:
 
     def test_reads_clean_handoff(self, tmp_path: Path):
         from deerflow.agents.middlewares.experiment_context import read_handoff
+        from unittest.mock import patch
+        from deerflow.agents.middlewares.experiment_context import HandoffStrictMode
         td = self._build_thread_data(tmp_path)
         handoff_path = Path(td["workspace_path"]) / "handoff_code_executor.json"
         clean_handoff = _make_handoff_dict(_VALID_PATHS)
         handoff_path.write_text(json.dumps(clean_handoff), encoding="utf-8")
 
-        result = read_handoff(td["workspace_path"], thread_data=td)
+        with patch("deerflow.agents.middlewares.experiment_context._get_strict_mode", return_value=HandoffStrictMode.WARN):
+            result = read_handoff(td["workspace_path"], thread_data=td)
         assert result is not None
         assert result["inputs"]["raw_files"] == _VALID_PATHS
         assert "_schema_violations" not in result
@@ -138,6 +143,8 @@ class TestReadHandoffReverseMask:
     def test_reverse_masks_host_paths_in_text(self, tmp_path: Path):
         """Polluted handoff with host paths is rewritten back to virtual before parsing."""
         from deerflow.agents.middlewares.experiment_context import read_handoff
+        from unittest.mock import patch
+        from deerflow.agents.middlewares.experiment_context import HandoffStrictMode
         td = self._build_thread_data(tmp_path)
         handoff_path = Path(td["workspace_path"]) / "handoff_code_executor.json"
         # Simulate a polluted handoff (code-executor ran Path.resolve()).
@@ -147,7 +154,8 @@ class TestReadHandoffReverseMask:
         )
         handoff_path.write_text(json.dumps(polluted_handoff, ensure_ascii=False), encoding="utf-8")
 
-        result = read_handoff(td["workspace_path"], thread_data=td)
+        with patch("deerflow.agents.middlewares.experiment_context._get_strict_mode", return_value=HandoffStrictMode.WARN):
+            result = read_handoff(td["workspace_path"], thread_data=td)
         assert result is not None
         assert result["inputs"]["raw_files"] == ["/mnt/user-data/uploads/trial.txt"]
         # After masking, the schema validates cleanly — no violation recorded.
@@ -156,13 +164,16 @@ class TestReadHandoffReverseMask:
     def test_records_violation_when_path_unmappable(self, tmp_path: Path):
         """If host paths cannot be reverse-mapped (different host root), record soft violation."""
         from deerflow.agents.middlewares.experiment_context import read_handoff
+        from unittest.mock import patch
+        from deerflow.agents.middlewares.experiment_context import HandoffStrictMode
         td = self._build_thread_data(tmp_path)
         handoff_path = Path(td["workspace_path"]) / "handoff_code_executor.json"
         # Path outside any allowed root — mask cannot translate it.
         polluted = _make_handoff_dict(["/some/unrelated/host/path/trial.txt"])
         handoff_path.write_text(json.dumps(polluted), encoding="utf-8")
 
-        result = read_handoff(td["workspace_path"], thread_data=td)
+        with patch("deerflow.agents.middlewares.experiment_context._get_strict_mode", return_value=HandoffStrictMode.WARN):
+            result = read_handoff(td["workspace_path"], thread_data=td)
         assert result is not None
         # Raw value preserved (we don't drop the field), but schema violation surfaces.
         assert result["_schema_violations"]
@@ -171,18 +182,21 @@ class TestReadHandoffReverseMask:
     def test_get_critical_warnings_works_on_polluted_handoff(self, tmp_path: Path):
         """gate2 critical-warning extraction must succeed even when inputs are polluted."""
         from deerflow.agents.middlewares.experiment_context import get_critical_warnings
+        from unittest.mock import patch
+        from deerflow.agents.middlewares.experiment_context import HandoffStrictMode
         td = self._build_thread_data(tmp_path)
         handoff_path = Path(td["workspace_path"]) / "handoff_code_executor.json"
         polluted = _make_handoff_dict(
             [f"{td['uploads_path']}/trial.txt"],
             extras={
                 "data_quality_warnings": [
-                    {"severity": "critical", "metric": "all", "message": "n=1"}
+                    {"severity": "critical", "metric": "all", "message": "n=1", "code": "SAMPLE.TOO_SMALL", "blocks_downstream": True}
                 ]
             },
         )
         handoff_path.write_text(json.dumps(polluted), encoding="utf-8")
 
-        warnings = get_critical_warnings(td["workspace_path"], thread_data=td)
+        with patch("deerflow.agents.middlewares.experiment_context._get_strict_mode", return_value=HandoffStrictMode.WARN):
+            warnings = get_critical_warnings(td["workspace_path"], thread_data=td)
         assert len(warnings) == 1
         assert warnings[0]["message"] == "n=1"

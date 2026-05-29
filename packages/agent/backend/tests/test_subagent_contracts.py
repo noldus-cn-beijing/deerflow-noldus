@@ -34,24 +34,26 @@ from deerflow.subagents.handoff_schemas import (  # noqa: E402
 
 class TestCodeExecutorHandoffSchema:
     def test_minimal_completed_accepts(self):
-        handoff = CodeExecutorHandoff(status="completed", summary="ok")
+        handoff = CodeExecutorHandoff(status="completed", summary="ok", paradigm="fst", analysis_config_id="test-config-id")
         assert handoff.status == "completed"
         assert handoff.errors == []
         assert handoff.data_quality_warnings == []
 
     def test_rejects_invalid_status(self):
         with pytest.raises(Exception):
-            CodeExecutorHandoff(status="unknown", summary="ok")  # type: ignore[arg-type]
+            CodeExecutorHandoff(status="unknown", summary="ok", paradigm="fst", analysis_config_id="test-config-id")  # type: ignore[arg-type]
 
     def test_rejects_missing_status(self):
         with pytest.raises(Exception):
-            CodeExecutorHandoff(summary="ok")  # type: ignore[call-arg]
+            CodeExecutorHandoff(summary="ok", paradigm="fst", analysis_config_id="test-config-id")  # type: ignore[call-arg]
 
     def test_accepts_metrics_summary_with_extra_fields(self):
         """Real ethoinsight output has mean/std/n/p25/p75 — extras must pass."""
         payload = {
             "status": "completed",
             "summary": "ok",
+            "paradigm": "fst",
+            "analysis_config_id": "test-config-id",
             "metrics_summary": {
                 "control": {
                     "iid": {"mean": 45.2, "std": 12.3, "n": 6, "p25": 35.0, "p75": 55.0}
@@ -67,6 +69,8 @@ class TestCodeExecutorHandoffSchema:
         payload = {
             "status": "completed",
             "summary": "ok",
+            "paradigm": "fst",
+            "analysis_config_id": "test-config-id",
             "metrics_summary": {
                 "control": {
                     "iid": {
@@ -85,24 +89,29 @@ class TestCodeExecutorHandoffSchema:
         payload = {
             "status": "partial",
             "summary": "warnings",
+            "paradigm": "fst",
+            "analysis_config_id": "test-config-id",
             "data_quality_warnings": [
-                {"severity": "critical", "metric": "all", "message": "n<3 in group control"},
-                {"severity": "warning", "metric": "iid", "message": "zero variance"},
+                {"severity": "critical", "metric": "all", "message": "n<3 in group control", "code": "SAMPLE.TOO_SMALL", "blocks_downstream": True},
+                {"severity": "warning", "metric": "iid", "message": "zero variance", "code": "SIGNAL.TRACKING_LOST"},
             ],
         }
         h = CodeExecutorHandoff(**payload)
         assert len(h.data_quality_warnings) == 2
         assert h.data_quality_warnings[0].severity == "critical"
+        assert h.data_quality_warnings[0].code == "SAMPLE.TOO_SMALL"
 
     def test_rejects_invalid_confidence(self):
         with pytest.raises(Exception):
-            CodeExecutorHandoff(status="completed", summary="ok", confidence=1.5)
+            CodeExecutorHandoff(status="completed", summary="ok", paradigm="fst", analysis_config_id="test-config-id", confidence=1.5)
 
     def test_current_production_shape_parses(self):
         """Mirrors the dict currently written by the SOTA glue-script."""
         production_sample = {
             "status": "completed",
             "summary": "Analyzed 5 files, 5 subjects, paradigm: shoaling",
+            "paradigm": "shoaling",
+            "analysis_config_id": "test-config-id",
             "output_files": {
                 "metrics": "/mnt/user-data/outputs/metrics.csv",
                 "statistics": "/mnt/user-data/outputs/statistics.json",
@@ -123,7 +132,7 @@ class TestCodeExecutorHandoffSchema:
 
 class TestDataAnalystHandoffSchema:
     def test_minimal_completed_accepts(self):
-        h = DataAnalystHandoff(status="completed")
+        h = DataAnalystHandoff(status="completed", analysis_config_id="test-config-id")
         assert h.status == "completed"
         assert h.key_findings == []
         assert h.outlier_findings == []
@@ -131,11 +140,12 @@ class TestDataAnalystHandoffSchema:
 
     def test_status_is_required(self):
         with pytest.raises(Exception):
-            DataAnalystHandoff()  # type: ignore[call-arg]
+            DataAnalystHandoff(analysis_config_id="test-config-id")  # type: ignore[call-arg]
 
     def test_failed_with_errors(self):
         h = DataAnalystHandoff(
             status="failed",
+            analysis_config_id="test-config-id",
             errors=["timeout reading handoff_code_executor.json"],
         )
         assert h.status == "failed"
@@ -146,16 +156,17 @@ class TestReportWriterHandoffSchema:
     def test_minimal_completed_accepts(self):
         h = ReportWriterHandoff(
             status="completed",
+            analysis_config_id="test-config-id",
             report_path="/mnt/user-data/outputs/report.md",
         )
         assert h.sections_written == []
 
     def test_rejects_missing_path(self):
         with pytest.raises(Exception):
-            ReportWriterHandoff(status="completed")  # type: ignore[call-arg]
+            ReportWriterHandoff(status="completed", analysis_config_id="test-config-id")  # type: ignore[call-arg]
 
 
 class TestDataQualityWarning:
     def test_rejects_unknown_severity(self):
         with pytest.raises(Exception):
-            DataQualityWarning(severity="meh", metric="iid", message="x")  # type: ignore[arg-type]
+            DataQualityWarning(severity="meh", metric="iid", message="x", code="SAMPLE.TOO_SMALL")  # type: ignore[arg-type]

@@ -1,12 +1,15 @@
 """OFT: 时间进程图（5 分钟 bin，运动距离 + 中心区滞留双折线）。
 
 CLI:
-  单文件:  python -m ethoinsight.scripts.oft.plot_time_progress \
+  单文件:  python -m ethoinsight.scripts.oft.plot_time_progress \\
              --input <轨迹文件> --output <png>
-  多文件:  python -m ethoinsight.scripts.oft.plot_time_progress \
+  多文件:  python -m ethoinsight.scripts.oft.plot_time_progress \\
              --inputs <inputs.json> --output <png>
+  分组聚合: python -m ethoinsight.scripts.oft.plot_time_progress \\
+             --inputs <inputs.json> --groups <groups.json> --output <png>
 
 per-subject plot: reads ``paths[0]`` when given an inputs.json.
+Group-aggregate: computes group mean ± SEM per 5-min bin across subjects.
 catalog when: total_duration_seconds > 300
 bin 长度固定 300 秒，末尾不足并入最后一个 bin。
 """
@@ -14,15 +17,15 @@ bin 长度固定 300 秒，末尾不足并入最后一个 bin。
 from __future__ import annotations
 
 import math
-import re
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from ethoinsight.charts import time_progress_plot
 from ethoinsight.parse import parse_trajectory
-from ethoinsight.scripts._cli import emit_result, make_plot_parser, resolve_per_subject_input
+from ethoinsight.scripts._cli import emit_result, make_plot_parser, read_groups_json, read_inputs_json, resolve_per_subject_input
 
 
 def _find_center_col(df: pd.DataFrame) -> str | None:
@@ -91,7 +94,72 @@ def _compute_bins(df: pd.DataFrame) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = make_plot_parser(description=__doc__, supports_groups=False).parse_args(argv)
+    args = make_plot_parser(description=__doc__, supports_groups=True).parse_args(argv)
+
+    # Group-aggregate mode: multiple subjects with group labels
+    if args.inputs and args.groups:
+        paths = read_inputs_json(args.inputs)
+        groups = read_groups_json(args.groups)
+
+        # Build subject_name → group_name lookup
+        subject_group: dict[str, str] = {}
+        for gname, subjects in groups.items():
+            for s in subjects:
+                subject_group[s] = gname
+
+        # Parse all subjects, compute per-subject bins
+        group_bins: dict[str, list[list[dict]]] = {}
+        for p in paths:
+            df = parse_trajectory(p)
+            if "trial_time" not in df.columns:
+                continue
+            subject_name = Path(p).stem
+            gname = subject_group.get(subject_name, "ungrouped")
+            bins = _compute_bins(df)
+            group_bins.setdefault(gname, []).append(bins)
+
+        if not group_bins:
+            print("error: no valid data found", file=sys.stderr)
+            return 1
+
+        # Aggregate: per-bin mean ± SEM across subjects within each group.
+        # Bins are aligned by index (bin 0 = first 300s, bin 1 = next 300s, ...)
+        # since all subjects share the same trial duration assumption.
+        for gname, subjects_bins in group_bins.items():
+            n_subjects = len(subjects_bins)
+            # Use the most common bin count as reference
+            bin_counts = [len(b) for b in subjects_bins]
+            n_bins = max(set(bin_counts), key=bin_counts.count)
+            aggregated = []
+            for bin_i in range(n_bins):
+                bin_distances = []
+                bin_center_times = []
+                bin_start = None
+                bin_end = None
+                for sb in subjects_bins:
+                    if bin_i < len(sb):
+                        bin_distances.append(sb[bin_i]["distance"])
+                        bin_center_times.append(sb[bin_i]["center_time"])
+                        if bin_start is None:
+                            bin_start = sb[bin_i]["bin_start_sec"]
+                            bin_end = sb[bin_i]["bin_end_sec"]
+
+                n_contrib = len(bin_distances)
+                aggregated.append({
+                    "bin_start_sec": bin_start or 0,
+                    "bin_end_sec": bin_end or 0,
+                    "distance": float(np.mean(bin_distances)) if n_contrib > 0 else 0.0,
+                    "distance_sem": float(np.std(bin_distances, ddof=1) / np.sqrt(n_contrib)) if n_contrib > 1 else None,
+                    "center_time": float(np.mean(bin_center_times)) if n_contrib > 0 else 0.0,
+                    "center_time_sem": float(np.std(bin_center_times, ddof=1) / np.sqrt(n_contrib)) if n_contrib > 1 else None,
+                })
+
+            output_path = time_progress_plot(aggregated, output_path=args.output, group_label=gname)
+            emit_result({"plot": "time_progress", "group": gname, "n_subjects": n_subjects, "n_bins": n_bins, "path": output_path})
+
+        return 0
+
+    # Per-subject mode
     try:
         path = resolve_per_subject_input(args)
     except ValueError as e:

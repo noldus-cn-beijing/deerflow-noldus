@@ -203,6 +203,9 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
      "open_field" → open_field.md；"zero_maze" → zero_maze.md；
      "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
    - 把文档中"报告解读语言"段的标准表述用在报告里，不要自创术语
+2.6 **若 §3 描述性统计 / §4 解读中需引用 EV19 原始公式**（如解释 Activity 百分比含义、
+   Mobility state 编码、Distance 计算方式等），read_file：
+   - `/mnt/skills/custom/ethovision-paradigm-knowledge/references/ev19-dependent-variables.md`
 
 <optional_chart_handoff>
 如果 lead 在 task prompt 中包含 handoff_chart_maker.json 路径
@@ -219,7 +222,9 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 3. write_file /mnt/user-data/outputs/report.md 保存报告
    - 报告通常 3-8K 字符；超过 8000 时按 <write_file_chunking> 分段
 
-4. write_file /mnt/user-data/workspace/handoff_report_writer.json 写交接文件
+4. **封存 handoff**: 调 seal_report_writer_handoff tool，传入 status/report_path/sections_written/errors/gate_signals，
+   工具会自动写入 /mnt/user-data/workspace/handoff_report_writer.json 并落 manifest hash。
+   **严禁直接 write_file 写 handoff_report_writer.json，必须走本 tool。**
 
 5. 最终 AIMessage：报告摘要（报告路径 + 各章节是否写全 + 任何失败条目）
 </workflow>
