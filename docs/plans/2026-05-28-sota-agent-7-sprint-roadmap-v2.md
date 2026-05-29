@@ -88,6 +88,44 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 
 ---
 
+## 2026-05-29 grill 复审（实施进展 + Sprint 5.8 grill 教训驱动的二次修订）
+
+截至 2026-05-29，Sprint 0 / 1 / 2a / 2b / 5.7 已实施（5.7 + 5.8 是新增的 seal 可靠性 sprint）。在为 Sprint 5.8 跑 `/grill-with-docs` 时，暴露出**roadmap 制定方式本身的 4 个系统性问题**，它们不止影响 5.8，而是命中多个未实施 sprint。本段集中记录复审结论，下面各 sprint 标题带 `← grill 复审` 的即受影响项。
+
+### 4 条可泛化教训（来自 grill 5.8 + 3 个 deepseek 真机探针）
+
+1. **roadmap 的"改动清单"基于未核验的代码假设** → 5.8 核验后发现原 spec 3 处会让实施 agent 踩空 + 1 个负优化（max_turns）。**推论**：每个 sprint 真正实施前都需像 5.8 那样核验行号/字段是否真就位，roadmap 的"改动"是设计意图不是已验事实。
+2. **roadmap 凭直觉选了"看起来对"的技术方案** → forced tool_choice 被探针证伪是陷阱（dashscope thinking 拒绝 / 关 thinking 产空 args），见 [ADR-0001](../adr/0001-seal-resume-not-forced-tool-choice.md)。**推论**：涉及模型 API 行为的方案必须探针验证，不能假设。
+3. **roadmap 没把"模型无关"当硬约束** → 线上 deepseek-v4-pro（dashscope），未来换 Qwen3（vLLM/Fireworks），thinking/tool_choice/reasoning 行为各异。**推论**：任何依赖模型特定行为的设计都会在切模型时爆，防御应放 harness 层。
+4. **roadmap 假设了错误的失败机制** → "data-analyst 漏调因撞 max_turns" 被查 dogfood jsonl 证伪（成功仅用 3-4/12 轮）。**推论**：失败归因要有数据，不能拍脑袋。
+
+### 逐 sprint 复审结论
+
+| Sprint | 复审裁决 | 依据（对应教训/原则） |
+|---|---|---|
+| **3 参数审计** | 🟡 设计对，实施加护栏 | 改 `data_analyst.py` workflow——**这是 5.7 seal bug 的同一文件**（加 step 必须 grep `^\d+\.` 验编号唯一，防 seal bug 复发）；且 3/5/5.8/6 改同一文件同片区域，是**热点**，需协调实施顺序；硬依赖 2b 的 `parameters_used`（已实施 ✅） |
+| **4 调参指南** | 🔴 撞 single-source | `by-experiment/*.md` 的 SSOT 归属是**行为学同事（走 review-packages）**，不是工程团队直接编辑（[[feedback_ssot_lives_in_review_packages]] / [[feedback_ssot_skill_deployment_distinction]]）。"调参指南"内容（调到多少、为什么）是行为学判断，应由同事写。**Sprint 4 工程部分只做"data_analyst grep 该段"的通路，内容留空待同事填**，否则会被 review-packages 同步覆盖 + 越权写领域知识 |
+| **4.5 analysis_config_id** | 🟢 健康（小问） | deterministic hash 判断对。小问：v0.1 用户改参数频率若极低，则"改参数重跑对比 config_id"用例少、价值低——但成本仅 0.5 周且是"标识"非"防篡改"，可留 |
+| **5 数据质量门** | 🟡 估期乐观 | "克隆 Ev19TemplateGuardrailProvider，1 周富余"是 5.8 同款乐观（5.8 也以为简单，核验冒出 3 坑）。依赖未核验：`blocks_downstream`（Sprint 1）/ `workflow_mode=manual`（deerflow 现成？）/ `gate2_quality_acknowledged`（新加）。**估期可能 >1 周，实施前先核验依赖就位** |
+| **5.5 lineage 封印** | 🔴 **降级**（最大改动） | 原设计是 handoff 内容 **sha256 封印 + fail-closed**（防篡改，2 周）。但：①威胁不存在——单产品/确定性脚本/自有 subagent 链，没有"恶意篡改 handoff"的威胁模型；②"写一半被读"的 race 已被 Sprint 0 的 atomic write（tmp+rename）覆盖；③用户/demo 无感（违反公测标准导向）；④与 grill 5.8 立案的 [[project_2026-05-29_handoff_content_validation_pending]]（handoff 内容**非空**校验）重叠——后者是真需求（空内容 handoff 静默产垃圾，实际会发生），前者是假需求。**裁决：5.5 从"sha256 hash 封印（2周）"替换为"handoff 内容非空/schema 完整性校验（0.5周）"**，hash 封印推 v0.2 或砍。复用 5.7/5.8 的 validator。 |
+| **6 跨会话 memory** | 🟢 健康（2 个注意） | 设计对（复用 deerflow facts 通道、确定性写入不走 LLM 抽取——已吸取"LLM 抽取数字漂移"教训）。注意：①改 `seal_report_writer_handoff` 内部——与 5.8 seal-resume 改**同一 seal 路径**，需协调顺序；②PRD §8 把"跨范式关联"**划出 MVP**，确认 v0.1 是否要做（这是"主人哲学"质变能力，非公测标准） |
+| **7 假设面板** | 🟢 最健康 | 已自我纠偏（拒绝 GateProvider 强制、改可主动调用工具）——正是 grill 会强调的"不过度工程"。仅需标依赖（2b ✅/3/5.5） |
+
+### 横切主题（影响多个 sprint）
+
+- **`data_analyst.py` 是改动热点**：Sprint 3 / 5 / 5.8 / 6 都改它的 workflow 或 handoff 路径。实施顺序需串行协调，且每次加 workflow step 必须 grep 编号唯一性（防 5.7 seal bug 复发）。
+- **依赖时序**：很多 sprint 依赖尚未实施项的产出（5 依赖 1、5.5 依赖 0+4.5+2b、7 依赖 2b+3+5.5）。**写"代码核验版"spec 前需确认依赖已落地**，否则核验的是不存在的代码状态。当前已实施：0/1/2a/2b/5.7。
+- **战略提醒（未决）**：5.5（hash）/6（跨会话）/7（假设面板）属"主人哲学上层建筑"，PRD 公测标准是"6 范式跑得准、不翻车、端到端"。golden-cases 仍为空、OFT/LDB/Zero Maze 无端到端 dogfood——若 v0.1 资源紧张，这几个应让位于"范式端到端验证 + golden-case"。本复审不擅自重排优先级，仅标记。
+
+### 复审后 spec 编写策略
+
+- **5.5 spec 按"内容非空校验"写**（不写 hash 封印）
+- **Sprint 4 spec 明确"内容由同事写、工程只做通路"**
+- 3/5/6/7 spec 写"设计骨架 + 标依赖/热点/实施前核验点"，真正实施时再升级为代码核验版（如 5.8）
+- Sprint 8（feedback 回流）优先级最低（自标"微调到位后收益减半"），最后写
+
+---
+
 ## 修正后路线图
 
 ### Sprint 0（2 周）：handoff 全面 schema 化 + seal_*_handoff tool 集 ← ★ 新增，最高优先级
@@ -238,7 +276,7 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 2. 同样的 overrides JSON 跑两次，生成的 plan_metrics.json bit-identical（确定性）
 3. 改一项 override → 重新 catalog.resolve → 新 plan_metrics.json + 新 analysis_config_id（Sprint 4.5 衔接）
 
-### Sprint 3（1 周）：data-analyst 参数审计
+### Sprint 3（1 周）：data-analyst 参数审计 ← grill 复审（加编号检查 + 热点协调 + 依赖 2b✅）
 
 **动机**：参数可配置了，但没人告诉用户"你的数据用当前参数不合适"。data-analyst 比对参数和实际数据分布，发现 velocity 中位数 5mm/s 但阈值 30mm/s → 生成警告。
 
@@ -248,7 +286,7 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 
 - `packages/agent/backend/packages/harness/deerflow/subagents/builtins/data_analyst.py` — workflow 加参数适配性检查段（从 `MetricStat.parameters_used` 取参数，从 handoff 数据分布取实际值，比对）；handoff schema 增 `parameter_audit` 字段；gate_signals 增 `parameter_audit_findings_count`
 
-### Sprint 4（1 周）：调参指南进 by-experiment md
+### Sprint 4（1 周）：调参指南进 by-experiment md ← grill 复审 🔴（SSOT 归属：内容由同事写，工程只做通路）
 
 **动机**：agent 警告了阈值不合适，但不知道"调到多少"。paradigm md 提供权威调参指南。knowledge-assistant 回答"为什么是 30"时解释权衡而非背诵权威。
 
@@ -293,7 +331,7 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 2. 同一份 overrides JSON 两次跑得到完全相同的 analysis_config_id（deterministic 验证）
 3. parameter_overrides 为空时（首次跑），analysis_config_id 仍然生成（基于纯 catalog default 的 hash）
 
-### Sprint 5（1 周）：GuardrailProvider 数据质量门 ← 重估（降 2→1 周）
+### Sprint 5（1 周）：GuardrailProvider 数据质量门 ← 重估（降 2→1 周）+ grill 复审（估期可能 >1 周，依赖未核验）
 
 **动机**：现在 code-executor 生成 warning 后 data-analyst 照样跑。有 `severity=critical` + `blocks_downstream=true` 时，必须先让用户确认再继续。用 DeerFlow 已有 GuardrailMiddleware 机制拦截下游 subagent 派遣。
 
@@ -328,47 +366,36 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
   - **仅在 `workflow_mode=manual` 时**挂 DataQualityGuardrailProvider（仿 GateEnforcementMiddleware）
 - `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/prompt.py` — manual 模式下调度员角色边界加："critical + blocks_downstream warning 出现时，必须先 ask_clarification → 调 set_experiment_paradigm(acknowledge_quality=True) → 才能派下游 subagent"
 
-### Sprint 5.5（2 周）：Lineage 封印 + 校验门 ← ★ 新增（第四块橡皮泥）
+### Sprint 5.5（0.5 周）：Handoff 内容完整性校验 ← grill 复审降级（原"lineage 封印"2 周 → 内容非空校验 0.5 周）
 
-**动机**：经过 5 个 sprint，参数 lineage 能从 catalog 追踪到 handoff。但缺少**内容冻结 + 下游校验**：code-executor 写完 handoff 后，下游 subagent 读到的内容可能被中间状态污染。需要 lineage 封印——handoff 写完即冻结（hash），下游读时验 hash，不匹配直接 fail-closed。
+> **⚠️ 2026-05-29 grill 复审降级**：本 sprint 原设计是 handoff 内容 **sha256 封印 + fail-closed + audit log**（防篡改，2 周）。复审否决，理由见上文「grill 复审」表 5.5 行：威胁不存在（单产品/确定性脚本/自有 subagent 链）、race 已被 Sprint 0 atomic write 覆盖、用户无感、且与真需求「内容非空校验」重叠。**hash 封印推 v0.2 或砍。** 下面是降级后的设计。原 hash 封印设计存档于本节末「附：原 lineage 封印设计（已搁置）」。
 
-**设计原则**：与 `HandoffIsolationProvider`（管"路径授权"）正交——这个是管"内容封印"。
+**动机（降级后）**：当前 `_validate_handoff_emitted`（Sprint 5.7）+ seal-resume 补轮判定（Sprint 5.8）**只查 handoff 文件存在，不查内容**。LLM（正常调 seal 或 5.8 补轮被催着调）极小概率会调了 seal 但核心字段残缺/空（`key_findings=[]`、`summary=""`）→ 文件产出 → 判 COMPLETED → 下游读到空内容 handoff，**无人报警、一路绿灯产垃圾**。这比漏调更隐蔽（漏调至少 5.7 会响亮 FAILED）。这是 seal tool 的**普遍**问题（非补轮引入），是真实会发生的失败模式。
 
-**LangChain API 约束**：`GuardrailProvider.evaluate()` 只在 pre-tool-call 触发，没有独立的 post-tool-call hook。`GuardrailMiddleware.wrap_tool_call` 包住 `handler(request)`，可以在调 handler 后做后置处理。所以 lineage 机制走两条路：
-
-- **写 manifest（在 seal tool 内部做，不在 guardrail 做）**：Sprint 0 的 `seal_*_handoff` tool 已经在 atomic write 后计算 sha256 写入 `.lineage/manifest.json`，本 sprint 不重复造
-- **验 hash（pre-handler）**：本 sprint 新建 `LineageIntegrityGuardrailProvider`，在 `evaluate()` 拦 `task` 工具：若 subagent_type ∈ {data_analyst, chart_maker, report_writer}，先读 `.lineage/manifest.json` + 校验所有相关 handoff 文件的 sha256，不匹配 → deny + 写 audit log
-
-**关键设计（grill 锁定）**：
-
-- **8.1 manifest 位置 = B**：`/mnt/user-data/workspace/.lineage/manifest.json`（隐藏子目录，subagent 训练数据里见过 `.git`/`.vscode`，默认不进）
-- **8.2 验失败处理 = D + F**：fail-closed deny + 写 audit log（`/mnt/user-data/workspace/.lineage/violations.log`）。**不自动 reseal**——封印的全部意义是"内容不可篡改"
-- **8.3 report 反查砍掉**：v0.1 不做 report-writer 中数字一致性反查；LLM 幻觉数字问题留给 Sprint 8（prior_corrections）+ 后训练
+**设计原则**：
+- 增强 `_validate_handoff_emitted`（或新建并列 validator），文件存在性检查**之后**追加"核心字段非空"检查。
+- 各 subagent 的"核心字段"判据来自其 handoff 契约（`handoff_schemas.py` 的 Pydantic 类，[[feedback_single_source_of_truth]]：契约单一来源）：
+  - code-executor：`metrics_summary` 非空
+  - data-analyst：`key_findings` 非空数组
+  - chart-maker：`chart_files` 非空 或 `failed_charts` 有说明
+  - report-writer：`report_path` 存在且文件非空
+- 覆盖**正常路径 + 5.8 补轮路径**（两者复用同一 validator，5.8 补轮判定自动受益）。
+- 失败处理：与 5.7 一致——标 FAILED + 诊断（"sealed but core field X empty"）→ lead 重派 / 5.8 补轮。**不做 hash、不做 audit log**（那是被否决的 v0.2 范畴）。
 
 **改动**：
 
-- `packages/agent/backend/packages/harness/deerflow/tools/builtins/seal_handoff_tools.py`（Sprint 0 建的）— 扩展共享 helper，atomic write 后写 manifest：
-  ```
-  .lineage/manifest.json = {
-    "handoff_code_executor.json": {sha256, analysis_config_id, timestamp},
-    "handoff_data_analyst.json": {...},
-    ...
-  }
-  ```
-- `packages/agent/backend/packages/harness/deerflow/guardrails/lineage_integrity_provider.py` 新建 —
-  - `evaluate(request)` 拦 `task(subagent_type=data-analyst|chart-maker|report-writer)`：
-    - 读 `.lineage/manifest.json` + 相关 handoff 文件
-    - 计算当前 handoff 的 sha256
-    - 不匹配 → return GuardrailDecision(allow=False, reasons=[...]); 同时 append 一行到 `.lineage/violations.log`
-  - ContextVar bridge 注入 workspace 路径（仿 Ev19TemplateGuardrailProvider）
-- `packages/agent/backend/packages/harness/deerflow/guardrails/__init__.py` — 注册
-- `packages/agent/backend/packages/harness/deerflow/agents/lead_agent/agent.py` — 中间件链加 LineageIntegrityGuardrailProvider（在 HandoffIsolationProvider **之后**，DataQualityGuardrailProvider **之前**）
-- `packages/agent/backend/packages/harness/deerflow/sandbox/tools.py` — `write_file` 路径若命中 `.lineage/*` → guardrail 拒绝（双保险，避免 subagent 误改 manifest）
+- `packages/agent/backend/packages/harness/deerflow/subagents/executor.py` — `_validate_handoff_emitted` 扩展（或加 `_validate_handoff_nonempty`）：文件存在后读 JSON，按 subagent 查核心字段非空。**核心字段判据从 handoff_schemas.py 的契约推导，不在此硬编码字段名清单**（避免与 schema 双存，违反 single-source）。
+- `tests/` — 各 subagent "文件在但核心字段空 → 仍判失败" 的 case；正常路径不退化。
+- **依赖**：Sprint 0（seal tool）+ 5.7（_validate_handoff_emitted）已实施 ✅；与 5.8 补轮共用 validator，需在 5.8 之后或协调。
 
 **验收**：
-1. 人为篡改 handoff_code_executor.json 中的 p 值 → 派 data-analyst 时被拦截 fail-closed
-2. `.lineage/violations.log` 出现一行 audit 记录（含 timestamp/file/expected_sha/actual_sha）
-3. 正常流程下，所有下游派遣放行
+1. 构造 data-analyst handoff 文件存在但 `key_findings=[]` → 派下游时判失败（而非绿灯放行）
+2. 正常完整 handoff → 放行
+3. 5.8 补轮产出空内容 handoff（模拟）→ 同样被拦
+
+**附：原 lineage 封印设计（已搁置，v0.2 再评估）**：原拟在 seal tool 内写 `.lineage/manifest.json`（sha256）+ 新建 `LineageIntegrityGuardrailProvider` 在 `evaluate()` 拦 task 验 hash + fail-closed + `.lineage/violations.log` audit。grill 复审认定 v0.1 不需要（无篡改威胁），完整设计见 git history 本节修订前版本。
+
+### ~~Sprint 5.5（2 周）：Lineage 封印~~ — 见上（已降级）
 
 ### Sprint 5.7（0.5 周）：Handoff Emission Validator ← ★ 新增（兜底 LLM 漏调 seal tool，dogfood 实证驱动）
 
@@ -388,7 +415,7 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 
 **spec + 实施文档**：[Sprint 5.7 spec](../superpowers/specs/2026-05-28-sprint-5.7-handoff-emission-validator-design.md) / [实施文档（代码核验版）](../superpowers/plans/2026-05-29-sprint-5.7-handoff-emission-validator-impl.md)
 
-### Sprint 6（0.5 周）：跨会话范式 memory ← 修正（复用 deerflow facts 通道，砍掉新顶层结构）
+### Sprint 6（0.5 周）：跨会话范式 memory ← 修正（复用 deerflow facts 通道，砍掉新顶层结构）+ grill 复审（与 5.8 改同一 seal 路径需协调；PRD 将跨范式划出 MVP）
 
 **动机**：这是"主人"的质变能力。用户上周做 EPM、这周做 OFT——agent 应能跨会话汇聚证据。审计发现 MemoryMiddleware 的 LLM 抽取通道会把数字漂移成字符串——但**不需要新建顶层 ExperimentSummary 结构**，复用 deerflow 现有的 facts 通道即可。
 
@@ -422,7 +449,7 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 2. 第二个会话做 EPM 时，lead system prompt 的 `<memory>` 段含上次 fact（confidence=1.0 排序最优先）
 3. 跑 200 次分析后，memory.json 仍只有 100 条 facts（max_facts 自动 eviction）；confidence=1.0 的 experiment_summary 不被低 confidence 的 user preference 挤掉
 
-### Sprint 7（0.5 周）：用户侧假设暴露面板 ← ★ 新增（轻量版，不强制）
+### Sprint 7（0.5 周）：用户侧假设暴露面板 ← ★ 新增（轻量版，不强制）+ grill 复审 🟢（最健康，已自我纠偏，仅标依赖）
 
 **动机**：Sprint 3 的参数审计 + Sprint 4 的调参指南生成了 method_warnings 和参数调整推荐，但它们写在 data-analyst handoff 里，是给 lead 看的中间产物。"让本体论承诺显式化"的哲学价值确实存在——但**不该用 LLM 必调 + guardrail 强制的方式实现**（增加决策树复杂度、用户大概率不读冗余卡片）。
 
@@ -512,7 +539,9 @@ S8（独立）
 
 Sprint 1 和 Sprint 2a 可以在 S0 完成后并行；Sprint 4.5 可以在 S0 完成后独立启动。
 
-总计 10 个 sprint（原 7 个 + 新增 3 个 — S0 / S4.5 / S5.5 / S7 是新增，S2 拆为 2a+2b，S5 压缩，共计 10），约 **16.5 周**（grill 后净省 2 周：S6 -1.5、S7 -1.5、S0 +1），约 50 个文件改动。
+总计 **12 个 sprint**（0/1/2a/2b/3/4/4.5/5/5.5/5.7/5.8/6/7/8 — 含 2026-05-29 新增的 5.7 + 5.8 两个 seal 可靠性 sprint）。**2026-05-29 grill 复审后周数下调**：5.5 从 2 周降到 0.5 周（hash 封印 → 内容非空校验），新增 5.7（0.5）+ 5.8（0.5）。约 **15.5 周**。
+
+**已实施（截至 2026-05-29）**：Sprint 0 / 1 / 2a / 2b / 5.7 / 5.8 ✅。其余待写 spec / 待实施。
 
 ## 与原路线图的差异对照
 
