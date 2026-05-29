@@ -153,7 +153,7 @@ def _estimate_dt(df: pd.DataFrame) -> float:
 
 
 def _resolve_immobile_series(
-    df: pd.DataFrame, mobility_col: str | None
+    df: pd.DataFrame, mobility_col: str | None, **kwargs,
 ) -> tuple[pd.Series, int] | None:
     """Resolve the mobility column to a (series, immobile_value) pair.
 
@@ -175,23 +175,24 @@ def _resolve_immobile_series(
     col = mobility_col or _find_mobility_column(df)
     if col is None or col not in df.columns:
         # Fallback 1: derive immobility from raw Activity via pendulum detection
-        result = _resolve_immobile_from_activity(df)
+        result = _resolve_immobile_from_activity(df, **kwargs)
         if result is not None:
             return result
         # Fallback 2: velocity-based (Noldus Non-movement bouts, last resort)
-        return _resolve_immobile_from_velocity(df)
+        return _resolve_immobile_from_velocity(df, **kwargs)
     series = df[col].dropna()
     if series.empty:
-        result = _resolve_immobile_from_activity(df)
+        result = _resolve_immobile_from_activity(df, **kwargs)
         if result is not None:
             return result
-        return _resolve_immobile_from_velocity(df)
+        return _resolve_immobile_from_velocity(df, **kwargs)
     immobile_value = 1 if "immobile" in col.lower() else 0
     return series, immobile_value
 
 
 def _resolve_immobile_from_activity(
     df: pd.DataFrame,
+    **pendulum_kwargs,
 ) -> tuple[pd.Series, int] | None:
     """Derive immobility labels from raw Activity via pendulum detection.
 
@@ -199,6 +200,8 @@ def _resolve_immobile_from_activity(
     exists in the export.  Runs the autocorrelation-based pendulum detector on
     the continuous Activity column (pixel change %) and returns a one-hot
     immobility series (1=immobile, 0=mobile).
+
+    pendulum_kwargs 透传给 pendulum_immobility_series → detect_pendulum。
 
     Returns None when no usable Activity column is present.
     """
@@ -211,24 +214,30 @@ def _resolve_immobile_from_activity(
     if np.all(np.isnan(activity)):
         return None
     dt = _estimate_dt(df)
-    immobile = pendulum_immobility_series(activity, dt)
+    immobile = pendulum_immobility_series(activity, dt, **pendulum_kwargs)
     series = pd.Series(immobile, index=df.index[:len(immobile)], dtype=int)
     return series, 1  # one-hot: 1 = immobile
 
 
-_VELOCITY_THRESHOLD_MM_S = 30.0   # Noldus default: ≤ 30 mm/s = immobile
-_VELOCITY_MIN_DURATION = 25        # Noldus default: ≥ 25 samples (1s at 25fps)
+# Sprint 2b: _VELOCITY_THRESHOLD_MM_S / _VELOCITY_MIN_DURATION 模块常量已删除。
+# 参数现在通过函数签名 kwargs 传入（与 catalog _common.yaml shared_parameters default 一致）。
 
 
 def _resolve_immobile_from_velocity(
     df: pd.DataFrame,
+    *,
+    velocity_threshold: float = 30.0,
+    velocity_min_duration: int = 25,
 ) -> tuple[pd.Series, int] | None:
     """Derive immobility from center-point velocity (Noldus Non-movement bouts).
 
     Last-resort fallback when neither ``mobility_state`` nor ``activity``
     columns are available.  Classifies a frame as immobile when the
-    center-point velocity (Euclidean distance / time delta) ≤ 30 mm/s for
-    at least 25 consecutive samples (frame-rate adaptive).
+    center-point velocity (Euclidean distance / time delta) ≤ velocity_threshold
+    for at least velocity_min_duration consecutive samples (frame-rate adaptive).
+
+    Sprint 2b: velocity_threshold / velocity_min_duration 从 catalog 传入,
+        default 30.0 / 25 仅供本地 unit test 使用。
 
     Returns None when ``x_center`` or ``y_center`` columns are missing.
     """
@@ -240,7 +249,7 @@ def _resolve_immobile_from_velocity(
 
     # Frame-rate adaptation: scale min-duration to match 25fps baseline
     scale = 0.04 / dt if dt > 0 and dt != 0.04 else 1.0
-    min_dur = max(1, round(_VELOCITY_MIN_DURATION * scale))
+    min_dur = max(1, round(velocity_min_duration * scale))
 
     n = len(x)
     immobile = np.zeros(n, dtype=int)
@@ -252,7 +261,7 @@ def _resolve_immobile_from_velocity(
         dx = x[i] - x[i - 1]
         dy = y[i] - y[i - 1]
         velocity = np.sqrt(dx * dx + dy * dy) / dt
-        if velocity <= _VELOCITY_THRESHOLD_MM_S:
+        if velocity <= velocity_threshold:
             counter += 1
         else:
             counter = 0
@@ -289,14 +298,18 @@ def _runs(arr, value=0):
 def compute_immobility_time(
     df: pd.DataFrame,
     mobility_col: str | None = None,
+    **kwargs,
 ) -> float | None:
     """Total immobility time (seconds).
 
     Sums the duration of all immobility bouts. Works with both the combined
     ``mobility_state`` column (0=immobile) and the one-hot
     ``mobility_state_immobile`` column (1=immobile).
+
+    kwargs 透传给 _resolve_immobile_series（Sprint 2b: velocity_threshold,
+    velocity_min_duration, pendulum_* 参数）。
     """
-    resolved = _resolve_immobile_series(df, mobility_col)
+    resolved = _resolve_immobile_series(df, mobility_col, **kwargs)
     if resolved is None:
         return None
     series, immobile_value = resolved
@@ -319,13 +332,16 @@ def compute_immobility_time(
 def compute_immobility_latency(
     df: pd.DataFrame,
     mobility_col: str | None = None,
+    **kwargs,
 ) -> float | None:
     """Latency to first immobility bout (seconds).
 
     Returns the trial_time value of the first immobile frame, or None if
     the animal was never immobile.
+
+    kwargs 透传给 _resolve_immobile_series（Sprint 2b）。
     """
-    resolved = _resolve_immobile_series(df, mobility_col)
+    resolved = _resolve_immobile_series(df, mobility_col, **kwargs)
     if resolved is None:
         return None
     series, immobile_value = resolved
@@ -344,12 +360,15 @@ def compute_immobility_latency(
 def compute_immobility_bout_count(
     df: pd.DataFrame,
     mobility_col: str | None = None,
+    **kwargs,
 ) -> int | None:
     """Number of immobility bouts (run-length encoding).
 
     Each consecutive run of immobile frames counts as one bout.
+
+    kwargs 透传给 _resolve_immobile_series（Sprint 2b）。
     """
-    resolved = _resolve_immobile_series(df, mobility_col)
+    resolved = _resolve_immobile_series(df, mobility_col, **kwargs)
     if resolved is None:
         return None
     series, immobile_value = resolved
@@ -361,13 +380,16 @@ def compute_immobility_bout_count(
 def extract_immobility_bouts(
     df: pd.DataFrame,
     mobility_col: str | None = None,
+    **kwargs,
 ) -> list[tuple[float, float]]:
     """Extract (start_sec, end_sec) pairs for each immobility bout.
 
     Uses trial_time column to convert frame indices to seconds.
     Returns empty list if mobility column or trial_time is missing.
+
+    kwargs 透传给 _resolve_immobile_series（Sprint 2b）。
     """
-    resolved = _resolve_immobile_series(df, mobility_col)
+    resolved = _resolve_immobile_series(df, mobility_col, **kwargs)
     if resolved is None:
         return []
     series, immobile_value = resolved

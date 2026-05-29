@@ -159,6 +159,7 @@ class PlanMetric:
     direction_for_anxiety: str | None = None
     statistical_default: str = ""
     parameters_in_use: dict[str, float | int | str] = field(default_factory=dict)
+    args: list[str] = field(default_factory=list)  # === Sprint 2b: CLI args for code-executor ===
 
 
 @dataclass
