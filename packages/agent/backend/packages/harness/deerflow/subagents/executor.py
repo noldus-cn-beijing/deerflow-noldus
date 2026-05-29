@@ -12,6 +12,7 @@ from contextvars import Context, copy_context
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from langchain.agents import create_agent
@@ -69,6 +70,89 @@ def calculate_subagent_recursion_limit(middlewares: list[AgentMiddleware], max_t
     one_off = before_agent + after_agent
     margin = 3
     return max_turns * per_turn + one_off + margin
+
+
+# ---------------------------------------------------------------------------
+# Sprint 5.7: Handoff emission validation
+#
+# Ethoinsight subagents that MUST seal a handoff file before terminating
+# successfully. Keys are SubagentConfig.name (hyphenated, matching config.name);
+# values are the expected handoff filename in the thread workspace.
+#
+# General-purpose subagents (general-purpose / bash / knowledge-assistant) are
+# intentionally NOT in this map — they have no seal_*_handoff contract and may
+# legitimately complete without producing a handoff file.
+# ---------------------------------------------------------------------------
+_HANDOFF_EMISSION_REQUIRED: dict[str, str] = {
+    "code-executor": "handoff_code_executor.json",
+    "data-analyst": "handoff_data_analyst.json",
+    "chart-maker": "handoff_chart_maker.json",
+    "report-writer": "handoff_report_writer.json",
+}
+
+
+def _validate_handoff_emitted(
+    subagent_name: str,
+    workspace_path: str | None,
+) -> str | None:
+    """Return None if the subagent's handoff file is present, else a diagnostic.
+
+    Called just before set_terminal(COMPLETED). If subagent_name is in
+    _HANDOFF_EMISSION_REQUIRED but its handoff file is absent in workspace,
+    returns an error string explaining the failure (used as
+    try_set_terminal(FAILED, error=...)). Otherwise returns None (pass / N/A).
+
+    ROBUSTNESS (Sprint 5.7 spec §1 C3): this function MUST NOT raise. The call
+    site sits inside executor's try/except — any exception here would be caught
+    and mis-attributed as a generic FAILED, clobbering our diagnostic. So all
+    filesystem access is wrapped; on unexpected error we fail-open (return None).
+
+    Args:
+        subagent_name: SubagentConfig.name, e.g. "data-analyst".
+        workspace_path: Host-side workspace dir from thread_data["workspace_path"].
+            None when ThreadDataMiddleware didn't set it (old threads / dev paths).
+
+    Returns:
+        None  -> validation passes, or subagent not in white-list, or
+                 unresolvable workspace (fail-open).
+        str   -> diagnostic explaining the missing handoff.
+    """
+    expected_filename = _HANDOFF_EMISSION_REQUIRED.get(subagent_name)
+    if expected_filename is None:
+        # Not a handoff-producing ethoinsight subagent — no contract to enforce.
+        return None
+
+    if not workspace_path:
+        # No workspace resolvable — can't validate. Fail-open (do NOT block);
+        # this preserves pre-5.7 behavior for old threads and dev paths.
+        logger.warning(
+            "[handoff_emission] Subagent %s: no workspace_path; skipping "
+            "handoff validation (fail-open).",
+            subagent_name,
+        )
+        return None
+
+    try:
+        handoff_path = Path(workspace_path) / expected_filename
+        if handoff_path.exists():
+            return None
+    except Exception:  # noqa: BLE001 — must never raise; see docstring ROBUSTNESS.
+        logger.exception(
+            "[handoff_emission] Subagent %s: error while checking %s; "
+            "failing open.",
+            subagent_name,
+            expected_filename,
+        )
+        return None
+
+    seal_tool = f"seal_{subagent_name.replace('-', '_')}_handoff"
+    return (
+        f"Subagent '{subagent_name}' terminated without emitting "
+        f"'{expected_filename}'. This means the LLM finished its reasoning "
+        f"but forgot to call the {seal_tool} tool. The handoff file is "
+        f"REQUIRED by downstream subagents. Lead should re-dispatch this task "
+        f"with an explicit reminder to invoke the seal tool at the end."
+    )
 
 
 class SubagentStatus(Enum):
@@ -720,7 +804,28 @@ class SubagentExecutor:
                     logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} no messages in final state")
                     result.result = "No response generated"
 
-            result.try_set_terminal(SubagentStatus.COMPLETED)
+            # Sprint 5.7: validate handoff emission before marking COMPLETED.
+            # For ethoinsight subagents (code-executor / data-analyst /
+            # chart-maker / report-writer), the expected handoff file MUST exist
+            # in the thread workspace. An LLM can finish its thinking turn
+            # without emitting the seal_*_handoff tool_call — executor would
+            # otherwise mark the task COMPLETED falsely and break downstream.
+            _workspace = (
+                self.thread_data.get("workspace_path")
+                if isinstance(self.thread_data, dict)
+                else None
+            )
+            _handoff_error = _validate_handoff_emitted(self.config.name, _workspace)
+            if _handoff_error is not None:
+                logger.warning(
+                    "[trace=%s] Subagent %s terminated without emitting handoff: %s",
+                    self.trace_id,
+                    self.config.name,
+                    _handoff_error,
+                )
+                result.try_set_terminal(SubagentStatus.FAILED, error=_handoff_error)
+            else:
+                result.try_set_terminal(SubagentStatus.COMPLETED)
 
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} async execution failed")
