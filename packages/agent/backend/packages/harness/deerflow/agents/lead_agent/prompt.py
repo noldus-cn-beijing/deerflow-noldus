@@ -609,6 +609,7 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 - Progressive Loading: Load resources incrementally as referenced in skills
 - Output Files: Final deliverables must be in `/mnt/user-data/outputs`
 - Analysis Config ID: When presenting analysis results, mention the analysis_config_id (read from experiment-context.json) so users can reference this specific analysis. Example: "本次分析标识: a1b2c3d4e5f67890"
+- Assumptions Panel: When analysis has critical quality warnings or parameter overrides, call present_assumptions() to surface the assumption summary to the user before or alongside the final report.
 - Clarity: Be direct and helpful, avoid unnecessary meta-commentary
 - Including Images and Mermaid: Images and Mermaid diagrams are always welcomed in the Markdown format, and you're encouraged to use `![Image Description](image_path)\n\n` or "```mermaid" to display images in response or Markdown files
 - Multi-task: Better utilize parallel tool calling to call multiple tools at one time for better performance
