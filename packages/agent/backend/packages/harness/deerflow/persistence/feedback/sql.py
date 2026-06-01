@@ -135,11 +135,13 @@ class FeedbackRepository:
         comment: str | None = None,
         verdict: str | None = None,
         revised_text: str | None = None,
+        paradigm: str | None = None,
     ) -> dict:
         """Create or update feedback for (thread_id, run_id, user_id, message_id).
 
         rating must be +1, -1, or None (Noldus verdict=needs_fix path).
         verdict must be 'correct' / 'needs_fix' / 'wrong' or None (上游 rating-only path).
+        paradigm is the experiment paradigm name, read from experiment-context.json (Sprint 8).
         """
         if rating is not None and rating not in (1, -1):
             raise ValueError(f"rating must be +1 or -1, got {rating}")
@@ -162,6 +164,7 @@ class FeedbackRepository:
                 row.comment = comment
                 row.verdict = verdict
                 row.revised_text = revised_text
+                row.paradigm = paradigm
                 row.created_at = datetime.now(UTC)
             else:
                 row = FeedbackRow(
@@ -174,6 +177,7 @@ class FeedbackRepository:
                     comment=comment,
                     verdict=verdict,
                     revised_text=revised_text,
+                    paradigm=paradigm,
                     created_at=datetime.now(UTC),
                 )
                 session.add(row)
@@ -234,3 +238,38 @@ class FeedbackRepository:
                 "positive": row.positive,
                 "negative": row.negative,
             }
+
+    async def list_prior_corrections(
+        self,
+        *,
+        paradigm: str,
+        user_id: str | None | _AutoSentinel = AUTO,
+        limit: int = 5,
+    ) -> list[dict]:
+        """Retrieve prior corrections (needs_fix + wrong) for a paradigm.
+
+        Used by Sprint 8 to inject prior corrections into the lead agent prompt
+        so the agent learns from past mistakes for the same paradigm.
+
+        Args:
+            paradigm: The experiment paradigm to filter by.
+            user_id: If provided, only returns corrections for this user.
+            limit: Maximum number of corrections to return.
+
+        Returns:
+            List of feedback dicts with verdict, comment, revised_text, created_at.
+        """
+        resolved_user_id = resolve_user_id(user_id, method_name="FeedbackRepository.list_prior_corrections")
+        stmt = (
+            select(FeedbackRow)
+            .where(
+                FeedbackRow.paradigm == paradigm,
+                FeedbackRow.verdict.in_(["needs_fix", "wrong"]),
+            )
+        )
+        if resolved_user_id is not None:
+            stmt = stmt.where(FeedbackRow.user_id == resolved_user_id)
+        stmt = stmt.order_by(FeedbackRow.created_at.desc()).limit(limit)
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return [self._row_to_dict(r) for r in result.scalars()]

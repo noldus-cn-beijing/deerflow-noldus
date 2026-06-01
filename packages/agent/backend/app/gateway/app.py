@@ -370,6 +370,9 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
     # verdict 三分类 + 可选 revised_text（SFT 训练种子）。
     app.include_router(feedback.router)
 
+    # Sprint 8: prior corrections endpoint at /api/feedback/prior_corrections
+    app.include_router(feedback.corrections_router)
+
     # Public feedback-issue form at /api/feedback (GET page) and /api/feedback-issue (POST)
     app.include_router(feedback_issue.router)
 

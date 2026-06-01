@@ -6,13 +6,18 @@ POST/GET /api/threads/{thread_id}/runs/{run_id}/feedback
 Noldus 语义：verdict ∈ {correct, needs_fix, wrong} + 可选 revised_text 作为
 SFT 训练种子。verdict 自动映射到上游 rating 字段，使上游 thumbs-up/down
 aggregate_by_run 统计仍可用。
+
+Sprint 8: 提交时从 experiment-context.json 读 paradigm 一并写入 feedback 表；
+新增 GET /api/feedback/prior_corrections 端点供 lead prompt 注入。
 """
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.authz import require_permission
@@ -62,6 +67,25 @@ def _to_item(record: dict[str, Any]) -> FeedbackItem:
     )
 
 
+def _read_paradigm_from_context(thread_id: str) -> str | None:
+    """Read paradigm from experiment-context.json in the thread workspace.
+
+    Returns None if file doesn't exist or can't be read (non-blocking).
+    """
+    try:
+        from deerflow.config.paths import get_paths
+
+        base = get_paths().base_dir
+        ctx_path = base / "threads" / thread_id / "user-data" / "workspace" / "experiment-context.json"
+        if not ctx_path.exists():
+            return None
+        ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
+        return ctx.get("paradigm")
+    except Exception as e:
+        logger.debug("Could not read paradigm for thread %s: %s", thread_id, e)
+        return None
+
+
 @router.post(
     "/{thread_id}/runs/{run_id}/feedback",
     response_model=FeedbackItem,
@@ -89,6 +113,10 @@ async def submit_feedback(
     """
     user_id = await get_current_user(request)
     feedback_repo = get_feedback_repo(request)
+
+    # Sprint 8: read paradigm from experiment-context.json
+    paradigm = _read_paradigm_from_context(thread_id)
+
     record = await feedback_repo.upsert(
         thread_id=thread_id,
         run_id=run_id,
@@ -98,6 +126,7 @@ async def submit_feedback(
         rating=_VERDICT_TO_RATING[body.verdict],
         revised_text=body.revised_text,
         comment=body.note,
+        paradigm=paradigm,
     )
     return _to_item(record).model_dump()
 
@@ -117,3 +146,53 @@ async def list_run_feedback(
     user_id = await get_current_user(request)
     rows = await feedback_repo.list_by_run(thread_id, run_id, user_id=user_id)
     return [_to_item(r).model_dump() for r in rows]
+
+
+# Sprint 8: prior corrections endpoint (used by lead prompt injection)
+# This is mounted under /api/feedback/ (see app.py router registration)
+# Using a separate prefix-free router for this endpoint
+
+
+corrections_router = APIRouter(prefix="/api/feedback", tags=["feedback"])
+
+
+class PriorCorrectionItem(BaseModel):
+    verdict: str
+    paradigm: str | None
+    comment: str | None
+    revised_text: str | None
+    created_at: str
+
+
+@corrections_router.get(
+    "/prior_corrections",
+    response_model=list[PriorCorrectionItem],
+)
+@require_permission("threads", "read", owner_check=False)
+async def get_prior_corrections(
+    request: Request,
+    paradigm: str = Query(..., min_length=1),
+    limit: int = Query(default=5, ge=1, le=20),
+) -> list[dict[str, Any]]:
+    """Retrieve prior corrections (needs_fix + wrong verdicts) for a paradigm.
+
+    Used by the lead agent prompt to learn from past mistakes for the same
+    experiment paradigm. Returns the most recent corrections, newest first.
+    """
+    user_id = await get_current_user(request)
+    feedback_repo = get_feedback_repo(request)
+    rows = await feedback_repo.list_prior_corrections(
+        paradigm=paradigm,
+        user_id=user_id,
+        limit=limit,
+    )
+    return [
+        {
+            "verdict": r.get("verdict"),
+            "paradigm": r.get("paradigm"),
+            "comment": r.get("comment"),
+            "revised_text": r.get("revised_text"),
+            "created_at": r.get("created_at"),
+        }
+        for r in rows
+    ]

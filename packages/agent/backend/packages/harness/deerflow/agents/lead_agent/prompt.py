@@ -396,6 +396,7 @@ You are {agent_name}, an open-source super agent.
 
 {soul}
 {memory_context}
+{prior_corrections_context}
 
 <thinking_style>
 - Think concisely and strategically about the user's request BEFORE taking action
@@ -658,6 +659,99 @@ def _get_memory_context(agent_name: str | None = None) -> str:
         return ""
 
 
+def _get_prior_corrections_context() -> str:
+    """Get prior corrections for the current paradigm from feedback history.
+
+    Reads the experiment-context.json to determine the current paradigm,
+    then queries the FeedbackRepository for prior corrections (needs_fix/wrong
+    verdicts) for that paradigm. Results are formatted and injected into the
+    system prompt so the agent learns from past mistakes.
+
+    Non-blocking: all exceptions are caught and logged, returns "" on failure.
+    """
+    try:
+        import asyncio
+
+        from deerflow.persistence.feedback.sql import FeedbackRepository
+        from deerflow.runtime.user_context import get_current_user
+
+        # 1. Read current paradigm from experiment-context.json
+        current_user = get_current_user()
+        user_id = current_user.id if current_user is not None else None
+
+        # Determine paradigm from the current thread's workspace
+        from deerflow.agents.middlewares.experiment_context import read_context, resolve_workspace_from_state
+
+        # We don't have state here — read from the thread_data ContextVar
+        # Instead, try to get it from the thread state if available
+        try:
+            from deerflow.agents.thread_state import _current_thread_data
+
+            td = _current_thread_data.get() if hasattr(_current_thread_data, "get") else None
+            workspace = td.get("workspace_path") if isinstance(td, dict) else None
+        except Exception:
+            workspace = None
+
+        if not workspace:
+            return ""
+
+        ctx = read_context(workspace)
+        if not ctx:
+            return ""
+
+        paradigm = ctx.get("paradigm")
+        if not paradigm:
+            return ""
+
+        # 2. Query feedback repository for prior corrections
+        from deerflow.persistence.database import get_session_factory
+
+        session_factory = get_session_factory()
+        repo = FeedbackRepository(session_factory)
+
+        # Run async query in sync context
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                corrections = pool.submit(
+                    asyncio.run,
+                    repo.list_prior_corrections(paradigm=paradigm, user_id=user_id, limit=3),
+                ).result(timeout=5)
+        else:
+            corrections = asyncio.run(
+                repo.list_prior_corrections(paradigm=paradigm, user_id=user_id, limit=3)
+            )
+
+        if not corrections:
+            return ""
+
+        # 3. Format corrections as prompt section
+        lines = [f"<prior_corrections>", f"Previous corrections for {paradigm} analysis:"]
+        for i, c in enumerate(corrections, 1):
+            comment = c.get("comment") or ""
+            revised = c.get("revised_text") or ""
+            verdict = c.get("verdict", "needs_fix")
+            date = c.get("created_at", "")
+            if isinstance(date, str):
+                date = date[:10]  # YYYY-MM-DD only
+            lines.append(f"  {i}. [{verdict}] ({date}) {comment}")
+            if revised:
+                lines.append(f"     Correct approach: {revised}")
+        lines.append("Apply these lessons to avoid repeating the same mistakes.")
+        lines.append("</prior_corrections>")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.debug("prior_corrections_context unavailable: %s", e)
+        return ""
+
+
 @lru_cache(maxsize=32)
 def _get_cached_skills_prompt_section(
     skill_signature: tuple[tuple[str, str, str, str], ...],
@@ -913,6 +1007,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
         skills_section=skills_section,
         deferred_tools_section=deferred_tools_section,
         memory_context=memory_context,
+        prior_corrections_context=_get_prior_corrections_context(),
         subagent_section=subagent_section,
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,
