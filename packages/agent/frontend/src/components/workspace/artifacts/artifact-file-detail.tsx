@@ -30,7 +30,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CodeEditor } from "@/components/workspace/code-editor";
 import { useArtifactContent } from "@/core/artifacts/hooks";
-import { urlOfArtifact } from "@/core/artifacts/utils";
+import { urlOfArtifact, normalizeArtifactImageSrc } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { installSkill } from "@/core/skills/api";
 import { streamdownPlugins } from "@/core/streamdown";
@@ -252,6 +252,7 @@ export function ArtifactFileDetail({
               isWriteFile={isWriteFile}
               language={language ?? "text"}
               url={url}
+              threadId={threadId}
             />
           )}
         {isCodeFile && viewMode === "code" && (
@@ -277,19 +278,46 @@ export function ArtifactFilePreview({
   isWriteFile,
   language,
   url,
+  threadId,
 }: {
   content: string;
   isWriteFile: boolean;
   language: string;
   url?: string;
+  threadId: string;
 }) {
+  const components = useMemo<Components>(
+    () => ({
+      a: ArtifactLink,
+      img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
+        const { src, alt, ...rest } = props;
+        if (!src || typeof src !== "string") {
+          return <img src={src} alt={alt} {...rest} />;
+        }
+        const filepath = normalizeArtifactImageSrc(src);
+        const imgSrc = filepath
+          ? urlOfArtifact({ filepath, threadId })
+          : src;
+        return (
+          <img
+            className="max-w-full rounded-lg"
+            src={imgSrc}
+            alt={alt}
+            loading="lazy"
+            {...rest}
+          />
+        );
+      },
+    }),
+    [threadId],
+  );
   if (language === "markdown") {
     return (
       <div className="size-full px-4">
         <Streamdown
           className="size-full"
           {...streamdownPlugins}
-          components={{ a: ArtifactLink } as Components}
+          components={components}
         >
           {content ?? ""}
         </Streamdown>
