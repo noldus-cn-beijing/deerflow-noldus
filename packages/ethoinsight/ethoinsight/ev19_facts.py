@@ -83,6 +83,7 @@ SUPPORTED_PARADIGMS_V01: frozenset[str] = frozenset({
     "zero_maze",
     "light_dark_box",
     "forced_swim",
+    "tail_suspension",
 })
 
 
