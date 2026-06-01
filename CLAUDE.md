@@ -6,7 +6,7 @@
 
 **EthoInsight** — 面向行为学研究员的 AI 分析助手。研究员上传 EthoVision XT 导出的轨迹数据，Agent 自动完成统计分析、专业解读、APA 格式报告生成。
 
-- **当前状态**：端到端流水线可用，v0.1 已支持 5 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场、TST 等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）
+- **当前状态**：端到端流水线可用，v0.1 已支持 6 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze/TST）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）
 - **愿景**：从"数据分析工具"演进为"全生命周期行为学研究助手"（实验指导 → 数据分析 → 追问 → 知识问答 → 跨范式证据链）
 - **关键里程碑**：2026 年 9 月 v0.1 可用版本
 - **路线图**：见 [docs/roadmap.md](docs/roadmap.md)

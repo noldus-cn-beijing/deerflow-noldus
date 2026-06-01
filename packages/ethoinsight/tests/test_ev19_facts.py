@@ -4,6 +4,7 @@ from ethoinsight.ev19_facts import (
     EV19_VARIANTS,
     EV19_CATEGORIES,
     EV19_TEMPLATE_PARADIGM_MAP,
+    SUPPORTED_PARADIGMS_V01,
     is_valid_ev19_template,
     get_template_facts,
     suggest_nearby_templates,
@@ -86,3 +87,30 @@ def test_is_paradigm_template_compatible_mismatch():
 def test_is_paradigm_template_compatible_unknown_paradigm():
     """Unknown paradigm returns False."""
     assert is_paradigm_template_compatible("nonexistent", "PlusMaze-AllZones") is False
+
+
+# ---------------------------------------------------------------------------
+# TST (Tail Suspension Test) support — added 2026-06-01
+# ---------------------------------------------------------------------------
+
+
+def test_tail_suspension_is_in_supported_paradigms_v01():
+    """tail_suspension must be in the v0.1 whitelist so Gate 1 recognizes it."""
+    assert "tail_suspension" in SUPPORTED_PARADIGMS_V01
+
+
+def test_tail_suspension_default_template_is_notemplate():
+    """TST maps to NoTemplate (no zone-based analysis)."""
+    assert get_default_template_for_paradigm("tail_suspension") == "NoTemplate"
+
+
+def test_tail_suspension_paradigm_map_entry_exists():
+    """Paradigm map has a tail_suspension entry."""
+    assert "tail_suspension" in EV19_TEMPLATE_PARADIGM_MAP
+    assert EV19_TEMPLATE_PARADIGM_MAP["tail_suspension"] == ["NoTemplate"]
+
+
+def test_supported_paradigms_v01_has_six_paradigms():
+    """v0.1 now supports 6 paradigms (5 original + TST)."""
+    expected = {"epm", "open_field", "zero_maze", "light_dark_box", "forced_swim", "tail_suspension"}
+    assert SUPPORTED_PARADIGMS_V01 == expected
