@@ -396,6 +396,7 @@ You are {agent_name}, an open-source super agent.
 
 {soul}
 {memory_context}
+{prior_corrections_context}
 
 <thinking_style>
 - Think concisely and strategically about the user's request BEFORE taking action
@@ -609,6 +610,7 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 - Progressive Loading: Load resources incrementally as referenced in skills
 - Output Files: Final deliverables must be in `/mnt/user-data/outputs`
 - Analysis Config ID: When presenting analysis results, mention the analysis_config_id (read from experiment-context.json) so users can reference this specific analysis. Example: "本次分析标识: a1b2c3d4e5f67890"
+- Assumptions Panel: When analysis has critical quality warnings or parameter overrides, call present_assumptions() to surface the assumption summary to the user before or alongside the final report.
 - Clarity: Be direct and helpful, avoid unnecessary meta-commentary
 - Including Images and Mermaid: Images and Mermaid diagrams are always welcomed in the Markdown format, and you're encouraged to use `![Image Description](image_path)\n\n` or "```mermaid" to display images in response or Markdown files
 - Multi-task: Better utilize parallel tool calling to call multiple tools at one time for better performance
@@ -654,6 +656,76 @@ def _get_memory_context(agent_name: str | None = None) -> str:
 """
     except Exception as e:
         logger.error("Failed to load memory context: %s", e)
+        return ""
+
+
+def _get_prior_corrections_context(paradigm: str | None = None, user_id: str | None = None) -> str:
+    """Build the <prior_corrections> prompt section for a paradigm.
+
+    The caller (``make_lead_agent``) resolves ``paradigm`` from the thread
+    workspace's experiment-context.json — where the thread_id is reliably
+    available — and passes it in. At prompt-build time there is no thread
+    ContextVar, so this function does not attempt to discover the paradigm
+    itself; it returns "" when no paradigm is supplied.
+
+    Queries the FeedbackRepository for prior corrections (needs_fix/wrong
+    verdicts) for that paradigm so the agent learns from past mistakes.
+
+    Non-blocking: all exceptions are caught and logged, returns "" on failure.
+    """
+    if not paradigm:
+        return ""
+    try:
+        import asyncio
+
+        from deerflow.persistence.engine import get_session_factory
+        from deerflow.persistence.feedback.sql import FeedbackRepository
+
+        session_factory = get_session_factory()
+        if session_factory is None:
+            return ""
+        repo = FeedbackRepository(session_factory)
+
+        # Run async query in sync context (prompt building is synchronous).
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                corrections = pool.submit(
+                    asyncio.run,
+                    repo.list_prior_corrections(paradigm=paradigm, user_id=user_id, limit=3),
+                ).result(timeout=5)
+        else:
+            corrections = asyncio.run(
+                repo.list_prior_corrections(paradigm=paradigm, user_id=user_id, limit=3)
+            )
+
+        if not corrections:
+            return ""
+
+        # Format corrections as prompt section.
+        lines = ["<prior_corrections>", f"Previous corrections for {paradigm} analysis:"]
+        for i, c in enumerate(corrections, 1):
+            comment = c.get("comment") or ""
+            revised = c.get("revised_text") or ""
+            verdict = c.get("verdict", "needs_fix")
+            date = c.get("created_at", "")
+            if isinstance(date, str):
+                date = date[:10]  # YYYY-MM-DD only
+            lines.append(f"  {i}. [{verdict}] ({date}) {comment}")
+            if revised:
+                lines.append(f"     Correct approach: {revised}")
+        lines.append("Apply these lessons to avoid repeating the same mistakes.")
+        lines.append("</prior_corrections>")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.debug("prior_corrections_context unavailable: %s", e)
         return ""
 
 
@@ -823,9 +895,12 @@ def _render_intent_state_machine() -> str:
     return "\n".join(lines)
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:
+def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None, paradigm: str | None = None, user_id: str | None = None) -> str:
     # Get memory context
     memory_context = _get_memory_context(agent_name)
+
+    # Sprint 8: prior-corrections context for the current paradigm (caller-resolved).
+    prior_corrections_context = _get_prior_corrections_context(paradigm=paradigm, user_id=user_id)
 
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
@@ -912,6 +987,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
         skills_section=skills_section,
         deferred_tools_section=deferred_tools_section,
         memory_context=memory_context,
+        prior_corrections_context=prior_corrections_context,
         subagent_section=subagent_section,
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,

@@ -497,24 +497,29 @@ def make_lead_agent(config: RunnableConfig):
         return effort  # "low", None, or unknown → keep
 
     thread_id = cfg.get("thread_id")
-    if thread_id and reasoning_effort:
+    # Resolve the current paradigm + user from the thread workspace once, so it can
+    # feed both reasoning_effort downgrade and Sprint 8 prior-corrections injection.
+    lead_paradigm: str | None = None
+    lead_user_id: str | None = None
+    if thread_id:
         try:
             from deerflow.agents.middlewares.experiment_context import read_context
             from deerflow.runtime.user_context import get_effective_user_id
 
-            user_id = get_effective_user_id()
+            lead_user_id = get_effective_user_id()
             app_config = get_app_config()
-            workspace = app_config.paths.sandbox_work_dir(thread_id, user_id=user_id)
+            workspace = app_config.paths.sandbox_work_dir(thread_id, user_id=lead_user_id)
             ctx = read_context(str(workspace))
             if ctx:
+                lead_paradigm = ctx.get("paradigm")
                 gate_completed = ctx.get("gate_completed", [])
-                if isinstance(gate_completed, list):
+                if reasoning_effort and isinstance(gate_completed, list):
                     if "gate2_quality_acknowledged" in gate_completed:
                         reasoning_effort = _step_down(_step_down(reasoning_effort))
                     elif "gate1_paradigm" in gate_completed:
                         reasoning_effort = _step_down(reasoning_effort)
         except Exception:
-            pass  # fail-safe: keep configured reasoning_effort
+            pass  # fail-safe: keep configured reasoning_effort, no paradigm context
 
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
     is_plan_mode = cfg.get("is_plan_mode", False)
@@ -615,7 +620,7 @@ def make_lead_agent(config: RunnableConfig):
         tools=filtered_lead_tools,
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(
-            subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None
+            subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None, paradigm=lead_paradigm, user_id=lead_user_id
         ),
         state_schema=ThreadState,
     )

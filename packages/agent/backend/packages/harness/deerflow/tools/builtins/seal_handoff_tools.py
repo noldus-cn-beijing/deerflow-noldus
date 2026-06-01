@@ -36,6 +36,88 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Sprint 6: experiment_summary memory fact
+# ============================================================================
+
+
+def _extract_n_per_group(workspace: Path) -> str:
+    """Read n_per_group from handoff_code_executor.json (deterministic, no LLM).
+
+    Priority: metadata.n_per_group > first metrics_summary group's n > "unknown".
+    """
+    ce_path = workspace / "handoff_code_executor.json"
+    if not ce_path.exists():
+        return "unknown"
+    try:
+        ce = json.loads(ce_path.read_text(encoding="utf-8"))
+        # Priority 1: explicit metadata field
+        meta = ce.get("metadata")
+        if isinstance(meta, dict) and "n_per_group" in meta:
+            return str(meta["n_per_group"])
+        # Priority 2: scan metrics_summary for first group's first metric's n
+        ms = ce.get("metrics_summary")
+        if isinstance(ms, dict):
+            for _group, metrics in ms.items():
+                if isinstance(metrics, dict):
+                    for _metric, stats in metrics.items():
+                        if isinstance(stats, dict) and "n" in stats:
+                            return str(stats["n"])
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _extract_key_findings_count(workspace: Path) -> int:
+    """Read key_findings count from handoff_data_analyst.json."""
+    da_path = workspace / "handoff_data_analyst.json"
+    if not da_path.exists():
+        return 0
+    try:
+        da = json.loads(da_path.read_text(encoding="utf-8"))
+        return len(da.get("key_findings", []))
+    except Exception:
+        return 0
+
+
+def _write_experiment_summary_memory(
+    workspace: Path,
+    paradigm: str,
+    config_id: str,
+    thread_id: str,
+    user_id: str | None,
+) -> None:
+    """Write an experiment_summary fact to memory (deterministic, no LLM).
+
+    Non-fatal: all exceptions are caught and logged as warnings.
+    """
+    try:
+        from deerflow.agents.memory.updater import create_memory_fact
+
+        n_per_group = _extract_n_per_group(workspace)
+        key_findings_count = _extract_key_findings_count(workspace)
+
+        # Lineage (thread_id/config_id) is folded into content because
+        # create_memory_fact() hardcodes source="manual" and does not accept
+        # a source kwarg — keeping it in content preserves traceability.
+        content = (
+            f"{paradigm} analysis on {datetime.now(UTC).strftime('%Y-%m-%d')}: "
+            f"n_per_group={n_per_group}; "
+            f"key_findings_count={key_findings_count}; "
+            f"analysis_config_id={config_id}; "
+            f"thread={thread_id}"
+        )
+        create_memory_fact(
+            content=content,
+            category="experiment_summary",
+            confidence=1.0,
+            user_id=user_id,
+        )
+        logger.info("experiment_summary fact written for config_id=%s", config_id)
+    except Exception as e:
+        logger.warning("Failed to write experiment_summary memory fact: %s", e)
+
+
+# ============================================================================
 # 内部 helper
 # ============================================================================
 
@@ -306,4 +388,36 @@ def seal_report_writer_handoff(
         "errors": errors or [],
         "gate_signals": gate_signals,
     }
-    return _seal_handoff(ReportWriterHandoff, "handoff_report_writer.json", payload, runtime)
+    result = _seal_handoff(ReportWriterHandoff, "handoff_report_writer.json", payload, runtime)
+
+    # Sprint 6: write experiment_summary memory fact on successful completion
+    if status == "completed":
+        try:
+            workspace = _resolve_workspace(runtime)
+            thread_data = runtime.state.get("thread_data", {})
+            config_id = payload.get("analysis_config_id", _read_analysis_config_id(workspace))
+
+            # Read paradigm from experiment-context.json
+            ctx_path = workspace / "experiment-context.json"
+            paradigm = "unknown"
+            if ctx_path.exists():
+                try:
+                    ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
+                    paradigm = ctx.get("paradigm", "unknown")
+                except Exception:
+                    pass
+
+            thread_id = runtime.state.get("thread_id", "unknown")
+            user_id = thread_data.get("user_id")
+
+            _write_experiment_summary_memory(
+                workspace=workspace,
+                paradigm=paradigm,
+                config_id=config_id,
+                thread_id=thread_id,
+                user_id=user_id,
+            )
+        except Exception as e:
+            logger.warning("S6 memory injection skipped: %s", e)
+
+    return result
