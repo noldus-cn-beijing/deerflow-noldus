@@ -180,7 +180,7 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 2. **贯穿三层的"实验本体 SSOT"**：愿景的契约链是 `设计→[契约A]→采集→[契约B]→分析→[契约C 已有]`。契约 A（设计→采集）全新且最危险：设计阶段定义的 zone/采样率/追踪点，必须**无损可追溯**地流到分析；若"open arm 的定义"在设计层和分析层不一致，结论全错且**数字看起来正常没人发现**。现在的 catalog SSOT 管"算什么"，愿景需要更上游的**"实验本体 SSOT"管"这个实验是什么"，从设计一路约束到分析**。这是 `feedback_single_source_of_truth` 在愿景尺度的体现。
 3. **科学仪器级可复现**：论文三年后被质疑要求完全重现 → 必须能回答"当时哪个版本 agent、什么范式定义、什么参数、什么统计决策、为什么这么选"。整条**设计决策链**都要可封存、可审计、可重现。这是 roadmap 里 lineage 封印（曾 5.5）/ 假设暴露面板（Sprint 7）的最终归宿——它们现在是分析层功能，愿景里要覆盖整条设计链。
 
-### D. 两模式架构假说（⚠️ 待向行为学同事核实后才能锁定）
+### D. 两模式架构 ✅ 已确认（2026-06-01 决定性开关闭环，假说升级为结论）
 
 行为学同事透露 EV19 有**两个模式**，且"现在的 EV19 无限接近图灵完备的实验环境"：
 
@@ -201,22 +201,88 @@ DeerFlow 已有 5 个机制可以支撑这些能力，不需要新架构：
 
 **论断的核心**：**自由 ≠ 动态；"接近图灵完备" ≠ 真图灵完备。** 用户同事那句"**跑不出行为学范畴**"是关键——它意味着基元库**有限**（像 LEGO：积木种类有限，但能搭出"感觉无限"的东西；没人说 LEGO 需要动态编排）。真图灵完备是"积木本身无限"；自由模式是"有限基元的自由组合"，依然可枚举、可声明、可复现。
 
-**🔑 决定性开关（必须先核实，否则不能据此排 sprint）**：
-> **自由模式里，用户能定义的"基元"是不是真的有限？** 即用户是在**一组预定义积木**（zone 类型、事件谓词、参数）里自由组合，还是能**写脚本/公式定义全新的检测逻辑**？
-> - **若是前者**（有限积木自由组合）→ "一套引擎 + 分层构件"成立，全链路声明式。
-> - **若是后者**（能写任意脚本/自定义计算逻辑）→ 那才是**真图灵完备**，自由模式层**才真的需要动态编排能力**，本节论断需推翻重做。
+**🔑 决定性开关 ✅ 已确认（2026-06-01）**：
 
-下一 agent 第一件事：带这个开关问题去问行为学同事，再决定愿景架构是否落地为 sprint。
+原悬而未决的问题——"自由模式里用户能定义的基元是不是真有限？"——**2026-06-01 用户确认为前者（有限积木自由组合）**。用户原话：
+
+> EV19 实验建设有两种方式：基于模板建设和自由建设。基于模板建设就是我们给的 OFT、EPM 等固定实验范式。自由建设需要用户连接摄像头后自己设置好观察区，**不过观察区里边的所谓的"标记"也都是行为学有限集内的**。
+
+**这把开关拨到了"有限积木自由组合"分支**：
+- 自由建设 = 用户自己画**观察区（zone 几何）** + 在区内放**有限集标记/谓词**
+- 用户**不能写脚本/公式定义全新检测逻辑**——标记来自行为学有限集
+- 所以 **不是真图灵完备**，是"有限基元的自由组合"（LEGO 模型成立）
+
+**结论（不再是假说）**：
+1. **两模式架构成立**：一套声明式引擎 + 两种粒度构件（模板=预组合快照 / 自由=基元自由组合 + 合法性规则）。
+2. **全链路声明式**，三把判据（可枚举 / 不容试错 / 可复现）全部成立，**不需要动态编排**。
+3. **新的工程抽象**：自由模式需要的不是"动态编排引擎"，而是 **(a) 行为学基元库的 SSOT 定义**（zone 几何类型 / 有限集标记 / 谓词 / 计时器 / 阈值）+ **(b) 组合合法性规则**（哪些基元能怎么组合）+ **(c) 自然语言→基元组合的 LLM 翻译层**（结果是确定性声明式产物）。模板模式则是这些基元的预组合快照。
+
+**仍属 v0.2 之后**（愿景层，非 v0.1 公测标准）。v0.1 继续走"分析 agent + 护栏逼近"。但开关已闭环，**愿景架构可以据此排 sprint 了**（之前禁止据假说排 sprint 的约束解除）。
+
+---
+
+**附：原决定性开关问题（已闭环，存档）**：
+> **自由模式里，用户能定义的"基元"是不是真的有限？** 即用户是在**一组预定义积木**（zone 类型、事件谓词、参数）里自由组合，还是能**写脚本/公式定义全新的检测逻辑**？
+> - **若是前者**（有限积木自由组合）→ "一套引擎 + 分层构件"成立，全链路声明式。 ← **2026-06-01 确认为此分支**
+> - **若是后者**（能写任意脚本/自定义计算逻辑）→ 那才是**真图灵完备**，自由模式层**才真的需要动态编排能力**，本节论断需推翻重做。
 
 ### E. 落到 roadmap 的位置
 
 - 全部属于 **v0.2 之后**（愿景层，非 v0.1 公测标准）。v0.1 继续走"分析 agent + 护栏逼近"。
 - 与现有 track 的接口：愿景的"实验本体 SSOT"是 catalog SSOT 的上游延伸；"决策链可复现"是 lineage/假设面板的放大。**先有声明式主干（编排 SSOT A/B），愿景的设计层才有可信地基可站。**
 
+### F. 版本边界确认（2026-06-01 用户锁定）
+
+| 版本 | 定位 | 范围 | 编排范式 |
+|---|---|---|---|
+| **v0.1（2026 年 9 月）** | **insight 数据分析工具的 harness** | 只做"消费 EV19 导出的 raw data → 分析 → 洞察/报告"。**不碰实验设计、不碰采集** | 有限路由 + 声明式 catalog（范式维度） |
+| **v1.0（将来）** | **完整的行为学实验 harness agent** | 设计 → 采集 → 分析 全链路（agent 版 EV19 + AI native）| 同一套有限路由 + 声明式引擎，基元粒度 |
+
+**关键论断（防下一 agent 误排 sprint）**：
+- **v0.1 不是一次性工具，是 v1.0 的承重墙**。今天（2026-06-01）确认：v0.1 的 infra 选型（有限路由 + 声明式 SSOT + 范式维度 catalog）从第一天起就是 v1.0 实验 harness 的同一套地基——v1.0 是"在 v0.1 的声明式引擎上加基元抽象层 + 接设计/采集"，**不是推翻重做**。这就是"做好 insight，同时架构能迭代成最终行为学 agent"的精确版本表述。
+- **范式维度 catalog 是 v0.1 的正确设计**，不是债。因为 v0.1 消费的 raw data 本就是 EV19 按范式导出的，catalog 按范式组织 = 与输入对齐。它是声明式数据、信息完整（requires_columns + 语义字段），v1.0 基元化是"加抽象层"不是"推翻"——前向兼容已验证（见 §G 末"catalog 前向兼容核实"）。
+- **愿景层（设计决策智能 / 实验本体 SSOT / 跨实验知识 / 基元化）一律 v1.0，不进 v0.1 sprint**。v0.1 sprint 全部服务"6 范式跑得准、不翻车、端到端"的公测标准。
+
+### G. Harness 11 项能力审计（2026-06-01，"agent 作为新软件范式"视角）
+
+**元判断**：我们不是从零造 harness，是 **deerflow harness 的领域定制层**。生产级 harness 的 11 项能力，9 项由 deerflow 提供，本月所有 sprint 集中在"通用 harness 给地基、生产级可靠性自己补"的 3 项（⑥⑧⑨）。
+
+| # | harness 能力 | 真实落点（2026-06-01 grep 核实）| 谁的 | 成熟度 |
+|---|---|---|---|---|
+| ① | 模型客户端（重试/成本/超时）| `models/`（claude/vllm/deepseek/minimax 多 provider）+ `llm_error_handling_middleware`（Noldus 补总超时）| deerflow + 补 | 🟢 |
+| ② | context 组装（压缩/保留）| `summarization_middleware` + `archiving_summarization`（Noldus）+ `dynamic_context_middleware` | deerflow + 补 | 🟢 |
+| ③ | 工具系统（定义/并发/失败）| `tools/builtins/` + `MAX_CONCURRENT_SUBAGENTS=3` + `tool_error_handling_middleware` | deerflow | 🟢 |
+| ④ | 执行环境（沙箱）| `sandbox/`（local + aio docker + security + file_operation_lock）+ Noldus extra_env | deerflow + 扩展 | 🟢 |
+| ⑤ | 状态/记忆/checkpoint | `memory/`（facts + 注入 + eviction）+ checkpointer + `persistence/`（Tier 4）| deerflow | 🟢（S6 待接 experiment_summary）|
+| ⑥ | **调度循环（继续/结束/反思）** | recursion_limit + max_turns + LoopDetection + try_set_terminal + safety_finish_reason + **seal-resume 补轮（S5.8）** | deerflow + **大量补强** | 🟢 |
+| ⑦ | 身份/权限 | `runtime.user_context` + `@require_permission` + `get_effective_user_id`（Tier 4 多用户）| deerflow | 🟢 |
+| ⑧ | **可观测性（记录/replay/debug）** | langfuse tracing + `training_data_middleware`（飞轮）+ sandbox_audit + trace_id | deerflow + 补 | 🟡 **replay 维弱**（见下）|
+| ⑨ | **安全策略（拦危险/防注入）** | `guardrails/` **9 个 provider**（ev19/handoff_isolation/intent/path_sequence/script_invocation/task_handoff_auth…）| **大量 Noldus 自建** | 🟢 业务侧 / 🟡 注入侧（见下）|
+| ⑩ | API 接入层 | `app/gateway/routers/`（runs/auth/feedback/artifacts/channels… 15 个）| deerflow | 🟢 |
+| ⑪ | 部署基础设施 | `packages/agent/Makefile`（deploy-tar）+ docker compose 4 服务 → ECS | 我们 | 🟢（ACR 待启）|
+
+**两个半薄弱项（诚实标注，影响 v1.0 但 v0.1 可接受）**：
+- **🟡 ⑧ replay 维**：有 langfuse（记录）+ training-data + trace_id，但 **agent 执行轨迹的确定性 replay 弱**。analysis_config_id（S4.5）/ lineage 补的是"业务结果可复现"，不是"执行轨迹可重放 debug"。deerflow 有 checkpointer 地基但从未用过 `interrupt()` 原语（编排 SSOT 阶段 B 的根治对象）。**有限路由让这条可补；图灵完备编排会让它变绝症（见诊断 §7.5）。**
+- **🟡 ⑨ 防 prompt injection**：9 个 guardrail 全是**业务护栏**，无一防注入。对单用户研究助手、上传 EthoVision 数据文件（非不可信外部文本），现在风险低。**v1.0 接文献库/外部数据/多租户时变真缺口。**
+
+**结论**：你列的 harness 11 项，与 roadmap 的 sprint 是同一件事的两个视角——本月 sprint（S0/5.5/5.7/5.8 = ⑥；S1/3/5 = ⑨业务侧；S7/8 + lineage = ⑧）全部在补 ⑥⑧⑨。**我们一直在做的，就是把 deerflow 给的"能跑的 harness"补成"生产级可靠的 harness"。**
+
+**catalog 前向兼容核实（2026-06-01 grep 实测）**：
+
+验证"加新范式 = 加 yaml（数据）还是改引擎（Python）"——决定 v0.1 加范式成本 + v1.0 基元化能否长出来。
+
+- 🟢 **主引擎范式无关**：`load_catalog(paradigm)` 是 `catalog_dir / f"{stem}.yaml"`（loader.py:86，按文件名动态加载，非硬编码清单）；指标计算 yaml 数据驱动（yaml 写 `script:` 指哪个就调哪个）。**加标准范式 ≈ 加 yaml + 写 script + 可能加 1 行 `_PARADIGM_ALIASES`，不改引擎逻辑。**
+- 🟡 **一处已核实的反模式**：`resolve.py:808` 的 `_metric_uses_pendulum` / `_metric_uses_velocity_immobility`（Sprint 2b `_compute_parameters_in_use` 内）用**字符串嗅探**（`".fst." in script`、`id 含 immobility/pendulum/struggle/activity_intensity`）决定注入哪类参数到 `parameters_in_use`。
+  - **准确定性**（2026-06-01 核实，修正早先"唯一反模式"的过强表述）：这是**「参数注入决策」该声明式却用了 Python 字符串嗅探**，**不是范式分发主路径耦合**（主引擎仍范式无关）。影响面局部但真实：加一个 script 路径不含 `.fst.`/`.tst.` 的新 pendulum 类范式 → `_metric_uses_pendulum` 返 False → pendulum 参数不被注入 → `parameters_in_use` 缺参。
+  - **理想形态**：metric 在 yaml 声明 `param_groups: [pendulum, velocity]`，resolve 读声明注入，不靠嗅探。
+
+**工程原则（前向兼容守则）**：**「范式差异必须活在声明式 yaml 里，不活在引擎 Python 分支里」**——这一条同时保证 v0.1 好加范式 + v1.0 能基元化。`resolve.py:808` 是现存唯一已核实违例，标记为"启动基元化或加 pendulum 类范式时优先清理"。
+
 ---
 
 
 ## 修正后路线图
+
 
 ### Sprint 0（2 周）：handoff 全面 schema 化 + seal_*_handoff tool 集 ← ★ 新增，最高优先级
 
