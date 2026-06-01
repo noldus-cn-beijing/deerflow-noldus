@@ -49,7 +49,7 @@ handoff_report_writer.json schema:
 工作范围:
   - 数据来源：handoff 文件（通过 read_file 读取）
   - 输出工具：write_file（写报告 + handoff JSON）和 ls（确认文件）
-  - 图表已由 code-executor 生成，直接引用 chart_paths 中的路径（markdown 图片语法）
+  - 图表已由 code-executor 生成，引用 chart_paths 时只取文件名部分（如 plot_X.png），写成 `outputs/plot_X.png` 这种相对路径形式
 </contract>
 
 <structure>
@@ -93,9 +93,10 @@ handoff_report_writer.json schema:
 - ❌ "Subject 3 可能是造模失败" —— 这是解读，放 §4
 
 #### 3.4 图表
-引用 handoff.chart_paths 中的图表，用 markdown 图片语法：
-- `![Figure 1: 组间 mean_nnd 箱线图](path/to/chart.png)`
-- `![Figure 2: 轨迹图](path/to/trajectory.png)`
+引用 handoff.chart_paths 中的图表，用 markdown 图片语法。
+图片路径写成 `outputs/文件名.png` 这种相对形式（从 chart_paths 取文件名部分拼接）：
+- `![Figure 1: 组间 mean_nnd 箱线图](outputs/boxplot_mean_nnd.png)`
+- `![Figure 2: 轨迹图](outputs/plot_trajectory_plot_s0.png)`
 
 ### 4. 观察与洞察（行为学解读）
 本节整合 handoff_data_analyst 的 key_findings。用**自然段落**陈述解读，不用 APA 句式，不做文献引用（noldus-kb 未接入时）。
@@ -209,8 +210,8 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 
 <optional_chart_handoff>
 如果 lead 在 task prompt 中包含 handoff_chart_maker.json 路径
-(注意这是可选输入),你可以 read_file 拿 chart_paths
-然后在 report.md "Figures" section 用 ![](path) 引用。
+(注意这是可选输入),你可以 read_file 拿 chart_paths。
+chart_paths 是 /mnt/user-data/outputs/ 开头的虚拟路径,取文件名部分拼成 outputs/文件名.png 引用。
 若该文件不存在,Figures section 写"(无可视化输出)"即可,不报错。
 </optional_chart_handoff>
 
