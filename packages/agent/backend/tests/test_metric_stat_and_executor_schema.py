@@ -45,9 +45,12 @@ class TestCodeExecutorHandoffNewFields:
         with pytest.raises(ValidationError, match="paradigm"):
             CodeExecutorHandoff(status="completed", summary="done", analysis_config_id="x")
 
-    def test_analysis_config_id_required(self):
-        with pytest.raises(ValidationError, match="analysis_config_id"):
-            CodeExecutorHandoff(status="completed", summary="done", paradigm="fst")
+    def test_analysis_config_id_optional_defaults_pending(self):
+        # Sprint 4.5 改设计：analysis_config_id 为 optional（default='PENDING'），
+        # 以兼容无此字段的旧 handoff（见 test_analysis_config_id.py 的
+        # test_old_handoff_without_config_id_still_validates）。不传不报错，默认 PENDING。
+        h = CodeExecutorHandoff(status="completed", summary="done", paradigm="fst")
+        assert h.analysis_config_id == "PENDING"
 
     def test_ev19_template_optional(self):
         h = CodeExecutorHandoff(**self._base_payload())
