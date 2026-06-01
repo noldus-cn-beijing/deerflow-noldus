@@ -659,57 +659,34 @@ def _get_memory_context(agent_name: str | None = None) -> str:
         return ""
 
 
-def _get_prior_corrections_context() -> str:
-    """Get prior corrections for the current paradigm from feedback history.
+def _get_prior_corrections_context(paradigm: str | None = None, user_id: str | None = None) -> str:
+    """Build the <prior_corrections> prompt section for a paradigm.
 
-    Reads the experiment-context.json to determine the current paradigm,
-    then queries the FeedbackRepository for prior corrections (needs_fix/wrong
-    verdicts) for that paradigm. Results are formatted and injected into the
-    system prompt so the agent learns from past mistakes.
+    The caller (``make_lead_agent``) resolves ``paradigm`` from the thread
+    workspace's experiment-context.json — where the thread_id is reliably
+    available — and passes it in. At prompt-build time there is no thread
+    ContextVar, so this function does not attempt to discover the paradigm
+    itself; it returns "" when no paradigm is supplied.
+
+    Queries the FeedbackRepository for prior corrections (needs_fix/wrong
+    verdicts) for that paradigm so the agent learns from past mistakes.
 
     Non-blocking: all exceptions are caught and logged, returns "" on failure.
     """
+    if not paradigm:
+        return ""
     try:
         import asyncio
 
+        from deerflow.persistence.engine import get_session_factory
         from deerflow.persistence.feedback.sql import FeedbackRepository
-        from deerflow.runtime.user_context import get_current_user
-
-        # 1. Read current paradigm from experiment-context.json
-        current_user = get_current_user()
-        user_id = current_user.id if current_user is not None else None
-
-        # Determine paradigm from the current thread's workspace
-        from deerflow.agents.middlewares.experiment_context import read_context, resolve_workspace_from_state
-
-        # We don't have state here — read from the thread_data ContextVar
-        # Instead, try to get it from the thread state if available
-        try:
-            from deerflow.agents.thread_state import _current_thread_data
-
-            td = _current_thread_data.get() if hasattr(_current_thread_data, "get") else None
-            workspace = td.get("workspace_path") if isinstance(td, dict) else None
-        except Exception:
-            workspace = None
-
-        if not workspace:
-            return ""
-
-        ctx = read_context(workspace)
-        if not ctx:
-            return ""
-
-        paradigm = ctx.get("paradigm")
-        if not paradigm:
-            return ""
-
-        # 2. Query feedback repository for prior corrections
-        from deerflow.persistence.database import get_session_factory
 
         session_factory = get_session_factory()
+        if session_factory is None:
+            return ""
         repo = FeedbackRepository(session_factory)
 
-        # Run async query in sync context
+        # Run async query in sync context (prompt building is synchronous).
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -731,8 +708,8 @@ def _get_prior_corrections_context() -> str:
         if not corrections:
             return ""
 
-        # 3. Format corrections as prompt section
-        lines = [f"<prior_corrections>", f"Previous corrections for {paradigm} analysis:"]
+        # Format corrections as prompt section.
+        lines = ["<prior_corrections>", f"Previous corrections for {paradigm} analysis:"]
         for i, c in enumerate(corrections, 1):
             comment = c.get("comment") or ""
             revised = c.get("revised_text") or ""
@@ -918,9 +895,12 @@ def _render_intent_state_machine() -> str:
     return "\n".join(lines)
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:
+def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None, paradigm: str | None = None, user_id: str | None = None) -> str:
     # Get memory context
     memory_context = _get_memory_context(agent_name)
+
+    # Sprint 8: prior-corrections context for the current paradigm (caller-resolved).
+    prior_corrections_context = _get_prior_corrections_context(paradigm=paradigm, user_id=user_id)
 
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
@@ -1007,7 +987,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
         skills_section=skills_section,
         deferred_tools_section=deferred_tools_section,
         memory_context=memory_context,
-        prior_corrections_context=_get_prior_corrections_context(),
+        prior_corrections_context=prior_corrections_context,
         subagent_section=subagent_section,
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,

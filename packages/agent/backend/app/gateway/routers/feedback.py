@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -67,20 +66,30 @@ def _to_item(record: dict[str, Any]) -> FeedbackItem:
     )
 
 
-def _read_paradigm_from_context(thread_id: str) -> str | None:
+def _read_paradigm_from_context(thread_id: str, user_id: str | None = None) -> str | None:
     """Read paradigm from experiment-context.json in the thread workspace.
+
+    Uses the canonical ``Paths.sandbox_work_dir`` so the per-user layout
+    (``users/{user_id}/threads/...``) resolves correctly in multi-user mode.
+    Falls back to the user-less path for legacy single-user layouts.
 
     Returns None if file doesn't exist or can't be read (non-blocking).
     """
     try:
         from deerflow.config.paths import get_paths
 
-        base = get_paths().base_dir
-        ctx_path = base / "threads" / thread_id / "user-data" / "workspace" / "experiment-context.json"
-        if not ctx_path.exists():
-            return None
-        ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
-        return ctx.get("paradigm")
+        paths = get_paths()
+        candidates = []
+        if user_id is not None:
+            candidates.append(paths.sandbox_work_dir(thread_id, user_id=user_id) / "experiment-context.json")
+        # Always try the user-less path too (legacy / single-user threads).
+        candidates.append(paths.sandbox_work_dir(thread_id) / "experiment-context.json")
+
+        for ctx_path in candidates:
+            if ctx_path.exists():
+                ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
+                return ctx.get("paradigm")
+        return None
     except Exception as e:
         logger.debug("Could not read paradigm for thread %s: %s", thread_id, e)
         return None
@@ -115,7 +124,7 @@ async def submit_feedback(
     feedback_repo = get_feedback_repo(request)
 
     # Sprint 8: read paradigm from experiment-context.json
-    paradigm = _read_paradigm_from_context(thread_id)
+    paradigm = _read_paradigm_from_context(thread_id, user_id=user_id)
 
     record = await feedback_repo.upsert(
         thread_id=thread_id,

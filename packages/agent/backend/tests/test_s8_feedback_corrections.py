@@ -7,13 +7,11 @@ Tests cover:
 4. _get_prior_corrections_context prompt injection (unit, no DB)
 """
 
-from datetime import UTC, datetime
 
 import pytest
 
 from deerflow.persistence.feedback.model import FeedbackRow
 from deerflow.persistence.feedback.sql import FeedbackRepository
-
 
 # ============================================================================
 # Test FeedbackRow paradigm column
@@ -199,20 +197,93 @@ class TestUpsertParadigmIntegration:
 class TestGetPriorCorrectionsContext:
     """Tests for the prompt injection function.
 
-    Since _get_prior_corrections_context uses many internal imports,
-    we test it by patching at the import source level and verifying
-    the output format.
+    The paradigm is supplied by the caller (make_lead_agent resolves it from the
+    thread workspace). These tests exercise the real function — including its
+    real imports and the real FeedbackRepository — so a broken import path or
+    signature surfaces as a failure instead of a silent "" (the original bug).
     """
 
-    def test_returns_empty_on_exception(self):
-        """Any internal failure returns empty string (non-blocking)."""
+    def test_returns_empty_without_paradigm(self):
+        """No paradigm supplied → empty string (nothing to inject)."""
         from deerflow.agents.lead_agent.prompt import _get_prior_corrections_context
 
-        # Calling without any thread context should return ""
-        result = _get_prior_corrections_context()
-        assert result == ""
+        assert _get_prior_corrections_context(paradigm=None) == ""
+        assert _get_prior_corrections_context(paradigm="") == ""
 
     def test_function_exists_and_is_callable(self):
         from deerflow.agents.lead_agent.prompt import _get_prior_corrections_context
 
         assert callable(_get_prior_corrections_context)
+
+    def test_renders_prior_corrections_section_happy_path(self, tmp_path):
+        """With a paradigm + a matching needs_fix correction, the section renders.
+
+        Exercises the REAL imports (deerflow.persistence.engine.get_session_factory,
+        FeedbackRepository) — guards against the import-path regression that made
+        this a silent no-op.
+        """
+        import asyncio
+        from unittest.mock import patch
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from deerflow.agents.lead_agent.prompt import _get_prior_corrections_context
+        from deerflow.persistence.base import Base
+
+        # Real SQLite repo seeded with a matching correction.
+        db_path = tmp_path / "s8_prompt.db"
+        engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+        sf = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def _seed():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            repo = FeedbackRepository(sf)
+            await repo.upsert(
+                thread_id="t-1",
+                run_id="r-1",
+                user_id=None,
+                message_id="m-1",
+                rating=-1,
+                verdict="needs_fix",
+                comment="混淆了 control 与 treatment 分组",
+                revised_text="按 header Treatment 字段分组",
+                paradigm="epm",
+            )
+
+        asyncio.run(_seed())
+
+        # Point the function's session factory at our seeded DB.
+        with patch("deerflow.persistence.engine.get_session_factory", return_value=sf):
+            result = _get_prior_corrections_context(paradigm="epm", user_id=None)
+
+        assert "<prior_corrections>" in result
+        assert "epm analysis" in result
+        assert "needs_fix" in result
+        assert "混淆了 control 与 treatment 分组" in result
+        assert "按 header Treatment 字段分组" in result
+        assert "</prior_corrections>" in result
+
+    def test_returns_empty_when_no_matching_corrections(self, tmp_path):
+        """Paradigm with no prior corrections → empty string."""
+        import asyncio
+        from unittest.mock import patch
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from deerflow.agents.lead_agent.prompt import _get_prior_corrections_context
+        from deerflow.persistence.base import Base
+
+        db_path = tmp_path / "s8_empty.db"
+        engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+        sf = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def _create():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+        asyncio.run(_create())
+
+        with patch("deerflow.persistence.engine.get_session_factory", return_value=sf):
+            result = _get_prior_corrections_context(paradigm="oft", user_id=None)
+        assert result == ""

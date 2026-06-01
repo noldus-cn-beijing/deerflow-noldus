@@ -4,8 +4,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from deerflow.tools.builtins.present_assumptions import (
     _build_assumptions_markdown,
     present_assumptions_tool,
@@ -68,15 +66,14 @@ def _make_workspace(
 
 class TestBuildAssumptionsMarkdown:
     def test_empty_when_all_defaults(self):
-        """All default values → empty string (nothing to show)."""
+        """All-default run (no overrides, no warnings, no audit) → empty string.
+
+        A simple analysis must NOT render a redundant panel (brief §7:
+        "简单分析 lead 不调"). Only overrides/warnings/audit count as content.
+        """
         ctx = {"analysis_config_id": "abc", "parameter_overrides": {}, "gate_completed": ["gate1_paradigm"]}
         result = _build_assumptions_markdown(ctx, None, None)
-        # No overrides, no warnings, no audit → but overrides_section exists with "使用 catalog 默认值"
-        # Actually it DOES have content (the overrides section)
-        # Let's check: only overrides section with "使用 catalog 默认值" should still appear
-        # because the handoff says "简单分析 lead 不调"
-        assert "<details>" in result
-        assert "使用 catalog 默认值" in result
+        assert result == ""
 
     def test_empty_when_all_none(self):
         """All inputs None → empty string."""
@@ -155,11 +152,10 @@ class TestPresentAssumptionsTool:
 
     def test_tool_returns_empty_for_clean_analysis(self, tmp_path):
         ws = _make_workspace(tmp_path, config_id="clean", overrides={})
-        # No plan, no da handoff
+        # No plan, no da handoff, no overrides → nothing worth surfacing.
         runtime = _make_runtime(str(ws))
         result = present_assumptions_tool.func(workspace_dir="/mnt/user-data/workspace/", runtime=runtime)
-        # Has overrides section but says "使用 catalog 默认值"
-        assert "<details>" in result
+        assert result == ""
 
     def test_tool_handles_missing_workspace(self, tmp_path):
         empty_ws = tmp_path / "nonexistent"

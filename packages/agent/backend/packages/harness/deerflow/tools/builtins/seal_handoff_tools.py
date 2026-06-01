@@ -96,17 +96,20 @@ def _write_experiment_summary_memory(
         n_per_group = _extract_n_per_group(workspace)
         key_findings_count = _extract_key_findings_count(workspace)
 
+        # Lineage (thread_id/config_id) is folded into content because
+        # create_memory_fact() hardcodes source="manual" and does not accept
+        # a source kwarg — keeping it in content preserves traceability.
         content = (
             f"{paradigm} analysis on {datetime.now(UTC).strftime('%Y-%m-%d')}: "
             f"n_per_group={n_per_group}; "
             f"key_findings_count={key_findings_count}; "
-            f"analysis_config_id={config_id}"
+            f"analysis_config_id={config_id}; "
+            f"thread={thread_id}"
         )
         create_memory_fact(
             content=content,
             category="experiment_summary",
             confidence=1.0,
-            source=f"thread:{thread_id}, config_id:{config_id}",
             user_id=user_id,
         )
         logger.info("experiment_summary fact written for config_id=%s", config_id)

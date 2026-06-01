@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
 
 from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
@@ -49,24 +48,19 @@ def _build_assumptions_markdown(
     config_id = "?"
     overrides_section = ""
     data_quality_section = ""
-    parameter_audit_section = ""
     parameters_in_use_section = ""
 
     # --- Parameter configuration ---
+    # Only the *override* section counts as content. An all-default run (no
+    # overrides) must NOT, on its own, force the panel to render — otherwise
+    # every analysis shows a redundant "使用 catalog 默认值" card, contradicting
+    # the "simple analysis → no panel" contract (brief §7).
     if ctx:
         config_id = ctx.get("analysis_config_id", "?")
         overrides = ctx.get("parameter_overrides")
         if overrides and isinstance(overrides, dict) and len(overrides) > 0:
             override_lines = "\n".join(f"  - `{k}`: `{v}`" for k, v in sorted(overrides.items()))
             overrides_section = f"\n### 参数覆盖\n{override_lines}\n"
-        else:
-            overrides_section = "\n### 参数覆盖\n（使用 catalog 默认值）\n"
-
-        gates = ctx.get("gate_completed", [])
-        if isinstance(gates, list):
-            gate_str = ", ".join(gates) if gates else "（无）"
-        else:
-            gate_str = str(gates)
 
     # --- Parameters in use (from plan_metrics.json) ---
     if plan:
