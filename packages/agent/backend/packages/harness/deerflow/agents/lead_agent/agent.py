@@ -351,6 +351,15 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         middlewares.append(Ev19WorkspaceBridgeMiddleware())
         middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
 
+        # S5: DataQualityGuardrailProvider — block downstream subagents on
+        # critical+blocks_downstream warnings (manual mode only)
+        workflow_mode_dq = config.get("configurable", {}).get("workflow_mode", "auto")
+        if workflow_mode_dq == "manual":
+            from deerflow.guardrails.data_quality_provider import DataQualityGuardrailProvider
+
+            dq_provider = DataQualityGuardrailProvider()
+            middlewares.append(GuardrailMiddleware(provider=dq_provider, fail_closed=guardrails_cfg.fail_closed))
+
         # W17: Intent classification — block non-read_file calls before lead declares [intent]
         from deerflow.guardrails.intent_classification_provider import (
             IntentBridgeMiddleware,

@@ -235,19 +235,19 @@ class TestHandoffSchemaConfigId:
         h = ChartMakerHandoff(paradigm="epm", summary="ok", analysis_config_id="abcd1234efgh5678")
         assert h.analysis_config_id == "abcd1234efgh5678"
 
-    def test_config_id_defaults_to_pending(self):
-        """analysis_config_id defaults to 'PENDING' when not explicitly provided."""
-        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+    def test_config_id_defaults_to_pending_for_downstream(self):
+        """Downstream handoffs default to 'PENDING' when not explicitly provided."""
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
 
-        h = CodeExecutorHandoff(status="completed", summary="ok", paradigm="epm")
+        h = DataAnalystHandoff(status="completed", key_findings=["test"])
         assert h.analysis_config_id == "PENDING"
 
-    def test_old_handoff_without_config_id_still_validates(self):
-        """Handoff JSON without analysis_config_id still validates (default='PENDING')."""
-        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+    def test_old_handoff_without_config_id_still_validates_for_downstream(self):
+        """Downstream handoff JSON without analysis_config_id validates (default='PENDING')."""
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
 
-        raw = {"status": "completed", "summary": "ok", "paradigm": "epm", "metrics_summary": {}}
-        h = CodeExecutorHandoff.model_validate(raw)
+        raw = {"status": "completed", "key_findings": ["ok"]}
+        h = DataAnalystHandoff.model_validate(raw)
         assert h.analysis_config_id == "PENDING"
 
 

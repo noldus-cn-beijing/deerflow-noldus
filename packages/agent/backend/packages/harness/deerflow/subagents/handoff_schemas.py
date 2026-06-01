@@ -318,11 +318,9 @@ class CodeExecutorHandoff(BaseModel):
         description="EV19 template ID, or None for paradigms not mapped to EV19.",
     )
     analysis_config_id: str = Field(
-        default="PENDING",
         description=(
             "16-char hex hash of (catalog_default + parameter_overrides). "
-            "Populated by seal tool from experiment-context.json. "
-            "'PENDING' when experiment-context.json lacks the field (pre-S4.5)."
+            "Populated by code-executor from experiment-context.json."
         ),
     )
 
