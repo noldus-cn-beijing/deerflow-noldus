@@ -286,6 +286,9 @@ write_file 若返回 "Error: Content exceeds 8000 chars..."，按错误消息里
     output_contract=(
         "- 写 /mnt/user-data/outputs/report.md(6 段骨架)\n"
         "- 写 /mnt/user-data/workspace/handoff_report_writer.json\n"
+        "- handoff JSON 必须包含 analysis_config_id 字段:\n"
+        "  从 handoff_data_analyst.json 或 handoff_code_executor.json 的 analysis_config_id 透传。\n"
+        "  若上游无此字段，用 \"PENDING\"。\n"
         "- 最终 AIMessage:报告路径 + 章节摘要 + [gate_signals]\n"
         "- [gate_signals] 字段:constitution_acknowledged / sections_written_count / "
         "sections_missing[] / statistical_validity / errors_count"

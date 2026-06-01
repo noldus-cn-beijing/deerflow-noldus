@@ -318,9 +318,11 @@ class CodeExecutorHandoff(BaseModel):
         description="EV19 template ID, or None for paradigms not mapped to EV19.",
     )
     analysis_config_id: str = Field(
+        default="PENDING",
         description=(
             "16-char hex hash of (catalog_default + parameter_overrides). "
-            "Populated by seal_code_executor_handoff tool (Sprint 4.5)."
+            "Populated by seal tool from experiment-context.json. "
+            "'PENDING' when experiment-context.json lacks the field (pre-S4.5)."
         ),
     )
 
@@ -350,7 +352,10 @@ class ChartMakerHandoff(BaseModel):
     failed_charts: list[FailedChart] = Field(default_factory=list)
     summary: str = Field(description="One-liner describing generated charts.")
     gate_signals: GateSignals | None = None
-    analysis_config_id: str = Field(description="Inherited from CodeExecutorHandoff.")
+    analysis_config_id: str = Field(
+        default="PENDING",
+        description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
 
     @field_validator("chart_files")
     @classmethod
@@ -432,7 +437,10 @@ class DataAnalystHandoff(BaseModel):
     )
     errors: list[str] = Field(default_factory=list)
     gate_signals: GateSignals | None = Field(default=None)
-    analysis_config_id: str = Field(description="Inherited from CodeExecutorHandoff.")
+    analysis_config_id: str = Field(
+        default="PENDING",
+        description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
     quality_warnings: list[DataQualityWarning] = Field(
         default_factory=list,
         description=(
@@ -464,7 +472,10 @@ class ReportWriterHandoff(BaseModel):
     )
     errors: list[str] = Field(default_factory=list)
     gate_signals: GateSignals | None = Field(default=None)
-    analysis_config_id: str = Field(description="Inherited from CodeExecutorHandoff.")
+    analysis_config_id: str = Field(
+        default="PENDING",
+        description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
 
 
 __all__ = [

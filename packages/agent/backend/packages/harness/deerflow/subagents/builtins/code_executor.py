@@ -144,6 +144,10 @@ errors_count: <int>
     output_contract=(
         "- 写 /mnt/user-data/workspace/handoff_code_executor.json\n"
         "  (schema 详见 ethoinsight-code skill templates/output-contract.md)\n"
+        "- handoff JSON 必须包含 analysis_config_id 字段:\n"
+        "  read_file /mnt/user-data/workspace/experiment-context.json → 取 analysis_config_id →\n"
+        "  写入 handoff_code_executor.json 的顶层 analysis_config_id 字段。\n"
+        "  若 experiment-context.json 不存在或无此字段，用 \"PENDING\"。\n"
         "- 最终 AIMessage 形如 `OK: handoff written\\n[gate_signals]\\n...`\n"
         "- [gate_signals] 字段:constitution_acknowledged / data_quality{critical_count, "
         "warning_count, critical_items[]} / statistical_validity / errors_count"

@@ -238,6 +238,9 @@ skill 的字段字典 reference。
     output_contract=(
         "- 写 /mnt/user-data/workspace/handoff_data_analyst.json\n"
         "  (schema 详见 data_analyst system_prompt)\n"
+        "- handoff JSON 必须包含 analysis_config_id 字段:\n"
+        "  从 handoff_code_executor.json 的 analysis_config_id 透传即可。\n"
+        "  若上游无此字段，用 \"PENDING\"。\n"
         "- 最终 AIMessage:2-3 段自然语言摘要 + [gate_signals] 块\n"
         "- [gate_signals] 字段:constitution_acknowledged / method_warnings_count / "
         "outlier_count / excluded_metrics_count / statistical_validity / errors_count / "

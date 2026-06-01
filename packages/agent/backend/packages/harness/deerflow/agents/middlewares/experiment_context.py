@@ -12,6 +12,7 @@ TWO PATH DOMAINS:
 Robustness: file-not-found returns None (never raises).
 """
 
+import hashlib
 import json
 import logging
 import enum
@@ -56,6 +57,28 @@ def _get_strict_mode() -> HandoffStrictMode:
     except ValueError:
         logger.warning("invalid handoff_strict_mode %r, falling back to WARN", mode_str)
         return HandoffStrictMode.WARN
+
+
+def compute_analysis_config_id(
+    catalog_default: dict,
+    overrides: dict[str, float | int | str],
+) -> str:
+    """Deterministic 16-char hex id for a unique (catalog_default + overrides) combination.
+
+    Canonical ordering ensures key order does not affect the hash:
+    normalize (sort keys) → json.dumps → sha256 → first 16 hex chars.
+
+    Args:
+        catalog_default: Paradigm catalog defaults (paradigm key, n_per_group, etc.).
+        overrides: User-supplied parameter overrides (may be empty).
+
+    Returns:
+        16-character hex string, e.g. ``"a1b2c3d4e5f67890"``.
+    """
+    payload = {"catalog_default": catalog_default, "overrides": overrides}
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return digest[:16]
 
 
 def read_context(workspace_dir: str) -> dict | None:
@@ -178,6 +201,7 @@ def set_experiment_paradigm_tool(
     subject: str | None = None,
     ev19_template: str | None = None,
     acknowledge_quality: bool = False,
+    parameter_overrides: dict[str, float | int | str] | None = None,
     workspace_dir: str = "/mnt/user-data/workspace/",
     runtime: ToolRuntime[ContextT, ThreadState] = None,
 ) -> str:
@@ -202,6 +226,9 @@ def set_experiment_paradigm_tool(
         acknowledge_quality: Set True to acknowledge data quality warnings (Gate 2 mode).
                              When True, all paradigm fields may be omitted — the existing
                              experiment-context.json is read and only gate_completed is updated.
+        parameter_overrides: User-confirmed parameter overrides (e.g. {"immobility_threshold": 0.5}).
+                             Stored in experiment-context.json; used to compute analysis_config_id.
+                             Pass None or {} when no overrides are needed (defaults apply).
         workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
 
     Returns:
@@ -273,6 +300,11 @@ def set_experiment_paradigm_tool(
     if "gate2_quality_acknowledged" in prior_gate_completed:
         gate_completed.append("gate2_quality_acknowledged")
 
+    # Sprint 4.5: store parameter_overrides + compute deterministic analysis_config_id
+    overrides = parameter_overrides if parameter_overrides is not None else {}
+    catalog_default = {"paradigm": paradigm, "ev19_template": ev19_template, "subject": subject}
+    config_id = compute_analysis_config_id(catalog_default, overrides)
+
     data = {
         "paradigm": paradigm,
         "paradigm_cn": paradigm_cn,
@@ -281,13 +313,21 @@ def set_experiment_paradigm_tool(
         "ev19_template": ev19_template,
         "paradigm_confirmed_at": datetime.now(UTC).isoformat(),
         "gate_completed": gate_completed,
+        "parameter_overrides": overrides,
+        "analysis_config_id": config_id,
     }
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, default=str)
 
-    response: dict = {"status": "ok", "path": str(path), "paradigm": paradigm, "ev19_template": ev19_template}
+    response: dict = {
+        "status": "ok",
+        "path": str(path),
+        "paradigm": paradigm,
+        "ev19_template": ev19_template,
+        "analysis_config_id": config_id,
+    }
     if warning is not None:
         response["warning"] = warning
     return json.dumps(response, ensure_ascii=False)

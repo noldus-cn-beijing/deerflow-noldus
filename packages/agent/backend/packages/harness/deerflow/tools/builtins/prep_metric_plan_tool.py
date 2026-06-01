@@ -186,6 +186,13 @@ def prep_metric_plan_tool(
                     failed_file=uploaded_file,
                 )
 
+    # Step 4.5: read parameter_overrides from experiment-context.json (Sprint 4.5)
+    from deerflow.agents.middlewares.experiment_context import read_context
+
+    ctx = read_context(real_workspace_path)
+    parameter_overrides = ctx.get("parameter_overrides", {}) if ctx else {}
+    analysis_config_id = ctx.get("analysis_config_id", "PENDING") if ctx else "PENDING"
+
     # Step 5: resolve catalog → PlanMetrics
     # raw_files 走虚拟路径,避免宿主机路径泄漏到 plan_metrics.json 后被 subagent
     # 照抄进 bash --input。IO 部分(detect_ethovision / parse_header)已在 Step 2-4
@@ -254,6 +261,10 @@ def prep_metric_plan_tool(
 
     # Step 6: serialize plan to workspace/plan_metrics.json
     plan_dict = plan_metrics_to_dict(plan)
+    # Sprint 4.5: embed analysis_config_id in plan for lineage tracing
+    plan_dict["analysis_config_id"] = analysis_config_id
+    if parameter_overrides:
+        plan_dict["parameter_overrides"] = parameter_overrides
     plan_path = Path(real_workspace_path) / "plan_metrics.json"
     try:
         plan_path.write_text(json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -262,6 +273,17 @@ def prep_metric_plan_tool(
             "parse_failed",
             f"Failed to write plan_metrics.json: {e}",
         )
+
+    # Step 6.5: lineage — write overrides file when overrides exist (Sprint 4.5)
+    if parameter_overrides:
+        overrides_path = Path(real_workspace_path) / f"overrides_{analysis_config_id}.json"
+        try:
+            overrides_path.write_text(
+                json.dumps({"analysis_config_id": analysis_config_id, "parameter_overrides": parameter_overrides}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.warning("Failed to write overrides file %s (non-critical)", overrides_path)
 
     # Step 7: build summary (paradigm/metric_count/subject_count/metric_ids,不含完整 plan)
     metric_dicts = plan_dict.get("metrics", [])
@@ -280,6 +302,7 @@ def prep_metric_plan_tool(
     return {
         "status": "ok",
         "plan_path": "/mnt/user-data/workspace/plan_metrics.json",
+        "analysis_config_id": analysis_config_id,
         "plan_summary": {
             "paradigm": paradigm,
             "metric_count": len(metric_ids),
