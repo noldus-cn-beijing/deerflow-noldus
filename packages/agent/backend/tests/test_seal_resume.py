@@ -69,11 +69,24 @@ def _make_result(mod: ModuleType, *, task_id: str = "test-task"):
     )
 
 
+# Sprint 5.5 起，_validate_handoff_emitted 不仅查文件存在，还查核心字段非空
+# （判据见 executor.py 的 _HANDOFF_CONTENT_CHECKS）。"handoff 存在且可用"的 fixture
+# 必须写满足契约的最小合法内容，不能用空 "{}"（空内容会被正确判 FAILED）。
+_MINIMAL_VALID_HANDOFF: dict[str, str] = {
+    "handoff_code_executor.json": '{"metrics_summary": {"epm": "ok"}}',
+    "handoff_data_analyst.json": '{"key_findings": ["finding-1"]}',
+    "handoff_chart_maker.json": '{"chart_files": ["chart_1.png"]}',
+    "handoff_report_writer.json": '{"report_path": "/mnt/user-data/outputs/report.md"}',
+}
+
+
 def _make_workspace(tmp_path: Path, *, with_file: str | None = None) -> str:
     ws = tmp_path / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
     if with_file:
-        (ws / with_file).write_text("{}", encoding="utf-8")
+        # 写满足核心字段非空契约的最小合法 handoff（默认回退到 data-analyst 形态）。
+        content = _MINIMAL_VALID_HANDOFF.get(with_file, '{"key_findings": ["finding-1"]}')
+        (ws / with_file).write_text(content, encoding="utf-8")
     return str(ws)
 
 
@@ -186,7 +199,8 @@ class TestSealResumeRecovery:
         agent = MagicMock()
         async def mock_astream_success(*args, **kwargs):
             seal_ai = AIMessage(content="", tool_calls=[{"name": "seal_data_analyst_handoff", "args": {}, "id": "tc_resume"}])
-            (Path(ws) / "handoff_data_analyst.json").write_text('{"status": "ok"}', encoding="utf-8")
+            # 补轮"成功"= 产出核心字段非空的可用 handoff（Sprint 5.5 内容校验要求）。
+            (Path(ws) / "handoff_data_analyst.json").write_text('{"key_findings": ["recovered-finding"]}', encoding="utf-8")
             yield {"messages": [ai_msg, seal_ai]}
 
         agent.astream = mock_astream_success
