@@ -18,6 +18,7 @@ from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
 from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
+from ethoinsight.catalog.loader import load_common_catalog
 from ethoinsight.parse._core import detect_ethovision, parse_header
 
 logger = logging.getLogger(__name__)
@@ -245,6 +246,8 @@ def prep_metric_plan_tool(
             workspace_dir=real_workspace_path,
             virtual_workspace_dir="/mnt/user-data/workspace",
             groups_file=groups_file_virtual,
+            overrides=parameter_overrides,  # Sprint 4.5: 把用户确认的参数覆盖真正传入计算（非仅展示）
+            common_catalog=load_common_catalog(),  # Sprint 4.5: shared_parameters 来源；缺它则 velocity_*/pendulum_* 等共享参数进不了 parameters_in_use，override 无可覆盖
         )
     except ResolveError as e:
         return _error_result(

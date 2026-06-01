@@ -351,6 +351,78 @@ class TestPrepMetricPlanConfigId:
         assert result["status"] == "ok"
         assert result["analysis_config_id"] == "PENDING"
 
+    def test_override_actually_changes_parameters_in_use(self, tmp_path):
+        """核心验收（Sprint 4.5 真正生效）：parameter_overrides 不止写进 plan 展示字段，
+        而是真正流入 resolve_metrics → 改变某 metric 的 parameters_in_use。
+
+        防的是"override 看起来生效（plan 里有、config_id 变了）但底层计算仍用 catalog
+        default"这一最隐蔽的失效模式。本测试用 FST immobility（吃 velocity_threshold，
+        catalog default=30.0），override 成 5.0，断言落到 parameters_in_use。
+        """
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        # experiment-context.json 带真实可生效的 override（velocity_threshold 是 _common.yaml
+        # tunable shared param，FST immobility metric 会注入它）
+        ctx = {
+            "paradigm": "forced_swim",
+            "analysis_config_id": "feedfeedfeedfeed",
+            "parameter_overrides": {"velocity_threshold": 5.0},
+        }
+        (workspace / "experiment-context.json").write_text(json.dumps(ctx))
+
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        data_file = uploads / "test_fst.txt"
+        _write_ethovision_file(str(data_file), FST_COLUMNS)
+
+        from langchain.tools import ToolRuntime
+
+        runtime = ToolRuntime(
+            state={
+                "thread_data": {
+                    "workspace_path": str(workspace),
+                    "uploads_path": str(uploads),
+                },
+            },
+            context=None,
+            config={},
+            stream_writer=None,
+            tool_call_id="test-id",
+            store=None,
+        )
+
+        from deerflow.tools.builtins.prep_metric_plan_tool import prep_metric_plan_tool
+
+        result = prep_metric_plan_tool.invoke(
+            {
+                "uploaded_files": ["/mnt/user-data/uploads/test_fst.txt"],
+                "paradigm": "forced_swim",
+                "runtime": runtime,
+            },
+        )
+
+        assert result["status"] == "ok", f"prep failed: {result}"
+
+        plan_data = json.loads((workspace / "plan_metrics.json").read_text())
+        # 至少一个 metric 的 parameters_in_use 反映了 override（=5.0，不是 catalog default 30.0）
+        overridden = [
+            m for m in plan_data["metrics"]
+            if m.get("parameters_in_use", {}).get("velocity_threshold") == 5.0
+        ]
+        assert overridden, (
+            "override velocity_threshold=5.0 未落入任何 metric 的 parameters_in_use；"
+            "说明 prep 没把 overrides/common_catalog 真正传给 resolve_metrics（仅展示，未生效）。"
+            f"实际 metrics parameters_in_use: "
+            f"{[(m['id'], m.get('parameters_in_use')) for m in plan_data['metrics']]}"
+        )
+        # 反向保证：没有任何 metric 还停在 default 30.0（override 应全局覆盖该 shared 参数）
+        stale = [
+            m["id"] for m in plan_data["metrics"]
+            if m.get("parameters_in_use", {}).get("velocity_threshold") == 30.0
+        ]
+        assert not stale, f"这些 metric 仍用 default 30.0 未被 override 覆盖: {stale}"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -367,6 +439,17 @@ EPM_COLUMNS = [
     "in zone Closed arms 1 / Center-point",
     "in zone Closed arms 2 / Center-point",
     "in zone Center-point / Center-point",
+]
+
+# EthoVision columns for FST (immobility metrics require mobility_state*; velocity_threshold
+# is the overridable shared param under test in test_override_actually_changes_parameters_in_use)
+FST_COLUMNS = [
+    "Trial time",
+    "Recording time",
+    "X center",
+    "Y center",
+    "Velocity",
+    "mobility_state",
 ]
 
 
