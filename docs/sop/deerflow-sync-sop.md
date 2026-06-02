@@ -54,6 +54,18 @@ grep -nE "Noldus marker pattern" <本地路径>                       # grep 验
 3. `_create_summarization_middleware` 内 2 处 (config.model_name / 默认分支)
 4. `agents/middlewares/title_middleware.py` 的 `TitleMiddleware._build_title_kwargs`
 
+### 教训 5: 全量跟随会洗掉 `backend/pyproject.toml` 里的 ethoinsight workspace 声明
+
+`packages/agent/backend/pyproject.toml` **是上游也有的文件**，全量跟随 sync（subtree/merge 整文件覆盖）会把它退回上游版，**删掉我们加的 ethoinsight workspace 依赖 3 行**（dependencies 的 `"ethoinsight"`、`[tool.uv.workspace] members` 的 `"packages/ethoinsight"`、`[tool.uv.sources]` 的 `ethoinsight = { workspace = true }`）。历史：`fbc2255e`(4-07) 加，`fa3418ec`(6-02 全量跟随 sync) 删 → dogfood 时 lead agent 调 `identify_ev19_template`/`set_experiment_paradigm`/`prep_metric_plan` 全 `ModuleNotFoundError: No module named 'ethoinsight'`。
+
+这是**第 2 次复发**（同 vector）。每次全量跟随 sync 后**必查**：
+```bash
+grep -q '"ethoinsight"' packages/agent/backend/pyproject.toml \
+  && grep -q 'packages/ethoinsight' packages/agent/backend/pyproject.toml \
+  || echo "⚠ ethoinsight workspace wiring LOST — 参照 fbc2255e 重新加 3 行后跑 uv sync"
+```
+CI 已有硬兜底（`backend-blocking-io-tests.yml` 的 "Assert ethoinsight is installed" 步骤）：洗掉 wiring 的 PR 合并前就变红。但 SOP 这条 grep 让 sync 当场就能发现，不用等 CI。注意 `sync-deerflow.sh` 的 `PROTECTED_FILES` **保护不了它**（那些路径都相对 `backend/packages/harness/deerflow/`，作用域外）。
+
 ## 前置条件
 
 - [ ] noldus-insight 工作区干净（`git status` 无未提交改动）

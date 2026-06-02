@@ -1,6 +1,6 @@
 install:
 	uv sync
-	uv pip install -e packages/ethoinsight
+	# ethoinsight 由 uv sync 经 workspace 自动安装（见 pyproject.toml [tool.uv.workspace]）
 
 dev:
 	BG_JOB_ISOLATED_LOOPS=true uv run langgraph dev --no-browser --no-reload --allow-blocking --n-jobs-per-worker 10

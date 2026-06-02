@@ -45,6 +45,24 @@ cd "$REPO_ROOT"
 DOCKER_DIR="$REPO_ROOT/docker"
 COMPOSE_CMD=(docker compose -p deer-flow -f "$DOCKER_DIR/docker-compose.yaml")
 
+# ── resolve_ethoinsight_symlink ───────────────────────────────────────────────
+# backend/packages/ethoinsight is a git-tracked symlink → ../../../ethoinsight
+# (= repo-root packages/ethoinsight, outside the Docker build context
+# packages/agent/). Docker COPY cannot follow a symlink that points outside the
+# build context, so before `docker compose build` we replace the symlink with a
+# real copy (mirrors .github/workflows/build-push-acr.yml's "Resolve ethoinsight
+# symlink" step). A trap restores the symlink on exit so the git working tree is
+# never left dirty, even if the build fails.
+resolve_ethoinsight_symlink() {
+    if [ -L "$REPO_ROOT/backend/packages/ethoinsight" ]; then
+        trap 'rm -rf "$REPO_ROOT/backend/packages/ethoinsight"; git -C "$REPO_ROOT" checkout -- backend/packages/ethoinsight 2>/dev/null || true' EXIT
+        rm "$REPO_ROOT/backend/packages/ethoinsight"
+        cp -rL "$REPO_ROOT/../ethoinsight" "$REPO_ROOT/backend/packages/ethoinsight"
+        echo -e "${GREEN}✓ Resolved ethoinsight symlink → real dir for Docker build (restored on exit)${NC}"
+    fi
+}
+
+
 # ── Colors ────────────────────────────────────────────────────────────────────
 
 GREEN='\033[0;32m'
@@ -237,6 +255,7 @@ if [ "$CMD" = "build" ]; then
         export DEER_FLOW_DOCKER_SOCKET="/var/run/docker.sock"
     fi
 
+    resolve_ethoinsight_symlink
     "${COMPOSE_CMD[@]}" build
 
     echo ""
@@ -299,6 +318,7 @@ else
     # Default: build + start
     echo "Building images and starting containers..."
     echo ""
+    resolve_ethoinsight_symlink
     # shellcheck disable=SC2086
     "${COMPOSE_CMD[@]}" up --build -d --remove-orphans $services
 fi

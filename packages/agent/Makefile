@@ -54,7 +54,7 @@ check:
 install:
 	@echo "Installing backend dependencies..."
 	@cd backend && uv sync
-	@cd backend && uv pip install -e packages/ethoinsight
+	@# ethoinsight 由 uv sync 经 workspace 自动安装（见 backend/pyproject.toml [tool.uv.workspace]）
 	@echo "Installing frontend dependencies..."
 	@cd frontend && pnpm install
 	@echo "✓ All dependencies installed"
