@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Streamdown } from "streamdown";
+import { type Components, Streamdown } from "streamdown";
 
 import {
   Artifact,
@@ -37,7 +37,7 @@ import {
   getArtifactViewState,
   HTML_PREVIEW_SCROLL_MESSAGE_SOURCE,
 } from "@/core/artifacts/preview";
-import { urlOfArtifact } from "@/core/artifacts/utils";
+import { urlOfArtifact, normalizeArtifactImageSrc } from "@/core/artifacts/utils";
 import { writeTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
 import { findToolCallResult } from "@/core/messages/utils";
@@ -294,6 +294,7 @@ export function ArtifactFileDetail({
               language={language ?? "text"}
               scrollKey={filepathFromProps}
               url={url}
+              threadId={threadId}
             />
           )}
         {isCodeFile && viewMode === "code" && (
@@ -319,11 +320,13 @@ export function ArtifactFilePreview({
   language,
   scrollKey,
   url,
+  threadId,
 }: {
   content: string;
   language: string;
   scrollKey: string;
   url?: string;
+  threadId: string;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const scrollPositionRef = useRef({ x: 0, y: 0 });
@@ -397,13 +400,39 @@ export function ArtifactFilePreview({
     };
   }, [content, language, scrollKey, url]);
 
+  const components = useMemo<Components>(
+    () => ({
+      a: ArtifactLink,
+      img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
+        const { src, alt, ...rest } = props;
+        if (!src || typeof src !== "string") {
+          return <img src={src} alt={alt} {...rest} />;
+        }
+        const filepath = normalizeArtifactImageSrc(src);
+        const imgSrc = filepath
+          ? urlOfArtifact({ filepath, threadId })
+          : src;
+        return (
+          <img
+            className="max-w-full rounded-lg"
+            src={imgSrc}
+            alt={alt}
+            loading="lazy"
+            {...rest}
+          />
+        );
+      },
+    }),
+    [threadId],
+  );
+
   if (language === "markdown") {
     return (
       <div className="size-full px-4">
         <Streamdown
           className="size-full"
           {...streamdownPlugins}
-          components={{ a: ArtifactLink }}
+          components={components}
         >
           {content ?? ""}
         </Streamdown>

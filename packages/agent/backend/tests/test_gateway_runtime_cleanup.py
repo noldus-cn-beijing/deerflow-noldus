@@ -1,24 +1,21 @@
-"""Regression coverage for the Gateway-owned LangGraph API runtime."""
+"""Regression coverage for the Gateway-owned LangGraph API runtime.
+
+EthoInsight follows upstream's Gateway-embedded runtime (3 processes: Gateway+runtime
+/ Frontend / Nginx). The standalone `langgraph dev` server and all transition-mode
+scaffolding (`make dev-pro`, `--gateway` flags, `LANGGRAPH_UPSTREAM`/`LANGGRAPH_REWRITE`
+nginx envsubst, `/api/langgraph-compat`) have been removed. These tests assert the
+operational layer (serve.sh / Makefile / docker-compose / nginx / frontend) no longer
+references the retired standalone mode.
+
+Note: smoke-test skill paths are prefixed with `backend/` because in this monorepo the
+deerflow tree's `.agent/` directory lives at `packages/agent/backend/.agent/` (REPO_ROOT
+here resolves to `packages/agent`).
+"""
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
-
-import pytest
-
-# 这些上游测试断言"已废弃 standalone LangGraph server 模式、全切 Gateway-embedded runtime"
-# (上游 #3301/#3334 等 clean-runtime-transition commit 的目标)。
-# EthoInsight 当前仍用 standard mode（serve.sh 的 `langgraph dev` + 4 服务 docker-compose +
-# nginx /api/langgraph→2024），是 Noldus 部署定制。
-#
-# 我们的决策（2026-06-02）：**跟随上游 Gateway 模式**（已全量合入上游 Gateway 架构代码），
-# 但部署形态迁移（serve.sh/Makefile/docker-compose/nginx 从 standard → Gateway 模式 +
-# Gateway 模式 dogfood 验证）是一次独立的部署架构迁移，单开 PR 做，不裹挟进本次 sync。
-# 迁移完成后删除本 skip 即为验收。详见 docs/superpowers/specs（待建 Gateway 迁移 spec）。
-pytestmark = pytest.mark.skip(
-    reason="跟随上游 Gateway 模式的决心已定；部署形态迁移待独立 PR，迁移完成后解除 skip 作为验收"
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,14 +99,14 @@ def test_frontend_rewrites_langgraph_prefix_to_gateway():
 
 def test_smoke_test_docs_do_not_expect_standalone_langgraph_server():
     smoke_files = {
-        ".agent/skills/smoke-test/SKILL.md": _read(".agent/skills/smoke-test/SKILL.md"),
-        ".agent/skills/smoke-test/references/SOP.md": _read(".agent/skills/smoke-test/references/SOP.md"),
-        ".agent/skills/smoke-test/references/troubleshooting.md": _read(".agent/skills/smoke-test/references/troubleshooting.md"),
-        ".agent/skills/smoke-test/scripts/check_local_env.sh": _read(".agent/skills/smoke-test/scripts/check_local_env.sh"),
-        ".agent/skills/smoke-test/scripts/deploy_local.sh": _read(".agent/skills/smoke-test/scripts/deploy_local.sh"),
-        ".agent/skills/smoke-test/scripts/health_check.sh": _read(".agent/skills/smoke-test/scripts/health_check.sh"),
-        ".agent/skills/smoke-test/templates/report.local.template.md": _read(".agent/skills/smoke-test/templates/report.local.template.md"),
-        ".agent/skills/smoke-test/templates/report.docker.template.md": _read(".agent/skills/smoke-test/templates/report.docker.template.md"),
+        "backend/.agent/skills/smoke-test/SKILL.md": _read("backend/.agent/skills/smoke-test/SKILL.md"),
+        "backend/.agent/skills/smoke-test/references/SOP.md": _read("backend/.agent/skills/smoke-test/references/SOP.md"),
+        "backend/.agent/skills/smoke-test/references/troubleshooting.md": _read("backend/.agent/skills/smoke-test/references/troubleshooting.md"),
+        "backend/.agent/skills/smoke-test/scripts/check_local_env.sh": _read("backend/.agent/skills/smoke-test/scripts/check_local_env.sh"),
+        "backend/.agent/skills/smoke-test/scripts/deploy_local.sh": _read("backend/.agent/skills/smoke-test/scripts/deploy_local.sh"),
+        "backend/.agent/skills/smoke-test/scripts/health_check.sh": _read("backend/.agent/skills/smoke-test/scripts/health_check.sh"),
+        "backend/.agent/skills/smoke-test/templates/report.local.template.md": _read("backend/.agent/skills/smoke-test/templates/report.local.template.md"),
+        "backend/.agent/skills/smoke-test/templates/report.docker.template.md": _read("backend/.agent/skills/smoke-test/templates/report.docker.template.md"),
     }
 
     for path, content in smoke_files.items():
