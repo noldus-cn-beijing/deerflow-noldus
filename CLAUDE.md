@@ -82,7 +82,7 @@ report-writer（结构化简单报告 + 文献引用）
 `packages/agent/` 是 DeerFlow 上游的 subtree fork，在其基础上做了定制：
 
 - **受保护文件**（有 Noldus 定制）：`agents/lead_agent/prompt.py`、`subagents/builtins/__init__.py`、`mcp/tools.py`、`sandbox/tools.py` 等
-- **同步方式**：用 `scripts/sync-deerflow.sh` 选择性合入上游改动（区分"安全文件"和"受保护文件"）
+- **同步方式**：用 `scripts/sync-deerflow.sh` 全量跟随上游改动，受保护文件做 surgical 守护定制（deerflow 是 infra 底座，默认全合；详见下方「同步核心规则」）
 - **上游架构详情**：见 [packages/agent/backend/CLAUDE.md](packages/agent/backend/CLAUDE.md)
 
 ## 常用命令
@@ -120,9 +120,13 @@ pytest tests/      # 运行分析库测试
 ./scripts/sync-deerflow.sh                 # 交互式合入
 ```
 
-#### ⚠️ 同步时的核心规则:取长补短,不直接覆盖
+#### ⚠️ 同步时的核心规则:全量跟随上游 + surgical 守护 Noldus 定制
 
-**任何包含 Noldus 独特改动的文件,绝对不能直接接受上游版本覆盖。** 必须逐处对比,**只挑出上游纯粹的安全/bug fix 改动**手动合入,保留所有 Noldus 定制。
+**deerflow 是我们的 infra 底座,不是外部参考库**(2026-06-02 策略锁定)。我们整个 agent harness 站在它肩上,它的 bug fix / 性能改进 / 新能力**默认全要**——它修的坑就是我们迟早会踩的坑(event-loop 阻塞、SSE、checkpointer、中间件全是地基)。
+
+**默认全量合,例外是受保护文件做 surgical**(不是"默认跳过、挑着合")。理由:挑着合 = 主动让底座和上游分叉,分叉越久未来 sync 越痛,且会错过"还没意识到需要"的修复。即使某 commit 当前用不上(如 postgres pool / 非 deepseek provider),只要落在**非受保护文件**,合进来零害(不走那条路就不触发)且消除下次 sync 的冲突点——为"用不上"主动跳过等于人为制造分叉。
+
+**唯一必须 surgical(逐处对比、绝不整文件覆盖)的,是含 Noldus 独特改动的受保护文件**(清单 `scripts/sync-deerflow.sh:51` 的 22 个)。这些文件上游也改时,合上游 fix **保留所有 Noldus 定制**。真正可跳过的只有纯 docs。
 
 Noldus 独特改动包括(但不限于):
 
@@ -142,24 +146,24 @@ Noldus 独特改动包括(但不限于):
 2. 识别上游的「真正修复」(常是几行 try/except、几行 import、几行边界检查)
 3. **手工编辑本地文件**,只把上游的修复点合入,**保留所有 Noldus 定制代码原样不动**
 4. 改完跑 `make test` 验证;如果上游修复带了配套 test,把那个 test 拿过来一起加
-5. **如果上游改动深度依赖了 Tier 4 体系**(`runtime.user_context` / `persistence.*` / per-user filesystem 多用户隔离 / unified auth + better-auth / unified skill storage),**整个 PR 跳过**,在交接文档里记录原因(EthoInsight v0.1 单用户研究助手,不需要这些)
+5. **上游改动涉及 Tier 4 体系**(`runtime.user_context` / `persistence.*` / `runtime.checkpointer` / `runtime.events` 等):**本仓库已吃下 Tier 4**(persistence 模块齐全,多用户研究助手,见第 13 条),这些**可以跟随上游**,不再"整 PR 跳过"。只需确认上游改动没碰到我们的受保护定制(如 thread_state 的 shared_path 字段)。**例外**:若上游改动依赖了我们**确实没有**的新子系统(unified auth + better-auth 等我们没接的),那一处仍 surgical 隔离或跳过,在交接文档记录。
 
 **错误做法**(永远禁止):
 
-- ❌ `git show deerflow/main:<file> > <local_file>` 直接覆盖含 Noldus 定制的文件
-- ❌ 使用 `./scripts/sync-deerflow.sh --auto-apply` 而不审视「安全文件」分类(脚本只看本地是否改过,不识别**间接依赖** Tier 4 模块的文件)
+- ❌ `git show deerflow/main:<file> > <local_file>` 直接覆盖含 Noldus 定制的**受保护**文件(非受保护文件全量覆盖正是我们要的)
+- ❌ 使用 `./scripts/sync-deerflow.sh --auto-apply` 而不对受保护文件做人工 surgical(脚本「安全文件」分类用于提示"哪些要 surgical",非受保护文件可在交互里全 Y)
 - ❌ 接受上游 `lead_agent/agent.py` 整文件 — 它包含中间件链顺序,直接覆盖会丢失 Noldus 的定制中间件
 - ❌ 接受上游 `prompt.py` 整文件 — 你会立刻丢掉所有中文调度规则和 ethoinsight subagent 描述
 
-**血泪教训**(2026-05-06 同步实测):
+**血泪教训**(2026-05-06 同步实测,⚠️ **部分前提已随 Tier4 合入而变**,见下):
 
-- 上游脚本把 `runtime/user_context.py`、`runtime/runs/manager.py`、`agents/memory/storage.py`、`tools/builtins/setup_agent_tool.py` 等都标为「安全文件」,但它们实际已被 Tier 4 体系污染,直接拉取会引入 ImportError(依赖 `persistence/*` 这些 Noldus 故意不要的模块)
-- 上游 `view_image_tool.py` 引用 sandbox/tools.py 中 Noldus 还没合入的新函数,直接拉取会运行时炸
-- 上游 `local_sandbox.py` 不接受 Noldus 定制的 `extra_env` 参数,直接覆盖会让 bash 工具立刻报 TypeError(test_client_live 立刻发现)
+- 上游脚本把 `runtime/user_context.py`、`runtime/runs/manager.py`、`agents/memory/storage.py`、`tools/builtins/setup_agent_tool.py` 等标为「安全文件」——**2026-05-06 时**它们引 `persistence/*`(当时 Noldus 没有)会 ImportError;**但 2026-05-07/08 Tier234 合入后我们已有 persistence**,此风险大幅消解,这些文件现在多可跟随(仍 grep 确认无受保护定制)
+- 上游 `view_image_tool.py` 引用 sandbox/tools.py 中 Noldus 还没合入的新函数,直接拉取会运行时炸 → **教训仍有效**:全量合后跑 `make test`,缺函数会立刻暴露
+- 上游 `local_sandbox.py` 不接受 Noldus 定制的 `extra_env` 参数,直接覆盖会让 bash 工具立刻报 TypeError(test_client_live 立刻发现)→ **教训仍有效**:`local_sandbox.py` 含 extra_env 定制,属受保护,surgical
 
-**判断「Tier 4 体系」的简易方法**:
+**判断「需 surgical 隔离」的简易方法**:
 
-如果上游文件 import 了下列任一模块,**整文件不能直接拉**(必须做 surgical merge 或跳过):
+如果上游文件 import 了下列模块**且我们没有对应实现**,该处 surgical(我们已有的 persistence/checkpointer 不在此列,可跟随):
 
 ```python
 from deerflow.runtime.user_context import ...     # per-user filesystem isolation
