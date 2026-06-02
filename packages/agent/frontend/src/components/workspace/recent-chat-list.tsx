@@ -43,7 +43,6 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { getAPIClient } from "@/core/api";
-import { writeTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   exportThreadAsJSON,
@@ -63,11 +62,7 @@ export function RecentChatList() {
   const { t } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
-  const { thread_id: threadIdFromPath, agent_name: agentNameFromPath } =
-    useParams<{
-      thread_id: string;
-      agent_name?: string;
-    }>();
+  const { thread_id: threadIdFromPath } = useParams<{ thread_id: string }>();
   const { data: threads = [] } = useThreads();
   const { mutate: deleteThread } = useDeleteThread();
   const { mutate: renameThread } = useRenameThread();
@@ -82,20 +77,18 @@ export function RecentChatList() {
       deleteThread({ threadId });
       if (threadId === threadIdFromPath) {
         const threadIndex = threads.findIndex((t) => t.thread_id === threadId);
-        let nextThreadPath = pathOfThread("new", {
-          agent_name: agentNameFromPath,
-        });
+        let nextThreadId = "new";
         if (threadIndex > -1) {
           if (threads[threadIndex + 1]) {
-            nextThreadPath = pathOfThread(threads[threadIndex + 1]!);
+            nextThreadId = threads[threadIndex + 1]!.thread_id;
           } else if (threads[threadIndex - 1]) {
-            nextThreadPath = pathOfThread(threads[threadIndex - 1]!);
+            nextThreadId = threads[threadIndex - 1]!.thread_id;
           }
         }
-        void router.push(nextThreadPath);
+        void router.push(`/workspace/chats/${nextThreadId}`);
       }
     },
-    [agentNameFromPath, deleteThread, router, threadIdFromPath, threads],
+    [deleteThread, router, threadIdFromPath, threads],
   );
 
   const handleRenameClick = useCallback(
@@ -117,22 +110,10 @@ export function RecentChatList() {
   }, [renameThread, renameThreadId, renameValue]);
 
   const handleShare = useCallback(
-    async (thread: AgentThread) => {
-      // Always use Vercel URL for sharing so others can access
-      const VERCEL_URL = "https://deer-flow-v2.vercel.app";
-      const isLocalhost =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1";
-      // On localhost: use Vercel URL; On production: use current origin
-      const baseUrl = isLocalhost ? VERCEL_URL : window.location.origin;
-      const shareUrl = `${baseUrl}${pathOfThread(thread)}`;
+    async (threadId: string) => {
+      const shareUrl = `${window.location.origin}/workspace/chats/${threadId}`;
       try {
-        const didCopy = await writeTextToClipboard(shareUrl);
-        if (!didCopy) {
-          toast.error(t.clipboard.failedToCopyToClipboard);
-          return;
-        }
-
+        await navigator.clipboard.writeText(shareUrl);
         toast.success(t.clipboard.linkCopied);
       } catch {
         toast.error(t.clipboard.failedToCopyToClipboard);
@@ -181,7 +162,7 @@ export function RecentChatList() {
           <SidebarMenu>
             <div className="flex w-full flex-col gap-1">
               {threads.map((thread) => {
-                const isActive = pathOfThread(thread) === pathname;
+                const isActive = pathOfThread(thread.thread_id) === pathname;
                 return (
                   <SidebarMenuItem
                     key={thread.thread_id}
@@ -191,7 +172,7 @@ export function RecentChatList() {
                       <div>
                         <Link
                           className="text-muted-foreground block w-full whitespace-nowrap group-hover/side-menu-item:overflow-hidden"
-                          href={pathOfThread(thread)}
+                          href={pathOfThread(thread.thread_id)}
                         >
                           {titleOfThread(thread)}
                         </Link>
@@ -223,7 +204,7 @@ export function RecentChatList() {
                                 <span>{t.common.rename}</span>
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onSelect={() => handleShare(thread)}
+                                onSelect={() => handleShare(thread.thread_id)}
                               >
                                 <Share2 className="text-muted-foreground" />
                                 <span>{t.common.share}</span>

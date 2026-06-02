@@ -31,12 +31,7 @@ import { ArtifactsProvider } from "@/components/workspace/artifacts";
 import { MessageList } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
 import type { Agent } from "@/core/agents";
-import {
-  AgentNameCheckError,
-  AgentsApiDisabledError,
-  checkAgentName,
-  getAgent,
-} from "@/core/agents/api";
+import { checkAgentName, getAgent } from "@/core/agents/api";
 import { useI18n } from "@/core/i18n/hooks";
 import { useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
@@ -86,10 +81,10 @@ export default function NewAgentPage() {
 
   const threadId = useMemo(() => uuid(), []);
 
-  const { thread, sendMessage } = useThreadStream({
-    threadId: undefined,
+  const [thread, sendMessage] = useThreadStream({
+    threadId: step === "chat" ? threadId : undefined,
     context: {
-      mode: "flash",
+      mode: "auto",
       is_bootstrap: true,
     },
     onFinish() {
@@ -139,34 +134,8 @@ export default function NewAgentPage() {
         return;
       }
     } catch (err) {
-      if (err instanceof AgentsApiDisabledError) {
-        setNameError(t.agents.nameStepApiDisabledError);
-      } else if (
-        err instanceof AgentNameCheckError &&
-        err.reason === "backend_unreachable"
-      ) {
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
         setNameError(t.agents.nameStepNetworkError);
-      } else if (
-        err instanceof AgentNameCheckError &&
-        err.reason === "request_failed"
-      ) {
-        // Surface the backend-provided detail (e.g. validation error) when
-        // one is present, wrapped in a localised prefix so zh-CN users
-        // don't see a bare English string next to the surrounding Chinese
-        // UI. Falls back to the generic localised fallback when the backend
-        // sent no detail — `err.message` is unreliable for this branch
-        // because `checkAgentName` substitutes a generated fallback string
-        // ("Failed to check agent name: ${statusText}") when `detail` is
-        // missing, so testing `err.message` would always be truthy and the
-        // generated fallback would leak through.
-        setNameError(
-          err.detail
-            ? t.agents.nameStepCheckErrorWithDetail.replace(
-                "{detail}",
-                err.detail,
-              )
-            : t.agents.nameStepCheckError,
-        );
       } else {
         setNameError(t.agents.nameStepCheckError);
       }
@@ -177,23 +146,17 @@ export default function NewAgentPage() {
 
     setAgentName(trimmed);
     setStep("chat");
-    await sendMessage(
-      threadId,
-      {
-        text: t.agents.nameStepBootstrapMessage.replace("{name}", trimmed),
-        files: [],
-      },
-      { agent_name: trimmed },
-    );
+    await sendMessage(threadId, {
+      text: t.agents.nameStepBootstrapMessage.replace("{name}", trimmed),
+      files: [],
+    });
   }, [
     nameInput,
     sendMessage,
     t.agents.nameStepAlreadyExistsError,
-    t.agents.nameStepApiDisabledError,
     t.agents.nameStepNetworkError,
     t.agents.nameStepBootstrapMessage,
     t.agents.nameStepCheckError,
-    t.agents.nameStepCheckErrorWithDetail,
     t.agents.nameStepInvalidError,
     threadId,
   ]);
@@ -276,11 +239,9 @@ export default function NewAgentPage() {
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               onSelect={() => void handleSaveAgent()}
-              disabled={[
-                Boolean(agent),
-                thread.isLoading,
-                setupAgentStatus !== "idle",
-              ].some(Boolean)}
+              disabled={
+                !!agent || thread.isLoading || setupAgentStatus !== "idle"
+              }
             >
               <SaveIcon className="h-4 w-4" />
               {setupAgentStatus === "requested"
