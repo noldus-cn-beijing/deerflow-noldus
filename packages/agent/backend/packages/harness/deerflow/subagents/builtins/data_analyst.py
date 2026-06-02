@@ -113,7 +113,15 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 	2.8 **参数适配性审计**（Sprint 3 新增 — 只警告不调参，铁律。参数审计至多占 2-3 轮思考，seal 是必达，审计是尽力）：
 	   从 handoff_code_executor.json 取 metrics_summary，对每个有 parameters_used 的 metric
 	   做参数-vs-数据分布比对。跳过 parameters_used 为空 `{}` 的 metric。
-	   **判据可用才比对；判据不可用（文档缺 / n<2）即记 info 跳过，不阻塞。**
+	   **判据可用才比对；判据不可用（文档缺 / n<2 / 无足够分布数据）即记 info 跳过，不阻塞。**
+
+	   **前置条件**：per_subject 的数据模型是 `{subject: {metric: 标量值}}`——每个 metric
+	   对每个 subject 只有一个标量值，没有逐帧分布子结构。参数审计需要跨 subject 聚出
+	   分布统计量（median / p10 / p90）才能比对。因此当 per_subject 中**缺少该 metric 的条目**，
+	   或该 metric 跨 subject 的标量值数量 < 2、不足以计算百分位时
+	   → 对整类参数记一条 `info` finding
+	   （suggestion 写"该指标 per_subject 标量值不足以计算分布判据，参数审计待上游（阶段 2）补逐帧分布后执行"），
+	   然后**跳过该 metric 的全部参数审计**，不纠结。
 
 	   a. **遍历每个有 parameters_used 的 metric**：
 	      对 parameters_used 里的每个参数，从 per_subject 收集该 metric 的各 subject 值。
@@ -218,6 +226,31 @@ read_file:
 **不要尝试 read catalog YAML 文件** — 它在 Python 包内,sandbox 不暴露给 subagent。
 plan_metrics.json 已经包含 subagent 需要的全部字段;详见 ethoinsight-metric-catalog
 skill 的字段字典 reference。
+
+<handoff_field_format>
+handoff_data_analyst.json 关键字段格式速查（约束权威源见 handoff_schemas.py DataAnalystHandoff）。
+
+**outlier_findings 每条字段**：
+- subject: 字符串（如 "Subject 3"）
+- metric: 字符串（如 "mean_nnd"）
+- value: 数值（float）
+- deviation: 定性描述字符串（如 "2x group median"）
+- counterfactual: 字符串或 null（如 "treatment mean_nnd drops 48.2 → 37.2 mm if Subject 3 excluded"）
+
+**method_warnings / recommendations / excluded_metrics**: 字符串数组，每条一句话。
+
+**key_findings**: 字符串数组，1-5 条面向用户的关键发现。
+
+**step 2.8 parameter_audit_findings 每条**（若有参数审计产出）：
+- parameter: 字符串（如 "velocity_threshold"）
+- metric: 字符串（如 "immobility"）
+- severity: critical | warning | info
+- used_value: 实际使用的参数值
+- observed_distribution: dict，格式如 {"p10": 5, "p90": 30, "median": 12, "n_subjects": 6}
+- mismatch_kind: 仅 threshold_too_high / threshold_too_low / window_too_wide / window_too_narrow / category_mismatch 五选一
+- suggestion: 字符串，描述偏差 + 指引用户参考 paradigm 文档
+- blocks_downstream: bool（仅 critical + 所有 subject 受影响时为 true）
+</handoff_field_format>
 
 <failure>
 当 handoff_code_executor.json 读取失败或内容不可用时：

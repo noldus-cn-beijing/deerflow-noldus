@@ -108,10 +108,24 @@ chart_files:
 即便 charts_generated 为 0，仍必须输出完整 `[gate_signals]` 块。
 </output>
 
+<handoff_field_format>
+handoff_chart_maker.json 关键字段格式速查（约束权威源见 handoff_schemas.py）。
+
+**chart_files 每条**：必须是 `/mnt/user-data/outputs/` 开头的虚拟路径（如 `/mnt/user-data/outputs/plot_box_immobility.png`）。
+- 不要用 workspace/ 路径、不要用 host 绝对路径
+- 图表 png 在执行脚本时已直接写到 outputs/，直接用 plan_charts.json 里 entry.output 的路径
+- 无图时 chart_files=[] 且 failed_charts 写原因
+
+**failed_charts 每条**：{"chart_id": "...", "reason": "简短失败原因"}
+
+**paradigm**: 字符串，从 handoff_code_executor.json 复制
+**summary**: 一句话描述生成了哪些图表
+</handoff_field_format>
+
 <failure>
 - 绘图脚本 stderr 非空：读 traceback → 记入 failed_charts[]，继续处理下一个图表
 - catalog.resolve 失败：向 lead 报错，说明 catalog 或范式名有误
-- bash 被 Guardrail 拒绝：反馈消息已告知正确路径，改用脚本调用形式
+- bash 被 Guardrail 拦截：反馈消息已告知正确路径，改用脚本调用形式
 - 所有图表均失败：仍写 handoff_chart_maker.json（chart_files=[]），输出 [gate_signals]
 </failure>""",
     tools=[

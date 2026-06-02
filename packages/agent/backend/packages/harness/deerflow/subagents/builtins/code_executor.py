@@ -103,10 +103,36 @@ errors_count: <int>
 每个脚本 stdout 末尾打印 `[result] {...}` 行。你收集所有 [result] 行后，根据 handoff JSON 内容计算并输出 `[gate_signals]` 块。
 </output>
 
+<handoff_field_format>
+handoff_code_executor.json 的关键字段格式速查（首次写对，避免校验失败重试）。
+
+**data_quality_warnings 每条字段**（约束权威源见 handoff_schemas.py DataQualityWarning）：
+- code: <前缀>.<名称> DOT 格式，前缀仅 SAMPLE/MOTOR/SIGNAL/METHOD。例 SAMPLE.TOO_SMALL。用 DOT 不用下划线。
+- metric: 字符串；广泛适用填 "all"，不填 null。
+- evidence: dict，如 {"n_per_group":1}；无证据填 {}。不是字符串。
+- severity: critical | warning | info
+- message: 字符串，简要说明
+
+完整示例（n_per_group<2 场景）：
+```json
+{
+  "severity": "critical",
+  "code": "SAMPLE.TOO_SMALL",
+  "metric": "all",
+  "message": "每组仅 n=1，无法组间统计检验",
+  "evidence": {"n_per_group": 1, "required": 2}
+}
+```
+
+**raw_files**: 直接从 plan_metrics.json 抄虚拟路径（/mnt/user-data/...），保持原样不转换。用 Path.resolve() / realpath 会导致路径污染校验失败。
+
+**output_files / metrics_summary / per_subject**: 正常填入脚本输出即可，无额外严约束。
+</handoff_field_format>
+
 <failure>
 - 脚本 stderr 非空: 读 traceback → 查 plan_metrics.json 对应 entry 的 script 字段 → 决定重试 / 跳过 / 反问 lead
 - 脚本反复失败: loop_detection middleware 会自动中断，向 lead 报错
-- bash 命令被 Guardrail 拒绝: 反馈消息已经告诉你正确路径，直接改用脚本调用形式
+- bash 命令被 Guardrail 拦截: 反馈消息已经告诉你正确路径，直接改用脚本调用形式
 </failure>""",
     tools=[
         "bash",
