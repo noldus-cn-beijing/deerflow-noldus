@@ -181,7 +181,13 @@ class ParameterAuditFinding(BaseModel):
     per_subject data distribution to detect mismatches (e.g. velocity_threshold=30
     but data median=5). This is distinct from DataQualityWarning (which flags
     data-level problems); ParameterAuditFinding flags parameter-vs-data mismatches.
+
+    Phase 1.5: model_validator(mode="before") normalises common LLM mistakes
+    (used_value=None → "", non-numeric observed_distribution values stripped)
+    before strict field validation runs — mirrors DataQualityWarning._normalize_llm_typeros.
     """
+
+    model_config = ConfigDict(extra="allow")
 
     parameter: str = Field(
         description=(
@@ -225,6 +231,43 @@ class ParameterAuditFinding(BaseModel):
             "block downstream subagent dispatch in manual mode."
         ),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_audit_finding(cls, values: dict[str, Any] | Any) -> Any:
+        """Conservatively normalise common LLM mistakes before strict validation.
+
+        Only touches fields that are unambiguous — never guesses semantics.
+        Mirrors DataQualityWarning._normalize_llm_typeros pattern.
+
+        Handles degenerate findings from step 2.8 "skip/info" exits where
+        deepseek may fill used_value=None or put explanatory text in
+        observed_distribution (e.g. {"note": "文字"} instead of numeric dict).
+        """
+        if not isinstance(values, dict):
+            return values
+
+        # 1. used_value=None → "" (schema requires float|int|str; degenerate
+        #    scene prompt should fill real param value, this catches edge leaks)
+        if values.get("used_value") is None:
+            values["used_value"] = ""
+
+        # 2. observed_distribution: strip non-numeric values (schema requires
+        #    dict[str, float|int]). {"note": "文字"} / any str values → removed;
+        #    if all keys stripped → {}. Explicit None / non-dict (when the key is
+        #    present) → {} (degenerate skip exit: deepseek may send null/text).
+        #    A *missing* key is left untouched so genuine omissions still fail loud.
+        if "observed_distribution" in values:
+            od = values["observed_distribution"]
+            if isinstance(od, dict):
+                values["observed_distribution"] = {
+                    k: v for k, v in od.items() if isinstance(v, (int, float)) and not isinstance(v, bool)
+                }
+            else:
+                # None, str, list, etc. → empty numeric dict
+                values["observed_distribution"] = {}
+
+        return values
 
     @field_validator("parameter")
     @classmethod

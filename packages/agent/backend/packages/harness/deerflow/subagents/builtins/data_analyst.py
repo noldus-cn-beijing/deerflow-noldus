@@ -115,21 +115,23 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 	   做参数-vs-数据分布比对。跳过 parameters_used 为空 `{}` 的 metric。
 	   **判据可用才比对；判据不可用（文档缺 / n<2 / 无足够分布数据）即记 info 跳过，不阻塞。**
 
-	   **前置条件**：per_subject 的数据模型是 `{subject: {metric: 标量值}}`——每个 metric
-	   对每个 subject 只有一个标量值，没有逐帧分布子结构。参数审计需要跨 subject 聚出
-	   分布统计量（median / p10 / p90）才能比对。因此当 per_subject 中**缺少该 metric 的条目**，
-	   或该 metric 跨 subject 的标量值数量 < 2、不足以计算百分位时
-	   → 对整类参数记一条 `info` finding
-	   （suggestion 写"该指标 per_subject 标量值不足以计算分布判据，参数审计待上游（阶段 2）补逐帧分布后执行"），
-	   然后**跳过该 metric 的全部参数审计**，不纠结。
-
-	   a. **遍历每个有 parameters_used 的 metric**：
-	      对 parameters_used 里的每个参数，从 per_subject 收集该 metric 的各 subject 值。
-	      - 若 n_subjects < 2（per_subject 每指标不足 2 个值），p10/p90/百分位无意义 →
-	        对该参数记一条 `info` finding（mismatch_kind 用 `threshold_too_high` 等最接近值，
-	        observed_distribution 只填 n_subjects，suggestion 写"样本量不足（n=1），无法计算百分位判据，
-	        参数合理性待更多数据验证"），然后**立即继续**下一个参数，不纠结。
-	      - 若 n_subjects ≥ 2，计算分布统计量（median / p10 / p90 / max / n_subjects）。
+	   a. **遍历每个有 parameters_used 的 metric 的每个参数**：
+	      从 per_subject 收集该 metric 各 subject 的标量值。
+	      **降级判定（任一成立即记一条 info finding 并继续下一个参数，不纠结）**：
+	      - per_subject 缺该 metric 条目，或跨 subject 标量值 < 2（无法算 p10/p90）
+	      - 当前范式文档无该参数的领域判据
+	      **降级 finding 的字段必须这样填（否则 seal 校验失败）**：
+	      - parameter: 当前参数名（真实，从 parameters_used 取）
+	      - metric: 当前 metric 名（真实）
+	      - used_value: **该参数的真实值**（从 parameters_used[参数名] 取，绝不填 None）
+	      - observed_distribution: 填 `{}` 或纯数字如 `{"n_subjects": 1}`，**绝不放说明文字**
+	      - mismatch_kind: 用最接近的合法值（如 threshold_too_high）；降级场景无真实 mismatch，
+	        但 schema 要求五选一，填最接近的
+	      - severity: "info"
+	      - suggestion: **说明文字放这里**（str 字段），如"per_subject 仅含标量值、样本不足，
+	        无法计算 p10/p90 百分位判据，参数审计待上游（阶段 2）补逐帧分布后执行"
+	      - blocks_downstream: false
+	      若判据可用且 n_subjects ≥ 2 → 正常算分布统计量做比对（下方 b-e 段）。
 
 	   b. **按参数类型选判据来源**：
 	      **优先从当前范式文档取判据**（step 2.6 已 read 的 `<paradigm>.md`，及其中引用的

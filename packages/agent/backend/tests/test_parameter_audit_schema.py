@@ -11,6 +11,15 @@ TDD 优先：schema 测试通过后再改 prompt/seal。
 6. test_severity_critical_does_not_auto_block — severity=critical 不自动让 blocks_downstream=True
 7. test_data_analyst_handoff_carries_findings — DataAnalystHandoff 能携带 list[ParameterAuditFinding]
 8. test_gate_signals_carries_counts — parameter_audit_findings_count + parameter_audit_critical_count 默认 0
+
+Phase 1.5 新增（对应 spec §7.2）：
+9. test_normalize_used_value_none — used_value=None 归一化为 "" 后通过
+10. test_normalize_od_note_text — observed_distribution={"note":"文字"} 归一化为 {} 后通过
+11. test_normalize_od_mixed — 混合 dict 只保留 numeric 键
+12. test_normalize_od_non_dict — 非 dict observed_distribution 归一化为 {}
+13. test_normalize_no_effect_on_valid — 正常 finding 不受归一化影响
+14. test_normalize_idempotent — 已合规 finding 二次归一化不变
+15. test_degenerate_finding_in_handoff — 退化 finding 经归一化后能进 DataAnalystHandoff
 """
 
 import pytest
@@ -125,9 +134,14 @@ class TestObservedDistributionNumeric:
         finding = ParameterAuditFinding(**_make_finding(observed_distribution={}))
         assert finding.observed_distribution == {}
 
-    def test_string_value_rejected(self):
-        with pytest.raises(ValidationError):
-            ParameterAuditFinding(**_make_finding(observed_distribution={"median": "high"}))
+    def test_string_value_stripped_by_normalizer(self):
+        """Phase 1.5: model_validator strips string values from observed_distribution.
+
+        {"median": "high"} → {} (non-numeric stripped, dict is empty but valid).
+        This was previously a ValidationError; now the normalizer handles it.
+        """
+        finding = ParameterAuditFinding(**_make_finding(observed_distribution={"median": "high"}))
+        assert finding.observed_distribution == {}
 
 
 # ---------------------------------------------------------------------------
@@ -207,3 +221,102 @@ class TestGateSignalsCounts:
         gs = GateSignals(parameter_audit_findings_count=2, parameter_audit_critical_count=0)
         handoff = DataAnalystHandoff(status="completed", analysis_config_id="abc123", gate_signals=gs)
         assert handoff.gate_signals.parameter_audit_findings_count == 2
+
+
+# ---------------------------------------------------------------------------
+# 9-15. Phase 1.5 — _normalize_audit_finding model_validator tests
+#       (mirrors DataQualityWarning._normalize_llm_typeros test pattern)
+# ---------------------------------------------------------------------------
+class TestNormalizeAuditFinding:
+    """Test ParameterAuditFinding._normalize_audit_finding model_validator.
+
+    Phase 1.5 (spec §7.2): conservatively normalise common LLM mistakes
+    before strict validation. Mirrors DataQualityWarning._normalize_llm_typeros.
+    """
+
+    def test_normalize_used_value_none(self):
+        """used_value=None → "" (schema requires float|int|str)."""
+        finding = ParameterAuditFinding(**_make_finding(used_value=None))
+        assert finding.used_value == ""
+
+    def test_normalize_od_note_text(self):
+        """observed_distribution={"note": "文字"} → {} (non-numeric stripped)."""
+        finding = ParameterAuditFinding(
+            **_make_finding(
+                observed_distribution={"note": "per_subject 仅含标量值无法计算百分位判据"},
+            )
+        )
+        assert finding.observed_distribution == {}
+
+    def test_normalize_od_mixed(self):
+        """observed_distribution={"p90": 12.0, "note": "x"} → {"p90": 12.0}."""
+        finding = ParameterAuditFinding(
+            **_make_finding(
+                observed_distribution={"p90": 12.0, "note": "some text"},
+            )
+        )
+        assert finding.observed_distribution == {"p90": 12.0}
+
+    def test_normalize_od_non_dict(self):
+        """Non-dict observed_distribution (e.g. a string) → {}."""
+        finding = ParameterAuditFinding(
+            **_make_finding(
+                observed_distribution="some text instead of dict",
+            )
+        )
+        assert finding.observed_distribution == {}
+
+    def test_normalize_od_none(self):
+        """observed_distribution=None (explicit null) → {}.
+
+        Degenerate skip exit: deepseek may send null when there is no
+        distribution. The key is present, so it is normalized to an empty
+        numeric dict rather than failing strict validation.
+        """
+        finding = ParameterAuditFinding(**_make_finding(observed_distribution=None))
+        assert finding.observed_distribution == {}
+
+    def test_normalize_no_effect_on_valid(self):
+        """Normal finding with valid numeric observed_distribution is unchanged."""
+        original = _make_finding()
+        finding = ParameterAuditFinding(**original)
+        assert finding.used_value == original["used_value"]
+        assert finding.observed_distribution == original["observed_distribution"]
+
+    def test_normalize_idempotent(self):
+        """Already-compliant finding survives re-validation unchanged."""
+        finding1 = ParameterAuditFinding(**_make_finding())
+        # Re-construct from dict (simulates second normalization pass)
+        finding2 = ParameterAuditFinding(**finding1.model_dump())
+        assert finding1.used_value == finding2.used_value
+        assert finding1.observed_distribution == finding2.observed_distribution
+
+    def test_degenerate_finding_in_handoff(self):
+        """Degenerate finding (the exact pattern from dogfood failure) passes
+        through DataAnalystHandoff after normalization.
+
+        Reproduces thread 81051535: used_value=None + observed_distribution
+        with note text.
+        """
+        degenerate = {
+            "parameter": "velocity_threshold",
+            "metric": "immobility_time",
+            "severity": "info",
+            "used_value": None,  # ← LLM filled None
+            "observed_distribution": {
+                "note": "per_subject 仅含标量值，无法计算 median 等百分位判据"
+            },  # ← LLM put text instead of numbers
+            "mismatch_kind": "threshold_too_high",
+            "suggestion": "样本量不足（n=1），无法计算百分位判据，参数审计待上游补逐帧分布后执行",
+            "blocks_downstream": False,
+        }
+        handoff = DataAnalystHandoff(
+            status="completed",
+            analysis_config_id="abc123",
+            parameter_audit_findings=[degenerate],
+        )
+        assert len(handoff.parameter_audit_findings) == 1
+        f = handoff.parameter_audit_findings[0]
+        assert f.used_value == ""  # normalized from None
+        assert f.observed_distribution == {}  # text stripped
+        assert f.parameter == "velocity_threshold"
