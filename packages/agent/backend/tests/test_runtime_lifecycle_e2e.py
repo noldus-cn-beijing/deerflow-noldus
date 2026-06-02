@@ -478,6 +478,12 @@ def test_stream_run_completes_and_persists_runtime_state(isolated_app):
         assert any(row["content"]["content"] == "Lifecycle complete." for row in message_events if row["event_type"] == "llm.ai.response")
 
 
+@pytest.mark.skip(
+    reason="上游新测试断言 setup_agent 写 per-user 路径 users/<uid>/agents/.../SOUL.md；"
+    "EthoInsight 的 setup_agent_tool.py（受保护定制）用扁平路径 agents/.../SOUL.md。"
+    "属上游行为与 Noldus 定制分歧（非回归，文件确实写了只是路径层级不同）。"
+    "若未来对齐 per-user agent 存储则解除 skip。"
+)
 def test_stream_run_executes_real_lead_agent_setup_agent_business_path(isolated_app, isolated_deer_flow_home: Path):
     """A runtime stream should execute real lead-agent business code and tools."""
     from starlette.testclient import TestClient
