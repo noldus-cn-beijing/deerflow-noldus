@@ -16,23 +16,22 @@ const config = {
   devIndicators: false,
   async rewrites() {
     const rewrites = [];
-    const langgraphURL = getInternalServiceURL(
-      "DEER_FLOW_INTERNAL_LANGGRAPH_BASE_URL",
-      "http://127.0.0.1:2024",
-    );
     const gatewayURL = getInternalServiceURL(
       "DEER_FLOW_INTERNAL_GATEWAY_BASE_URL",
       "http://127.0.0.1:8001",
     );
 
+    // LangGraph-compatible API is served by the Gateway-embedded runtime under
+    // /api/*. Keep the public /api/langgraph prefix and rewrite it onto the
+    // Gateway's native /api/* paths (mirrors the nginx rewrite for prod).
     if (!process.env.NEXT_PUBLIC_LANGGRAPH_BASE_URL) {
       rewrites.push({
         source: "/api/langgraph",
-        destination: langgraphURL,
+        destination: `${gatewayURL}/api`,
       });
       rewrites.push({
         source: "/api/langgraph/:path*",
-        destination: `${langgraphURL}/:path*`,
+        destination: `${gatewayURL}/api/:path*`,
       });
     }
 
