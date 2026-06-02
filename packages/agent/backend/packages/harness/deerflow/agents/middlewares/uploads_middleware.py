@@ -7,6 +7,7 @@ from typing import NotRequired, override
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import run_in_executor
 from langgraph.runtime import Runtime
 
 from deerflow.config.paths import Paths, get_paths
@@ -16,9 +17,10 @@ from deerflow.utils.file_conversion import extract_outline
 logger = logging.getLogger(__name__)
 
 
-_DATA_FILE_EXTENSIONS = {".xlsx", ".xls", ".csv", ".tsv", ".txt"}
-
 _OUTLINE_PREVIEW_LINES = 5
+
+# Noldus 定制: 数据文件扩展名,用于区分结构化数据和文档
+_DATA_FILE_EXTENSIONS = {".xlsx", ".xls", ".csv", ".tsv", ".txt"}
 
 
 def _extract_outline_for_file(file_path: Path) -> tuple[list[dict], list[str]]:
@@ -90,8 +92,15 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
         size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{size_kb / 1024:.1f} MB"
         lines.append(f"- {file['filename']} ({size_str})")
         lines.append(f"  Path: {file['path']}")
-        outline = file.get("outline") or []
+        # Noldus 定制: 结构化数据文件特殊提示
         ext = (file.get("extension") or "").lower()
+        if ext in _DATA_FILE_EXTENSIONS:
+            lines.append("  Structured data file — do NOT use read_file on it.")
+            lines.append("  Use bash with Python/pandas to read tabular data, or")
+            lines.append("  delegate to the appropriate data-analysis subagent.")
+            lines.append("")
+            return
+        outline = file.get("outline") or []
         if outline:
             truncated = outline[-1].get("truncated", False)
             visible = [e for e in outline if not e.get("truncated")]
@@ -100,10 +109,6 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
                 lines.append(f"    L{entry['line']}: {entry['title']}")
             if truncated:
                 lines.append(f"    ... (showing first {len(visible)} headings; use `read_file` to explore further)")
-        elif ext in _DATA_FILE_EXTENSIONS:
-            lines.append("  Structured data file — do NOT use read_file on it.")
-            lines.append("  Use bash with Python/pandas to read tabular data, or")
-            lines.append("  delegate to the appropriate data-analysis subagent.")
         else:
             preview = file.get("outline_preview") or []
             if preview:
@@ -142,6 +147,7 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
             for file in historical_files:
                 self._format_file_entry(file, lines)
 
+        # Noldus 定制: 区分数据文件和文档文件, 给予不同指引
         all_files = (new_files or []) + (historical_files or [])
         has_data_files = any(
             ((f.get("extension") or "").lower() in _DATA_FILE_EXTENSIONS)
@@ -315,3 +321,16 @@ class UploadsMiddleware(AgentMiddleware[UploadsMiddlewareState]):
             "uploaded_files": new_files,
             "messages": messages,
         }
+
+    @override
+    async def abefore_agent(self, state: UploadsMiddlewareState, runtime: Runtime) -> dict | None:
+        """Async hook that offloads the synchronous uploads scan off the event loop.
+
+        ``before_agent`` performs blocking filesystem IO (directory enumeration,
+        ``stat``, reading sibling ``.md`` outlines). When the graph runs async,
+        langgraph would otherwise execute the sync hook directly on the event
+        loop, so it is dispatched to a worker thread via ``run_in_executor``.
+        ``run_in_executor`` copies the current context, so the ``user_id``
+        contextvar read by ``get_effective_user_id()`` is preserved.
+        """
+        return await run_in_executor(None, self.before_agent, state, runtime)

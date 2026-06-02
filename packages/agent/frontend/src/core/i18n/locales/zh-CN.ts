@@ -1,4 +1,4 @@
-import {
+﻿import {
   CompassIcon,
   GraduationCapIcon,
   ImageIcon,
@@ -29,6 +29,7 @@ export const zhCN: Translations = {
     close: "关闭",
     more: "更多",
     search: "搜索",
+    loadMore: "加载更多",
     download: "下载",
     thinking: "思考",
     artifacts: "文件",
@@ -51,15 +52,21 @@ export const zhCN: Translations = {
     exportSuccess: "对话已导出",
   },
 
+  // Home
+  home: {
+    docs: "文档",
+    blog: "博客",
+  },
+
   // Welcome
   welcome: {
     greeting: "你好，欢迎回来！",
     description:
-      "欢迎使用 EthoInsight — 上传 EthoVision XT 轨迹数据，AI 助手将自动完成统计分析、专业解读、APA 格式报告生成。",
+      "欢迎使用 🦌 DeerFlow，一个完全开源的超级智能体。通过内置和自定义的 Skills，\nDeerFlow 可以帮你搜索网络、分析数据，还能为你生成幻灯片、\n图片、视频、播客及网页等，几乎可以做任何事情。",
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
-      "创建你的 Agent Skill 来扩展 EthoInsight 的能力。通过自定义技能，EthoInsight\n可以适配你的实验范式、分析流程与报告模板，更贴合你的研究需求。",
+      "创建你的 Agent Skill 来释放 DeerFlow 的潜力。通过自定义技能，DeerFlow\n可以帮你搜索网络、分析数据，还能为你生成幻灯片、\n网页等作品，几乎可以做任何事情。",
   },
 
   // Clipboard
@@ -77,12 +84,15 @@ export const zhCN: Translations = {
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
     mode: "模式",
-    autoMode: "全自动",
-    autoModeDescription:
-      "全自动分析流水线，可调用子代理分工协作，适合复杂多步骤任务",
-    flywheelMode: "数据飞轮",
-    flywheelModeDescription:
-      "交互式分析，每个关键决策点等待您确认，适合训练数据收集",
+    flashMode: "闪速",
+    flashModeDescription: "快速且高效的完成任务，但可能不够精准",
+    reasoningMode: "思考",
+    reasoningModeDescription: "思考后再行动，在时间与准确性之间取得平衡",
+    proMode: "Pro",
+    proModeDescription: "思考、计划再执行，获得更精准的结果，可能需要更多时间",
+    ultraMode: "Ultra",
+    ultraModeDescription:
+      "继承自 Pro 模式，可调用子代理分工协作，适合复杂多步骤任务，能力最强",
     reasoningEffort: "推理深度",
     reasoningEffortMinimal: "最低",
     reasoningEffortMinimalDescription: "检索 + 直接输出",
@@ -157,7 +167,6 @@ export const zhCN: Translations = {
     recentChats: "最近的对话",
     demoChats: "演示对话",
     agents: "智能体",
-    feedback: "反馈",
   },
 
   // Agents
@@ -183,18 +192,21 @@ export const zhCN: Translations = {
     nameStepAlreadyExistsError: "已存在同名智能体",
     nameStepNetworkError: "网络请求失败，请检查网络或后端连接",
     nameStepCheckError: "无法验证名称可用性，请稍后重试",
+    nameStepCheckErrorWithDetail: "名称校验失败：{detail}",
+    nameStepApiDisabledError:
+      "服务器未开启自定义智能体管理功能，请联系管理员。",
     nameStepBootstrapMessage:
-      "新智能体的名称是 {name}，现在开始为它生成 **SOUL**。",
+      "新智能体的名称是 {name}。请先帮我设计它的用途、行为方式和 SOUL.md，再保存它。",
     save: "保存智能体",
     saving: "正在保存智能体...",
     saveRequested:
-      "已提交保存请求，EthoInsight 正在根据当前对话生成并保存初版智能体。",
+      "已提交保存请求，DeerFlow 正在根据当前对话生成并保存初版智能体。",
     saveHint:
       "你可以在右上角的菜单里随时保存这个智能体，就算目前还只是初稿也可以。",
     saveCommandMessage:
       "请现在根据我们目前已经讨论的全部内容保存这个自定义智能体。这就是我明确的保存确认。如果仍有少量细节缺失，请根据上下文做出合理假设，生成一份简洁的英文初始 SOUL.md，并直接调用 setup_agent，不要再向我索要额外确认。",
     agentCreatedPendingRefresh:
-      "智能体已创建，但 EthoInsight 暂时还无法读取到它。请稍后刷新当前页面。",
+      "智能体已创建，但 DeerFlow 暂时还无法读取到它。请稍后刷新当前页面。",
     more: "更多操作",
     agentCreated: "智能体已创建！",
     startChatting: "开始对话",
@@ -209,13 +221,14 @@ export const zhCN: Translations = {
 
   // Workspace
   workspace: {
-    officialWebsite: "访问 Noldus 官方网站",
-    githubTooltip: "访问 EthoInsight 的代码仓库",
+    officialWebsite: "访问 DeerFlow 官方网站",
+    githubTooltip: "访问 DeerFlow 的 Github 仓库",
     settingsAndMore: "设置和更多",
-    visitGithub: "查看 EthoInsight 代码仓库",
+    visitGithub: "在 Github 上查看 DeerFlow",
     reportIssue: "报告问题",
     contactUs: "联系我们",
-    about: "关于 EthoInsight",
+    about: "关于 DeerFlow",
+    logout: "退出登录",
   },
 
   // Conversation
@@ -231,12 +244,11 @@ export const zhCN: Translations = {
 
   // Page titles (document title)
   pages: {
-    appName: "EthoInsight",
+    appName: "DeerFlow",
     chats: "对话",
     newChat: "新对话",
     untitled: "未命名",
   },
-
 
   // Tool calls
   toolCalls: {
@@ -245,35 +257,19 @@ export const zhCN: Translations = {
     executeCommand: "执行命令",
     presentFiles: "展示文件",
     needYourHelp: "需要你的协助",
-    useTool: (toolName: string) => `使用 "${toolName}" 工具`,
-    searchFor: (query: string) => `搜索 "${query}"`,
+    useTool: (toolName: string) => `使用 “${toolName}” 工具`,
+    searchFor: (query: string) => `搜索 “${query}”`,
     searchForRelatedInfo: "搜索相关信息",
     searchForRelatedImages: "搜索相关图片",
-    searchForRelatedImagesFor: (query: string) => `搜索相关图片 "${query}"`,
-    searchOnWebFor: (query: string) => `在网络上搜索 "${query}"`,
+    searchForRelatedImagesFor: (query: string) => `搜索相关图片 “${query}”`,
+    searchOnWebFor: (query: string) => `在网络上搜索 “${query}”`,
     viewWebPage: "查看网页",
     listFolder: "列出文件夹",
     readFile: "读取文件",
     writeFile: "写入文件",
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
-    skillInstallTooltip: "安装技能并使其可在 EthoInsight 中使用",
-    stageBroadcast: {
-      dispatchSubagent: (subagentType: string) => {
-        const labels: Record<string, string> = {
-          "code-executor": "🧮 正在计算指标，预计 30-60 秒...",
-          "data-analyst": "🔬 指标已完成，正在请专家解读，预计 1-2 分钟...",
-          "report-writer": "📝 解读已完成，正在生成中文研究报告...",
-          "knowledge-assistant": "📚 正在查阅领域知识...",
-        };
-        return labels[subagentType] ?? `🛠 正在派遣 ${subagentType}...`;
-      },
-      parseHeaders: "📂 正在解析 EthoVision 文件结构...",
-      resolveCatalog: "📋 正在生成指标计划...",
-      askClarification: "⚠️ 我需要先确认一件事...",
-      runScript: (scriptName: string) => `⚙️ 正在运行 ${scriptName}...`,
-      genericBash: "💻 正在执行命令...",
-    },
+    skillInstallTooltip: "安装技能并使其可在 DeerFlow 中使用",
   },
 
   uploads: {
@@ -288,22 +284,40 @@ export const zhCN: Translations = {
     in_progress: "子任务运行中",
     completed: "子任务已完成",
     failed: "子任务失败",
-    taskDescription: "任务描述",
-    taskResult: "任务结果",
-    expertWorking: "专家工作过程",
-  },
-
-  clarification: {
-    chooseOption: "选择一个选项",
-    orTypeCustom: "或在下方输入框自定义回复",
   },
 
   // Token Usage
   tokenUsage: {
     title: "Token 用量",
+    label: "Tokens",
     input: "输入",
     output: "输出",
     total: "总计",
+    view: "显示方式",
+    unavailable:
+      "暂无 Token 用量。只有模型成功返回且供应商提供 usage_metadata 时才会显示。",
+    unavailableShort: "未返回用量",
+    note: "顶部总量优先使用后端持久化的线程用量；当当前回复仍在流式返回时，还会叠加可见的进行中用量。每轮和调试用量只来自当前可见消息，可能与平台账单页不完全一致。",
+    presets: {
+      off: "关闭",
+      summary: "总览",
+      perTurn: "每轮",
+      debug: "调试",
+    },
+    presetDescriptions: {
+      off: "隐藏顶部和会话内的 token 展示。",
+      summary: "只在顶部显示当前对话累计 token。",
+      perTurn: "显示顶部累计，并为每轮 assistant 回复显示一条汇总 token。",
+      debug: "显示顶部累计，并展示按步骤归类的 token 调试信息。",
+    },
+    finalAnswer: "最终回复",
+    stepTotal: "步骤总计",
+    sharedAttribution: "该 token 由此步骤中的多个动作共同消耗",
+    subagent: (description: string) => `子任务：${description}`,
+    startTodo: (content: string) => `开始 To-do：${content}`,
+    completeTodo: (content: string) => `完成 To-do：${content}`,
+    updateTodo: (content: string) => `更新 To-do：${content}`,
+    removeTodo: (content: string) => `移除 To-do：${content}`,
   },
 
   // Shortcuts
@@ -312,7 +326,7 @@ export const zhCN: Translations = {
     noResults: "未找到结果。",
     actions: "操作",
     keyboardShortcuts: "键盘快捷键",
-    keyboardShortcutsDescription: "使用键盘快捷键更快地操作 EthoInsight。",
+    keyboardShortcutsDescription: "使用键盘快捷键更快地操作 DeerFlow。",
     openCommandPalette: "打开命令面板",
     toggleSidebar: "切换侧边栏",
   },
@@ -320,9 +334,9 @@ export const zhCN: Translations = {
   // Settings
   settings: {
     title: "设置",
-    description: "根据你的偏好调整 EthoInsight 的界面和行为。",
+    description: "根据你的偏好调整 DeerFlow 的界面和行为。",
     sections: {
-      account: "账户",
+      account: "账号",
       appearance: "外观",
       memory: "记忆",
       tools: "工具",
@@ -333,7 +347,7 @@ export const zhCN: Translations = {
     memory: {
       title: "记忆",
       description:
-        "EthoInsight 会在后台不断从你的对话中自动学习。这些记忆能帮助 EthoInsight 更好地理解你，并提供更个性化的体验。",
+        "DeerFlow 会在后台不断从你的对话中自动学习。这些记忆能帮助 DeerFlow 更好地理解你，并提供更个性化的体验。",
       empty: "暂无可展示的记忆数据。",
       rawJson: "原始 JSON",
       exportButton: "导出记忆",
@@ -407,23 +421,6 @@ export const zhCN: Translations = {
         },
       },
     },
-    account: {
-      profileTitle: "个人资料",
-      email: "邮箱",
-      role: "角色",
-      changePasswordTitle: "修改密码",
-      changePasswordDescription: "更新你的账户密码。",
-      currentPassword: "当前密码",
-      newPassword: "新密码",
-      confirmNewPassword: "确认新密码",
-      passwordMismatch: "两次输入的新密码不一致",
-      passwordTooShort: "密码至少需要 8 位字符",
-      passwordChangedSuccess: "密码修改成功",
-      networkError: "网络错误，请重试。",
-      updating: "更新中...",
-      updatePassword: "更新密码",
-      signOut: "退出登录",
-    },
     appearance: {
       themeTitle: "主题",
       themeDescription: "跟随系统或选择固定的界面模式。",
@@ -446,21 +443,38 @@ export const zhCN: Translations = {
       createSkill: "新建技能",
       emptyTitle: "还没有技能",
       emptyDescription:
-        "将你的 Agent Skill 文件夹放在 EthoInsight 根目录下的 `/skills/custom` 文件夹中。",
+        "将你的 Agent Skill 文件夹放在 DeerFlow 根目录下的 `/skills/custom` 文件夹中。",
       emptyButton: "创建你的第一个技能",
     },
     notification: {
       title: "通知",
       description:
-        "EthoInsight 只会在窗口不活跃时发送完成通知，特别适合长时间任务：你可以先去做别的事，完成后会收到提醒。",
+        "DeerFlow 只会在窗口不活跃时发送完成通知，特别适合长时间任务：你可以先去做别的事，完成后会收到提醒。",
       requestPermission: "请求通知权限",
       deniedHint:
         "通知权限已被拒绝。可在浏览器的网站设置中重新开启，以接收完成提醒。",
       testButton: "发送测试通知",
-      testTitle: "EthoInsight",
+      testTitle: "DeerFlow",
       testBody: "这是一条测试通知。",
       notSupported: "当前浏览器不支持通知功能。",
       disableNotification: "关闭通知",
+    },
+    account: {
+      profileTitle: "个人信息",
+      email: "邮箱",
+      role: "角色",
+      changePasswordTitle: "修改密码",
+      changePasswordDescription: "更新你的账号密码。",
+      currentPassword: "当前密码",
+      newPassword: "新密码",
+      confirmNewPassword: "确认新密码",
+      passwordMismatch: "两次输入的新密码不一致",
+      passwordTooShort: "密码长度至少为 8 个字符",
+      passwordChangedSuccess: "密码修改成功",
+      networkError: "网络错误，请重试。",
+      updating: "更新中...",
+      updatePassword: "修改密码",
+      signOut: "退出登录",
     },
     acknowledge: {
       emptyTitle: "致谢",

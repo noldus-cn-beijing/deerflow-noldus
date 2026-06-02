@@ -18,7 +18,7 @@ interface AssistantClarificationGroup extends GenericMessageGroup<"assistant:cla
 
 interface AssistantSubagentGroup extends GenericMessageGroup<"assistant:subagent"> {}
 
-type MessageGroup =
+export type MessageGroup =
   | HumanMessageGroup
   | AssistantProcessingGroup
   | AssistantMessageGroup
@@ -33,18 +33,12 @@ const HIDDEN_CONTROL_MESSAGE_NAMES = new Set([
   "todo_completion_reminder",
 ]);
 
-export function groupMessages<T>(
-  messages: Message[],
-  mapper: (group: MessageGroup) => T,
-  options: { isStreaming?: boolean } = {},
-): T[] {
+export function getMessageGroups(messages: Message[]): MessageGroup[] {
   if (messages.length === 0) {
     return [];
   }
 
   const groups: MessageGroup[] = [];
-  const lastIndex = messages.length - 1;
-  const { isStreaming = false } = options;
 
   // Returns the last group if it can still accept tool messages
   // (i.e. it's an in-flight processing group, not a terminal human/assistant group).
@@ -61,8 +55,7 @@ export function groupMessages<T>(
     return null;
   }
 
-  for (let i = 0; i < messages.length; i++) {
-    const message = messages[i]!;
+  for (const message of messages) {
     if (isHiddenFromUIMessage(message)) {
       continue;
     }
@@ -86,15 +79,17 @@ export function groupMessages<T>(
         const open = lastOpenGroup();
         if (open) {
           open.messages.push(message);
+        } else {
+          console.error(
+            "Unexpected tool message outside a processing group",
+            message,
+          );
         }
-        // Silently ignore orphaned tool messages (e.g. after LLM timeout
-        // returns a plain AIMessage without tool_calls).
       }
       continue;
     }
 
     if (message.type === "ai") {
-      const isLastAndStreaming = isStreaming && i === lastIndex;
       if (hasPresentFiles(message)) {
         groups.push({
           id: message.id,
@@ -107,34 +102,9 @@ export function groupMessages<T>(
           type: "assistant:subagent",
           messages: [message],
         });
-      } else if (
-        hasReasoning(message) &&
-        hasContent(message) &&
-        !hasToolCalls(message) &&
-        !isLastAndStreaming
-      ) {
-        // Final answer with reasoning + content (no tool calls).
-        // Must NOT also enter the processing group below — one message, one group.
-        //
-        // Streaming exception: when this IS the last message and the stream is
-        // still active, we cannot tell whether tool_calls chunks will arrive
-        // next. Keep the message pinned to assistant:processing (handled by the
-        // branch below) so the React tree stays mounted across chunks instead
-        // of flickering between processing → assistant → processing. Once the
-        // stream ends, re-classification picks the final assistant group.
-        groups.push({
-          id: message.id,
-          type: "assistant",
-          messages: [message],
-        });
-      } else if (
-        hasReasoning(message) ||
-        hasToolCalls(message) ||
-        (isLastAndStreaming && hasContent(message))
-      ) {
-        // Intermediate step: reasoning-only, tool_calls-only, or reasoning+tool_calls.
-        // Streaming tail also lands here to avoid the flicker described above.
+      } else if (hasReasoning(message) || hasToolCalls(message)) {
         const lastGroup = groups[groups.length - 1];
+        // Accumulate consecutive intermediate AI messages into one processing group.
         if (lastGroup?.type !== "assistant:processing") {
           groups.push({
             id: message.id,
@@ -144,20 +114,140 @@ export function groupMessages<T>(
         } else {
           lastGroup.messages.push(message);
         }
-      } else if (hasContent(message)) {
-        // Content-only final answer (no reasoning, no tool calls).
-        groups.push({
-          id: message.id,
-          type: "assistant",
-          messages: [message],
-        });
+      }
+
+      // Not an else-if: a message with reasoning + content (but no tool calls) goes
+      // into the processing group above AND gets its own assistant bubble here.
+      if (hasContent(message) && !hasToolCalls(message)) {
+        groups.push({ id: message.id, type: "assistant", messages: [message] });
       }
     }
   }
 
-  return groups
+  return groups;
+}
+
+export function groupMessages<T>(
+  messages: Message[],
+  mapper: (group: MessageGroup) => T,
+): T[] {
+  return getMessageGroups(messages)
     .map(mapper)
     .filter((result) => result !== undefined && result !== null) as T[];
+}
+
+export function getAssistantTurnUsageMessages(groups: MessageGroup[]) {
+  const usageMessagesByGroupIndex: Array<Message[] | null> = Array.from(
+    { length: groups.length },
+    () => null,
+  );
+
+  let turnStartIndex: number | null = null;
+
+  for (const [index, group] of groups.entries()) {
+    if (group.type === "human") {
+      turnStartIndex = null;
+      continue;
+    }
+
+    turnStartIndex ??= index;
+
+    const nextGroup = groups[index + 1];
+    const isTurnEnd = !nextGroup || nextGroup.type === "human";
+
+    if (!isTurnEnd) {
+      continue;
+    }
+
+    usageMessagesByGroupIndex[index] = groups
+      .slice(turnStartIndex, index + 1)
+      .flatMap((currentGroup) => currentGroup.messages)
+      .filter((message) => message.type === "ai");
+
+    turnStartIndex = null;
+  }
+
+  return usageMessagesByGroupIndex;
+}
+
+type MessageMetadataLookup = (
+  message: Message,
+  index: number,
+) => { streamMetadata?: Record<string, unknown> } | undefined;
+
+export type StreamingMessageLookup = {
+  ids: ReadonlySet<string>;
+  messages: ReadonlySet<Message>;
+};
+
+export function getStreamingMessageLookup(
+  messages: Message[],
+  isStreaming: boolean,
+  getMessagesMetadata?: MessageMetadataLookup,
+): StreamingMessageLookup {
+  const streamingMessageIds = new Set<string>();
+  const streamingMessages = new Set<Message>();
+
+  if (!isStreaming) {
+    return {
+      ids: streamingMessageIds,
+      messages: streamingMessages,
+    };
+  }
+
+  messages.forEach((message, index) => {
+    if (!getMessagesMetadata?.(message, index)?.streamMetadata) {
+      return;
+    }
+
+    if (typeof message.id === "string" && message.id.length > 0) {
+      streamingMessageIds.add(message.id);
+    }
+    streamingMessages.add(message);
+  });
+
+  return {
+    ids: streamingMessageIds,
+    messages: streamingMessages,
+  };
+}
+
+export function isAssistantMessageGroupStreaming(
+  groupMessages: Message[],
+  streamingMessages: StreamingMessageLookup,
+) {
+  return groupMessages.some((message) => {
+    if (message.type !== "ai") {
+      return false;
+    }
+
+    return (
+      (typeof message.id === "string" &&
+        message.id.length > 0 &&
+        streamingMessages.ids.has(message.id)) ||
+      streamingMessages.messages.has(message)
+    );
+  });
+}
+
+export function getAssistantTurnCopyData(
+  messages: Message[],
+  { isStreaming = false }: { isStreaming?: boolean } = {},
+) {
+  if (isStreaming) {
+    return null;
+  }
+
+  return (
+    [...messages]
+      .reverse()
+      .filter((message) => message.type === "ai")
+      .map((message) => {
+        const content = extractContentFromMessage(message);
+        return content ?? extractReasoningContentFromMessage(message) ?? "";
+      })
+      .find((content) => content.length > 0) ?? null
+  );
 }
 
 export function extractTextFromMessage(message: Message) {
@@ -170,14 +260,14 @@ export function extractTextFromMessage(message: Message) {
   if (Array.isArray(message.content)) {
     return message.content
       .map((content) => (content.type === "text" ? content.text : ""))
-      .join("")
+      .join("\n")
       .trim();
   }
   return "";
 }
 
-const THINK_TAG_RE = /<think>\s*([\s\S]*?)\s*<\/think>/g;
 const THINK_OPEN_TAG = "<think>";
+const THINK_TAG_RE = /<think>\s*([\s\S]*?)\s*<\/think>/g;
 
 function splitInlineReasoning(content: string) {
   const reasoningParts: string[] = [];
@@ -231,9 +321,6 @@ export function extractContentFromMessage(message: Message) {
     );
   }
   if (Array.isArray(message.content)) {
-    // Join with "" — adjacent text blocks are continuous text; "\n" turns
-    // fine-grained delta streams (e.g. DeepSeek) into one-token-per-line
-    // which breaks the markdown parser.
     return message.content
       .map((content) => {
         switch (content.type) {
@@ -241,12 +328,12 @@ export function extractContentFromMessage(message: Message) {
             return content.text;
           case "image_url":
             const imageURL = extractURLFromImageURLContent(content.image_url);
-            return `\n![image](${imageURL})\n`;
+            return `![image](${imageURL})`;
           default:
             return "";
         }
       })
-      .join("")
+      .join("\n")
       .trim();
   }
   return "";
@@ -344,44 +431,6 @@ export function isClarificationToolMessage(message: Message) {
   return message.type === "tool" && message.name === "ask_clarification";
 }
 
-/**
- * Strip the backend-rendered "  1. opt\n  2. opt" numbered options block from
- * a clarification ToolMessage's content so the frontend doesn't show options
- * twice (once as text, once as {@link ClarificationOptions} buttons).
- *
- * Matches the exact format produced by
- * `ClarificationMiddleware._format_clarification_message` (backend): a blank
- * line followed by lines like `  {N}. {option}` for each option in order.
- * IM channels still consume the full content (without button UI), so the
- * backend format is unchanged — this strip happens only at render time.
- *
- * Returns the trimmed content if the trailing block matched, or the original
- * content if it didn't (defensive — never lose the question text).
- */
-export function stripClarificationOptionsFromContent(
-  content: string,
-  options: readonly string[],
-): string {
-  if (!options.length || !content) return content;
-
-  const lines = content.split("\n");
-  // The numbered list is at the end, one line per option; last option is
-  // last non-empty line. Walk from the tail and require exact match.
-  let cursor = lines.length - 1;
-  for (let i = options.length - 1; i >= 0; i--) {
-    const expected = `  ${i + 1}. ${options[i]}`;
-    if (cursor < 0 || lines[cursor] !== expected) {
-      return content;
-    }
-    cursor--;
-  }
-  // The backend inserts a blank line before the numbered block — drop it too.
-  if (cursor >= 0 && lines[cursor] === "") {
-    cursor--;
-  }
-  return lines.slice(0, cursor + 1).join("\n");
-}
-
 export function extractPresentFilesFromMessage(message: Message) {
   if (message.type !== "ai" || !hasPresentFiles(message)) {
     return [];
@@ -419,26 +468,6 @@ export function findToolCallResult(toolCallId: string, messages: Message[]) {
   return undefined;
 }
 
-/**
- * Look up the tool_call args that produced the ToolMessage with the given id.
- * Useful when rendering a tool message's UI needs data that only lives on the
- * originating AIMessage (e.g. ask_clarification's options list).
- */
-export function findToolCallArgs(
-  toolCallId: string,
-  messages: Message[],
-): Record<string, unknown> | undefined {
-  for (const message of messages) {
-    if (message.type !== "ai") continue;
-    for (const toolCall of message.tool_calls ?? []) {
-      if (toolCall.id === toolCallId) {
-        return toolCall.args;
-      }
-    }
-  }
-  return undefined;
-}
-
 export function isHiddenFromUIMessage(message: Message) {
   return (
     message.additional_kwargs?.hide_from_ui === true ||
@@ -466,6 +495,50 @@ export function stripUploadedFilesTag(content: string): string {
   return content
     .replace(/<uploaded_files>[\s\S]*?<\/uploaded_files>/g, "")
     .trim();
+}
+
+/**
+ * Tag names that backend middlewares wrap around internal payloads before
+ * letting them ride along inside LangGraph message ``content``.
+ *
+ * These markers are *not* user copy — they come from:
+ *
+ * - ``UploadsMiddleware`` → ``<uploaded_files>``
+ * - ``DynamicContextMiddleware`` → ``<system-reminder>`` (carrying
+ *   ``<memory>`` / ``<current_date>`` inside)
+ * - ``TodoListMiddleware`` / ``LoopDetectionMiddleware`` style reminders
+ *   live in ``hide_from_ui`` HumanMessages, but their inner payload uses
+ *   the same tag vocabulary.
+ *
+ * The primary export filter is {@link isHiddenFromUIMessage}. This list is
+ * the defence-in-depth strip for any message that — by middleware bug,
+ * provider quirk, or merge-conflict regression — slips through without
+ * its ``hide_from_ui`` flag set.
+ */
+export const INTERNAL_MARKER_TAGS = [
+  "uploaded_files",
+  "system-reminder",
+  "memory",
+  "current_date",
+] as const;
+
+const INTERNAL_MARKER_RE = new RegExp(
+  `<(${INTERNAL_MARKER_TAGS.join("|")})>[\\s\\S]*?</\\1>`,
+  "g",
+);
+
+/**
+ * Strip every known backend-injected marker from message content.
+ *
+ * Intended for the chat export path where a marker leaking through is a
+ * privacy regression. UI render paths should keep using
+ * {@link stripUploadedFilesTag} — they receive ``hide_from_ui`` messages
+ * via a separate filter and the narrower function avoids stripping content
+ * a user might legitimately type into a meta-discussion (e.g. asking the
+ * model about its own ``<memory>`` system).
+ */
+export function stripInternalMarkers(content: string): string {
+  return content.replace(INTERNAL_MARKER_RE, "").trim();
 }
 
 export function parseUploadedFiles(content: string): FileInMessage[] {

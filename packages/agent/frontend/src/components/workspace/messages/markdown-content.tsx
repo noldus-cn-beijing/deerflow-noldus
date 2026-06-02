@@ -7,7 +7,10 @@ import {
   MessageResponse,
   type MessageResponseProps,
 } from "@/components/ai-elements/message";
-import { streamdownPlugins } from "@/core/streamdown";
+import {
+  preprocessStreamdownMarkdown,
+  streamdownPlugins,
+} from "@/core/streamdown";
 import { cn } from "@/lib/utils";
 
 import { CitationLink } from "../citations/citation-link";
@@ -19,7 +22,7 @@ function isExternalUrl(href: string | undefined): boolean {
 export type MarkdownContentProps = {
   content: string;
   isLoading: boolean;
-  rehypePlugins?: MessageResponseProps["rehypePlugins"];
+  rehypePlugins: MessageResponseProps["rehypePlugins"];
   className?: string;
   remarkPlugins?: MessageResponseProps["remarkPlugins"];
   components?: MessageResponseProps["components"];
@@ -28,11 +31,15 @@ export type MarkdownContentProps = {
 /** Renders markdown content. */
 export function MarkdownContent({
   content,
-  rehypePlugins = streamdownPlugins.rehypePlugins,
+  rehypePlugins,
   className,
   remarkPlugins = streamdownPlugins.remarkPlugins,
   components: componentsFromProps,
 }: MarkdownContentProps) {
+  const normalizedContent = useMemo(
+    () => preprocessStreamdownMarkdown(content),
+    [content],
+  );
   const components = useMemo(() => {
     return {
       a: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => {
@@ -49,7 +56,7 @@ export function MarkdownContent({
           <a
             {...rest}
             className={cn(
-              "text-primary underline underline-offset-4 hover:text-brand transition-colors",
+              "text-primary decoration-primary/30 hover:decoration-primary/60 underline underline-offset-2 transition-colors",
               className,
             )}
             target={target ?? (external ? "_blank" : undefined)}
@@ -70,7 +77,7 @@ export function MarkdownContent({
       rehypePlugins={rehypePlugins}
       components={components}
     >
-      {content}
+      {normalizedContent}
     </MessageResponse>
   );
 }

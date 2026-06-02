@@ -1,10 +1,10 @@
 """Tests for TodoMiddleware context-loss detection."""
 
 import asyncio
-from typing import Annotated, Any, NotRequired
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from langchain.agents import AgentState, create_agent
+from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import PrivateAttr
@@ -17,13 +17,7 @@ from deerflow.agents.middlewares.todo_middleware import (
     _reminder_in_messages,
     _todos_in_messages,
 )
-from deerflow.agents.thread_state import merge_todos
-
-
-class _TestThreadState(AgentState):
-    """Minimal state for TodoMiddleware tests — includes todos channel."""
-
-    todos: Annotated[NotRequired[list | None], merge_todos]
+from deerflow.agents.thread_state import ThreadState
 
 
 def _ai_with_write_todos():
@@ -517,6 +511,42 @@ class TestWrapModelCall:
 
 
 class TestTodoMiddlewareAgentGraphIntegration:
+    def test_reuses_thread_state_todos_schema_in_real_agent_graph(self):
+        mw = TodoMiddleware()
+        model = _CapturingFakeMessagesListChatModel(
+            responses=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "write_todos",
+                            "id": "todos-1",
+                            "args": {
+                                "todos": [
+                                    {"content": "Step 1", "status": "pending"},
+                                ]
+                            },
+                        }
+                    ],
+                ),
+                AIMessage(content="final"),
+            ],
+        )
+
+        graph = create_agent(
+            model=model,
+            tools=[],
+            middleware=[mw],
+            state_schema=ThreadState,
+        )
+
+        result = graph.invoke(
+            {"messages": [("user", "create a todo")]},
+            context={"thread_id": "schema-thread", "run_id": "schema-run"},
+        )
+
+        assert result["todos"] == [{"content": "Step 1", "status": "pending"}]
+
     def test_completion_reminder_is_transient_in_real_agent_graph(self):
         mw = TodoMiddleware()
         model = _CapturingFakeMessagesListChatModel(
@@ -541,7 +571,7 @@ class TestTodoMiddlewareAgentGraphIntegration:
                 AIMessage(content="premature final 3"),
             ],
         )
-        graph = create_agent(model=model, tools=[], middleware=[mw], state_schema=_TestThreadState)
+        graph = create_agent(model=model, tools=[], middleware=[mw])
 
         result = graph.invoke(
             {"messages": [("user", "finish all todos")]},

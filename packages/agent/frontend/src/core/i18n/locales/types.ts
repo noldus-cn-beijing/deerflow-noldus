@@ -18,6 +18,7 @@ export interface Translations {
     close: string;
     more: string;
     search: string;
+    loadMore: string;
     download: string;
     thinking: string;
     artifacts: string;
@@ -38,6 +39,11 @@ export interface Translations {
     exportAsMarkdown: string;
     exportAsJSON: string;
     exportSuccess: string;
+  };
+
+  home: {
+    docs: string;
+    blog: string;
   };
 
   // Welcome
@@ -62,10 +68,14 @@ export interface Translations {
     createSkillPrompt: string;
     addAttachments: string;
     mode: string;
-    autoMode: string;
-    autoModeDescription: string;
-    flywheelMode: string;
-    flywheelModeDescription: string;
+    flashMode: string;
+    flashModeDescription: string;
+    reasoningMode: string;
+    reasoningModeDescription: string;
+    proMode: string;
+    proModeDescription: string;
+    ultraMode: string;
+    ultraModeDescription: string;
     reasoningEffort: string;
     reasoningEffortMinimal: string;
     reasoningEffortMinimalDescription: string;
@@ -107,7 +117,6 @@ export interface Translations {
     chats: string;
     demoChats: string;
     agents: string;
-    feedback: string;
   };
 
   // Agents
@@ -132,6 +141,8 @@ export interface Translations {
     nameStepAlreadyExistsError: string;
     nameStepNetworkError: string;
     nameStepCheckError: string;
+    nameStepCheckErrorWithDetail: string;
+    nameStepApiDisabledError: string;
     nameStepBootstrapMessage: string;
     save: string;
     saving: string;
@@ -160,6 +171,7 @@ export interface Translations {
     reportIssue: string;
     contactUs: string;
     about: string;
+    logout: string;
   };
 
   // Conversation
@@ -201,14 +213,6 @@ export interface Translations {
     clickToViewContent: string;
     writeTodos: string;
     skillInstallTooltip: string;
-    stageBroadcast: {
-      dispatchSubagent: (subagentType: string) => string;
-      parseHeaders: string;
-      resolveCatalog: string;
-      askClarification: string;
-      runScript: (scriptName: string) => string;
-      genericBash: string;
-    };
   };
 
   // Uploads
@@ -224,23 +228,39 @@ export interface Translations {
     in_progress: string;
     completed: string;
     failed: string;
-    taskDescription: string;
-    taskResult: string;
-    expertWorking: string;
-  };
-
-  // Clarification
-  clarification: {
-    chooseOption: string;
-    orTypeCustom: string;
   };
 
   // Token Usage
   tokenUsage: {
     title: string;
+    label: string;
     input: string;
     output: string;
     total: string;
+    view: string;
+    unavailable: string;
+    unavailableShort: string;
+    note: string;
+    presets: {
+      off: string;
+      summary: string;
+      perTurn: string;
+      debug: string;
+    };
+    presetDescriptions: {
+      off: string;
+      summary: string;
+      perTurn: string;
+      debug: string;
+    };
+    finalAnswer: string;
+    stepTotal: string;
+    sharedAttribution: string;
+    subagent: (description: string) => string;
+    startTodo: (content: string) => string;
+    completeTodo: (content: string) => string;
+    updateTodo: (content: string) => string;
+    removeTodo: (content: string) => string;
   };
 
   // Shortcuts
@@ -352,23 +372,6 @@ export interface Translations {
       languageTitle: string;
       languageDescription: string;
     };
-    account: {
-      profileTitle: string;
-      email: string;
-      role: string;
-      changePasswordTitle: string;
-      changePasswordDescription: string;
-      currentPassword: string;
-      newPassword: string;
-      confirmNewPassword: string;
-      passwordMismatch: string;
-      passwordTooShort: string;
-      passwordChangedSuccess: string;
-      networkError: string;
-      updating: string;
-      updatePassword: string;
-      signOut: string;
-    };
     tools: {
       title: string;
       description: string;
@@ -391,6 +394,23 @@ export interface Translations {
       testBody: string;
       notSupported: string;
       disableNotification: string;
+    };
+    account: {
+      profileTitle: string;
+      email: string;
+      role: string;
+      changePasswordTitle: string;
+      changePasswordDescription: string;
+      currentPassword: string;
+      newPassword: string;
+      confirmNewPassword: string;
+      passwordMismatch: string;
+      passwordTooShort: string;
+      passwordChangedSuccess: string;
+      networkError: string;
+      updating: string;
+      updatePassword: string;
+      signOut: string;
     };
     acknowledge: {
       emptyTitle: string;
