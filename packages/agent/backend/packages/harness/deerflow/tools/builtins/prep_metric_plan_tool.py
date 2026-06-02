@@ -18,6 +18,7 @@ from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
 from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
+from ethoinsight.catalog.loader import load_common_catalog
 from ethoinsight.parse._core import detect_ethovision, parse_header
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ def prep_metric_plan_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
     uploaded_files: list[str],
     paradigm: str,
+    groups: dict[str, str] | None = None,
 ) -> dict:
     """一步生成 plan_metrics.json，无需 bash。
 
@@ -81,6 +83,7 @@ def prep_metric_plan_tool(
                 其他 paradigm_key (如 'shoaling'/'tail_suspension'/'morris_water_maze' 等)
                 会在 catalog.resolve 阶段报错; lead 应在 identify_ev19_template 看到
                 status=unsupported 时就反问用户, 不要走到这一步
+      groups: 可选的 subject -> group_name 映射。当用户已经在 ask_clarification 中说清分组(如"第一个是实验组，第二个是对照组")，lead 必须把它翻译成 dict 传进来。dict 的 key 必须是 uploaded_files 列表中的某个文件路径(普通多文件直接用文件路径；FST 多 sheet 用 sheet-suffixed virtual path 如 "/mnt/.../foo.xlsx::轨迹-Arena 1-Subject 1")，value 是 group_name 字符串(如 "treatment" / "control" / "vehicle")。详见 ethoinsight-grouping skill 的 references/lead-translates-answer.md。传入后会写入 /mnt/user-data/workspace/groups.json 并在 plan_metrics.json 的 inputs.groups_file 字段记录路径，下游 code-executor 据此进行分组聚合统计，避免 code-executor 看不到分组幻觉脚本去探测 drug 列。None = 无分组信息(单组分析，或 lead 还没收集到分组)。
 
     Returns:
       status="ok" 时:
@@ -184,10 +187,57 @@ def prep_metric_plan_tool(
                     failed_file=uploaded_file,
                 )
 
+    # Step 4.5: read parameter_overrides from experiment-context.json (Sprint 4.5)
+    from deerflow.agents.middlewares.experiment_context import read_context
+
+    ctx = read_context(real_workspace_path)
+    parameter_overrides = ctx.get("parameter_overrides", {}) if ctx else {}
+    analysis_config_id = ctx.get("analysis_config_id", "PENDING") if ctx else "PENDING"
+
     # Step 5: resolve catalog → PlanMetrics
     # raw_files 走虚拟路径,避免宿主机路径泄漏到 plan_metrics.json 后被 subagent
     # 照抄进 bash --input。IO 部分(detect_ethovision / parse_header)已在 Step 2-4
     # 完成,resolve_metrics 内部按 raw_files 展开 N 个 PlanMetric(每个 subject 一个)。
+
+    # Step 4.5 (Bug #3 fix 2026-05-28): 若 lead 传入 groups 映射,写入 groups.json
+    # 并透传给 resolve_metrics;否则 code-executor 看不到分组会幻觉脚本探测 drug 列。
+    groups_file_virtual: str | None = None
+    groups_file_real: str | None = None
+    if groups:
+        if not isinstance(groups, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in groups.items()
+        ):
+            return _error_result(
+                "schema_violation",
+                f"groups must be dict[str, str] (subject -> group_name), got {type(groups).__name__}",
+            )
+        # 校验所有 key 都对应 uploaded_files 中的某个文件
+        unknown_keys = [k for k in groups if k not in uploaded_files]
+        if unknown_keys:
+            return _error_result(
+                "schema_violation",
+                f"groups keys 必须出现在 uploaded_files 中: 未知键 {unknown_keys}; "
+                f"可用键 {uploaded_files}",
+            )
+        groups_path = Path(real_workspace_path) / "groups.json"
+        try:
+            groups_path.write_text(
+                json.dumps(groups, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as e:
+            return _error_result(
+                "parse_failed",
+                f"Failed to write groups.json: {e}",
+            )
+        groups_file_real = str(groups_path)
+        groups_file_virtual = "/mnt/user-data/workspace/groups.json"
+        logger.info(
+            "prep_metric_plan: wrote groups.json with %d entries, groups=%s",
+            len(groups),
+            sorted(set(groups.values())),
+        )
+
     try:
         plan = resolve_metrics(
             paradigm=paradigm,
@@ -195,6 +245,9 @@ def prep_metric_plan_tool(
             raw_files=list(uploaded_files),
             workspace_dir=real_workspace_path,
             virtual_workspace_dir="/mnt/user-data/workspace",
+            groups_file=groups_file_virtual,
+            overrides=parameter_overrides,  # Sprint 4.5: 把用户确认的参数覆盖真正传入计算（非仅展示）
+            common_catalog=load_common_catalog(),  # Sprint 4.5: shared_parameters 来源；缺它则 velocity_*/pendulum_* 等共享参数进不了 parameters_in_use，override 无可覆盖
         )
     except ResolveError as e:
         return _error_result(
@@ -211,6 +264,10 @@ def prep_metric_plan_tool(
 
     # Step 6: serialize plan to workspace/plan_metrics.json
     plan_dict = plan_metrics_to_dict(plan)
+    # Sprint 4.5: embed analysis_config_id in plan for lineage tracing
+    plan_dict["analysis_config_id"] = analysis_config_id
+    if parameter_overrides:
+        plan_dict["parameter_overrides"] = parameter_overrides
     plan_path = Path(real_workspace_path) / "plan_metrics.json"
     try:
         plan_path.write_text(json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -219,6 +276,17 @@ def prep_metric_plan_tool(
             "parse_failed",
             f"Failed to write plan_metrics.json: {e}",
         )
+
+    # Step 6.5: lineage — write overrides file when overrides exist (Sprint 4.5)
+    if parameter_overrides:
+        overrides_path = Path(real_workspace_path) / f"overrides_{analysis_config_id}.json"
+        try:
+            overrides_path.write_text(
+                json.dumps({"analysis_config_id": analysis_config_id, "parameter_overrides": parameter_overrides}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.warning("Failed to write overrides file %s (non-critical)", overrides_path)
 
     # Step 7: build summary (paradigm/metric_count/subject_count/metric_ids,不含完整 plan)
     metric_dicts = plan_dict.get("metrics", [])
@@ -237,6 +305,7 @@ def prep_metric_plan_tool(
     return {
         "status": "ok",
         "plan_path": "/mnt/user-data/workspace/plan_metrics.json",
+        "analysis_config_id": analysis_config_id,
         "plan_summary": {
             "paradigm": paradigm,
             "metric_count": len(metric_ids),

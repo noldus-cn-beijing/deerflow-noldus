@@ -192,12 +192,14 @@ class WeComChannel(Channel):
                 payload = (item or {}).get(item_type) or {}
                 url = payload.get("url")
                 aeskey = payload.get("aeskey")
+                filename = payload.get("filename")
                 if isinstance(url, str) and url:
                     files.append(
                         {
                             "type": item_type,
                             "url": url,
                             "aeskey": (aeskey if isinstance(aeskey, str) and aeskey else None),
+                            "filename": (filename if isinstance(filename, str) and filename else None),
                         }
                     )
         text = "\n\n".join(parts).strip()
@@ -212,6 +214,7 @@ class WeComChannel(Channel):
         image = body.get("image") or {}
         url = image.get("url")
         aeskey = image.get("aeskey")
+        filename = image.get("filename")
         if not isinstance(url, str) or not url:
             return
         await self._publish_ws_inbound(
@@ -222,6 +225,7 @@ class WeComChannel(Channel):
                     "type": "image",
                     "url": url,
                     "aeskey": aeskey if isinstance(aeskey, str) and aeskey else None,
+                    "filename": filename if isinstance(filename, str) and filename else None,
                 }
             ],
         )
@@ -231,6 +235,7 @@ class WeComChannel(Channel):
         file_obj = body.get("file") or {}
         url = file_obj.get("url")
         aeskey = file_obj.get("aeskey")
+        filename = file_obj.get("filename")
         if not isinstance(url, str) or not url:
             return
         await self._publish_ws_inbound(
@@ -241,6 +246,7 @@ class WeComChannel(Channel):
                     "type": "file",
                     "url": url,
                     "aeskey": aeskey if isinstance(aeskey, str) and aeskey else None,
+                    "filename": filename if isinstance(filename, str) and filename else None,
                 }
             ],
         )

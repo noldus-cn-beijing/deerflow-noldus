@@ -42,3 +42,10 @@
 
 - 与 TST（悬尾实验）的区别：FST 将动物置于水中，TST 将动物悬吊于空中；两者均测量不动行为评估绝望表型，但物理刺激方式不同，结果可相互验证但不可混用
 - 与焦虑类范式（EPM/OFT/Zero Maze/LDB）的区别：FST 评估抑郁样行为（绝望），焦虑类范式评估焦虑样行为（回避）
+
+## 🟡 pendulum 参数判据
+
+FST 使用钟摆算法检测不动行为（动物停止挣扎后身体规律摆动需与真实挣扎区分）。参数判据详见配套文档：
+`/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/forced_swim-pendulum-params.md`
+
+data-analyst 在 step 2.8 参数审计时，对 FST pendulum 参数按该文档判据审计。

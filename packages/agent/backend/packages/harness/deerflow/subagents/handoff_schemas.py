@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
 
 # Virtual path contract: all subagent handoff JSON files must reference user-data
 # files via virtual paths (e.g. /mnt/user-data/uploads/x.txt), never host absolute
@@ -24,6 +25,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # path via Path.resolve() fails fast at handoff parse time rather than silently
 # propagating through the pipeline (see project_2026-05-26 path-pollution-defense).
 _VIRTUAL_USER_DATA_PREFIX = "/mnt/user-data/"
+
+# Allowed DOT-prefixes for DataQualityWarning.code.
+# Imported by downstream normalization logic — single source of truth.
+WARNING_CODE_PREFIXES = frozenset({"SAMPLE", "MOTOR", "SIGNAL", "METHOD"})
 
 
 def _validate_virtual_user_data_paths(paths: list[str]) -> list[str]:
@@ -64,16 +69,169 @@ class MetricStat(BaseModel):
         default=None,
         description="Present when applicable=False; explains why.",
     )
+    parameters_used: dict[str, float | int | str | None] = Field(
+        default_factory=dict,
+        description=(
+            "Actual parameters used to compute this metric, e.g. "
+            "{'velocity_threshold': 30.0, 'velocity_min_duration': 25}. "
+            "Populated by Sprint 2b execution pipeline. "
+            "Sprint 0 only defines the field; defaults to empty dict. "
+            "None is allowed for individual values when the param is not "
+            "applicable to this metric (e.g. pendulum params on EPM)."
+        ),
+    )
 
 
 class DataQualityWarning(BaseModel):
-    """Single quality warning attached to a handoff."""
+    """Single quality warning attached to a handoff.
+
+    Normalisation (underscores→DOT, metric=None→"all", evidence=str→wrapped)
+    is applied transparently by the model_validator(mode="before") above,
+    before the field_validator("code") runs strict namespace checks.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     severity: Literal["critical", "warning", "info"]
     metric: str = Field(
         description="Metric name, or 'all' / 'pipeline' when warning applies broadly.",
     )
     message: str
+    code: str = Field(
+        description=(
+            "Warning code in dotted form, e.g. 'SAMPLE.TOO_SMALL', 'MOTOR.LOW_VELOCITY'. "
+            "First segment must be one of: SAMPLE / MOTOR / SIGNAL / METHOD. "
+            "See Sprint 1 spec for full code taxonomy."
+        ),
+    )
+    evidence: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Structured numeric evidence, e.g. "
+            "{'velocity_median_mm_s': 5.2, 'threshold_mm_s': 30.0}. "
+            "Frontend / data-analyst should not parse `message` for numbers."
+        ),
+    )
+    blocks_downstream: bool = Field(
+        default=False,
+        description=(
+            "True = downstream subagents (data-analyst, chart-maker, report-writer) "
+            "should not be dispatched without user acknowledgement. "
+            "Used by Sprint 5 DataQualityGuardrailProvider (manual mode) "
+            "and Sprint 1 frontend (red vs orange rendering)."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_typeros(cls, values: dict[str, Any] | Any) -> Any:
+        """Conservatively normalise common LLM typos before strict validation.
+
+        Only touches fields that are unambiguous — never guesses semantics.
+        Triggered by key presence, so missing keys are left untouched.
+        Runs before field_validator("code") so underscore→DOT happens first.
+        """
+        if not isinstance(values, dict):
+            return values
+
+        # 1. code: underscore → DOT when first segment is a known prefix.
+        #    e.g. "SAMPLE_TOO_SMALL" → "SAMPLE.TOO_SMALL"
+        #    Pure semantic errors like "insufficient_sample" are left as-is
+        #    (no known prefix match → no transformation).
+        code_val = values.get("code")
+        if isinstance(code_val, str) and "_" in code_val:
+            first_segment = code_val.split("_")[0].upper()
+            if first_segment in WARNING_CODE_PREFIXES:
+                values["code"] = code_val.replace("_", ".", 1)
+
+        # 2. metric: None / missing → "all"
+        metric_val = values.get("metric")
+        if metric_val is None:
+            values["metric"] = "all"
+
+        # 3. evidence: str → {"note": <original>}; non-dict non-str → {}
+        evidence_val = values.get("evidence")
+        if isinstance(evidence_val, str):
+            values["evidence"] = {"note": evidence_val}
+        elif evidence_val is not None and not isinstance(evidence_val, dict):
+            values["evidence"] = {}
+
+        return values
+
+    @field_validator("code")
+    @classmethod
+    def _validate_code_namespace(cls, v: str) -> str:
+        allowed = {"SAMPLE", "MOTOR", "SIGNAL", "METHOD"}
+        head = v.split(".", 1)[0] if "." in v else ""
+        if head not in allowed:
+            raise ValueError(
+                f"warning code must use literal DOT '.' as separator, e.g. "
+                f"'SAMPLE.TOO_SMALL', 'MOTOR.LOW_VELOCITY', 'SIGNAL.TRACKING_LOST', "
+                f"'METHOD.SHAPIRO_INAPPLICABLE'. NOT underscore-separated ('SAMPLE_X' is INVALID). "
+                f"First segment must be one of {sorted(allowed)} followed by '.'. "
+                f"Got {v!r}."
+            )
+        return v
+
+
+class ParameterAuditFinding(BaseModel):
+    """Single parameter-vs-data-distribution mismatch finding from data-analyst.
+
+    Sprint 3: data-analyst compares MetricStat.parameters_used against
+    per_subject data distribution to detect mismatches (e.g. velocity_threshold=30
+    but data median=5). This is distinct from DataQualityWarning (which flags
+    data-level problems); ParameterAuditFinding flags parameter-vs-data mismatches.
+    """
+
+    parameter: str = Field(
+        description=(
+            "Parameter name as it appears in MetricStat.parameters_used, "
+            "e.g. 'velocity_threshold', 'total_entry_threshold'."
+        ),
+    )
+    metric: str = Field(
+        description="Affected metric slug, e.g. 'immobility_time', 'total_entry_count'."
+    )
+    severity: Literal["critical", "warning", "info"]
+    used_value: float | int | str = Field(
+        description="Parameter value actually used in the run (from MetricStat.parameters_used)."
+    )
+    observed_distribution: dict[str, float | int] = Field(
+        description=(
+            "Snapshot of the data distribution that triggered the finding, e.g. "
+            "{'median': 5.0, 'p90': 12.0, 'max': 25.0, 'n_subjects': 12}. "
+            "Used by the report writer and the hypothesis panel (Sprint 7)."
+        ),
+    )
+    mismatch_kind: Literal[
+        "threshold_too_high",  # 阈值远高于数据上限/中位数
+        "threshold_too_low",  # 阈值远低于数据下限/中位数
+        "window_too_wide",  # 窗口超出 trial 时长
+        "window_too_narrow",  # 窗口过窄无法捕捉事件
+        "category_mismatch",  # 离散参数取值与 paradigm 不符
+    ]
+    suggestion: str = Field(
+        description=(
+            "Plain-Chinese guidance for the researcher. e.g. "
+            "'当前阈值 30 mm/s 高于本批中位数 5 mm/s 的 6 倍，建议改至 ≤10 mm/s 后重跑'. "
+            "MUST NOT include exact override values — that's Sprint 4 paradigm md's job."
+        ),
+    )
+    blocks_downstream: bool = Field(
+        default=False,
+        description=(
+            "When True, chart-maker / report-writer should annotate the affected "
+            "metric as 'parameter-suspect'. Sprint 5 GuardrailProvider may also "
+            "block downstream subagent dispatch in manual mode."
+        ),
+    )
+
+    @field_validator("parameter")
+    @classmethod
+    def _validate_parameter(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("parameter must be a non-empty identifier")
+        return v
 
 
 class GateSignals(BaseModel):
@@ -97,6 +255,28 @@ class GateSignals(BaseModel):
     )
     statistical_validity: Literal["ok", "warning", "failed", "skipped"] = "ok"
     errors_count: int = 0
+    quality_warnings_critical_count: int = Field(
+        default=0,
+        description=(
+            "data-analyst 看到的 critical + blocks_downstream=true 警告数, "
+            "lead 据此判断是否需要 ask_clarification (Sprint 5 in manual mode)。"
+        ),
+    )
+    parameter_audit_findings_count: int = Field(
+        default=0,
+        description=(
+            "Sprint 3 新增。data-analyst 看到的 parameter_audit_findings 总数 "
+            "(critical+warning+info 合计)。lead 据此决定是否在播报模板中提及。"
+        ),
+    )
+    parameter_audit_critical_count: int = Field(
+        default=0,
+        description=(
+            "Sprint 3 新增。parameter_audit_findings 中 severity=='critical' 且 "
+            "blocks_downstream=True 的条目数。Sprint 5 manual 模式下 guardrail "
+            "可据此拦截下游 subagent。"
+        ),
+    )
 
 
 class CodeExecutorInputs(BaseModel):
@@ -175,6 +355,67 @@ class CodeExecutorHandoff(BaseModel):
             "but recommended to include for audit/replay."
         ),
     )
+    paradigm: str = Field(
+        description=(
+            "Experiment paradigm (e.g. 'fst', 'epm'). Redundant with "
+            "experiment-context.json so handoff is self-contained for replay."
+        ),
+    )
+    ev19_template: str | None = Field(
+        default=None,
+        description="EV19 template ID, or None for paradigms not mapped to EV19.",
+    )
+    analysis_config_id: str = Field(
+        description=(
+            "16-char hex hash of (catalog_default + parameter_overrides). "
+            "Populated by code-executor from experiment-context.json."
+        ),
+    )
+
+
+class FailedChart(BaseModel):
+    """One failed chart entry."""
+
+    chart_id: str = Field(description="Chart ID from catalog, e.g. 'trajectory_heatmap'.")
+    reason: str = Field(description="Free-text failure reason.")
+
+
+class ChartMakerHandoff(BaseModel):
+    """Handoff JSON produced by chart-maker subagent.
+
+    Fields align with the schema currently declared in chart-maker subagent prompt
+    (subagents/builtins/chart_maker.py <handoff_schema> section).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    status: Literal["completed", "partial", "failed"] = "completed"
+    paradigm: str = Field(description="Experiment paradigm.")
+    chart_files: list[str] = Field(
+        default_factory=list,
+        description="Virtual paths under /mnt/user-data/outputs/.",
+    )
+    failed_charts: list[FailedChart] = Field(default_factory=list)
+    summary: str = Field(description="One-liner describing generated charts.")
+    gate_signals: GateSignals | None = None
+    analysis_config_id: str = Field(
+        default="PENDING",
+        description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
+
+    @field_validator("chart_files")
+    @classmethod
+    def _validate_chart_paths(cls, v: list[str]) -> list[str]:
+        if not v:
+            return v
+        prefix = "/mnt/user-data/outputs/"
+        offenders = [p for p in v if not p.startswith(prefix)]
+        if offenders:
+            raise ValueError(
+                f"chart_files must be under {prefix!r}, "
+                f"got: {offenders}. Outputs must be in outputs/, not workspace/."
+            )
+        return v
 
 
 class OutlierFinding(BaseModel):
@@ -242,6 +483,26 @@ class DataAnalystHandoff(BaseModel):
     )
     errors: list[str] = Field(default_factory=list)
     gate_signals: GateSignals | None = Field(default=None)
+    analysis_config_id: str = Field(
+        default="PENDING",
+        description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
+    quality_warnings: list[DataQualityWarning] = Field(
+        default_factory=list,
+        description=(
+            "从 handoff_code_executor.json 透传的 data_quality_warnings, "
+            "保留完整结构供下游(report-writer / lead UI / 假设面板)按 code 分组渲染。"
+        ),
+    )
+    parameter_audit_findings: list[ParameterAuditFinding] = Field(
+        default_factory=list,
+        description=(
+            "Sprint 3 新增。data-analyst 比对 MetricStat.parameters_used 与 "
+            "handoff_code_executor 中的 per_subject 数据分布后产出的不匹配清单。"
+            "下游 report-writer 会读此字段写入'数据质量与局限'段；前端 "
+            "QualityWarningBanner 不读这个字段（它只显示 quality_warnings）。"
+        ),
+    )
 
 
 class ReportWriterHandoff(BaseModel):
@@ -257,15 +518,23 @@ class ReportWriterHandoff(BaseModel):
     )
     errors: list[str] = Field(default_factory=list)
     gate_signals: GateSignals | None = Field(default=None)
+    analysis_config_id: str = Field(
+        default="PENDING",
+        description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
 
 
 __all__ = [
+    "ChartMakerHandoff",
     "CodeExecutorHandoff",
     "CodeExecutorInputs",
     "DataAnalystHandoff",
     "DataQualityWarning",
+    "FailedChart",
     "GateSignals",
     "MetricStat",
     "OutlierFinding",
+    "ParameterAuditFinding",
     "ReportWriterHandoff",
+    "WARNING_CODE_PREFIXES",
 ]

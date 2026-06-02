@@ -52,12 +52,12 @@ class TestComputeImmobilityTime:
         assert result.returncode != 0
         assert "required" in result.stderr.lower() or "input" in result.stderr.lower()
 
-    def test_file_without_activity_column_returns_value_none(
+    def test_file_without_activity_column_uses_velocity_fallback(
         self, tmp_path: Path, make_tst_df
     ):
         from tests.scripts.conftest import _df_to_ethovision_file
 
-        # Build a df without Activity_State or any mobility/activity column
+        # Build a df without Activity_State — velocity fallback should work
         df = make_tst_df()
         df = df.drop(columns=["Activity_State"])
         path = tmp_path / "no_activity.txt"
@@ -72,7 +72,8 @@ class TestComputeImmobilityTime:
         assert result.returncode == 0
         payload = json.loads(out_path.read_text())
         assert payload["metric"] == "immobility_time"
-        assert payload["value"] is None
+        assert isinstance(payload["value"], float)
+        assert payload["value"] >= 0.0
 
 
 class TestComputeImmobilityLatency:

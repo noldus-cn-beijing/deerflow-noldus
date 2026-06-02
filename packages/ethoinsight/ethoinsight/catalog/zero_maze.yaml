@@ -49,12 +49,22 @@ default_metrics:
     direction_for_anxiety: higher_is_anxious
     statistical_default: groupwise_compare
 
-optional_metrics: []
+optional_metrics:
+  - id: head_direction_stats
+    script: ethoinsight.scripts.zero_maze.compute_head_direction_stats
+    requires_columns: [Direction]
+    output_unit: radians
+    display_name_zh: 头部朝向统计
+    unit_zh: 弧度
+    one_liner: 头部朝向的 circular mean/stdev（EV19 GetViewDirection），开放区朝向分析
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
 
 charts:
   - id: box_open_zone
     script: ethoinsight.scripts.zero_maze.plot_box_open_zone
     when: n_per_group >= 3
+    confidence: must_have
     display_name_zh: "开放区时间箱线图"
     output_mode: aggregate
     needs_groups: true
@@ -64,6 +74,7 @@ charts:
   - id: bar_open_zone
     script: ethoinsight.scripts.zero_maze.plot_bar_open_zone
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "开放区指标柱状图（均值±SEM）"
     output_mode: aggregate
     needs_groups: true
@@ -73,6 +84,7 @@ charts:
   - id: trajectory
     script: ethoinsight.scripts._common.plot_trajectory
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "轨迹图"
     requires_columns:
       - x_center
@@ -81,13 +93,30 @@ charts:
   - id: heatmap
     script: ethoinsight.scripts._common.plot_heatmap
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "热区图"
     requires_columns:
       - x_center
       - y_center
+
+  - id: rose
+    script: ethoinsight.scripts.zero_maze.plot_rose
+    when: total_subjects >= 1
+    confidence: optional
+    display_name_zh: "头部朝向玫瑰图"
+    requires_columns:
+      - Direction
 
 statistics:
   default:
     id: groupwise_compare
     script: ethoinsight.scripts.zero_maze.run_groupwise_stats
     when: n_per_group >= 2 and n_groups >= 2
+
+paradigm_parameters:
+  zm_low_distance_threshold:
+    default: 10.0
+    unit: cm
+    description: "Zero maze: subject 总移动距离 < 此值时,触发 MOTOR.LOW_DISTANCE 警告 (运动抑制嫌疑)。"
+    tunable_by_user: true
+    valid_range: [0.1, 200.0]

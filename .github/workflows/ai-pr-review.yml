@@ -1,0 +1,57 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: AI Code Review
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          PR=${{ github.event.pull_request.number }}
+
+          # 获取 PR diff（截断防止超限）
+          DIFF=$(gh pr diff "$PR" --repo "${{ github.repository }}" 2>/dev/null | head -c 12000)
+
+          if [ -z "$DIFF" ]; then
+            echo "No diff to review"
+            exit 0
+          fi
+
+          REVIEW=$(curl -s --max-time 120 "${{ secrets.NEWAPI_BASE_URL }}/v1/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.NEWAPI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg diff "$DIFF" --arg title "$PR_TITLE" --arg pr_body "$PR_BODY" '{
+              model: "deepseek-v4-pro",
+              temperature: 0.3,
+              messages: [{
+                role: "system",
+                content: "你是 EthoInsight 项目的代码审查助手。EthoInsight 是面向行为学研究员的 AI 分析助手，基于 DeerFlow (LangGraph) 框架构建，包含 Python 后端 + Next.js 前端。\n\n审查 PR diff，重点关注：\n1. **安全漏洞**：命令注入、路径遍历、密钥泄露\n2. **逻辑错误**：边界条件、空值处理、类型错误\n3. **架构风险**：是否修改了受保护文件（prompt.py / __init__.py / tools.py 等含 Noldus 定制的文件），如果改了需特别提醒\n4. **性能问题**：N+1 查询、阻塞 IO、内存泄漏\n5. **测试覆盖**：新功能是否有对应测试（项目强制 TDD）\n\n用中文输出，控制在 500 字以内。如果没有重大问题，输出\"### ✅ LGTM\"并简短说明。\n\n输出格式：\n### 🔴 严重问题\n（如有，列出）\n### 🟡 建议优化\n（如有，列出）\n### 💡 其他\n（如有）"
+              }, {
+                "role": "user",
+                "content": "PR 标题：\($title)\n\nPR 描述：\($pr_body)\n\nDiff：\n\($diff)"
+              }]
+            }')"
+
+          REVIEW_TEXT=$(echo "$REVIEW" | jq -r '.choices[0].message.content // "AI review unavailable (API error)"')
+
+          # 写到文件避免 heredoc 解析问题
+          printf '%s\n' "## 🤖 AI Code Review" "" "$REVIEW_TEXT" "" "---" "> 此评论由 AI 自动生成，仅供参考。请结合人工 review 做最终判断。" > /tmp/review-comment.md
+
+          gh pr comment "$PR" --body-file /tmp/review-comment.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

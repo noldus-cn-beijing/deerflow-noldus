@@ -953,6 +953,11 @@ skill_evolution:
 #   type: postgres
 #   connection_string: postgresql://user:password@localhost:5432/deerflow
 
+# Sprint 0 新增: handoff schema 校验级别
+# off = 不校验; warn = 记录违规但继续(默认); fail_closed = 抛出 HandoffSchemaError
+# 紧急降级: touch /tmp/disable_strict_handoff → 强制 warn
+# handoff_strict_mode: warn
+
 # ============================================================================
 # Database
 # ============================================================================

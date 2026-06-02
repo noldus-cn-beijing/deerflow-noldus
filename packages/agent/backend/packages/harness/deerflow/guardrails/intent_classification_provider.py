@@ -28,10 +28,7 @@ logger = logging.getLogger(__name__)
 
 _lead_messages: ContextVar[list | None] = ContextVar("_lead_messages", default=None)
 
-_VALID_INTENTS = frozenset({
-    "E2E_FULL", "E2E_FULL_ASKVIZ", "E2E_MIN", "CHART", "REPORT",
-    "QA_FACT", "QA_KNOWLEDGE", "CLARIFY",
-})
+from deerflow.guardrails.path_registry import VALID_INTENTS as _VALID_INTENTS
 
 _INTENT_LINE_RE = re.compile(r"\[intent\]\s+([A-Z0-9_]+)", re.MULTILINE)
 

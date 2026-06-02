@@ -137,9 +137,24 @@ else
 fi
 
 # Extra flags for uvicorn (Gateway)
-if $DEV_MODE && ! $DAEMON_MODE; then
-    GATEWAY_EXTRA_FLAGS="--reload --reload-dir=app --reload-dir=packages/harness --reload-include=\*.yaml --reload-include=.env --reload-exclude=\*.pyc --reload-exclude=__pycache__ --reload-exclude=sandbox/\*\* --reload-exclude=.deer-flow/\*\*"
+# Gateway hot-reload is OPT-IN via GATEWAY_RELOAD=1.
+# Rationale (2026-05-29): uvicorn --reload uses `watchfiles`, whose Rust watcher
+# hangs at the watch() entrypoint on some hosts (reproduced on Precision 7960 /
+# kernel 6.17, watchfiles 1.1.1: a bare watchfiles.watch('app') blocks forever
+# before entering its loop). With --reload active, uvicorn's reloader parent
+# blocks inside watch() before spawning the app worker → port never listens →
+# gateway.log stays 0 bytes → serve.sh waits the full 180s and aborts. Default
+# Gateway to no reload so `make dev` starts reliably; opt back in with
+# GATEWAY_RELOAD=1 once watchfiles works in the target env. The dev loop is
+# covered by re-running `make dev`.
+GATEWAY_RELOAD="${GATEWAY_RELOAD:-0}"
+if $DEV_MODE && ! $DAEMON_MODE && [ "$GATEWAY_RELOAD" = "1" ]; then
+    echo "↻ Gateway hot-reload ENABLED (GATEWAY_RELOAD=1) — requires working watchfiles"
+    GATEWAY_EXTRA_FLAGS="--reload --reload-dir=app --reload-dir=packages/harness --reload-include=\*.py --reload-include=\*.yaml --reload-include=.env --reload-exclude=\*.pyc --reload-exclude=__pycache__ --reload-exclude=sandbox/\*\* --reload-exclude=.deer-flow/\*\* --reload-exclude=.venv/\*\* --reload-exclude=node_modules/\*\* --reload-exclude=tests/\*\* --reload-exclude=.git/\*\*"
 else
+    if $DEV_MODE && ! $DAEMON_MODE; then
+        echo "⏩ Gateway hot-reload OFF (watchfiles hangs on this host); set GATEWAY_RELOAD=1 to opt in. Re-run 'make dev' to pick up backend changes."
+    fi
     GATEWAY_EXTRA_FLAGS=""
 fi
 

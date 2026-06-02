@@ -12,6 +12,8 @@
 
 - `PorsoltCylinder-NoZones` — **推荐**。无预定义 zone，用于记录不动行为
 
+> **⚠️ 待同事裁决（2026-06-01 标记）**：本文件模板写 `PorsoltCylinder-NoZones`，但 `ev19_facts.py` 映射为 `NoTemplate`。真实数据（tstHelperDemoVideo）经 `parse_header` 解析为单观察区单对象、无 zone，结构上更接近 NoTemplate。两者各有依据，属于领域归类问题，待行为学同事确认 TST 在 EthoVision XT 里标准配 arena 的方式后统一。当前工程层先按 `NoTemplate` 跑通。
+
 ## 🟡 必须计算的指标
 
 - 累计不动时间
@@ -40,3 +42,7 @@
 
 - 与 FST（强迫游泳）的区别：TST 将动物悬吊于空中，FST 将动物置于水中；两者均测量不动行为评估绝望表型，但物理刺激方式不同
 - 与焦虑类范式的区别：TST 评估抑郁样行为（绝望），焦虑类范式评估焦虑样行为（回避）
+
+## Pendulum 参数判据
+
+TST 不动行为判定使用 pendulum 算法区分钟摆摆动与真实挣扎。完整参数表和算法流程见 [tail_suspension-pendulum-params.md](tail_suspension-pendulum-params.md)（来源：`docs/review-packages/2026-0521-feedbacks/tstYoyo/tst-pendulum-algorithm.md`，同事 tstYoyo 撰写）。

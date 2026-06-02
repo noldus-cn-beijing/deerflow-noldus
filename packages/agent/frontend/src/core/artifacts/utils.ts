@@ -22,6 +22,18 @@ export function extractArtifactsFromThread(thread: AgentThread) {
   return thread.values.artifacts ?? [];
 }
 
+/**
+ * Normalize an image src from report.md into a proper artifact API filepath.
+ *
+ * Handles three known src variants produced by the LLM pipeline:
+ *   1. Host absolute path: /home/.../threads/<tid>/user-data/outputs/X.png
+ *   2. Sandbox virtual path: /mnt/user-data/outputs/X.png
+ *   3. Relative path: outputs/X.png or plot_X.png
+ *
+ * External URLs (http(s)://) are returned as-is (null = caller should use src directly).
+ *
+ * Returns a filepath like "/outputs/X.png" suitable for urlOfArtifact(), or null.
+ */
 export function normalizeArtifactImageSrc(src: string): string | null {
   if (/^https?:\/\//i.test(src)) return null;
 
