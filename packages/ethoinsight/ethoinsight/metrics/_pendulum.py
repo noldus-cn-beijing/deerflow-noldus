@@ -160,3 +160,32 @@ def pendulum_immobility_series(
     """
     results = detect_pendulum(activity, dt, **pendulum_kwargs)
     return np.array([1 - r["state"] for r in results], dtype=int)
+
+
+def pendulum_periodicity_series(
+    activity: np.ndarray,
+    dt: float = 0.04,
+    **pendulum_kwargs,
+) -> np.ndarray:
+    """逐帧 periodicity 序列 [0,1]，与 activity 等长。
+
+    供分布统计量计算（signal_distribution）使用。
+    不修改 ``detect_pendulum`` 或 ``pendulum_immobility_series`` 的返回值——
+    这是新增纯函数，零现有调用方受影响。
+
+    Parameters
+    ----------
+    activity : np.ndarray
+        Activity 百分比值序列 (0–100)。NaN 表示缺失帧。
+    dt : float
+        采样间隔（秒）。
+    pendulum_kwargs
+        透传给 detect_pendulum（pendulum_smooth_window 等）。
+
+    Returns
+    -------
+    np.ndarray
+        逐帧 periodicity 浮点数组 [0, 1]，长度与 activity 相同。
+    """
+    results = detect_pendulum(activity, dt, **pendulum_kwargs)
+    return np.array([r["periodicity"] for r in results], dtype=float)
