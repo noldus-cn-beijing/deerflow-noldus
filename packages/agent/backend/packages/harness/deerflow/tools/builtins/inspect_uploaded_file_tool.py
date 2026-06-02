@@ -1,13 +1,17 @@
-"""inspect_uploaded_file — lead 探查上传文件结构(sheets/columns/EV19 元数据),无需 bash。
+"""inspect_uploaded_file — lead 探查上传文件结构(sheets/columns/EV19 元数据/data preview),无需 bash。
 
 lead 在调 prep_metric_plan 之前,需要知道:
 - xlsx 文件有多少 sheet (FST/EPM 多 arena 场景)
 - 每个 sheet 含哪些列
 - **EV19 metadata header 中的分组信息**(Treatment / Dose / Animal ID / Group)
+- **前几行数据**(data preview),作为 hard fact 供 lead 理解数据内容
 
 Sprint 0/B fix 2026-05-28: 增加本 tool 解决 dogfood thread 485a899d 暴露的根因——
 lead 没有 bash / general-purpose subagent,无法探查 xlsx 列出分组信息;之前死循环
 反问"drug 列具体值是什么"但用户不知道。
+
+2026-06-02 增强: 新增 data_preview 字段(前 N 行真实数据),让 lead 调一次
+inspect 就拿到列名 + 前几行值 + EV19 metadata,无需 bash head。
 
 **关键设计**: EV19 文件头部已经写明 Treatment / Dose / Animal ID 等元数据
 (`raw_metadata` from parse_header),分组信息在头部不在数据列里。本 tool 直接
@@ -37,6 +41,9 @@ _GROUPING_METADATA_KEYS = (
     "Dose", "dose", "剂量",
     "Compound", "compound",
 )
+
+# Number of data rows to include in data_preview
+_DATA_PREVIEW_N_ROWS = 5
 
 
 @tool("inspect_uploaded_file", parse_docstring=True)
@@ -158,6 +165,98 @@ def _try_parse_header(file_path: str) -> dict[str, Any] | None:
         return None
 
 
+def _build_data_preview_txt(real_path: str, header: dict[str, Any]) -> dict[str, Any] | None:
+    """从 EV19 txt 文件提取前 N 行数据预览。
+
+    Uses ethoinsight.parse.parse_header's header_lines to know where data starts,
+    then reads the first _DATA_PREVIEW_N_ROWS data lines directly (no full file parse).
+    """
+    try:
+        columns = header.get("columns", [])
+        if not columns:
+            return None
+        header_lines = header.get("header_lines", 0)
+        if header_lines <= 0:
+            return None
+        with open(real_path, "r", encoding="utf-16-le") as f:
+            all_lines = f.readlines()
+        # BOM strip
+        all_lines[0] = all_lines[0].lstrip("﻿")
+        # Data starts after header_lines (which includes column names + units line)
+        # header_lines is 1-indexed count of header rows; data is at 0-indexed [header_lines:]
+        data_start = header_lines
+        from ethoinsight.parse._core import _split_semicolons
+
+        rows: list[list[Any]] = []
+        total_data_rows = 0
+        for line in all_lines[data_start:]:
+            line = line.strip()
+            if not line:
+                continue
+            total_data_rows += 1
+            if len(rows) < _DATA_PREVIEW_N_ROWS:
+                values = _split_semicolons(line)
+                values = [v.strip('"').strip() for v in values]
+                values = values[: len(columns)]
+                # Pad if too short
+                values += [None] * (len(columns) - len(values))
+                # Convert numeric strings
+                converted: list[Any] = []
+                for v in values:
+                    if v is None or v == "-" or v == "":
+                        converted.append(None)
+                    else:
+                        try:
+                            converted.append(float(v))
+                        except (ValueError, TypeError):
+                            converted.append(v)
+                rows.append(converted)
+        if not rows:
+            return None
+        return {
+            "columns": columns,
+            "rows": rows,
+            "n_rows_total": total_data_rows,
+        }
+    except Exception as e:
+        logger.debug("data_preview txt failed for %s: %s", real_path, e)
+        return None
+
+
+def _build_data_preview_df(df: "pandas.DataFrame", n_total: int | None = None) -> dict[str, Any] | None:
+    """从 pandas DataFrame 提取前 N 行数据预览。
+
+    Works for xlsx/csv paths where pandas is already used.
+    """
+    try:
+        import pandas as pd
+
+        columns = [str(c) for c in df.columns]
+        preview_df = df.head(_DATA_PREVIEW_N_ROWS)
+        rows: list[list[Any]] = []
+        for _, row in preview_df.iterrows():
+            converted: list[Any] = []
+            for val in row:
+                if pd.isna(val):
+                    converted.append(None)
+                elif isinstance(val, float) and val == int(val):
+                    converted.append(int(val))
+                else:
+                    converted.append(val)
+            rows.append(converted)
+        if not rows:
+            return None
+        n_total = n_total if n_total is not None else len(df)
+        return {
+            "columns": columns,
+            "rows": rows,
+            "n_rows_total": n_total,
+        }
+    except Exception as e:
+        logger.debug("data_preview df failed: %s", e)
+        return None
+
+
 def _inspect_txt(virtual_path: str, real_path: str) -> dict[str, Any]:
     """探查 EV19 txt 文件 (UTF-16 编码, header + tabular data)。"""
     header = _try_parse_header(real_path)
@@ -170,7 +269,7 @@ def _inspect_txt(virtual_path: str, real_path: str) -> dict[str, Any]:
         }
 
     raw_metadata = header.get("raw_metadata", {}) or {}
-    return {
+    result: dict[str, Any] = {
         "status": "ok",
         "file": virtual_path,
         "format": "txt",
@@ -186,10 +285,15 @@ def _inspect_txt(virtual_path: str, real_path: str) -> dict[str, Any]:
         "sheets": [],
         "columns": header.get("columns", []),
     }
+    # Add data preview
+    data_preview = _build_data_preview_txt(real_path, header)
+    if data_preview is not None:
+        result["data_preview"] = data_preview
+    return result
 
 
 def _inspect_excel(virtual_path: str, real_path: str) -> dict[str, Any]:
-    """探查 xlsx/xls 文件 sheets + 每个 sheet 的 EV19 metadata。"""
+    """探查 xlsx/xls 文件 sheets + 每个 sheet 的 EV19 metadata + data preview。"""
     try:
         import pandas as pd
     except ImportError:
@@ -250,7 +354,7 @@ def _inspect_excel(virtual_path: str, real_path: str) -> dict[str, Any]:
         header = _try_parse_header(sheet_full)
         if header:
             raw_metadata = header.get("raw_metadata", {}) or {}
-            return {
+            result: dict[str, Any] = {
                 "status": "ok",
                 "file": virtual_path,
                 "format": "xlsx",
@@ -264,13 +368,24 @@ def _inspect_excel(virtual_path: str, real_path: str) -> dict[str, Any]:
                 "sheets": [],
                 "columns": header.get("columns", []),
             }
-        else:
-            # 不是 EV19 格式, 只返回列名
+            # Add data preview for EV19 xlsx via header info
             try:
-                df = pd.read_excel(real_path, sheet_name=sheet_names[0], nrows=50)
+                from ethoinsight.parse._core import parse_trajectory
+
+                df = parse_trajectory(sheet_full)
+                data_preview = _build_data_preview_df(df)
+                if data_preview is not None:
+                    result["data_preview"] = data_preview
+            except Exception as e:
+                logger.debug("data_preview xlsx ev19 failed for %s: %s", sheet_full, e)
+            return result
+        else:
+            # 不是 EV19 格式, 只返回列名 + data preview
+            try:
+                df = pd.read_excel(real_path, sheet_name=sheet_names[0], nrows=_DATA_PREVIEW_N_ROWS)
             except Exception as e:
                 return {"status": "error", "error_code": "parse_failed", "message": f"Excel read failed: {e}"}
-            return {
+            result = {
                 "status": "ok",
                 "file": virtual_path,
                 "format": "xlsx",
@@ -278,6 +393,10 @@ def _inspect_excel(virtual_path: str, real_path: str) -> dict[str, Any]:
                 "sheets": [],
                 "columns": [str(c) for c in df.columns],
             }
+            data_preview = _build_data_preview_df(df)
+            if data_preview is not None:
+                result["data_preview"] = data_preview
+            return result
 
 
 def _inspect_csv(virtual_path: str, real_path: str) -> dict[str, Any]:
@@ -289,7 +408,7 @@ def _inspect_csv(virtual_path: str, real_path: str) -> dict[str, Any]:
     header = _try_parse_header(real_path)
     if header:
         raw_metadata = header.get("raw_metadata", {}) or {}
-        return {
+        result: dict[str, Any] = {
             "status": "ok",
             "file": virtual_path,
             "format": "csv",
@@ -303,12 +422,23 @@ def _inspect_csv(virtual_path: str, real_path: str) -> dict[str, Any]:
             "sheets": [],
             "columns": header.get("columns", []),
         }
+        # Try data preview via parse_trajectory for EV19 CSV
+        try:
+            from ethoinsight.parse._core import parse_trajectory
+
+            df = parse_trajectory(real_path)
+            data_preview = _build_data_preview_df(df)
+            if data_preview is not None:
+                result["data_preview"] = data_preview
+        except Exception as e:
+            logger.debug("data_preview csv ev19 failed for %s: %s", real_path, e)
+        return result
     # 退化到原始 CSV
     try:
-        df = pd.read_csv(real_path, nrows=50)
+        df = pd.read_csv(real_path, nrows=_DATA_PREVIEW_N_ROWS)
     except Exception as e:
         return {"status": "error", "error_code": "parse_failed", "message": f"CSV read failed: {e}"}
-    return {
+    result = {
         "status": "ok",
         "file": virtual_path,
         "format": "csv",
@@ -316,3 +446,7 @@ def _inspect_csv(virtual_path: str, real_path: str) -> dict[str, Any]:
         "sheets": [],
         "columns": [str(c) for c in df.columns],
     }
+    data_preview = _build_data_preview_df(df)
+    if data_preview is not None:
+        result["data_preview"] = data_preview
+    return result

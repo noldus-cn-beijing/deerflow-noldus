@@ -10,10 +10,9 @@
 
 利用啮齿类动物在不可逃避的强迫游泳环境中产生的不动行为，评估抑郁样行为中的绝望表型。
 
-## 🟡 适用模板（按推荐顺序 + 取舍说明）
+## 🟡 EV19 模板识别
 
-- `PorsoltCylinder-NoZones` — **推荐首选**。无预定义 zone，适合标准 FST 仅需记录不动行为的场景
-- `PorsoltCylinder-AllZones` — 包含 Diving zone，用于识别动物是否力竭溺水以自动停止采集
+调 `identify_ev19_template` 工具获取候选模板，**不要自己列举候选**。工具会根据数据结构返回唯一或 ambiguous 结果。
 
 ## 🟡 必须计算的指标
 

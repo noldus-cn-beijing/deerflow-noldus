@@ -29,6 +29,7 @@ from deerflow.agents.middlewares.archiving_summarization import ArchivingSummari
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
+from deerflow.agents.middlewares.paradigm_identification_gate_middleware import ParadigmIdentificationGateMiddleware
 from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 from deerflow.agents.middlewares.think_tag_middleware import ThinkTagMiddleware
@@ -329,6 +330,11 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         max_concurrent_subagents = config.get("configurable", {}).get("max_concurrent_subagents", 3)
         middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
 
+    # ParadigmIdentificationGateMiddleware — after_model gate to force
+    # identify_ev19_template call when uploaded data is present (layer 3a).
+    # Placed before LoopDetection so reminders are counted properly.
+    middlewares.append(ParadigmIdentificationGateMiddleware())
+
     # LoopDetectionMiddleware — append the instance created earlier
     middlewares.append(loop_detection)
 
@@ -350,6 +356,16 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         provider = Ev19TemplateGuardrailProvider()
         middlewares.append(Ev19WorkspaceBridgeMiddleware())
         middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
+
+        # InspectGateGuardrail — block ask_clarification when identify_ev19_template
+        # hasn't been called with uploaded data (layer 3b safety net).
+        from deerflow.guardrails.inspect_gate_provider import (
+            InspectGateBridgeMiddleware,
+            InspectGateGuardrailProvider,
+        )
+
+        middlewares.append(InspectGateBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(provider=InspectGateGuardrailProvider(), fail_closed=guardrails_cfg.fail_closed))
 
         # S5: DataQualityGuardrailProvider — block downstream subagents on
         # critical+blocks_downstream warnings (manual mode only)
