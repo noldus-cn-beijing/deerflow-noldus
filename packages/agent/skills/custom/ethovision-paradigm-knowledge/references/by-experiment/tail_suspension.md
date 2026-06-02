@@ -8,11 +8,9 @@
 
 利用啮齿类动物在不可逃避的悬吊环境中产生的不动行为，评估抑郁样行为中的绝望表型。
 
-## 🟡 适用模板（按推荐顺序 + 取舍说明）
+## 🟡 EV19 模板识别
 
-- `PorsoltCylinder-NoZones` — **推荐**。无预定义 zone，用于记录不动行为
-
-> **⚠️ 待同事裁决（2026-06-01 标记）**：本文件模板写 `PorsoltCylinder-NoZones`，但 `ev19_facts.py` 映射为 `NoTemplate`。真实数据（tstHelperDemoVideo）经 `parse_header` 解析为单观察区单对象、无 zone，结构上更接近 NoTemplate。两者各有依据，属于领域归类问题，待行为学同事确认 TST 在 EthoVision XT 里标准配 arena 的方式后统一。当前工程层先按 `NoTemplate` 跑通。
+调 `identify_ev19_template` 工具获取候选模板，**不要自己列举候选**。工具会根据数据结构返回唯一或 ambiguous 结果。
 
 ## 🟡 必须计算的指标
 

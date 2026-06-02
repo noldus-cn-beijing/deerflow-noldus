@@ -8,17 +8,9 @@
 
 <!-- 例：「测试啮齿动物在新环境中的探索-焦虑权衡」 -->
 
-## 🟡 适用模板（按推荐顺序 + 取舍说明）
+## 🟡 EV19 模板识别
 
-候选模板（起草时根据目录名猜的，**同事必须 review 删/改/补**）：
-
-- `UgoBasileFCS-1cubicle` —— 取舍：（待补充）
-- `UgoBasileFCS-4cubicles` —— 取舍：（待补充）
-
-<!-- 同事可自由增删。理想格式：
-- `OpenFieldCircle-NoZones-Fish` — 推荐 / 优势 / 局限
-- `AquariumTrack3D` — 何时用，何时别用
--->
+调 `identify_ev19_template` 工具获取候选模板，**不要自己列举候选**。工具会根据数据结构返回唯一或 ambiguous 结果。
 
 ## 🟡 必须计算的指标（待补充）
 

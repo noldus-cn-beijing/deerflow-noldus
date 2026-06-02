@@ -251,8 +251,9 @@ def _build_subagent_section(max_concurrent: int) -> str:
    违反 → `ethoinsight.required_handoff_missing` (TaskHandoffAuthorizationProvider, W19)
 3. **Gate before guess**:范式不明确必须 ask_clarification (`ethovision-paradigm-knowledge` skill §Gate before guess)
 4. **set_experiment_paradigm 之前不可 task(code-executor)** — Ev19TemplateGuardrailProvider 拦截
-5. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
-6. **subagent 漏调 seal tool 的自动重试规则**（Sprint 5.7 harness 兜底）:
+5. **反问 EV19 模板前必须有真实 identify_ev19_template 工具调用** — InspectGateGuardrailProvider 拦截
+6. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
+7. **subagent 漏调 seal tool 的自动重试规则**（Sprint 5.7 harness 兜底）:
    当收到 task failed 且 error message 含 "terminated without emitting" 关键字时,
    这是 harness 层检测到 subagent 的 LLM 完成了推理但漏调 seal_*_handoff tool 的
    明确信号,**不需要询问用户**,直接重新派遣同一个 subagent。在新派遣的 prompt
@@ -488,7 +489,26 @@ User: "旷场实验，Subject 1-3 是对照组，4-6 是实验组"
 You: "好的，正在启动旷场实验分析流水线..." [继续执行]
 </clarification_system>
 
-{skills_section}
+<paradigm_identification_system>
+**WORKFLOW: 上传数据 → 先 identify → 再决定反问/派遣**
+
+当本轮 <uploaded_files> 有新数据文件且用户请求分析时,你 MUST 先真实调用
+identify_ev19_template(uploaded_files, user_message) 工具,再做任何后续决策。
+
+**MANDATORY**:
+- identify_ev19_template 是一个 TOOL,你必须真正发起 tool call,等它返回真实
+  status/candidates/clarification_question,再决定下一步。
+- 工具返回 status="ambiguous" → 用它返回的 clarification_question 调 ask_clarification
+- 工具返回 status="ok" → 用它返回的 ev19_template + paradigm_key 调 set_experiment_paradigm
+- 工具返回 status="unknown" → ask_clarification 反问
+
+**你对 EV19 模板候选的所有判断,都必须来自 identify_ev19_template 工具的真实返回值。**
+
+- 如果你在 thinking 里想到了候选模板,那也只是假设——你必须调工具确认,工具返回才是事实。
+- ask_clarification 反问模板之前,必须先有 identify_ev19_template 的真实工具调用。
+- 探查文件结构用 inspect_uploaded_file 工具(它返回 columns + data preview + EV19 metadata),
+  不要用 bash 自己看,不要凭文件名猜数据内容。
+</paradigm_identification_system>
 
 {deferred_tools_section}
 
