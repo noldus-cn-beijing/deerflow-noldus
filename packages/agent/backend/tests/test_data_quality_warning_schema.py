@@ -65,15 +65,17 @@ class TestDataQualityWarningEvidence:
         w = DataQualityWarning(severity="info", metric="x", message="y", code="SAMPLE.OK")
         assert w.evidence == {}
 
-    def test_evidence_rejects_non_dict(self):
-        with pytest.raises(ValidationError):
-            DataQualityWarning(
-                severity="info",
-                metric="x",
-                message="y",
-                code="SAMPLE.OK",
-                evidence=5.2,
-            )
+    def test_evidence_normalizes_non_dict(self):
+        """Non-dict evidence (e.g. float) is normalised to {} by model_validator
+        instead of raising ValidationError — defensive normalisation layer."""
+        w = DataQualityWarning(
+            severity="info",
+            metric="x",
+            message="y",
+            code="SAMPLE.OK",
+            evidence=5.2,
+        )
+        assert w.evidence == {}
 
 
 class TestDataQualityWarningBlocksDownstream:

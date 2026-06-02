@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
 
 # Virtual path contract: all subagent handoff JSON files must reference user-data
 # files via virtual paths (e.g. /mnt/user-data/uploads/x.txt), never host absolute
@@ -24,6 +25,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # path via Path.resolve() fails fast at handoff parse time rather than silently
 # propagating through the pipeline (see project_2026-05-26 path-pollution-defense).
 _VIRTUAL_USER_DATA_PREFIX = "/mnt/user-data/"
+
+# Allowed DOT-prefixes for DataQualityWarning.code.
+# Imported by downstream normalization logic — single source of truth.
+WARNING_CODE_PREFIXES = frozenset({"SAMPLE", "MOTOR", "SIGNAL", "METHOD"})
 
 
 def _validate_virtual_user_data_paths(paths: list[str]) -> list[str]:
@@ -78,7 +83,14 @@ class MetricStat(BaseModel):
 
 
 class DataQualityWarning(BaseModel):
-    """Single quality warning attached to a handoff."""
+    """Single quality warning attached to a handoff.
+
+    Normalisation (underscores→DOT, metric=None→"all", evidence=str→wrapped)
+    is applied transparently by the model_validator(mode="before") above,
+    before the field_validator("code") runs strict namespace checks.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     severity: Literal["critical", "warning", "info"]
     metric: str = Field(
@@ -109,6 +121,42 @@ class DataQualityWarning(BaseModel):
             "and Sprint 1 frontend (red vs orange rendering)."
         ),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_typeros(cls, values: dict[str, Any] | Any) -> Any:
+        """Conservatively normalise common LLM typos before strict validation.
+
+        Only touches fields that are unambiguous — never guesses semantics.
+        Triggered by key presence, so missing keys are left untouched.
+        Runs before field_validator("code") so underscore→DOT happens first.
+        """
+        if not isinstance(values, dict):
+            return values
+
+        # 1. code: underscore → DOT when first segment is a known prefix.
+        #    e.g. "SAMPLE_TOO_SMALL" → "SAMPLE.TOO_SMALL"
+        #    Pure semantic errors like "insufficient_sample" are left as-is
+        #    (no known prefix match → no transformation).
+        code_val = values.get("code")
+        if isinstance(code_val, str) and "_" in code_val:
+            first_segment = code_val.split("_")[0].upper()
+            if first_segment in WARNING_CODE_PREFIXES:
+                values["code"] = code_val.replace("_", ".", 1)
+
+        # 2. metric: None / missing → "all"
+        metric_val = values.get("metric")
+        if metric_val is None:
+            values["metric"] = "all"
+
+        # 3. evidence: str → {"note": <original>}; non-dict non-str → {}
+        evidence_val = values.get("evidence")
+        if isinstance(evidence_val, str):
+            values["evidence"] = {"note": evidence_val}
+        elif evidence_val is not None and not isinstance(evidence_val, dict):
+            values["evidence"] = {}
+
+        return values
 
     @field_validator("code")
     @classmethod
@@ -488,4 +536,5 @@ __all__ = [
     "OutlierFinding",
     "ParameterAuditFinding",
     "ReportWriterHandoff",
+    "WARNING_CODE_PREFIXES",
 ]
