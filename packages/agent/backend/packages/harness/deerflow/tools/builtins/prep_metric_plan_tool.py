@@ -17,9 +17,6 @@ from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
-from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
-from ethoinsight.catalog.loader import load_common_catalog
-from ethoinsight.parse._core import detect_ethovision, parse_header
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +115,13 @@ def prep_metric_plan_tool(
     real_workspace_path = thread_data["workspace_path"]
     # Lazy import to avoid circular dependency (sandbox.tools → agents.factory → tools.builtins → here)
     from deerflow.sandbox.tools import replace_virtual_path
+
+    # Lazy import of the ethoinsight domain library: keep the deerflow harness
+    # importable (agent stack / middleware / other tools) without ethoinsight
+    # installed. The package is only required when this tool actually runs.
+    from ethoinsight.catalog.loader import load_common_catalog
+    from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
+    from ethoinsight.parse._core import detect_ethovision, parse_header
 
     # Step 1.5: expand multi-sheet XLSX files into individual sheet entries.
     # FST-style exports pack 2 subjects in 1 XLSX via separate sheets;
