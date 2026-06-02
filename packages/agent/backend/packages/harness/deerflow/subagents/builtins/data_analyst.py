@@ -113,13 +113,14 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 	2.8 **参数适配性审计**（Sprint 3 新增 — 只警告不调参，铁律。参数审计至多占 2-3 轮思考，seal 是必达，审计是尽力）：
 	   从 handoff_code_executor.json 取 metrics_summary，对每个有 parameters_used 的 metric
 	   做参数-vs-数据分布比对。跳过 parameters_used 为空 `{}` 的 metric。
-	   **判据可用才比对；判据不可用（文档缺 / n<2 / 数据分布字段缺失）即记 info 跳过，不阻塞。**
+	   **判据可用才比对；判据不可用（文档缺 / n<2 / 无足够分布数据）即记 info 跳过，不阻塞。**
 
-	   **前置条件**：参数审计需要 per_subject 中该 metric 有足够数据来计算分布统计量
-	   （median / p10 / p90）。如果 per_subject 中缺少该 metric 的条目（字段不存在），
-	   或该 metric 下无 signal_distribution 且 per_subject 值不足以自行计算分布
-	   （老 handoff / 无逐帧中间量的 metric）→ 对整类参数记一条 `info` finding
-	   （suggestion 写"该指标无逐帧分布数据（signal_distribution 缺失），参数审计待上游补分布后执行"），
+	   **前置条件**：per_subject 的数据模型是 `{subject: {metric: 标量值}}`——每个 metric
+	   对每个 subject 只有一个标量值，没有逐帧分布子结构。参数审计需要跨 subject 聚出
+	   分布统计量（median / p10 / p90）才能比对。因此当 per_subject 中**缺少该 metric 的条目**，
+	   或该 metric 跨 subject 的标量值数量 < 2、不足以计算百分位时
+	   → 对整类参数记一条 `info` finding
+	   （suggestion 写"该指标 per_subject 标量值不足以计算分布判据，参数审计待上游（阶段 2）补逐帧分布后执行"），
 	   然后**跳过该 metric 的全部参数审计**，不纠结。
 
 	   a. **遍历每个有 parameters_used 的 metric**：
