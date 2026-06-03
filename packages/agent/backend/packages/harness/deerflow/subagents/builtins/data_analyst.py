@@ -116,10 +116,20 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 	   **判据可用才比对；判据不可用（文档缺 / n<2 / 无足够分布数据）即记 info 跳过，不阻塞。**
 
 	   a. **遍历每个有 parameters_used 的 metric 的每个参数**：
-	      从 per_subject 收集该 metric 各 subject 的标量值。
-	      **降级判定（任一成立即记一条 info finding 并继续下一个参数，不纠结）**：
-	      - per_subject 缺该 metric 条目，或跨 subject 标量值 < 2（无法算 p10/p90）
-	      - 当前范式文档无该参数的领域判据
+		      **Phase 2 优先路径**：先检查 per_subject 是否有 `_signal_distributions` 命名空间键。
+		      若 per_subject 任一 subject 含 `_signal_distributions[metric_name]`（Phase 2 code-executor 已产出），
+		      从中直接取 p10/p90/median/max/n_frames/signal_key 做参数比对——这是逐帧真分布，精度最高。
+
+		      具体做法：收集所有 subject 的 `_signal_distributions[metric_name]`，取各 subject 中
+		      p90 最大值和 p10 最小值作为跨 subject 边界，与 used_value 做比对。
+
+		      **Phase 1 降级路径**（_signal_distributions 不存在时走此路径，与阶段 1.5 行为一致）：
+		      从 per_subject 收集该 metric 各 subject 的标量值。
+
+		      **降级判定（任一成立即记一条 info finding 并继续下一个参数，不纠结）**：
+		      - Phase 2: _signal_distributions 存在但 n_frames=0 或全 subject 无分布数据
+		      - Phase 1: per_subject 缺该 metric 条目，或跨 subject 标量值 < 2（无法算 p10/p90）
+		      - 当前范式文档无该参数的领域判据
 	      **降级 finding 的字段必须这样填（否则 seal 校验失败）**：
 	      - parameter: 当前参数名（真实，从 parameters_used 取）
 	      - metric: 当前 metric 名（真实）
@@ -131,7 +141,7 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 	      - suggestion: **说明文字放这里**（str 字段），如"per_subject 仅含标量值、样本不足，
 	        无法计算 p10/p90 百分位判据，参数审计待上游（阶段 2）补逐帧分布后执行"
 	      - blocks_downstream: false
-	      若判据可用且 n_subjects ≥ 2 → 正常算分布统计量做比对（下方 b-e 段）。
+	      若判据可用且数据充分（Phase 2 有 _signal_distributions 或 Phase 1 n_subjects ≥ 2）→ 正常做参数比对（下方 b-e 段）。
 
 	   b. **按参数类型选判据来源**：
 	      **优先从当前范式文档取判据**（step 2.6 已 read 的 `<paradigm>.md`，及其中引用的

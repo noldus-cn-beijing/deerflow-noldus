@@ -4,7 +4,8 @@ CLI: python -m ethoinsight.scripts.tst.compute_immobility_time \
        --input <轨迹文件> --output <metric.json>
 
 输出 JSON:
-  {"metric": "immobility_time", "value": <float or null>}
+  {"metric": "immobility_time", "value": <float or null>,
+   "signal_distribution": {...} or null}
 
 stdout 末尾打印 [result] {json} 行供 subagent 抓取。
 """
@@ -21,6 +22,7 @@ from ethoinsight.scripts._cli import (
     parse_parameters,
     save_output_json,
 )
+from ethoinsight.scripts._signal_distribution import extract_signal_distribution
 
 
 METRIC_NAME = "immobility_time"
@@ -35,6 +37,12 @@ def main(argv: list[str] | None = None) -> int:
     value = compute_immobility_time_tst(df, **parameters)
 
     payload = {"metric": METRIC_NAME, "value": value, "parameters_used": parameters}
+
+    # Phase 2: 额外提取逐帧信号分布统计量
+    sig = extract_signal_distribution(df, parameters)
+    if sig is not None and sig.get("n_frames", 0) > 0:
+        payload["signal_distribution"] = sig
+
     save_output_json(args.output, payload)
     emit_result(payload)
     return 0

@@ -374,9 +374,13 @@ class CodeExecutorHandoff(BaseModel):
     per_subject: dict[str, dict[str, Any]] = Field(
         default_factory=dict,
         description=(
-            "Raw per-subject metric values: {subject_name: {metric: value}}. "
+            "Raw per-subject metric values: {subject_name: {metric: value, ...}}. "
             "Downstream data-analyst uses this to identify outlier subjects by "
-            "name and compute leave-one-out counterfactual group statistics."
+            "name and compute leave-one-out counterfactual group statistics. "
+            "Phase 2: subject dict may also contain '_signal_distributions' key "
+            "(namespace prefix '_') mapping metric → {p10, p90, median, max, n_frames, signal_key}, "
+            "providing per-subject frame-level signal distribution for parameter audit. "
+            "Old code that iterates metric scalar values should skip '_'-prefixed keys."
         ),
     )
     statistics: dict[str, Any] = Field(default_factory=dict)

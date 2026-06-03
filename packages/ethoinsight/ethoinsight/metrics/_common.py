@@ -91,6 +91,43 @@ def _count_zone_entries(
 
 
 # ============================================================================
+# Signal distribution statistics (Phase 2 — seal-robustness)
+# ============================================================================
+
+
+def _compute_distribution_stats(
+    values: np.ndarray,
+    signal_key: str,
+) -> dict[str, float | int | str]:
+    """计算逐帧信号的分布统计量，供 signal_distribution 使用。
+
+    Parameters
+    ----------
+    values : np.ndarray
+        逐帧浮点序列（如 periodicity / velocity）。NaN 会被剔除。
+    signal_key : str
+        信号名称标识（如 "periodicity" / "velocity"）。
+
+    Returns
+    -------
+    dict
+        ``{p10, p90, median, max, n_frames, signal_key}``。
+        全 NaN 或空数组时返回 ``{"n_frames": 0, "signal_key": signal_key}``。
+    """
+    clean = values[~np.isnan(values)] if len(values) > 0 else np.array([], dtype=float)
+    if len(clean) == 0:
+        return {"n_frames": 0, "signal_key": signal_key}
+    return {
+        "p10": float(np.percentile(clean, 10)),
+        "p90": float(np.percentile(clean, 90)),
+        "median": float(np.median(clean)),
+        "max": float(np.max(clean)),
+        "n_frames": len(clean),
+        "signal_key": signal_key,
+    }
+
+
+# ============================================================================
 # Immobility analysis (shared by FST / TST)
 # ============================================================================
 
@@ -228,7 +265,8 @@ def _resolve_immobile_from_velocity(
     *,
     velocity_threshold: float = 30.0,
     velocity_min_duration: int = 25,
-) -> tuple[pd.Series, int] | None:
+    return_signal: bool = False,
+) -> tuple[pd.Series, int] | tuple[pd.Series, int, np.ndarray] | None:
     """Derive immobility from center-point velocity (Noldus Non-movement bouts).
 
     Last-resort fallback when neither ``mobility_state`` nor ``activity``
@@ -238,6 +276,13 @@ def _resolve_immobile_from_velocity(
 
     Sprint 2b: velocity_threshold / velocity_min_duration 从 catalog 传入,
         default 30.0 / 25 仅供本地 unit test 使用。
+
+    Parameters
+    ----------
+    return_signal : bool
+        若 True，返回 ``(series, immobile_value, velocity_arr)`` 三元组，
+        velocity_arr 为逐帧浮点速度数组（与 series 等长）。
+        默认 False 保持原有二元组返回，零波及现有调用方。
 
     Returns None when ``x_center`` or ``y_center`` columns are missing.
     """
@@ -254,6 +299,7 @@ def _resolve_immobile_from_velocity(
     n = len(x)
     immobile = np.zeros(n, dtype=int)
     counter = 0
+    velocity_arr = np.full(n, np.nan, dtype=float) if return_signal else None
     for i in range(1, n):
         if np.isnan(x[i]) or np.isnan(y[i]) or np.isnan(x[i - 1]) or np.isnan(y[i - 1]):
             counter = 0
@@ -261,6 +307,8 @@ def _resolve_immobile_from_velocity(
         dx = x[i] - x[i - 1]
         dy = y[i] - y[i - 1]
         velocity = np.sqrt(dx * dx + dy * dy) / dt
+        if return_signal:
+            velocity_arr[i] = velocity
         if velocity <= velocity_threshold:
             counter += 1
         else:
@@ -269,6 +317,8 @@ def _resolve_immobile_from_velocity(
             immobile[i] = 1
 
     series = pd.Series(immobile, index=df.index[:n], dtype=int)
+    if return_signal:
+        return series, 1, velocity_arr
     return series, 1  # one-hot: 1 = immobile
 
 
