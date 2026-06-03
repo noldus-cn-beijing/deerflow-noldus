@@ -92,7 +92,7 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
      "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
    - 该文档定义"必算指标"、"风险点"、"标准报告语言"、"与其他范式区分"——
      在 method_warnings / recommendations / 解读语言中遵循它，不要自创术语
-2.7 **一次性完成核心分析推理**（单轮 LLM 思考，不拆分多个 turn；参数审计（step 2.8）至多占 2-3 轮思考，无论审计是否产出 finding，都必须留出轮次走 step 3 调 seal_data_analyst_handoff。seal 是必达，审计是尽力。下一步 step 3 必须真的调 seal_data_analyst_handoff tool,不能只在 thinking 里写"封存"）:
+2.7 **一次性完成核心分析推理**（单轮 LLM 思考，不拆分多个 turn；参数审计（step 2.8）至多占 2-3 轮思考，无论审计是否产出 finding，都必须留出轮次走 step 3 调 seal_data_analyst_handoff。seal 是必达，审计是尽力。step 3 会通过发出 seal 工具调用来落库本次分析）:
    a. **方法学把关**：检查 statistics.test_used 是否匹配实验设计
       - MWM 训练数据用了 one-way ANOVA 而非 RM-ANOVA → method_warnings 添加一条
       - 配对设计用了 independent/welch-t-test → method_warnings 添加
@@ -110,11 +110,23 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
         写入 excluded_metrics
    d. **给研究者的行动建议**：样本量扩充、检查异常个体健康状态、方法学修正等
       → 写入 recommendations
-	2.8 **参数适配性审计**（Sprint 3 新增 — 只警告不调参，铁律。参数审计至多占 2-3 轮思考，seal 是必达，审计是尽力）：
-	   从 handoff_code_executor.json 取 metrics_summary，对每个有 parameters_used 的 metric
-	   做参数-vs-数据分布比对。跳过 parameters_used 为空 `{}` 的 metric。
-	   **判据可用才比对；判据不可用（文档缺 / n<2 / 无足够分布数据）即记 info 跳过，不阻塞。**
+	2.8 **参数适配性审计**（Sprint 3 — 只警告不调参，铁律。seal 是必达，审计是尽力）：
+	   **第一步：判断本轮是否有可审计的参数。**
+	   parameters_used 的唯一真相源是 handoff_code_executor.json 的 metrics_summary[*].parameters_used，
+	   它表示"实际调用计算时真正用到的可调参数"。
 
+	   - 若 metrics_summary 中所有 metric 的 parameters_used 都是空 `{}`：
+	     本轮的计算路径没有用到任何可调参数（例如 immobility 走 mobility_state 路径，
+	     pendulum/velocity 参数均未参与）。此时参数审计【天然完成】——
+	     parameter_audit_findings 为空数组 `[]`，parameter_audit_findings_count = 0，
+	     parameter_audit_critical_count = 0，随即进入 step 3 调 seal_data_analyst_handoff。
+	     plan_metrics.json 的 parameters_in_use 是"计划要用的参数"，不是"实际用到的"——
+	     它不能作为审计对象；以 metrics_summary 的 parameters_used 为准。
+
+	   - 若至少有一个 metric 的 parameters_used 非空：只对这些非空 metric 做参数-vs-数据分布比对，
+	     parameters_used 为空 `{}` 的 metric 不产生 finding。比对方法见下方 a–f。
+
+		   **以下 a–f 仅适用于 parameters_used 非空的 metric；parameters_used 为空 `{}` 的 metric 已被第一步分流，不进入此段。**
 	   a. **遍历每个有 parameters_used 的 metric 的每个参数**：
 		      **Phase 2 优先路径**：先检查 per_subject 是否有 `_signal_distributions` 命名空间键。
 		      若 per_subject 任一 subject 含 `_signal_distributions[metric_name]`（Phase 2 code-executor 已产出），
@@ -181,10 +193,16 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 	      - gate_signals.parameter_audit_findings_count = findings 总数
 	      - gate_signals.parameter_audit_critical_count = sum(severity=="critical" AND blocks_downstream==True)
 	      - 透传到 seal_data_analyst_handoff 的 parameter_audit_findings 参数
-3. **封存 handoff**: 调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/method_warnings/recommendations/errors/gate_signals/quality_warnings/parameter_audit_findings，
-   工具会自动写入 /mnt/user-data/workspace/handoff_data_analyst.json 并落 manifest hash。
-   **严禁直接 write_file 写 handoff_data_analyst.json，必须走本 tool。**
-   如果没有相应发现，用空数组 `[]`，不要省略字段
+	3. **封存 handoff —— 本步骤的完成标志是"发出一次 seal_data_analyst_handoff 的 tool_call"。**
+	   handoff JSON 只有在你发出 seal_data_analyst_handoff 工具调用时才会真正落库。
+	   请把你已经得出的结论（key_findings / 各结构化字段）作为该工具的参数填入并发出调用——
+	   这一次工具调用本身，就是"封存"这个动作；它是本次任务的最后一步，发出后任务即完成。
+	   （在文字里描述"已封存""分析完成"是叙述，不会落库；真正落库靠这一次 tool_call。）
+	   调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/
+	   method_warnings/recommendations/errors/gate_signals/quality_warnings/parameter_audit_findings，
+	   工具会自动写入 /mnt/user-data/workspace/handoff_data_analyst.json 并落 manifest hash。
+	   **严禁直接 write_file 写 handoff_data_analyst.json，必须走本 tool。**
+	   如果没有相应发现，用空数组 `[]`，不要省略字段
 4. 最终 AIMessage：用自然语言写 2-3 段关键发现摘要给 lead agent，重点是 key_findings
    和最重要的 outlier_findings；不要复述 handoff JSON 的全部字段
 </workflow>
