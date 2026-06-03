@@ -188,4 +188,10 @@ statistics:
     script: ethoinsight.scripts.oft.run_groupwise_stats
     when: n_per_group >= 2 and n_groups >= 2
 
-paradigm_parameters: {}
+paradigm_parameters:
+  center_zone:
+    default: "in_zone_center"
+    unit: ""
+    description: "中心区列名。默认为 in_zone_center（需要 in_zone_center_* 列存在）。当数据只有匿名 in_zone 列且用户确认为中心区时，可覆盖为 in_zone。"
+    tunable_by_user: true
+    valid_range: null

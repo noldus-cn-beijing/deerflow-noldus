@@ -200,10 +200,11 @@ class TestParadigmParameters:
         spec = cat.paradigm_parameters.parameters["signal_low_transition_threshold"]
         assert spec.default == 4
 
-    def test_oft_empty_paradigm_params(self):
-        """OFT has no paradigm-specific params (empty)."""
+    def test_oft_has_center_zone_param(self):
+        """OFT has center_zone in paradigm_parameters for anonymous zone resolution."""
         cat = load_catalog("open_field")
-        assert len(cat.paradigm_parameters.parameters) == 0
+        assert "center_zone" in cat.paradigm_parameters.parameters
+        assert cat.paradigm_parameters.parameters["center_zone"].default == "in_zone_center"
 
 
 # ============================================================================
