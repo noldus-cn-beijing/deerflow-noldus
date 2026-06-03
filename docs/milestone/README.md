@@ -8,6 +8,7 @@
 | Feature | 状态 | Milestone | 最新 handoff |
 |---------|------|-----------|-------------|
 | **SOTA Agent v2** | Sprint 0/1/2a 已合 dev · Sprint 5.7 实施中 | [sota-agent-v2-sprint-0.md](sota-agent-v2-sprint-0.md) | [5/28 Sprint1+2a deploy 准备 + seal bug 真根因](../handoffs/2026-05/2026-05-28-sprint1-2a-deploy-prep-and-seal-bug-handoff.md) |
+| **Subagent seal/handoff 鲁棒性** | 核心卡死已解(prompt 修复合 dev) · 开 think 洞察优化 spec 待实施 | [subagent-seal-handoff-robustness.md](subagent-seal-handoff-robustness.md) | [6/3 dual-root-cause-fix](../handoffs/2026-06/2026-06-03-fst-seal-deadlock-dual-root-cause-fix-handoff.md) |
 | DeerFlow upstream sync | ongoing | [deerflow-sync-2026-05-25-all-5-pr-merged.md](deerflow-sync-2026-05-25-all-5-pr-merged.md) | [5/27 issue57 + sync PR #3229/#3218](../handoffs/2026-05/2026-05-27-issue57-fix-sync-3229-3218-handoff.md) |
 | FST E2E dogfood + ASKVIZ | done | [fst-e2e-7fixes-askviz-intent.md](fst-e2e-7fixes-askviz-intent.md) | [5/25 FST E2E recursion + frontend chart final](../handoffs/2026-05/2026-05-25-fst-e2e-recursion-frontend-chart-final-handoff.md) |
 | Chart catalog P0-P3 | done | [chart-catalog-p0-p3.md](chart-catalog-p0-p3.md) | [5/25 chart catalog implementation](../handoffs/2026-05/2026-05-25-chart-catalog-p0-p3-implementation-handoff.md) |
