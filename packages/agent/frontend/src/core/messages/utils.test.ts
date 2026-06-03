@@ -107,7 +107,7 @@ describe("groupMessages — streaming continuity (no flicker)", () => {
       content: "partial answer streaming...",
       reasoning: "deciding next action",
     });
-    const result = groupMessages([msg], (g) => g.type, { isStreaming: true });
+    const result = groupMessages([msg], (g) => g.type);
     expect(result).toEqual(["assistant:processing"]);
   });
 
@@ -129,9 +129,7 @@ describe("groupMessages — streaming continuity (no flicker)", () => {
       content: "second turn streaming",
       reasoning: "thought 2",
     });
-    const result = groupMessages([msg1, msg2], (g) => g.type, {
-      isStreaming: true,
-    });
+    const result = groupMessages([msg1, msg2], (g) => g.type);
     expect(result).toEqual(["assistant", "assistant:processing"]);
   });
 });

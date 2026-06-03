@@ -349,7 +349,6 @@ export function MessageList({
           // Returning null keeps TypeScript's exhaustive narrowing happy.
           return null;
         },
-        { isStreaming: thread.isLoading },
         )}
         {thread.isLoading && <StreamingIndicator className="my-4" />}
         <div style={{ height: `${paddingBottom}px` }} />
