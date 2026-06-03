@@ -77,6 +77,7 @@ export const enUS: Translations = {
     createSkillPrompt:
       "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
     addAttachments: "Add attachments",
+    tooManyFiles: "Too many files. Up to {max} files can be uploaded at once.",
     mode: "Mode",
     autoMode: "Auto",
     autoModeDescription:

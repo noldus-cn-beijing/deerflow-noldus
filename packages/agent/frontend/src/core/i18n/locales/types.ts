@@ -62,6 +62,7 @@ export interface Translations {
     placeholder: string;
     createSkillPrompt: string;
     addAttachments: string;
+    tooManyFiles: string;
     mode: string;
     autoMode: string;
     autoModeDescription: string;

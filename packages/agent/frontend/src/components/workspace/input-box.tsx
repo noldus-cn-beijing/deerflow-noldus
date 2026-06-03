@@ -16,6 +16,7 @@ import {
   useState,
   type ComponentProps,
 } from "react";
+import { toast } from "sonner";
 
 import {
   PromptInput,
@@ -72,6 +73,11 @@ import { ModeHoverGuide } from "./mode-hover-guide";
 import { Tooltip } from "./tooltip";
 
 type InputMode = "auto" | "flywheel";
+
+// Client-side mirror of the backend `uploads.max_files` limit (config.yaml).
+// Keeps the limit in sync so users get an immediate hint instead of a mid-upload
+// 413 rejection. Must match the backend value when that config changes.
+const MAX_UPLOAD_FILES = 50;
 
 function getResolvedMode(
   mode: InputMode | undefined,
@@ -430,6 +436,17 @@ export function InputBox({
         multiple
         onSubmit={handleSubmit}
         {...props}
+        maxFiles={MAX_UPLOAD_FILES}
+        onError={(err) => {
+          if (err.code === "max_files") {
+            toast.error(
+              t.inputBox.tooManyFiles.replace(
+                "{max}",
+                String(MAX_UPLOAD_FILES),
+              ),
+            );
+          }
+        }}
       >
         {extraHeader && (
           <div className="absolute top-0 right-0 left-0 z-10">
