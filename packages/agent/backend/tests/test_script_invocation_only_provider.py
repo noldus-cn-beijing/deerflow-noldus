@@ -69,7 +69,7 @@ class TestCodeExecutorBashAllowList:
         assert decision.allow
 
     def test_cp_allowed(self, provider):
-        decision = provider.evaluate(_req("bash", command="cp /a /b"))
+        decision = provider.evaluate(_req("bash", command="cp /mnt/user-data/workspace/a.json /mnt/user-data/workspace/b.json"))
         assert decision.allow
 
     def test_ls_bash_allowed(self, provider):
