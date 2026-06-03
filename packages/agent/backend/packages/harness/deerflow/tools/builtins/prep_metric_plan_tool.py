@@ -36,8 +36,17 @@ _ERROR_HINTS: dict[str, str] = {
         "或检查 set_experiment_paradigm 调用是否正确。"
     ),
     "columns_missing": (
-        "数据缺关键列（可能录制设置漏了 Open/Closed arms 进入次数或相关区域）。"
-        "用 ask_clarification 让用户确认实验录制设置。"
+        "数据缺少指标必需的列。这通常意味着实验录制或导出设置不完整。"
+        "请向用户说明数据缺列、建议检查实验设计与导出配置后重新提供数据，"
+        "不要在缺列情况下勉强分析。"
+    ),
+    "zone_unnamed": (
+        "检测到一个未命名的分析区(in_zone)。"
+        "请用 ask_clarification 反问用户该区域代表什么"
+        "（如旷场的中心区）。"
+        "用户明确是中心区 → 写 parameter_overrides={\"center_zone\":\"in_zone\"} 后重调 prep_metric_plan；"
+        "用户不确定/非中心区 → 告知其数据缺明确的中心区，"
+        "请在 EthoVision 确认/命名区域后重新导出再分析，不要勉强计算。"
     ),
     "schema_violation": (
         "catalog YAML 损坏——这是项目内部 bug。present_files 把错误信息呈现给用户，让他报 bug。"
@@ -91,9 +100,9 @@ def prep_metric_plan_tool(
       status="error" 时:
         {"status": "error",
          "error_code": "file_not_found"|"format_unrecognized"|"parse_failed"|
-                       "unknown_paradigm"|"columns_missing"|"schema_violation"|
-                       "empty_plan"|"unknown_metric"|"workspace_missing"|
-                       "no_files_provided",
+                       "unknown_paradigm"|"columns_missing"|"zone_unnamed"|
+                       "schema_violation"|"empty_plan"|"unknown_metric"|
+                       "workspace_missing"|"no_files_provided",
          "message": str,
          "hint": str,
          "failed_file": str | None}

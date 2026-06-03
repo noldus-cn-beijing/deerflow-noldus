@@ -191,19 +191,30 @@ def resolve_metrics(
             continue
         missing = _missing_columns(m.requires_columns, columns)
         if missing:
-            raise ResolveError(
-                code="columns_missing",
-                message=(
-                    f"Required column(s) for metric '{m.id}' not found in data: "
-                    f"{missing}. Default metrics must always run; if the data "
-                    f"truly lacks these columns, ask the user before excluding."
-                ),
-                details={
-                    "metric": m.id,
-                    "missing_patterns": missing,
-                    "available_columns": columns,
-                },
-            )
+            # Check for anonymous zone: missing pattern like in_zone_* but bare in_zone exists.
+            # _detect_anonymous_zone returns:
+            #   ResolveError  → zone_unnamed (anonymous zone, no override) — raise immediately
+            #   True          → zone pattern resolved by override — proceed (skip column check)
+            #   None          → genuine missing column — raise columns_missing below
+            zone_check = _detect_anonymous_zone(missing, columns, overrides)
+            if isinstance(zone_check, ResolveError):
+                raise zone_check
+            if zone_check is None:
+                # Genuine missing column (not a zone pattern, or bare in_zone doesn't exist)
+                raise ResolveError(
+                    code="columns_missing",
+                    message=(
+                        f"数据缺少指标 '{m.id}' 必需的列：{missing}。"
+                        f"这通常意味着实验录制或导出设置不完整。"
+                        f"请检查实验设计与导出配置后重新提供数据，不要在缺列情况下勉强分析。"
+                    ),
+                    details={
+                        "metric": m.id,
+                        "missing_patterns": missing,
+                        "available_columns": columns,
+                    },
+                )
+            # zone_check is True: anonymous zone pattern resolved by override — proceed
         # === Sprint 2b: compute parameters_in_use ===
         params_in_use = _compute_parameters_in_use(
             metric=m,
@@ -453,6 +464,50 @@ def _missing_columns(patterns: list[str], available: list[str]) -> list[str]:
         if not any(fnmatch.fnmatchcase(col, pat) for col in available):
             missing.append(pat)
     return missing
+
+
+def _detect_anonymous_zone(
+    missing_patterns: list[str],
+    available_columns: list[str],
+    overrides: dict[str, str],
+) -> ResolveError | bool | None:
+    """Detect anonymous zone: missing pattern is a named in_zone variant
+    (e.g. in_zone_center_*) but bare in_zone exists in data.
+
+    Returns:
+        ResolveError — zone_unnamed: anonymous zone detected, no override declared
+        True         — zone pattern detected but override resolves it (proceed)
+        None         — not a zone pattern, or bare in_zone doesn't exist
+    """
+    # Check if any missing pattern is an in_zone variant (has suffix beyond "in_zone")
+    has_zone_pattern = any(
+        pat.startswith("in_zone") and len(pat) > len("in_zone")
+        for pat in missing_patterns
+    )
+    if not has_zone_pattern:
+        return None
+
+    # Bare in_zone must exist in available columns
+    if "in_zone" not in available_columns:
+        return None
+
+    # If center_zone override is already declared, allow it — user has confirmed.
+    if "center_zone" in overrides:
+        return True
+
+    return ResolveError(
+        code="zone_unnamed",
+        message=(
+            "检测到一个未命名的分析区(in_zone)，但指标需要命名区域列"
+            f"（缺失: {missing_patterns}）。"
+            "请用 ask_clarification 反问用户该区域代表什么。"
+        ),
+        details={
+            "found_column": "in_zone",
+            "missing_patterns": missing_patterns,
+            "available_columns": available_columns,
+        },
+    )
 
 
 def _metric_to_plan(

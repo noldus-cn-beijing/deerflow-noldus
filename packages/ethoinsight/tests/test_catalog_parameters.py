@@ -200,10 +200,22 @@ class TestParadigmParameters:
         spec = cat.paradigm_parameters.parameters["signal_low_transition_threshold"]
         assert spec.default == 4
 
-    def test_oft_empty_paradigm_params(self):
-        """OFT has no paradigm-specific params (empty)."""
+    def test_oft_center_metrics_have_center_zone_param(self):
+        """center_zone is on each center metric (metric-level), not paradigm-level."""
         cat = load_catalog("open_field")
+        # paradigm_parameters should be empty (center_zone moved to metric-level)
         assert len(cat.paradigm_parameters.parameters) == 0
+        # Check each center metric has center_zone
+        center_metric_ids = {"center_time_ratio", "center_distance_ratio", "center_entry_count", "center_time", "center_distance"}
+        for m in cat.default_metrics:
+            if m.id in center_metric_ids:
+                assert "center_zone" in m.parameters, f"{m.id} missing center_zone"
+                assert m.parameters["center_zone"].default == "in_zone_center"
+            else:
+                assert "center_zone" not in m.parameters, f"{m.id} should not have center_zone"
+        # Optional metrics must NOT have center_zone
+        for m in cat.optional_metrics:
+            assert "center_zone" not in m.parameters, f"optional {m.id} should not have center_zone"
 
 
 # ============================================================================

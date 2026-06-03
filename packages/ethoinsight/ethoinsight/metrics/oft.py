@@ -178,14 +178,14 @@ def compute_center_entry_count(
     return _count_zone_entries(df, [col], min_duration_frames=min_duration_frames)
 
 
-def compute_center_time(df: pd.DataFrame) -> float | None:
+def compute_center_time(df: pd.DataFrame, center_zone: str = "in_zone_center") -> float | None:
     """Total time the subject spent in center zone (seconds).
 
     = center_time_ratio * total_duration
 
     Returns None if center column cannot be resolved.
     """
-    ratio = compute_center_time_ratio(df)
+    ratio = compute_center_time_ratio(df, center_zone=center_zone)
     if ratio is None:
         return None
     if "trial_time" not in df.columns:
@@ -194,7 +194,7 @@ def compute_center_time(df: pd.DataFrame) -> float | None:
     return ratio * duration
 
 
-def compute_center_distance(df: pd.DataFrame) -> float | None:
+def compute_center_distance(df: pd.DataFrame, center_zone: str = "in_zone_center") -> float | None:
     """Total distance moved while in center zone (cm).
 
     Accumulates ``distance_moved`` only at frames where the center-zone indicator is 1.
@@ -202,7 +202,7 @@ def compute_center_distance(df: pd.DataFrame) -> float | None:
     """
     if "distance_moved" not in df.columns:
         return None
-    center_col = _find_center_zone_column(df)
+    center_col = _find_center_zone_column(df, hint=center_zone)
     if center_col is None:
         return None
     mask = df[center_col].fillna(0) > 0
