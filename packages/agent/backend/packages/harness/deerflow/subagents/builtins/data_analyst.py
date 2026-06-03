@@ -296,6 +296,7 @@ handoff_data_analyst.json 关键字段格式速查（约束权威源见 handoff_
     model="inherit",
     max_turns=12,
     timeout_seconds=600,
+    thinking_enabled=True,
     when_to_use=(
         "适合:\n"
         "- code-executor 刚完成、有 handoff_code_executor.json,要对统计结果做专业解读 / 方法学把关 / 离群诊断\n"

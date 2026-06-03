@@ -639,7 +639,8 @@ class SubagentExecutor:
         wholesale, fall back to a legacy formula).
         """
         model_name = _get_model_name(self.config, self.parent_model)
-        model = create_chat_model(name=model_name, thinking_enabled=False)
+        # 按 subagent config 决定是否开 think：洞察型 subagent（data-analyst）开，执行型关
+        model = create_chat_model(name=model_name, thinking_enabled=self.config.thinking_enabled)
 
         middlewares = self._build_middlewares()
         self._last_middlewares = middlewares
