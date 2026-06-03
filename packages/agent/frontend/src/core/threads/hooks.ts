@@ -1002,6 +1002,7 @@ export function useThreadHistory(threadId: string) {
       loadingRef.current = false;
       setLoading(false);
       setMessages([]);
+      setHistoryMessageRunIds(new Map());
     }
 
     if (runs.data && runs.data.length > 0) {
