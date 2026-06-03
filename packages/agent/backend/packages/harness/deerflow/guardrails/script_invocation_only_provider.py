@@ -25,6 +25,7 @@ See: docs/superpowers/specs/2026-05-12-script-per-metric-architecture-design.md 
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 
@@ -82,6 +83,9 @@ _HANDOFF_WRITE_FILE_DENY = (
 # Subagent types whose bash is gated (code-executor + chart-maker).
 _BASH_GATED_AGENTS = {"code-executor", "chart-maker"}
 
+# Sandbox workspace base used to resolve relative paths before boundary check.
+_SANDBOX_WORKSPACE_BASE = "/mnt/user-data/workspace"
+
 
 def _extract_target_path(cmd: str) -> str | None:
     """Extract the target/destination path from mkdir/cp/mv commands.
@@ -109,23 +113,33 @@ def _extract_target_path(cmd: str) -> str | None:
 def _is_path_safe(target: str) -> bool:
     """Check if target path is within the sandbox workspace and not in protected dirs.
 
-    Returns True only if the target is clearly within /mnt/user-data/ and does
-    not point to .venv, site-packages, or /mnt/skills (read-only).
+    Uses os.path.normpath to resolve ``..`` before checking boundaries,
+    eliminating relative-path escape (e.g. ``../../../../usr/lib/...``).
+
+    A sandbox base of ``/mnt/user-data/workspace`` is used to resolve
+    relative paths to absolute before the boundary check.
     """
+    # Resolve .. via normpath to close relative-path escape.
+    normalized = os.path.normpath(target)
+
+    # Resolve relative paths against the sandbox workspace base.
+    if not normalized.startswith("/"):
+        normalized = os.path.normpath(
+            os.path.join(_SANDBOX_WORKSPACE_BASE, normalized)
+        )
+
     # Deny paths that try to write into Python package directories.
-    if ".venv" in target or "site-packages" in target:
+    if ".venv" in normalized or "site-packages" in normalized:
         return False
 
-    # Absolute paths: must start with /mnt/user-data/ (the sandbox workspace).
-    if target.startswith("/"):
-        if target.startswith("/mnt/skills"):
-            return False
-        if not target.startswith("/mnt/user-data/"):
-            return False
-        return True
+    # Must be within /mnt/user-data/ (the sandbox boundary).
+    if not normalized.startswith("/mnt/user-data/"):
+        return False
 
-    # Relative path: allow (resolves within sandbox cwd),
-    # .venv/site-packages already checked above.
+    # Must not write into /mnt/skills (read-only).
+    if normalized.startswith("/mnt/skills"):
+        return False
+
     return True
 
 

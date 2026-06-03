@@ -254,6 +254,32 @@ class TestFileOpsPathValidation:
         ))
         assert not decision.allow
 
+    # --- Dot-dot escape attempts ---
+
+    def test_cp_dot_dot_escape_denied(self, provider):
+        """cp with ../../../../usr/lib escape should be denied."""
+        decision = provider.evaluate(_req(
+            "bash",
+            command="cp x.py ../../../../usr/lib/python3.12/x.py",
+        ))
+        assert not decision.allow
+
+    def test_mkdir_dot_dot_persistence_denied(self, provider):
+        """mkdir -p ../../../etc/cron.d/x should be denied (persistence attack)."""
+        decision = provider.evaluate(_req(
+            "bash",
+            command="mkdir -p ../../../etc/cron.d/x",
+        ))
+        assert not decision.allow
+
+    def test_cp_prefix_bypass_denied(self, provider):
+        """cp -r /tmp/pkg /mnt/user-data/../../etc/x should be denied (prefix + .. bypass)."""
+        decision = provider.evaluate(_req(
+            "bash",
+            command="cp -r /tmp/pkg /mnt/user-data/../../etc/x",
+        ))
+        assert not decision.allow
+
 
 # ============================================================
 # Backward compatibility (existing patterns still work)
