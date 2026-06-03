@@ -189,6 +189,103 @@ def _estimate_dt(df: pd.DataFrame) -> float:
     return float(tt.diff().median())
 
 
+# ============================================================================
+# Immobility resolution path (which signal actually drove the metric)
+# ============================================================================
+#
+# FST/TST 的 immobility 指标按可用列优先级走三条互斥路径之一（见
+# _resolve_immobile_series）。哪条路径真正参与了计算，决定了哪些参数真正
+# "被用到"——compute 脚本据此裁剪 parameters_used，避免把没参与计算的
+# 幽灵参数报给 data-analyst（否则 step 2.8 会去审计从未运行过的 pendulum/
+# velocity 阈值，把 LLM 推进死循环）。signal_distribution 的 signal_key 也据
+# 此对齐。
+MOBILITY_STATE_PATH = "mobility_state"  # EthoVision XT 自带 Mobility 检测列
+PENDULUM_PATH = "pendulum"  # 自相关钟摆检测（吃逐帧 Activity）
+VELOCITY_PATH = "velocity"  # 中心点位移速度（last-resort）
+
+# 各路径"真正消费"的参数键前缀。mobility_state 路径不消费任何阈值参数
+# （EthoVision 已经判好 immobile/mobile，我们只是读它的列）。
+_PATH_PARAM_PREFIXES: dict[str, tuple[str, ...]] = {
+    MOBILITY_STATE_PATH: (),
+    PENDULUM_PATH: ("pendulum_",),
+    VELOCITY_PATH: ("velocity_",),
+}
+
+
+def filter_parameters_for_path(
+    parameters: dict[str, object], path: str
+) -> dict[str, object]:
+    """只保留实际参与计算路径真正消费的参数键。
+
+    catalog 把 pendulum_* 与 velocity_* 参数作为 shared_parameters 一并注入，
+    但任一次计算只会走三条路径之一。本函数按路径裁剪 parameters_used，使其
+    只反映"真正被用到"的参数——这样 data-analyst 的参数审计不会去比对从未
+    运行过的算法的阈值。
+
+    路径无关的参数（既非 pendulum_ 也非 velocity_，如
+    sample_size_underpowered_threshold）始终保留。
+
+    Parameters
+    ----------
+    parameters : dict
+        compute 脚本拿到的全量参数（来自 catalog 注入的 --parameters-json）。
+    path : str
+        实际 resolution path（MOBILITY_STATE_PATH / PENDULUM_PATH / VELOCITY_PATH）。
+    """
+    keep_prefix = _PATH_PARAM_PREFIXES.get(path, ())
+    # 路径专属前缀集合：用于识别"哪些键属于某条路径"，从而剔除其他路径的键。
+    all_path_prefixes = ("pendulum_", "velocity_")
+    out: dict[str, object] = {}
+    for key, value in parameters.items():
+        is_path_specific = any(key.startswith(p) for p in all_path_prefixes)
+        if not is_path_specific:
+            out[key] = value  # 路径无关参数始终保留
+        elif any(key.startswith(p) for p in keep_prefix):
+            out[key] = value  # 属于当前路径的参数保留
+        # 否则：属于其他路径的幽灵参数 → 丢弃
+    return out
+
+
+def resolve_immobile_with_path(
+    df: pd.DataFrame, mobility_col: str | None, **kwargs,
+) -> tuple[pd.Series, int, str] | None:
+    """同 _resolve_immobile_series，但额外返回实际走的 resolution path。
+
+    返回 ``(series, immobile_value, path)``，path 为 MOBILITY_STATE_PATH /
+    PENDULUM_PATH / VELOCITY_PATH 之一。无可用列时返回 None。
+
+    这是路径感知的权威入口；``_resolve_immobile_series`` 是它的二元组包装，
+    保持所有现有调用方零波及。
+    """
+    col = mobility_col or _find_mobility_column(df)
+    # catalog 注入的是 pendulum_*+velocity_* 全集，但各 fallback 的底层函数
+    # （detect_pendulum / _resolve_immobile_from_velocity）只接受自己那组具名参数。
+    # 转发前按前缀裁剪，避免把对方的参数塞进去触发 TypeError。
+    pendulum_kwargs = {k: v for k, v in kwargs.items() if k.startswith("pendulum_")}
+    velocity_kwargs = {k: v for k, v in kwargs.items() if k.startswith("velocity_")}
+    if col is None or col not in df.columns:
+        # Fallback 1: derive immobility from raw Activity via pendulum detection
+        result = _resolve_immobile_from_activity(df, **pendulum_kwargs)
+        if result is not None:
+            return result[0], result[1], PENDULUM_PATH
+        # Fallback 2: velocity-based (Noldus Non-movement bouts, last resort)
+        vel = _resolve_immobile_from_velocity(df, **velocity_kwargs)
+        if vel is None:
+            return None
+        return vel[0], vel[1], VELOCITY_PATH
+    series = df[col].dropna()
+    if series.empty:
+        result = _resolve_immobile_from_activity(df, **pendulum_kwargs)
+        if result is not None:
+            return result[0], result[1], PENDULUM_PATH
+        vel = _resolve_immobile_from_velocity(df, **velocity_kwargs)
+        if vel is None:
+            return None
+        return vel[0], vel[1], VELOCITY_PATH
+    immobile_value = 1 if "immobile" in col.lower() else 0
+    return series, immobile_value, MOBILITY_STATE_PATH
+
+
 def _resolve_immobile_series(
     df: pd.DataFrame, mobility_col: str | None, **kwargs,
 ) -> tuple[pd.Series, int] | None:
@@ -200,6 +297,10 @@ def _resolve_immobile_series(
 
     Returns None when no usable column is present.
 
+    Thin 2-tuple wrapper over :func:`resolve_immobile_with_path` — keeps the
+    historical signature for all existing callers; new callers that need to
+    know which path ran should call ``resolve_immobile_with_path`` directly.
+
     **重要假设（EV19 Mobility state 编码）**：
     EV19 ``Mobility state`` 列实际是 2/3/4 状态多分类（参见
     ev19-dependent-variables.md §14）。``immobile_value=0`` 只在 2-state 配置下
@@ -209,21 +310,10 @@ def _resolve_immobile_series(
     仅当列名含 ``immobile`` 时才确认为 one-hot 列。如用户数据来自 3/4-state 配置，
     需上游显式映射后再传入。
     """
-    col = mobility_col or _find_mobility_column(df)
-    if col is None or col not in df.columns:
-        # Fallback 1: derive immobility from raw Activity via pendulum detection
-        result = _resolve_immobile_from_activity(df, **kwargs)
-        if result is not None:
-            return result
-        # Fallback 2: velocity-based (Noldus Non-movement bouts, last resort)
-        return _resolve_immobile_from_velocity(df, **kwargs)
-    series = df[col].dropna()
-    if series.empty:
-        result = _resolve_immobile_from_activity(df, **kwargs)
-        if result is not None:
-            return result
-        return _resolve_immobile_from_velocity(df, **kwargs)
-    immobile_value = 1 if "immobile" in col.lower() else 0
+    resolved = resolve_immobile_with_path(df, mobility_col, **kwargs)
+    if resolved is None:
+        return None
+    series, immobile_value, _path = resolved
     return series, immobile_value
 
 

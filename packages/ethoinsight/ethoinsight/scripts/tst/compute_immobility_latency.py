@@ -22,7 +22,7 @@ from ethoinsight.scripts._cli import (
     parse_parameters,
     save_output_json,
 )
-from ethoinsight.scripts._signal_distribution import extract_signal_distribution
+from ethoinsight.scripts._signal_distribution import resolve_immobility_metadata
 
 
 METRIC_NAME = "immobility_latency"
@@ -36,10 +36,11 @@ def main(argv: list[str] | None = None) -> int:
     parameters = parse_parameters(args)
     value = compute_immobility_latency_tst(df, **parameters)
 
-    payload = {"metric": METRIC_NAME, "value": value, "parameters_used": parameters}
+    # parameters_used 与 signal_distribution 都对齐 immobility 实际走的 resolution
+    # path（mobility_state / pendulum / velocity）——剔除未参与计算的幽灵参数。
+    used_params, sig = resolve_immobility_metadata(df, parameters)
 
-    # Phase 2: 额外提取逐帧信号分布统计量
-    sig = extract_signal_distribution(df, parameters)
+    payload = {"metric": METRIC_NAME, "value": value, "parameters_used": used_params}
     if sig is not None and sig.get("n_frames", 0) > 0:
         payload["signal_distribution"] = sig
 
