@@ -847,15 +847,6 @@ def _compute_parameters_in_use(
         for pname, pspec in shared_params.items():
             if pname.startswith("velocity_") and pname not in result:
                 result[pname] = pspec.default
-    # 2c. General paradigm_params — inject non-velocity, non-pendulum params
-    # (e.g. center_zone for OFT zone resolution). These are computation-related
-    # params declared at the paradigm level and should be available to all metrics.
-    for pname, pspec in paradigm_params.items():
-        if pname in result:
-            continue
-        if pname.startswith("pendulum_") or pname.startswith("velocity_"):
-            continue  # already handled above with metric-level gating
-        result[pname] = pspec.default
 
     # 3. metric.parameters (单 metric 独有)
     for pname, pspec in metric.parameters.items():
