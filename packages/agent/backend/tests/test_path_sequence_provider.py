@@ -93,9 +93,11 @@ class TestPathSequenceEnforcement:
     """Verify dispatch order is enforced correctly."""
 
     def test_code_executor_always_allowed_first(self, provider, reset_contextvars, tmp_path):
-        """code-executor is always the first dispatch step → always allowed."""
+        """code-executor is always the first dispatch step → always allowed (needs plan_metrics.json)."""
         _set_intent("E2E_FULL")
         _set_workspace(tmp_path)
+        # plan precondition: code-executor needs plan_metrics.json
+        (tmp_path / "plan_metrics.json").write_text('{"metrics": [1]}')
         req = _make_request("task", "code-executor")
         assert provider.evaluate(req).allow is True
 
@@ -138,16 +140,20 @@ class TestPathSequenceEnforcement:
         assert provider.evaluate(req).allow is True
 
     def test_chart_intent_allows_chart_maker_directly(self, provider, reset_contextvars, tmp_path):
-        """CHART intent: chart-maker has no predecessors → always allowed."""
+        """CHART intent: chart-maker has no predecessors → allowed (needs handoff_code_executor.json)."""
         _set_intent("CHART")
         _set_workspace(tmp_path)
+        # plan precondition: chart-maker needs handoff_code_executor.json
+        (tmp_path / "handoff_code_executor.json").write_text('{"status": "ok"}')
         req = _make_request("task", "chart-maker")
         assert provider.evaluate(req).allow is True
 
     def test_report_intent_allows_report_writer_directly(self, provider, reset_contextvars, tmp_path):
-        """REPORT intent: report-writer has no predecessors → always allowed."""
+        """REPORT intent: report-writer has no predecessors → allowed (needs handoff_code_executor.json)."""
         _set_intent("REPORT")
         _set_workspace(tmp_path)
+        # plan precondition: report-writer needs handoff_code_executor.json
+        (tmp_path / "handoff_code_executor.json").write_text('{"status": "ok"}')
         req = _make_request("task", "report-writer")
         assert provider.evaluate(req).allow is True
 
@@ -166,6 +172,9 @@ class TestDenyMessageFormat:
         """Deny message must contain intent name and missing predecessor."""
         _set_intent("E2E_FULL")
         _set_workspace(tmp_path)
+        # Provide handoff_code_executor.json so plan precondition passes;
+        # the test validates the sequence-check deny message.
+        (tmp_path / "handoff_code_executor.json").write_text('{"status": "ok"}')
         req = _make_request("task", "chart-maker")
         decision = provider.evaluate(req)
         assert decision.allow is False

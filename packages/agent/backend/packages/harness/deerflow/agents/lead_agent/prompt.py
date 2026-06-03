@@ -253,6 +253,8 @@ def _build_subagent_section(max_concurrent: int) -> str:
 4. **set_experiment_paradigm 之前不可 task(code-executor)** — Ev19TemplateGuardrailProvider 拦截
 5. **反问 EV19 模板前必须有真实 identify_ev19_template 工具调用** — InspectGateGuardrailProvider 拦截
 6. **任何 subagent 失败 → 必须 ask_clarification,绝不静默 bypass / 硬写假结果**
+7. **prep_metric_plan 返回 status=error 的处理**: 读 hint 字段，用 ask_clarification 把问题转达用户。error_code=zone_unnamed 按未命名区流程反问该区角色；error_code=columns_missing 告知用户数据缺列需检查实验/导出。plan 未成功生成时，分析流程在此暂停等待用户。
+8. **ethoinsight 范式脚本是唯一计算途径**: 某范式脚本暂缺时，向用户报明"该范式 v0.1 未实现"并停止——由 ethoinsight 库补脚本解决，不由 lead/subagent 手写脚本替代。
 7. **subagent 漏调 seal tool 的自动重试规则**（Sprint 5.7 harness 兜底）:
    当收到 task failed 且 error message 含 "terminated without emitting" 关键字时,
    这是 harness 层检测到 subagent 的 LLM 完成了推理但漏调 seal_*_handoff tool 的

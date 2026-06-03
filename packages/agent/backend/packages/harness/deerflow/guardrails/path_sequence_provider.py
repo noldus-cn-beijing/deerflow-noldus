@@ -1,14 +1,19 @@
-"""PathSequenceProvider — 校验 task() 派遣顺序是否符合 path_registry.PATHS。
+"""PathSequenceProvider — 校验 task() 派遣顺序是否符合 path_registry.PATHS + plan 就绪前置条件。
 
 堵诊断「洞 1」：跳过 data-analyst 直接 task(chart-maker) 无人拦。
+堵诊断「洞 2」：无 plan_metrics.json / handoff_code_executor.json 就派遣 subagent。
 
 逻辑：
 1. 只拦 task 工具
-2. 从 messages 提取 latest [intent]
-3. 查 PATHS[intent]，找出本次 task(subagent_type=X) 中 X 的位置
-4. 校验 X 之前的所有 dispatch step 对应的 handoff 都已落盘
-5. 若有前序 dispatch step 的 handoff 缺失 → deny，含明确指令
-6. Fail-open：workspace/context 不可用时 allow
+2. Plan 前置 gate:
+   - code-executor 需要 workspace/plan_metrics.json 存在且非空
+   - chart-maker / report-writer 需要 workspace/handoff_code_executor.json 存在且非空
+   - 缺失 → deny，含明确指令
+3. 从 messages 提取 latest [intent]
+4. 查 PATHS[intent]，找出本次 task(subagent_type=X) 中 X 的位置
+5. 校验 X 之前的所有 dispatch step 对应的 handoff 都已落盘
+6. 若有前序 dispatch step 的 handoff 缺失 → deny，含明确指令
+7. Fail-open：workspace/context 不可用时 allow
 
 与 TaskHandoffAuthorizationProvider 的区别（必须说清）：
 - 后者校验"prompt 里有没有写 {{handoff://X}} 占位符"（依赖声明）
@@ -73,6 +78,54 @@ def _extract_latest_intent(messages: list | None) -> str | None:
     return None
 
 
+def _check_plan_precondition(
+    subagent_type: str,
+    workspace: str,
+) -> GuardrailDecision | None:
+    """Check that the required plan/handoff file exists before dispatching.
+
+    - code-executor: needs plan_metrics.json (non-empty)
+    - chart-maker / report-writer: needs handoff_code_executor.json (non-empty)
+
+    Returns None if precondition is satisfied (or not applicable).
+    """
+    if subagent_type == "code-executor":
+        plan_path = Path(workspace) / "plan_metrics.json"
+        if not plan_path.exists() or plan_path.stat().st_size == 0:
+            return GuardrailDecision(
+                allow=False,
+                reasons=[GuardrailReason(
+                    code="ethoinsight.plan_precondition_failed",
+                    message=(
+                        "code-executor 需要 plan_metrics.json 作为施工单。"
+                        "请先调 prep_metric_plan(paradigm=...) 生成。"
+                        "若 prep 返回 zone_unnamed/columns_missing，"
+                        "先 ask_clarification 与用户澄清再 prep，"
+                        "不要在无 plan 时派遣 code-executor。"
+                    ),
+                )],
+                policy_id="path_sequence",
+            )
+    elif subagent_type in ("chart-maker", "report-writer"):
+        handoff_path = Path(workspace) / "handoff_code_executor.json"
+        if not handoff_path.exists() or handoff_path.stat().st_size == 0:
+            return GuardrailDecision(
+                allow=False,
+                reasons=[GuardrailReason(
+                    code="ethoinsight.plan_precondition_failed",
+                    message=(
+                        f"{subagent_type} 需要 handoff_code_executor.json"
+                        f"（code-executor 的施工产物）。"
+                        f"请先按路径依次派遣 code-executor → data-analyst"
+                        f"→ chart-maker/report-writer，"
+                        f"不要在缺失前序产物时直接派遣 {subagent_type}。"
+                    ),
+                )],
+                policy_id="path_sequence",
+            )
+    return None
+
+
 class PathSequenceProvider:
     """Block task(X) when preceding dispatch steps in the path haven't completed.
 
@@ -94,6 +147,14 @@ class PathSequenceProvider:
         subagent_type = request.tool_input.get("subagent_type")
         if not subagent_type:
             return GuardrailDecision(allow=True)
+
+        # --- Plan-ready precondition gate ---
+        # code-executor needs plan_metrics.json; chart-maker/report-writer need handoff_code_executor.json
+        workspace = _lead_workspace.get()
+        if workspace:
+            plan_deny = _check_plan_precondition(subagent_type, workspace)
+            if plan_deny is not None:
+                return plan_deny
 
         # Check intent from messages
         messages = _lead_messages.get()
