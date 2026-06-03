@@ -36,6 +36,7 @@ export const enUS: Translations = {
     custom: "Custom",
     notAvailableInDemoMode: "Not available in demo mode",
     loading: "Loading...",
+    loadMore: "Load more",
     version: "Version",
     lastUpdated: "Last updated",
     code: "Code",
@@ -312,9 +313,34 @@ export const enUS: Translations = {
   // Token Usage
   tokenUsage: {
     title: "Token Usage",
+    label: "Tokens",
     input: "Input",
     output: "Output",
     total: "Total",
+    view: "View usage",
+    unavailable: "Unavailable",
+    unavailableShort: "N/A",
+    note: "Usage reported automatically by the model",
+    presets: {
+      off: "Off",
+      summary: "Summary",
+      perTurn: "Per Turn",
+      debug: "Debug",
+    },
+    presetDescriptions: {
+      off: "Don't show token usage",
+      summary: "Show total usage in header",
+      perTurn: "Show usage per conversation turn",
+      debug: "Show detailed usage per step",
+    },
+    finalAnswer: "Final answer",
+    stepTotal: "Step total",
+    sharedAttribution: "Shared attribution",
+    subagent: (description: string) => `Subagent: ${description}`,
+    startTodo: (content: string) => `Start: ${content}`,
+    completeTodo: (content: string) => `Complete: ${content}`,
+    updateTodo: (content: string) => `Update: ${content}`,
+    removeTodo: (content: string) => `Remove: ${content}`,
   },
 
   // Shortcuts

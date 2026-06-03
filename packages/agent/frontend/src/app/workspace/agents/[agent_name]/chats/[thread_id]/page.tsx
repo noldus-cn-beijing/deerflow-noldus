@@ -48,7 +48,7 @@ export default function AgentChatPage() {
   const isCenteredLayout = isNewThread && !welcomeDismissed;
 
   const { showNotification } = useNotification();
-  const [thread, sendMessage] = useThreadStream({
+  const { thread: streamThread, sendMessage } = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: { ...settings.context, agent_name: agent_name },
     onStart: () => {
@@ -77,6 +77,7 @@ export default function AgentChatPage() {
       }
     },
   });
+  const thread = streamThread;
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
