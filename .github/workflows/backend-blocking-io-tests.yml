@@ -41,6 +41,10 @@ jobs:
         working-directory: packages/agent/backend
         run: uv sync --group dev
 
+      - name: Assert ethoinsight is installed (guards against sync wiping the workspace dep)
+        working-directory: packages/agent/backend
+        run: uv run python -c "import ethoinsight; from ethoinsight.catalog.loader import load_common_catalog; load_common_catalog(); print('ethoinsight import OK')"
+
       - name: Run blocking IO regression tests
         working-directory: packages/agent/backend
         run: uv run pytest tests/blocking_io/ -v --no-header

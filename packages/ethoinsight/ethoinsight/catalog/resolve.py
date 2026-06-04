@@ -22,8 +22,10 @@ from typing import Any
 
 from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.schema import (
+    AnonymousZoneOverride,
     ChartEntry,
     MetricEntry,
+    ParamSpec,
     Plan,
     PlanChart,
     PlanCharts,
@@ -69,6 +71,8 @@ def resolve(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    overrides: dict[str, float | int | str] | None = None,
+    common_catalog: CommonCatalog | None = None,
 ) -> Plan:
     """生成 Plan dataclass。失败抛 ResolveError。
 
@@ -92,6 +96,8 @@ def resolve(
         columns_file=columns_file,
         ev19_template=ev19_template,
         virtual_workspace_dir=virtual_workspace_dir,
+        overrides=overrides,
+        common_catalog=common_catalog,
     )
     return Plan(
         schema_version=pm.schema_version,
@@ -121,13 +127,23 @@ def resolve_metrics(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    overrides: dict[str, float | int | str] | None = None,  # === Sprint 2b ===
+    common_catalog: CommonCatalog | None = None,  # === Sprint 2b ===
 ) -> PlanMetrics:
     """生成 PlanMetrics dataclass（不含 charts）。失败抛 ResolveError。
 
     workspace_dir: 真实物理路径（用于脚本实际执行时的 input 引用等）。
     virtual_workspace_dir: plan.json output 字段使用的虚拟路径（面向 downstream subagent）。
                            未提供时兜底使用 workspace_dir（兼容旧调用方）。
+
+    Sprint 2b 新增:
+        overrides: 用户参数覆盖。key=参数名,value=覆盖值。
+        common_catalog: 含 shared_parameters,用于解析 metric.parameters_ref。
     """
+    overrides = overrides or {}
+    shared_params: dict[str, ParamSpec] = (
+        common_catalog.shared_parameters.parameters if common_catalog else {}
+    )
     try:
         cat = load_catalog(paradigm)
     except CatalogError as e:
@@ -176,23 +192,43 @@ def resolve_metrics(
             continue
         missing = _missing_columns(m.requires_columns, columns)
         if missing:
-            raise ResolveError(
-                code="columns_missing",
-                message=(
-                    f"Required column(s) for metric '{m.id}' not found in data: "
-                    f"{missing}. Default metrics must always run; if the data "
-                    f"truly lacks these columns, ask the user before excluding."
-                ),
-                details={
-                    "metric": m.id,
-                    "missing_patterns": missing,
-                    "available_columns": columns,
-                },
-            )
+            # Check for anonymous zone: missing pattern like in_zone_* but bare in_zone exists.
+            # _detect_anonymous_zone returns:
+            #   ResolveError  → zone_unnamed (anonymous zone, no override) — raise immediately
+            #   True          → zone pattern resolved by override — proceed (skip column check)
+            #   None          → genuine missing column — raise columns_missing below
+            zone_check = _detect_anonymous_zone(missing, columns, overrides, cat.anonymous_zone_override)
+            if isinstance(zone_check, ResolveError):
+                raise zone_check
+            if zone_check is None:
+                # Genuine missing column (not a zone pattern, or bare in_zone doesn't exist)
+                raise ResolveError(
+                    code="columns_missing",
+                    message=(
+                        f"数据缺少指标 '{m.id}' 必需的列：{missing}。"
+                        f"这通常意味着实验录制或导出设置不完整。"
+                        f"请检查实验设计与导出配置后重新提供数据，不要在缺列情况下勉强分析。"
+                    ),
+                    details={
+                        "metric": m.id,
+                        "missing_patterns": missing,
+                        "available_columns": columns,
+                    },
+                )
+            # zone_check is True: anonymous zone pattern resolved by override — proceed
+        # === Sprint 2b: compute parameters_in_use ===
+        params_in_use = _compute_parameters_in_use(
+            metric=m,
+            shared_params=shared_params,
+            paradigm_params=cat.paradigm_parameters.parameters,
+            overrides=overrides,
+            anonymous_zone_override=cat.anonymous_zone_override,
+        )
         plan_metrics.extend(
             _metric_to_plan(
                 m, raw_files, workspace_dir, required=True, reason="paradigm.default",
                 virtual_workspace_dir=virtual_workspace_dir,
+                parameters_in_use=params_in_use,
             )
         )
 
@@ -220,10 +256,19 @@ def resolve_metrics(
                 )
             )
             continue
+        # === Sprint 2b: compute parameters_in_use ===
+        params_in_use = _compute_parameters_in_use(
+            metric=m,
+            shared_params=shared_params,
+            paradigm_params=cat.paradigm_parameters.parameters,
+            overrides=overrides,
+            anonymous_zone_override=cat.anonymous_zone_override,
+        )
         plan_metrics.extend(
             _metric_to_plan(
                 m, raw_files, workspace_dir, required=False, reason="user.include",
                 virtual_workspace_dir=virtual_workspace_dir,
+                parameters_in_use=params_in_use,
             )
         )
 
@@ -424,6 +469,56 @@ def _missing_columns(patterns: list[str], available: list[str]) -> list[str]:
     return missing
 
 
+def _detect_anonymous_zone(
+    missing_patterns: list[str],
+    available_columns: list[str],
+    overrides: dict[str, str],
+    anonymous_zone_override: AnonymousZoneOverride | None = None,
+) -> ResolveError | bool | None:
+    """Detect anonymous zone: missing pattern is a named in_zone variant
+    (e.g. in_zone_center_*) but bare in_zone exists in data.
+
+    Returns:
+        ResolveError — zone_unnamed: anonymous zone detected, no override declared
+        True         — zone pattern detected but override resolves it (proceed)
+        None         — not a zone pattern, or bare in_zone doesn't exist
+    """
+    # Check if any missing pattern is an in_zone variant (has suffix beyond "in_zone")
+    has_zone_pattern = any(
+        pat.startswith("in_zone") and len(pat) > len("in_zone")
+        for pat in missing_patterns
+    )
+    if not has_zone_pattern:
+        return None
+
+    # Bare in_zone must exist in available columns
+    if "in_zone" not in available_columns:
+        return None
+
+    # Paradigm must declare anonymous_zone_override for zone_unnamed to trigger.
+    # Paradigms without it (EPM/FST/TST) fall through to columns_missing.
+    if anonymous_zone_override is None:
+        return None
+
+    # User has provided the unified key → override resolves the zone.
+    if "anonymous_zone_is" in overrides:
+        return True
+
+    return ResolveError(
+        code="zone_unnamed",
+        message=(
+            "检测到一个未命名的分析区(in_zone)，但指标需要命名区域列"
+            f"（缺失: {missing_patterns}）。"
+            "请用 ask_clarification 反问用户该区域代表什么。"
+        ),
+        details={
+            "found_column": "in_zone",
+            "missing_patterns": missing_patterns,
+            "available_columns": available_columns,
+        },
+    )
+
+
 def _metric_to_plan(
     m: MetricEntry,
     raw_files: list[str],
@@ -432,6 +527,7 @@ def _metric_to_plan(
     required: bool,
     reason: str,
     virtual_workspace_dir: str | None = None,
+    parameters_in_use: dict[str, float | int | str] | None = None,  # === Sprint 2b ===
 ) -> list[PlanMetric]:
     """Expand one MetricEntry into N PlanMetric (one per raw_file).
 
@@ -442,15 +538,23 @@ def _metric_to_plan(
 
     W27 (2026-05-27): 透传 catalog 判读 / 展示字段到 PlanMetric,subagent 不再 read catalog YAML。
     详见 docs/superpowers/specs/2026-05-27-catalog-fields-into-plan-design.md
+
+    Sprint 2b: parameters_in_use 填入 PlanMetric; 如非空则追加 --parameters-json 到 args。
     """
     if not raw_files:
         return []
     effective_workspace = virtual_workspace_dir or workspace_dir
     multi = len(raw_files) > 1
+    params_in_use = parameters_in_use or {}
     plans: list[PlanMetric] = []
     for idx, raw_file in enumerate(raw_files):
         suffix = f"_s{idx}" if multi else ""
         output_path = str(Path(effective_workspace) / f"m_{m.id}{suffix}.json")
+        # === Sprint 2b: build args with --parameters-json ===
+        args: list[str] = ["--input", raw_file, "--output", output_path]
+        if params_in_use:
+            params_json = json.dumps(params_in_use, ensure_ascii=False, sort_keys=True)
+            args.extend(["--parameters-json", params_json])
         plans.append(
             PlanMetric(
                 id=m.id,
@@ -466,6 +570,8 @@ def _metric_to_plan(
                 output_unit=m.output_unit,
                 direction_for_anxiety=m.direction_for_anxiety,
                 statistical_default=m.statistical_default,
+                parameters_in_use=params_in_use,  # === Sprint 2b ===
+                args=args,  # === Sprint 2b: CLI args with --parameters-json ===
             )
         )
     return plans
@@ -607,6 +713,7 @@ def _chart_to_plan(
                 output=output_path,
                 subject_index=0,
                 display_name_zh=ch.display_name_zh,
+                confidence=ch.confidence,
                 args=args,
             )
         )
@@ -630,6 +737,7 @@ def _chart_to_plan(
                 output=output_path,
                 subject_index=idx,
                 display_name_zh=ch.display_name_zh,
+                confidence=ch.confidence,
                 args=args,
             )
         )
@@ -699,6 +807,93 @@ def _utcnow_iso() -> str:
 
 
 # ============================================================================
+# Sprint 2b: parameter resolution helpers
+# ============================================================================
+
+
+def _compute_parameters_in_use(
+    metric: MetricEntry,
+    shared_params: dict[str, ParamSpec],
+    paradigm_params: dict[str, ParamSpec],
+    overrides: dict[str, float | int | str],
+    anonymous_zone_override: AnonymousZoneOverride | None = None,
+) -> dict[str, float | int | str]:
+    """合并 catalog default + override → 实际生效的参数集合。
+
+    优先级 (低 → 高):
+    1. shared_params (来自 _common.yaml,通过 metric.parameters_ref 引用)
+    2. paradigm_params (来自 <paradigm>.yaml.paradigm_parameters,范式级共用)
+    3. metric.parameters (单 metric 独有,本 sprint 阶段通常为空)
+    4. overrides (用户覆盖,key 与上述任一名字匹配则替换 default)
+
+    Returns:
+        合并后的 dict: {param_name: actual_value},包含所有适用于此 metric 的参数。
+    """
+    result: dict[str, float | int | str] = {}
+
+    # 1. shared (via parameters_ref)
+    for ref_name in metric.parameters_ref:
+        spec = shared_params.get(ref_name)
+        if spec is None:
+            continue
+        result[ref_name] = spec.default
+
+    # 2. paradigm_params — only inject computation-related params (not dispatcher-only ones)
+    if _metric_uses_pendulum(metric):
+        for pname, pspec in paradigm_params.items():
+            if pname.startswith("pendulum_"):
+                result[pname] = pspec.default
+        # Also inject pendulum_* from shared_params if not already set
+        for pname, pspec in shared_params.items():
+            if pname.startswith("pendulum_") and pname not in result:
+                result[pname] = pspec.default
+    # For velocity-based immobility (used by FST/TST/EPM/OFT/LDB/Zero Maze):
+    # inject velocity_threshold / velocity_min_duration if the metric uses immobility
+    if _metric_uses_velocity_immobility(metric):
+        for pname, pspec in paradigm_params.items():
+            if pname.startswith("velocity_"):
+                result[pname] = pspec.default
+        # Also inject velocity_* from shared_params if not already set
+        for pname, pspec in shared_params.items():
+            if pname.startswith("velocity_") and pname not in result:
+                result[pname] = pspec.default
+
+    # 3. metric.parameters (单 metric 独有)
+    for pname, pspec in metric.parameters.items():
+        result[pname] = pspec.default
+
+    # Translate unified zone key → paradigm's real param, before replace-only loop.
+    # This is where list wrapping happens (zero_maze open_zones requires list[str]).
+    effective_overrides = dict(overrides)
+    azo = anonymous_zone_override
+    if azo is not None and "anonymous_zone_is" in effective_overrides:
+        val = effective_overrides.pop("anonymous_zone_is")
+        effective_overrides[azo.target_param] = [val] if azo.wrap_list else val
+
+    # 4. overrides (最高优先级)
+    for pname, override_val in effective_overrides.items():
+        if pname in result:
+            result[pname] = override_val
+
+    return result
+
+
+def _metric_uses_pendulum(metric: MetricEntry) -> bool:
+    """启发式:metric.script 含 'fst' 或 'tst' 且 metric.id 含 immobility/struggle/pendulum/activity_intensity。"""
+    script_lower = metric.script.lower()
+    id_lower = metric.id.lower()
+    is_swim_test = ".fst." in script_lower or ".tst." in script_lower
+    is_pendulum_metric = any(kw in id_lower for kw in ["immobility", "struggle", "pendulum", "activity_intensity"])
+    return is_swim_test and is_pendulum_metric
+
+
+def _metric_uses_velocity_immobility(metric: MetricEntry) -> bool:
+    """启发式:metric.id 含 immobility 时需要 velocity 参数（用于 velocity-based immobility fallback）。"""
+    id_lower = metric.id.lower()
+    return "immobility" in id_lower
+
+
+# ============================================================================
 # Serialization
 # ============================================================================
 
@@ -731,6 +926,9 @@ def plan_to_dict(plan: Plan) -> dict:
                 "output_unit": m.output_unit,
                 "direction_for_anxiety": m.direction_for_anxiety,
                 "statistical_default": m.statistical_default,
+                # Sprint 2b: 参数 + CLI args
+                "parameters_in_use": m.parameters_in_use,
+                "args": m.args,
             }
             for m in plan.metrics
         ],
@@ -784,6 +982,9 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
                 "output_unit": m.output_unit,
                 "direction_for_anxiety": m.direction_for_anxiety,
                 "statistical_default": m.statistical_default,
+                # Sprint 2b: 参数 + CLI args
+                "parameters_in_use": m.parameters_in_use,
+                "args": m.args,
             }
             for m in pm.metrics
         ],

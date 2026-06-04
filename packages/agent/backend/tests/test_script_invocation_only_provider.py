@@ -69,12 +69,79 @@ class TestCodeExecutorBashAllowList:
         assert decision.allow
 
     def test_cp_allowed(self, provider):
-        decision = provider.evaluate(_req("bash", command="cp /a /b"))
+        decision = provider.evaluate(_req("bash", command="cp /mnt/user-data/workspace/a.json /mnt/user-data/workspace/b.json"))
         assert decision.allow
 
     def test_ls_bash_allowed(self, provider):
         decision = provider.evaluate(_req("bash", command="ls /tmp"))
         assert decision.allow
+
+
+class TestChartMakerResolveAndDumpHeadersAllowed:
+    """2026-06-04 regression fix: chart-maker's documented workflow runs
+    `ethoinsight.catalog.resolve --mode charts` (SKILL.md step 2) which has a
+    REQUIRED --columns-file produced by `ethoinsight.parse.dump_headers`. The
+    allow-pattern only matched `ethoinsight.scripts.*`, so chart-maker was blocked
+    at step 2 and could never produce a chart. These anchors lock the two CLIs in.
+    """
+
+    def test_catalog_resolve_charts_allowed_for_chart_maker(self, provider):
+        decision = provider.evaluate(_req(
+            "bash",
+            command=(
+                'python -m ethoinsight.catalog.resolve --mode charts --paradigm zero_maze '
+                '--columns-file /mnt/user-data/workspace/columns.json '
+                '--raw-files-json /mnt/user-data/workspace/raw_files.json '
+                '--workspace-dir /mnt/user-data/workspace --user-intent "画图" '
+                '--output /mnt/user-data/workspace/plan_charts.json'
+            ),
+            agent_id="subagent:chart-maker",
+        ))
+        assert decision.allow
+
+    def test_dump_headers_allowed_for_chart_maker(self, provider):
+        decision = provider.evaluate(_req(
+            "bash",
+            command=(
+                "python -m ethoinsight.parse.dump_headers "
+                "--input /mnt/user-data/uploads/a.xlsx "
+                "--output /mnt/user-data/workspace/columns.json"
+            ),
+            agent_id="subagent:chart-maker",
+        ))
+        assert decision.allow
+
+    def test_catalog_resolve_also_allowed_for_code_executor(self, provider):
+        # Whitelisting the module is agent-agnostic; code-executor passing through
+        # the same allow branch is harmless (its workflow does not call charts mode).
+        decision = provider.evaluate(_req(
+            "bash",
+            command="python -m ethoinsight.catalog.resolve --mode metrics --paradigm epm "
+                    "--columns-file /mnt/user-data/workspace/columns.json "
+                    "--raw-files-json /mnt/user-data/workspace/raw_files.json "
+                    "--workspace-dir /mnt/user-data/workspace --output /mnt/user-data/workspace/p.json",
+            agent_id="subagent:code-executor",
+        ))
+        assert decision.allow
+
+    def test_lookalike_other_ethoinsight_module_still_denied(self, provider):
+        # The fix must stay precise: only scripts.* / catalog.resolve / parse.dump_headers.
+        # A different ethoinsight module must NOT be opened up by the widened pattern.
+        decision = provider.evaluate(_req(
+            "bash",
+            command="python -m ethoinsight.parse.parse_trajectory --input /tmp/a.txt",
+            agent_id="subagent:chart-maker",
+        ))
+        assert not decision.allow
+
+    def test_catalog_other_submodule_still_denied(self, provider):
+        # Only catalog.resolve is allowed, not arbitrary catalog.* modules.
+        decision = provider.evaluate(_req(
+            "bash",
+            command="python -m ethoinsight.catalog.loader --paradigm epm",
+            agent_id="subagent:chart-maker",
+        ))
+        assert not decision.allow
 
 
 class TestCodeExecutorBashDenyList:

@@ -57,6 +57,8 @@
 | 3-4 | 执行标准流水线，但在 data-analyst prompt 中注明"样本量偏小，谨慎解读" |
 | < 3 | **`ask_clarification`**：告知用户样本量不足，询问：(a) 仅做描述性统计 (b) 先补数据 (c) 强行跑统计（不推荐）|
 
+**分组落地（必读）**: 用户在 ask_clarification 答完分组（如"第一个是实验组"）之后，**必须**把答案翻译成 dict 传给 `prep_metric_plan(groups=...)`，详见 `ethoinsight-grouping` skill 的 [lead-translates-answer.md](../../ethoinsight-grouping/references/lead-translates-answer.md)。**不允许**在派遣 code-executor 的 prompt 里用自然语言描述分组而不传 groups dict——会导致 code-executor 幻觉脚本探测 drug 列（2026-05-28 thread 485a899d 实证）。
+
 ## Gate 2: code-executor 返回后 — 数据质量警告
 
 **触发时机**: code-executor 完成，返回 handoff JSON

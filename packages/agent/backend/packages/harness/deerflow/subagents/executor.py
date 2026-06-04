@@ -12,6 +12,7 @@ from contextvars import Context, copy_context
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from langchain.agents import create_agent
@@ -69,6 +70,196 @@ def calculate_subagent_recursion_limit(middlewares: list[AgentMiddleware], max_t
     one_off = before_agent + after_agent
     margin = 3
     return max_turns * per_turn + one_off + margin
+
+
+# ---------------------------------------------------------------------------
+# Sprint 5.7: Handoff emission validation
+#
+# Ethoinsight subagents that MUST seal a handoff file before terminating
+# successfully. Keys are SubagentConfig.name (hyphenated, matching config.name);
+# values are the expected handoff filename in the thread workspace.
+#
+# General-purpose subagents (general-purpose / bash / knowledge-assistant) are
+# intentionally NOT in this map — they have no seal_*_handoff contract and may
+# legitimately complete without producing a handoff file.
+# ---------------------------------------------------------------------------
+_HANDOFF_EMISSION_REQUIRED: dict[str, str] = {
+    "code-executor": "handoff_code_executor.json",
+    "data-analyst": "handoff_data_analyst.json",
+    "chart-maker": "handoff_chart_maker.json",
+    "report-writer": "handoff_report_writer.json",
+}
+
+
+# ---------------------------------------------------------------------------
+# Sprint 5.5: 各 subagent handoff 的「核心字段非空」判据。
+# 判据语义对应 handoff_schemas.py 的字段（single-source：字段含义以 schema 为准，
+# 此处只编码"哪个字段必须非空"，不复制 schema 定义）：
+#   code-executor : metrics_summary 非空 dict（规范字段，Sprint 0 起）；
+#                   metrics / metrics_results = 历史等价字段，承认有效性但记 warning
+#   data-analyst  : key_findings 非空 list（DataAnalystHandoff.key_findings）
+#   chart-maker   : chart_files 非空 list 或 failed_charts 有说明（ChartMakerHandoff）
+#   report-writer : report_path 非空 str（ReportWriterHandoff.report_path）
+# 每个检查函数收 parsed handoff dict，返回 None=通过 / str=缺失字段说明。
+# ---------------------------------------------------------------------------
+
+# 指标数据的规范字段名（single source of truth）。
+# metrics_summary = 当前规范（Sprint 0 起）。
+# metrics / metrics_results = 历史等价字段（Sprint 0 前的旁路写入产物），
+#   承认其数据有效性以免误判残缺，但记 warning 暴露「非规范格式」。
+#
+# 已知边界：data-analyst 读 metrics_summary[*].parameters_used 做参数审计。
+# 若喂它 metrics/metrics_results 字段的历史样本（当前管道不产），
+# parameters_used 会取空 → 审计跳过（见 data_analyst.py:115-124）。
+# 此为历史样本独有，不在本任务修复范围——修复方向是让 data-analyst 也认等价字段。
+_CODE_EXECUTOR_METRICS_FIELDS = ("metrics_summary", "metrics", "metrics_results")
+
+
+def _check_code_executor_content(d: dict) -> str | None:
+    present = [f for f in _CODE_EXECUTOR_METRICS_FIELDS if d.get(f)]
+    if not present:
+        # 三个字段全空 → 真残缺
+        return "metrics data is empty (none of metrics_summary/metrics/metrics_results populated)"
+    if "metrics_summary" not in present:
+        # 数据在历史等价字段，非当前规范 → 放行但暴露，便于发现新的格式漂移
+        logger.warning(
+            "[handoff_content] code-executor handoff uses non-canonical metrics field(s) %s "
+            "instead of 'metrics_summary'. Data accepted, but this is a format drift — "
+            "current pipeline should emit metrics_summary.",
+            present,
+        )
+    return None
+
+
+def _check_data_analyst_content(d: dict) -> str | None:
+    if not d.get("key_findings"):
+        return "key_findings is empty"
+    return None
+
+
+def _check_chart_maker_content(d: dict) -> str | None:
+    # chart_files 空但 failed_charts 有说明 = 合法（图表确实没生成但记录了原因）
+    if not d.get("chart_files") and not d.get("failed_charts"):
+        return "both chart_files and failed_charts are empty"
+    return None
+
+
+def _check_report_writer_content(d: dict) -> str | None:
+    if not d.get("report_path"):
+        return "report_path is empty"
+    return None
+
+
+_HANDOFF_CONTENT_CHECKS: dict[str, Callable[[dict], str | None]] = {
+    "code-executor": _check_code_executor_content,
+    "data-analyst": _check_data_analyst_content,
+    "chart-maker": _check_chart_maker_content,
+    "report-writer": _check_report_writer_content,
+}
+
+
+# Sprint 5.8: seal-resume 只补 1 轮。这是深思过的决策，不是任意值。
+# 理由：补轮失败的主因更可能是【系统性】(分析结论本身残缺 / LLM 卡在理解错误)
+# 而非【随机】——再补一轮多半是同样结果。补不上时，交给 5.7 兜底重派【整个
+# subagent】(全新上下文)反而更可能成功。纵深防御已足够：补轮(便宜捞一次) →
+# 5.7 重派(全新上下文) → lead 最多 2 次 retry。不需要在补轮内部再加循环。
+# 改大此值的代价：消耗更多 turn + token + 延迟（补轮是独立 astream，受 recursion_limit 管）。
+_SEAL_RESUME_MAX_ATTEMPTS = 1
+
+
+def _validate_handoff_emitted(
+    subagent_name: str,
+    workspace_path: str | None,
+) -> str | None:
+    """Return None if the subagent's handoff file is present AND has non-empty core content.
+
+    Called just before set_terminal(COMPLETED). If subagent_name is in
+    _HANDOFF_EMISSION_REQUIRED but its handoff file is absent in workspace,
+    returns an error string explaining the failure (used as
+    try_set_terminal(FAILED, error=...)). If the file exists but its core
+    content fields are empty (Sprint 5.5), returns a diagnostic string
+    explaining the incompleteness. Otherwise returns None (pass / N/A).
+
+    ROBUSTNESS (Sprint 5.7 spec §1 C3 + Sprint 5.5): this function MUST NOT
+    raise. The call site sits inside executor's try/except — any exception
+    here would be caught and mis-attributed as a generic FAILED, clobbering
+    our diagnostic. So all filesystem access is wrapped; on unexpected error
+    we fail-open (return None).
+
+    Args:
+        subagent_name: SubagentConfig.name, e.g. "data-analyst".
+        workspace_path: Host-side workspace dir from thread_data["workspace_path"].
+            None when ThreadDataMiddleware didn't set it (old threads / dev paths).
+
+    Returns:
+        None  -> validation passes (file present + core content non-empty),
+                 or subagent not in white-list, or unresolvable workspace (fail-open).
+        str   -> diagnostic explaining the missing or empty handoff.
+    """
+    expected_filename = _HANDOFF_EMISSION_REQUIRED.get(subagent_name)
+    if expected_filename is None:
+        # Not a handoff-producing ethoinsight subagent — no contract to enforce.
+        return None
+
+    if not workspace_path:
+        # No workspace resolvable — can't validate. Fail-open (do NOT block);
+        # this preserves pre-5.7 behavior for old threads and dev paths.
+        logger.warning(
+            "[handoff_emission] Subagent %s: no workspace_path; skipping "
+            "handoff validation (fail-open).",
+            subagent_name,
+        )
+        return None
+
+    try:
+        handoff_path = Path(workspace_path) / expected_filename
+        if handoff_path.exists():
+            # Sprint 5.5: 文件存在 → 再查核心字段非空。空内容 handoff（调了 seal
+            # 但字段残缺）会静默通过下游产垃圾，比漏调更隐蔽。判据见 _HANDOFF_CONTENT_CHECKS。
+            content_check = _HANDOFF_CONTENT_CHECKS.get(subagent_name)
+            if content_check is None:
+                return None  # 无内容判据（理论上白名单内都有）→ 仅凭存在性放行
+            try:
+                import json
+
+                parsed = json.loads(handoff_path.read_text(encoding="utf-8"))
+            except Exception:
+                # 读/解析失败 → 无法判定内容 → fail-open 放行（保守，不阻断正常 task）
+                logger.warning(
+                    "[handoff_content] Subagent %s: cannot parse %s for content check; "
+                    "passing on existence only.",
+                    subagent_name,
+                    expected_filename,
+                )
+                return None
+            missing = content_check(parsed) if isinstance(parsed, dict) else "handoff is not a JSON object"
+            if missing is None:
+                return None  # 文件存在 + 核心字段非空 → 通过
+            # 文件存在但核心字段空 → 返回诊断（fall through to diagnostic below）
+            seal_tool = f"seal_{subagent_name.replace('-', '_')}_handoff"
+            return (
+                f"Subagent '{subagent_name}' sealed '{expected_filename}' but its "
+                f"core content is incomplete: {missing}. The handoff exists but is "
+                f"unusable by downstream subagents. Lead should re-dispatch this task "
+                f"reminding it to fill the {seal_tool} arguments with actual results."
+            )
+    except Exception:  # noqa: BLE001 — must never raise; see docstring ROBUSTNESS.
+        logger.exception(
+            "[handoff_emission] Subagent %s: error while checking %s; "
+            "failing open.",
+            subagent_name,
+            expected_filename,
+        )
+        return None
+
+    seal_tool = f"seal_{subagent_name.replace('-', '_')}_handoff"
+    return (
+        f"Subagent '{subagent_name}' terminated without emitting "
+        f"'{expected_filename}'. This means the LLM finished its reasoning "
+        f"but forgot to call the {seal_tool} tool. The handoff file is "
+        f"REQUIRED by downstream subagents. Lead should re-dispatch this task "
+        f"with an explicit reminder to invoke the seal tool at the end."
+    )
 
 
 class SubagentStatus(Enum):
@@ -472,7 +663,8 @@ class SubagentExecutor:
         wholesale, fall back to a legacy formula).
         """
         model_name = _get_model_name(self.config, self.parent_model)
-        model = create_chat_model(name=model_name, thinking_enabled=False)
+        # 按 subagent config 决定是否开 think：洞察型 subagent（data-analyst）开，执行型关
+        model = create_chat_model(name=model_name, thinking_enabled=self.config.thinking_enabled)
 
         middlewares = self._build_middlewares()
         self._last_middlewares = middlewares
@@ -530,6 +722,102 @@ class SubagentExecutor:
             state["thread_data"] = self.thread_data
 
         return state, self.tools
+
+    async def _attempt_seal_resume(
+        self,
+        agent,
+        final_state: dict,
+        run_config,
+        context: dict,
+        result,
+        collector,
+    ) -> dict | None:
+        """漏调 seal 时，就地补一轮聚焦收尾。返回更新后的 final_state，异常时返回 None。
+
+        不强制 tool_choice（探针证明会产空 args），不用 structured output（会 strip
+        runtime 注入）。只是给 subagent 一个上下文聚焦的"现在请 seal"轮次——探针实证
+        聚焦上下文里 LLM 会正确调 seal 且 args 完整。模型无关（Qwen 切换零影响）。
+
+        ROBUSTNESS: 绝不抛异常。补轮失败 → 返回 None → 外层走 5.7 FAILED 兜底。
+        """
+        seal_tool = f"seal_{self.config.name.replace('-', '_')}_handoff"
+        # 补轮 prompt 措辞（grill 2026-05-29 锁定）：用 HumanMessage 追加（不是第二个
+        # SystemMessage——dashscope/create_agent 不接受中途插第二条 SystemMessage，见
+        # executor.py:567 已踩坑规避）。措辞保持下方现状即可：它已是"指令 + 终结步骤"
+        # 框定（"这是最后一步"），且 2026-05-29 E2E dogfood 实证补轮用它成功调对 seal。
+        # 【实施 agent 不要"优化"这段措辞】——能跑通就不动；正面措辞，勿加"不要重新分析/
+        # 不要解释"之类反向激活词（CLAUDE.md §6 deepseek 正面提示原则）。
+        resume_prompt = (
+            f"你上面的分析已经完成。现在请调用 {seal_tool} 工具，"
+            f"把你刚才得出的结论（key_findings / 各结构化字段）填入工具参数并落库。"
+            f"这是完成本次任务的最后一步——调用该工具后任务即完成。"
+        )
+        try:
+            messages = list(final_state.get("messages", []))
+
+            # Sprint 5.8 前置守卫（grill 锁定 2026-05-29）：必须有实质分析内容
+            # (至少一条 AIMessage) 才值得补轮。补轮的全部价值是"让 LLM 把【已经做好的】
+            # 分析 seal 掉"；若 history 里连一条 AIMessage 都没有(subagent 根本没产生过
+            # 实质分析，如第一轮就被截断/异常早退)，补轮无米下锅——强行补只会让 LLM 用空
+            # args 调 seal，产出空 handoff(比漏调更糟)。这种情况返回 None，交给 5.7
+            # 兜底重派【整个 subagent】(全新跑一次)。语义：只补"漏了 seal"，不补"没分析"。
+            if not any(isinstance(m, AIMessage) for m in messages):
+                logger.warning(
+                    "[trace=%s] Subagent %s: no AIMessage in history, skip seal-resume "
+                    "(no analysis to seal; let 5.7 re-dispatch)",
+                    self.trace_id,
+                    self.config.name,
+                )
+                return None
+
+            messages.append(HumanMessage(content=resume_prompt))
+            resume_state = {**final_state, "messages": messages}
+            # Sprint 5.8 显式重注入 thread_data + sandbox（grill 2026-05-29 锁定）：
+            # 补轮里 subagent 调 seal_*_handoff 时，seal tool 从 runtime.state["thread_data"]
+            # ["workspace_path"] 取目录写文件（seal_handoff_tools.py:_resolve_workspace）。
+            # 探针已实证 graph 的 final_state 确实透传了 thread_data，所以【当前】不注入
+            # 也能 seal。但仍显式重注入——零成本(executor 手里就有
+            # self.thread_data/self.sandbox_state)、不依赖"graph 透传自定义 state 字段"
+            # 这个 langchain 版本相关的隐式行为(版本/middleware 变动可能改变)。显式 > 隐式透传
+            # ([[feedback_dev_prod_behavior_alignment]] 精神)。缺 workspace 时 seal 会抛
+            # RuntimeError → 被 try/except 吞 → 补轮静默白做，极难诊断，故防御性补这一行。
+            if self.thread_data is not None:
+                resume_state["thread_data"] = self.thread_data
+            if self.sandbox_state is not None:
+                resume_state["sandbox"] = self.sandbox_state
+
+            logger.info(
+                "[trace=%s] Subagent %s: handoff missing, attempting seal-resume (1 focused turn)",
+                self.trace_id,
+                self.config.name,
+            )
+            new_final = None
+            async for chunk in agent.astream(
+                resume_state, config=run_config, context=context, stream_mode="values"
+            ):
+                if result.cancel_event.is_set():
+                    return new_final  # 尊重取消
+                new_final = chunk
+                # 收集补轮的 AI message（复用主循环的去重模式）
+                msgs = chunk.get("messages", [])
+                if msgs and isinstance(msgs[-1], AIMessage):
+                    md = msgs[-1].model_dump()
+                    mid = md.get("id")
+                    dup = (
+                        any(m.get("id") == mid for m in result.ai_messages)
+                        if mid
+                        else md in result.ai_messages
+                    )
+                    if not dup:
+                        result.ai_messages.append(md)
+            return new_final if new_final is not None else final_state
+        except Exception:
+            logger.exception(
+                "[trace=%s] Subagent %s: seal-resume attempt failed; falling back to 5.7 FAILED",
+                self.trace_id,
+                self.config.name,
+            )
+            return None
 
     async def _aexecute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
         """Execute a task asynchronously.
@@ -720,7 +1008,54 @@ class SubagentExecutor:
                     logger.warning(f"[trace={self.trace_id}] Subagent {self.config.name} no messages in final state")
                     result.result = "No response generated"
 
-            result.try_set_terminal(SubagentStatus.COMPLETED)
+            # Sprint 5.7 + 5.8: validate handoff emission before marking COMPLETED.
+            # For ethoinsight subagents (code-executor / data-analyst /
+            # chart-maker / report-writer), the expected handoff file MUST exist
+            # in the thread workspace. An LLM can finish its thinking turn
+            # without emitting the seal_*_handoff tool_call — executor would
+            # otherwise mark the task COMPLETED falsely and break downstream.
+            #
+            # Sprint 5.8: 漏调 seal → 先就地补一轮聚焦收尾，补不上才走 5.7 FAILED。
+            # 仅对白名单 subagent（_validate 返回非 None 即在白名单且文件缺失）+ 有
+            # final_state 可续跑 + 未被取消时尝试。
+            _workspace = (
+                self.thread_data.get("workspace_path")
+                if isinstance(self.thread_data, dict)
+                else None
+            )
+            _handoff_error = _validate_handoff_emitted(self.config.name, _workspace)
+
+            if (
+                _handoff_error is not None
+                and final_state is not None
+                and not result.cancel_event.is_set()
+            ):
+                _resumed_state = await self._attempt_seal_resume(
+                    agent, final_state, run_config, context, result, collector,
+                )
+                if _resumed_state is not None:
+                    final_state = _resumed_state
+                # 补轮后重新校验（含 Sprint 5.5 内容非空检查）。
+                # Sprint 5.5 已覆盖：_validate_handoff_emitted 现在不仅查文件存在，
+                # 还查核心字段非空（metrics_summary 规范 + metrics/metrics_results 等价 / key_findings / chart_files /
+                # report_path）。补轮调了 seal 但 args 残缺 → 文件产出但内容空 →
+                # 此处判 FAILED → 走 lead ask_clarification 规则。
+                _handoff_error = _validate_handoff_emitted(self.config.name, _workspace)
+                # Sprint 5.8 §3.4: 补轮 token 计入 collector snapshot
+                if collector is not None:
+                    result.token_usage_records = collector.snapshot_records()
+
+            if _handoff_error is not None:
+                logger.warning(
+                    "[trace=%s] Subagent %s terminated without emitting handoff "
+                    "(seal-resume did not recover): %s",
+                    self.trace_id,
+                    self.config.name,
+                    _handoff_error,
+                )
+                result.try_set_terminal(SubagentStatus.FAILED, error=_handoff_error)
+            else:
+                result.try_set_terminal(SubagentStatus.COMPLETED)
 
         except Exception as e:
             logger.exception(f"[trace={self.trace_id}] Subagent {self.config.name} async execution failed")

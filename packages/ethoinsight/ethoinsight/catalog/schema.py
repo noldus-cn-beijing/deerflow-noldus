@@ -28,6 +28,36 @@ ALLOWED_STAT_DEFAULTS: frozenset[str] = frozenset(
 )
 
 
+# ============================================================================
+# Sprint 2a: parameter specs — catalog 端参数下沉
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class ParamSpec:
+    """单个参数的定义。"""
+
+    default: float | int | str
+    unit: str
+    description: str
+    tunable_by_user: bool
+    valid_range: list[float | int] | None  # [min, max] for numeric; None for str
+
+
+@dataclass(frozen=True)
+class SharedParameters:
+    """跨范式共享的参数集合 (_common.yaml.shared_parameters)。"""
+
+    parameters: dict[str, ParamSpec]
+
+
+@dataclass(frozen=True)
+class ParadigmParameters:
+    """范式级共用参数 (各 <paradigm>.yaml 的 paradigm_parameters 段)。"""
+
+    parameters: dict[str, ParamSpec] = field(default_factory=dict)
+
+
 @dataclass(frozen=True)
 class MetricEntry:
     id: str
@@ -39,6 +69,8 @@ class MetricEntry:
     one_liner: str
     direction_for_anxiety: str | None  # validated against ALLOWED_DIRECTIONS
     statistical_default: str  # validated against ALLOWED_STAT_DEFAULTS
+    parameters: dict[str, ParamSpec] = field(default_factory=dict)
+    parameters_ref: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -47,6 +79,9 @@ class ChartEntry:
     script: str
     when: ChartCondition  # "always" | "n_per_group >= K" | "n_groups >= K"
     display_name_zh: str = ""          # 1.1: 中文图名，必填（loader 校验）
+    confidence: str = "optional"       # "must_have" | "optional" | "rarely_used"
+                                       # must_have: 自动生成不询问；optional: 反问用户要不要出；
+                                       # rarely_used: 用户主动提才生成
     accepts_paradigm: bool = False      # 1.1: 脚本是否接受 --paradigm 参数
     output_mode: str = "per_subject"   # 1.2: "per_subject" expands to N PlanCharts (one inputs.json per file);
                                          # "aggregate" collapses to 1 PlanChart with all files in one inputs.json
@@ -65,6 +100,22 @@ class StatisticsEntry:
 
 
 @dataclass(frozen=True)
+class AnonymousZoneOverride:
+    """Per-paradigm translation rule for unified anonymous zone key.
+
+    When a paradigm declares this, the resolve layer:
+    1. Accepts the unified key ``anonymous_zone_is`` (instead of
+       paradigm-specific keys like center_zone / open_zones / light_zone).
+    2. Translates it into the real parameter name (target_param), with
+       optional list wrapping for parameters whose compute function expects
+       a list (e.g. zero_maze open_zones).
+    """
+
+    target_param: str
+    wrap_list: bool = False
+
+
+@dataclass(frozen=True)
 class Catalog:
     paradigm: str
     ev19_templates: list[str]
@@ -72,6 +123,20 @@ class Catalog:
     optional_metrics: list[MetricEntry]
     charts: list[ChartEntry]
     statistics_default: StatisticsEntry | None
+    paradigm_parameters: ParadigmParameters = field(
+        default_factory=ParadigmParameters
+    )
+    anonymous_zone_override: AnonymousZoneOverride | None = None
+
+
+@dataclass(frozen=True)
+class CommonCatalog:
+    """Paradigm-agnostic fallback resources."""
+
+    common_charts: list[ChartEntry]
+    shared_parameters: SharedParameters = field(
+        default_factory=lambda: SharedParameters(parameters={})
+    )
 
 
 # ============================================================================
@@ -110,6 +175,8 @@ class PlanMetric:
     output_unit: str = ""
     direction_for_anxiety: str | None = None
     statistical_default: str = ""
+    parameters_in_use: dict[str, float | int | str] = field(default_factory=dict)
+    args: list[str] = field(default_factory=list)  # === Sprint 2b: CLI args for code-executor ===
 
 
 @dataclass
@@ -136,6 +203,7 @@ class PlanChart:
     output: str
     subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
     display_name_zh: str = ""           # 1.1: 中文图名，透传自 ChartEntry
+    confidence: str = "optional"        # 透传自 ChartEntry.confidence
     args: list[str] = field(default_factory=list)  # 1.1: resolve 阶段填充的 CLI 参数数组
 
 

@@ -1,0 +1,33 @@
+# Case-001: EPM（高架十字迷宫）Baseline
+
+# ============================================================
+# 填写指引
+# ============================================================
+# 1. 先把 EthoVision 导出的数据文件放入 raw-data/ 目录
+# 2. 填写下方的必填字段（搜索 "TODO" 定位所有需要填的地方）
+# 3. 填写后删除 TODO 标记
+# ============================================================
+
+case_id: "case-001-epm-baseline"
+paradigm: "epm"
+species: ""                               # TODO: 如 "C57BL/6 mouse"
+strain: ""                                # TODO: 如 "C57BL/6J"
+n_subjects: 0                             # TODO: 受试者总数
+n_groups: 0                               # TODO: 分组数
+groups:                                   # TODO: 组名 → 受试者 ID 列表
+  # control:
+  #   - "Subject 1"
+  #   - "Subject 2"
+  #   - "Subject 3"
+  # treatment:
+  #   - "Subject 4"
+  #   - "Subject 5"
+  #   - "Subject 6"
+experimental_condition: ""                # TODO: 如 "Diazepam 2mg/kg i.p." 或 "Chronic mild stress 4w"
+source: ""                                # TODO: 如 "实验室A 2026年研究项目" 或 "demo-data/高架十字迷宫/"
+raw_data_files: 0                         # TODO: raw-data/ 下的文件数量
+created: ""                               # TODO: YYYY-MM-DD
+annotator: ""                             # TODO: 您的姓名
+reviewer: ""                              # 选填
+difficulty: "easy"                        # easy / moderate / hard
+tags: []                                  # TODO: 如 ["anxiety", "diazepam", "typical"]

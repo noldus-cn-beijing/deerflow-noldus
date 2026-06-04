@@ -3,52 +3,38 @@
 # deploy.sh - Build, start, or stop DeerFlow production services
 #
 # Commands:
-#   deploy.sh [--MODE]           — build + start (default: --standard)
+#   deploy.sh                    — build + start
 #   deploy.sh build              — build all images (mode-agnostic)
-#   deploy.sh start [--MODE]     — start from pre-built images (default: --standard)
+#   deploy.sh start              — start from pre-built images
 #   deploy.sh down               — stop and remove containers
-#
-# Runtime modes:
-#   --standard  (default)  All services including LangGraph server.
-#   --gateway              No LangGraph container; nginx routes /api/langgraph/*
-#                          to the Gateway compat API instead.
 #
 # Sandbox mode (local / aio / provisioner) is auto-detected from config.yaml.
 #
 # Examples:
-#   deploy.sh                    # build + start in standard mode
-#   deploy.sh --gateway          # build + start in gateway mode
+#   deploy.sh                    # build + start
 #   deploy.sh build              # build all images
-#   deploy.sh start --gateway    # start pre-built images in gateway mode
+#   deploy.sh start              # start pre-built images
 #   deploy.sh down               # stop and remove containers
 #
 # Must be run from the repo root directory.
 
 set -e
 
-RUNTIME_MODE="standard"
-
 case "${1:-}" in
     build|start|down)
         CMD="$1"
         if [ -n "${2:-}" ]; then
-            case "$2" in
-                --standard) RUNTIME_MODE="standard" ;;
-                --gateway)  RUNTIME_MODE="gateway" ;;
-                *) echo "Unknown mode: $2"; echo "Usage: deploy.sh [build|start|down] [--standard|--gateway]"; exit 1 ;;
-            esac
+            echo "Unknown argument: $2"
+            echo "Usage: deploy.sh [build|start|down]"
+            exit 1
         fi
-        ;;
-    --standard|--gateway)
-        CMD=""
-        RUNTIME_MODE="${1#--}"
         ;;
     "")
         CMD=""
         ;;
     *)
         echo "Unknown argument: $1"
-        echo "Usage: deploy.sh [build|start|down] [--standard|--gateway]"
+        echo "Usage: deploy.sh [build|start|down]"
         exit 1
         ;;
 esac
@@ -56,31 +42,26 @@ esac
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# ── Resolve symlinks for Docker COPY ─────────────────────────────────────────
-# Docker COPY cannot follow symlinks whose targets are outside the build context.
-# Replace symlinks under backend/packages/ with real copies from the monorepo.
-_ethoinsight_link="$REPO_ROOT/backend/packages/ethoinsight"
-if [ -L "$_ethoinsight_link" ]; then
-    _target="$(readlink -f "$_ethoinsight_link")"
-    if [ -d "$_target" ]; then
-        echo "Resolving symlink: backend/packages/ethoinsight → $_target"
-        rm "$_ethoinsight_link"
-        cp -r "$_target" "$_ethoinsight_link"
-        _restore_ethoinsight=1
-    fi
-fi
-
-# Restore symlink on exit (keep the worktree clean)
-cleanup_ethoinsight() {
-    if [ "${_restore_ethoinsight:-0}" = "1" ] && [ -d "$_ethoinsight_link" ]; then
-        rm -rf "$_ethoinsight_link"
-        ln -s ../../../ethoinsight "$_ethoinsight_link"
-    fi
-}
-trap cleanup_ethoinsight EXIT
-
 DOCKER_DIR="$REPO_ROOT/docker"
 COMPOSE_CMD=(docker compose -p deer-flow -f "$DOCKER_DIR/docker-compose.yaml")
+
+# ── resolve_ethoinsight_symlink ───────────────────────────────────────────────
+# backend/packages/ethoinsight is a git-tracked symlink → ../../../ethoinsight
+# (= repo-root packages/ethoinsight, outside the Docker build context
+# packages/agent/). Docker COPY cannot follow a symlink that points outside the
+# build context, so before `docker compose build` we replace the symlink with a
+# real copy (mirrors .github/workflows/build-push-acr.yml's "Resolve ethoinsight
+# symlink" step). A trap restores the symlink on exit so the git working tree is
+# never left dirty, even if the build fails.
+resolve_ethoinsight_symlink() {
+    if [ -L "$REPO_ROOT/backend/packages/ethoinsight" ]; then
+        trap 'rm -rf "$REPO_ROOT/backend/packages/ethoinsight"; git -C "$REPO_ROOT" checkout -- backend/packages/ethoinsight 2>/dev/null || true' EXIT
+        rm "$REPO_ROOT/backend/packages/ethoinsight"
+        cp -rL "$REPO_ROOT/../ethoinsight" "$REPO_ROOT/backend/packages/ethoinsight"
+        echo -e "${GREEN}✓ Resolved ethoinsight symlink → real dir for Docker build (restored on exit)${NC}"
+    fi
+}
+
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -108,17 +89,17 @@ if [ -z "$DEER_FLOW_CONFIG_PATH" ]; then
     export DEER_FLOW_CONFIG_PATH="$REPO_ROOT/config.yaml"
 fi
 
-if [ ! -f "$DEER_FLOW_CONFIG_PATH" ]; then
+if  [ "$CMD" != "down" ] && [ ! -f "$DEER_FLOW_CONFIG_PATH" ]; then
     # Try to seed from repo (config.example.yaml is the canonical template)
     if [ -f "$REPO_ROOT/config.example.yaml" ]; then
         cp "$REPO_ROOT/config.example.yaml" "$DEER_FLOW_CONFIG_PATH"
         echo -e "${GREEN}✓ Seeded config.example.yaml → $DEER_FLOW_CONFIG_PATH${NC}"
         echo -e "${YELLOW}⚠ config.yaml was seeded from the example template.${NC}"
-        echo "  Edit $DEER_FLOW_CONFIG_PATH and set your model API keys before use."
+        echo "  Run 'make setup' to generate a minimal config, or edit $DEER_FLOW_CONFIG_PATH manually before use."
     else
         echo -e "${RED}✗ No config.yaml found.${NC}"
-        echo "  Run 'make config' from the repo root to generate one,"
-        echo "  then set the required model API keys."
+        echo "  Run 'make setup' from the repo root (recommended),"
+        echo "  or 'make config' for the full template, then set the required model API keys."
         exit 1
     fi
 else
@@ -157,10 +138,55 @@ if [ -z "$BETTER_AUTH_SECRET" ]; then
         echo -e "${GREEN}✓ BETTER_AUTH_SECRET loaded from $_secret_file${NC}"
     else
         export BETTER_AUTH_SECRET
-        BETTER_AUTH_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+        if command -v python3 > /dev/null 2>&1 && \
+            BETTER_AUTH_SECRET="$(python3 -c 'import sys; sys.version_info >= (3, 6) or sys.exit(1); import secrets; print(secrets.token_hex(32))' 2>/dev/null)"; then
+            true
+        elif command -v python > /dev/null 2>&1 && \
+            BETTER_AUTH_SECRET="$(python -c 'import sys; sys.version_info >= (3, 6) or sys.exit(1); import secrets; print(secrets.token_hex(32))' 2>/dev/null)"; then
+            true
+        elif command -v openssl > /dev/null 2>&1 && \
+            BETTER_AUTH_SECRET="$(openssl rand -hex 32)"; then
+            true
+        else
+            echo -e "${RED}✗ Cannot generate BETTER_AUTH_SECRET: python3, python, and openssl are all unavailable.${NC}" >&2
+            echo -e "${RED}  Set BETTER_AUTH_SECRET manually before running make up.${NC}" >&2
+            exit 1
+        fi
         echo "$BETTER_AUTH_SECRET" > "$_secret_file"
         chmod 600 "$_secret_file"
         echo -e "${GREEN}✓ BETTER_AUTH_SECRET generated → $_secret_file${NC}"
+    fi
+fi
+
+# ── DEER_FLOW_INTERNAL_AUTH_TOKEN ────────────────────────────────────────────
+# Shared by all Gateway workers so channel workers can call internal Gateway
+# APIs even when the request is handled by a different Uvicorn worker.
+
+_internal_auth_token_file="$DEER_FLOW_HOME/.internal-auth-token"
+if  [ "$CMD" != "down" ] && [ -z "$DEER_FLOW_INTERNAL_AUTH_TOKEN" ]; then
+    if [ -f "$_internal_auth_token_file" ]; then
+        export DEER_FLOW_INTERNAL_AUTH_TOKEN
+        DEER_FLOW_INTERNAL_AUTH_TOKEN="$(cat "$_internal_auth_token_file")"
+        echo -e "${GREEN}✓ DEER_FLOW_INTERNAL_AUTH_TOKEN loaded from $_internal_auth_token_file${NC}"
+    else
+        export DEER_FLOW_INTERNAL_AUTH_TOKEN
+        if command -v python3 > /dev/null 2>&1 && \
+            DEER_FLOW_INTERNAL_AUTH_TOKEN="$(python3 -c 'import sys; sys.version_info >= (3, 6) or sys.exit(1); import secrets; print(secrets.token_urlsafe(32))' 2>/dev/null)"; then
+            true
+        elif command -v python > /dev/null 2>&1 && \
+            DEER_FLOW_INTERNAL_AUTH_TOKEN="$(python -c 'import sys; sys.version_info >= (3, 6) or sys.exit(1); import secrets; print(secrets.token_urlsafe(32))' 2>/dev/null)"; then
+            true
+        elif command -v openssl > /dev/null 2>&1 && \
+            DEER_FLOW_INTERNAL_AUTH_TOKEN="$(openssl rand -hex 32)"; then
+            true
+        else
+            echo -e "${RED}✗ Cannot generate DEER_FLOW_INTERNAL_AUTH_TOKEN: python3, python, and openssl are all unavailable.${NC}" >&2
+            echo -e "${RED}  Set DEER_FLOW_INTERNAL_AUTH_TOKEN manually before running make up.${NC}" >&2
+            exit 1
+        fi
+        echo "$DEER_FLOW_INTERNAL_AUTH_TOKEN" > "$_internal_auth_token_file"
+        chmod 600 "$_internal_auth_token_file"
+        echo -e "${GREEN}✓ DEER_FLOW_INTERNAL_AUTH_TOKEN generated → $_internal_auth_token_file${NC}"
     fi
 fi
 
@@ -210,6 +236,7 @@ if [ "$CMD" = "down" ]; then
     export DEER_FLOW_DOCKER_SOCKET="${DEER_FLOW_DOCKER_SOCKET:-/var/run/docker.sock}"
     export DEER_FLOW_REPO_ROOT="${DEER_FLOW_REPO_ROOT:-$REPO_ROOT}"
     export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-placeholder}"
+    export DEER_FLOW_INTERNAL_AUTH_TOKEN="${DEER_FLOW_INTERNAL_AUTH_TOKEN:-placeholder}"
     "${COMPOSE_CMD[@]}" down
     exit 0
 fi
@@ -228,22 +255,15 @@ if [ "$CMD" = "build" ]; then
         export DEER_FLOW_DOCKER_SOCKET="/var/run/docker.sock"
     fi
 
-    # NO_CACHE=1: bypass docker layer cache (forces full rebuild). Set in
-    # deploy-via-tar.sh when shipping to ECS, since editable installs of
-    # packages/ethoinsight can otherwise stick to a cached layer's source.
-    BUILD_ARGS=()
-    if [ "${NO_CACHE:-0}" = "1" ]; then
-        BUILD_ARGS+=(--no-cache)
-    fi
-
-    "${COMPOSE_CMD[@]}" build "${BUILD_ARGS[@]}"
+    resolve_ethoinsight_symlink
+    "${COMPOSE_CMD[@]}" build
 
     echo ""
     echo "=========================================="
     echo "  ✓ Images built successfully"
     echo "=========================================="
     echo ""
-    echo "  Next: deploy.sh start [--gateway]"
+    echo "  Next: deploy.sh start"
     echo ""
     exit 0
 fi
@@ -256,23 +276,14 @@ echo "=========================================="
 echo ""
 
 # ── Detect runtime configuration ────────────────────────────────────────────
-# Only needed for start / up — determines which containers to launch.
+# Only needed for start / up — determines whether provisioner is launched.
 
 sandbox_mode="$(detect_sandbox_mode)"
 echo -e "${BLUE}Sandbox mode: $sandbox_mode${NC}"
 
-echo -e "${BLUE}Runtime mode: $RUNTIME_MODE${NC}"
+echo -e "${BLUE}Runtime: Gateway embedded agent runtime${NC}"
 
-case "$RUNTIME_MODE" in
-    gateway)
-        export LANGGRAPH_UPSTREAM=gateway:8001
-        export LANGGRAPH_REWRITE=/api/
-        services="frontend gateway nginx"
-        ;;
-    standard)
-        services="frontend gateway langgraph nginx"
-        ;;
-esac
+services="frontend gateway nginx"
 
 if [ "$sandbox_mode" = "provisioner" ]; then
     services="$services provisioner"
@@ -307,23 +318,20 @@ else
     # Default: build + start
     echo "Building images and starting containers..."
     echo ""
+    resolve_ethoinsight_symlink
     # shellcheck disable=SC2086
     "${COMPOSE_CMD[@]}" up --build -d --remove-orphans $services
 fi
 
 echo ""
 echo "=========================================="
-echo "  DeerFlow is running! ($RUNTIME_MODE mode)"
+echo "  DeerFlow is running!"
 echo "=========================================="
 echo ""
 echo "  🌐 Application: http://localhost:${PORT:-2026}"
 echo "  📡 API Gateway: http://localhost:${PORT:-2026}/api/*"
-if [ "$RUNTIME_MODE" = "gateway" ]; then
-    echo "  🤖 Runtime:     Gateway embedded"
-    echo "  API:            /api/langgraph/* → Gateway (compat)"
-else
-    echo "  🤖 LangGraph:   http://localhost:${PORT:-2026}/api/langgraph/*"
-fi
+echo "  🤖 Runtime:     Gateway embedded"
+echo "  API:            /api/langgraph/* → Gateway"
 echo ""
 echo "  Manage:"
 echo "    make down        — stop and remove containers"

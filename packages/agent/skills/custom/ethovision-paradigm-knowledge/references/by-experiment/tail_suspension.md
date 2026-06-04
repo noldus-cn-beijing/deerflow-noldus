@@ -8,9 +8,9 @@
 
 利用啮齿类动物在不可逃避的悬吊环境中产生的不动行为，评估抑郁样行为中的绝望表型。
 
-## 🟡 适用模板（按推荐顺序 + 取舍说明）
+## 🟡 EV19 模板识别
 
-- `PorsoltCylinder-NoZones` — **推荐**。无预定义 zone，用于记录不动行为
+调 `identify_ev19_template` 工具获取候选模板，**不要自己列举候选**。工具会根据数据结构返回唯一或 ambiguous 结果。
 
 ## 🟡 必须计算的指标
 
@@ -40,3 +40,7 @@
 
 - 与 FST（强迫游泳）的区别：TST 将动物悬吊于空中，FST 将动物置于水中；两者均测量不动行为评估绝望表型，但物理刺激方式不同
 - 与焦虑类范式的区别：TST 评估抑郁样行为（绝望），焦虑类范式评估焦虑样行为（回避）
+
+## Pendulum 参数判据
+
+TST 不动行为判定使用 pendulum 算法区分钟摆摆动与真实挣扎。完整参数表和算法流程见 [tail_suspension-pendulum-params.md](tail_suspension-pendulum-params.md)（来源：`docs/review-packages/2026-0521-feedbacks/tstYoyo/tst-pendulum-algorithm.md`，同事 tstYoyo 撰写）。

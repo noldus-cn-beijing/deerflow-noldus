@@ -199,4 +199,12 @@ async def get_artifact(thread_id: str, path: str, request: Request, download: bo
     if is_text_file_by_content(actual_path):
         return PlainTextResponse(content=actual_path.read_text(encoding="utf-8"), media_type=mime_type)
 
-    return Response(content=actual_path.read_bytes(), media_type=mime_type, headers={"Content-Disposition": _build_content_disposition("inline", actual_path.name)})
+    # Fix 2026-05-28: 改用 FileResponse 而非 Response(read_bytes()) — 后者会同步阻塞 async event loop，
+    # 在 SSE stream 高并发期间(如 chart-maker 完成 → 4 个图片同时 GET + suggestions POST + lead final
+    # delivery 还在 stream)导致 gateway 整体阻塞，下游请求 504 Gateway Time-out。
+    # FileResponse 走 starlette anyio threadpool, 与 async event loop 解耦。
+    return FileResponse(
+        path=actual_path,
+        media_type=mime_type,
+        headers={"Content-Disposition": _build_content_disposition("inline", actual_path.name)},
+    )

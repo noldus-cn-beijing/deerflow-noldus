@@ -46,7 +46,7 @@ export default function ChatPage() {
 
   const { showNotification } = useNotification();
 
-  const [thread, sendMessage, isUploading, messageRunIds] = useThreadStream({
+  const { thread: streamThread, sendMessage, isUploading, mergedMessageRunIds: messageRunIds } = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: settings.context,
     isMock,
@@ -72,6 +72,7 @@ export default function ChatPage() {
       }
     },
   });
+  const thread = streamThread;
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {

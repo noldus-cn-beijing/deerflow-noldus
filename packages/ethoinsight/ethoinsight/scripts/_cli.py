@@ -99,13 +99,40 @@ def resolve_per_subject_input(args: argparse.Namespace) -> str:
 
 
 def make_compute_parser(description: str) -> argparse.ArgumentParser:
-    """Argparse for ``compute_*.py``: --input <single trajectory> --output <metric.json>."""
+    """Argparse for ``compute_*.py``: --input + --output + --parameters-json."""
     ap = argparse.ArgumentParser(description=description)
     ap.add_argument(
         "--input", required=True, help="Path to a single EthoVision trajectory file"
     )
     ap.add_argument("--output", required=True, help="Path to write the metric JSON")
+    # === Sprint 2b ===
+    ap.add_argument(
+        "--parameters-json",
+        default="{}",
+        help=(
+            "JSON dict of parameters (e.g. velocity_threshold, pendulum_*). "
+            "Empty dict means use script-side defaults. "
+            "Populated by catalog.resolve from PlanMetric.parameters_in_use."
+        ),
+    )
     return ap
+
+
+def parse_parameters(args_namespace: argparse.Namespace) -> dict[str, float | int | str]:
+    """Parse args.parameters_json into dict. Returns {} on empty/invalid (with stderr warning).
+
+    Sprint 2b: shared by all compute_*.py scripts for uniform parameter parsing.
+    """
+    raw = getattr(args_namespace, "parameters_json", "") or "{}"
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"[warning] --parameters-json parse failed ({e}); falling back to script defaults", file=sys.stderr)
+        return {}
+    if not isinstance(result, dict):
+        print(f"[warning] --parameters-json must be a JSON object, got {type(result).__name__}", file=sys.stderr)
+        return {}
+    return result
 
 
 def make_plot_parser(

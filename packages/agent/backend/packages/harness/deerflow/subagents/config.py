@@ -22,6 +22,8 @@ class SubagentConfig:
         model: Model to use - 'inherit' uses parent's model.
         max_turns: Maximum number of agent turns before stopping.
         timeout_seconds: Maximum execution time in seconds (default: 900 = 15 minutes).
+        thinking_enabled: Whether to enable the model's extended thinking channel (default: False).
+            Set True for insight-oriented subagents (data-analyst); keep False for execution-oriented ones.
     """
 
     name: str
@@ -33,6 +35,7 @@ class SubagentConfig:
     model: str = "inherit"
     max_turns: int = 50
     timeout_seconds: int = 900
+    thinking_enabled: bool = False  # reasoning 模型是否开扩展思考通道；洞察型 subagent（data-analyst）设 True
     # Noldus extensions — capability-exposure contract for subagent dispatch
     when_to_use: str | None = None
     input_contract: str | None = None

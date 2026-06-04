@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+import warnings
 
 import numpy as np
 
@@ -40,6 +42,39 @@ from ethoinsight.metrics.tst import (
     compute_immobility_latency_tst,
     compute_immobility_bout_count_tst,
 )
+
+
+# ============================================================================
+# Sprint 2a: catalog-backed parameter lookup
+# ============================================================================
+
+
+@functools.lru_cache(maxsize=16)
+def _get_shared_param(param_name: str, default: float | int | str) -> float | int | str:
+    """从 _common.yaml.shared_parameters 读参数,失败时回退到 default 并 warn。"""
+    try:
+        from ethoinsight.catalog.loader import load_common_catalog
+        common = load_common_catalog()
+        spec = common.shared_parameters.parameters.get(param_name)
+        if spec is not None:
+            return spec.default
+    except Exception as e:
+        warnings.warn(f"catalog load failed for shared param '{param_name}': {e}", stacklevel=2)
+    return default
+
+
+@functools.lru_cache(maxsize=32)
+def _get_paradigm_param(paradigm: str, param_name: str, default: float | int | str) -> float | int | str:
+    """从 <paradigm>.yaml.paradigm_parameters 读参数,失败时回退到 default 并 warn。"""
+    try:
+        from ethoinsight.catalog.loader import load_catalog
+        cat = load_catalog(paradigm)
+        spec = cat.paradigm_parameters.parameters.get(param_name)
+        if spec is not None:
+            return spec.default
+    except Exception as e:
+        warnings.warn(f"catalog load failed for paradigm '{paradigm}' param '{param_name}': {e}", stacklevel=2)
+    return default
 
 
 # ============================================================================
@@ -176,126 +211,188 @@ def compute_paradigm_metrics(
             data_quality_warnings.append(
                 {
                     "severity": "critical",
+                    "code": "SAMPLE.TOO_SMALL",
                     "metric": "all",
                     "message": (
                         f"Group '{grp_name}' has n={sample_n} (<3). "
                         "Statistical inference will be unreliable; descriptive statistics only."
                     ),
+                    "evidence": {
+                        "n": sample_n,
+                        "threshold": 3,
+                        "group": grp_name,
+                    },
+                    "blocks_downstream": True,
                 }
             )
     if paradigm == "epm":
-        # Per epm.md: n < 5 per group → low statistical power
+        _epm_sample_threshold = _get_shared_param("sample_size_underpowered_threshold", 5)
+        _epm_motor_threshold = _get_paradigm_param("epm", "motor_low_entries_threshold", 8)
         for grp_name, grp_metrics in group_summary.items():
             if not grp_metrics:
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
-            if 0 < sample_n < 5:
+            if 0 < sample_n < _epm_sample_threshold:
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
-                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            f"Group '{grp_name}' has n={sample_n} (<{_epm_sample_threshold}). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": _epm_sample_threshold,
+                            "paradigm": "epm",
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
-        # Per epm.md: total entries < 8 → motor suppression confound
         for name, m in per_subject.items():
             te = m.get("total_entry_count")
-            if te is not None and isinstance(te, (int, float)) and te < 8:
+            if te is not None and isinstance(te, (int, float)) and te < _epm_motor_threshold:
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "MOTOR.LOW_ENTRIES",
                         "metric": "total_entry_count",
                         "message": (
-                            f"Subject '{name}' 总进臂次数={int(te)} (<8)。"
+                            f"Subject '{name}' 总进臂次数={int(te)} (<{_epm_motor_threshold})。"
                             "开臂指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
                         ),
+                        "evidence": {
+                            "subject": name,
+                            "total_entry_count": int(te),
+                            "threshold": _epm_motor_threshold,
+                            "paradigm": "epm",
+                        },
+                        "blocks_downstream": False,
                     }
                 )
     if paradigm == "zero_maze":
-        # Per zero_maze.md: n < 5 per group → low statistical power
+        _zm_sample_threshold = _get_shared_param("sample_size_underpowered_threshold", 5)
+        _zm_distance_threshold = _get_paradigm_param("zero_maze", "zm_low_distance_threshold", 10.0)
         for grp_name, grp_metrics in group_summary.items():
             if not grp_metrics:
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
-            if 0 < sample_n < 5:
+            if 0 < sample_n < _zm_sample_threshold:
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
-                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            f"Group '{grp_name}' has n={sample_n} (<{_zm_sample_threshold}). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": _zm_sample_threshold,
+                            "paradigm": "zero_maze",
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
-        # Per zero_maze.md: total distance too low → motor suppression confound
-        _ZM_LOW_DISTANCE_THRESHOLD = 10.0  # cm; very low → movement suppressed
         for name, m in per_subject.items():
             td = m.get("distance_moved")
             if (
                 td is not None
                 and isinstance(td, (int, float))
-                and td < _ZM_LOW_DISTANCE_THRESHOLD
+                and td < _zm_distance_threshold
             ):
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "MOTOR.LOW_DISTANCE",
                         "metric": "distance_moved",
                         "message": (
-                            f"Subject '{name}' 总移动距离={td:.2f} (<{_ZM_LOW_DISTANCE_THRESHOLD})。"
+                            f"Subject '{name}' 总移动距离={td:.2f} (<{_zm_distance_threshold})。"
                             "开放区指标的下降可能为运动抑制而非焦虑增加，需标注警告。"
                         ),
+                        "evidence": {
+                            "subject": name,
+                            "distance_moved": td,
+                            "threshold": _zm_distance_threshold,
+                            "paradigm": "zero_maze",
+                        },
+                        "blocks_downstream": False,
                     }
                 )
     if paradigm == "light_dark_box":
-        # Per ldb.md: n < 5 per group → low statistical power
+        _ldb_sample_threshold = _get_shared_param("sample_size_underpowered_threshold", 5)
+        _ldb_transition_threshold = _get_paradigm_param("light_dark_box", "signal_low_transition_threshold", 4)
         for grp_name, grp_metrics in group_summary.items():
             if not grp_metrics:
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
-            if 0 < sample_n < 5:
+            if 0 < sample_n < _ldb_sample_threshold:
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
-                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            f"Group '{grp_name}' has n={sample_n} (<{_ldb_sample_threshold}). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": _ldb_sample_threshold,
+                            "paradigm": "light_dark_box",
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
-        # Per ldb.md: transitions < 4 → insufficient exploration motivation
         for name, m in per_subject.items():
             tc = m.get("transition_count")
-            if tc is not None and isinstance(tc, (int, float)) and tc < 4:
+            if tc is not None and isinstance(tc, (int, float)) and tc < _ldb_transition_threshold:
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SIGNAL.LOW_TRANSITION_COUNT",
                         "metric": "transition_count",
                         "message": (
-                            f"Subject '{name}' 穿梭次数={int(tc)} (<4)。"
+                            f"Subject '{name}' 穿梭次数={int(tc)} (<{_ldb_transition_threshold})。"
                             "明箱时间百分比的下降可能为探索动机不足而非焦虑增加，需标注警告。"
                         ),
+                        "evidence": {
+                            "subject": name,
+                            "transition_count": int(tc),
+                            "threshold": _ldb_transition_threshold,
+                            "paradigm": "light_dark_box",
+                        },
+                        "blocks_downstream": False,
                     }
                 )
     if paradigm in ("forced_swim", "tail_suspension"):
-        # n < 5 per group → low statistical power for immobility paradigms
+        _fst_sample_threshold = _get_shared_param("sample_size_underpowered_threshold", 5)
         for grp_name, grp_metrics in group_summary.items():
             if not grp_metrics:
                 continue
             sample_n = next(iter(grp_metrics.values())).get("n", 0)
-            if 0 < sample_n < 5:
+            if 0 < sample_n < _fst_sample_threshold:
                 data_quality_warnings.append(
                     {
                         "severity": "warning",
+                        "code": "SAMPLE.UNDERPOWERED",
                         "metric": "all",
                         "message": (
-                            f"Group '{grp_name}' has n={sample_n} (<5). "
+                            f"Group '{grp_name}' has n={sample_n} (<{_fst_sample_threshold}). "
                             "统计功效不足，结论需谨慎。"
                         ),
+                        "evidence": {
+                            "n": sample_n,
+                            "threshold": _fst_sample_threshold,
+                            "paradigm": paradigm,
+                            "group": grp_name,
+                        },
+                        "blocks_downstream": False,
                     }
                 )
 

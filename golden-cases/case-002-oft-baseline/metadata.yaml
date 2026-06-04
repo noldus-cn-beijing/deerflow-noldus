@@ -1,0 +1,25 @@
+# Case-002: OFT（旷场）Baseline
+
+case_id: "case-002-oft-baseline"
+paradigm: "oft"
+species: ""                               # TODO
+strain: ""                                # TODO
+n_subjects: 0                             # TODO
+n_groups: 0                               # TODO
+groups:                                   # TODO
+  # control:
+  #   - "Subject 1"
+  #   - "Subject 2"
+  #   - "Subject 3"
+  # treatment:
+  #   - "Subject 4"
+  #   - "Subject 5"
+  #   - "Subject 6"
+experimental_condition: ""                # TODO
+source: ""                                # TODO
+raw_data_files: 0                         # TODO
+created: ""                               # TODO
+annotator: ""                             # TODO
+reviewer: ""
+difficulty: "easy"
+tags: []

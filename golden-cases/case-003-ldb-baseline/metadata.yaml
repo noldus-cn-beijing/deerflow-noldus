@@ -1,0 +1,25 @@
+# Case-003: LDB（明暗箱）Baseline
+
+case_id: "case-003-ldb-baseline"
+paradigm: "ldb"
+species: ""                               # TODO
+strain: ""                                # TODO
+n_subjects: 0                             # TODO
+n_groups: 0                               # TODO
+groups:                                   # TODO
+  # control:
+  #   - "Subject 1"
+  #   - "Subject 2"
+  #   - "Subject 3"
+  # treatment:
+  #   - "Subject 4"
+  #   - "Subject 5"
+  #   - "Subject 6"
+experimental_condition: ""                # TODO
+source: ""                                # TODO
+raw_data_files: 0                         # TODO
+created: ""                               # TODO
+annotator: ""                             # TODO
+reviewer: ""
+difficulty: "easy"
+tags: []

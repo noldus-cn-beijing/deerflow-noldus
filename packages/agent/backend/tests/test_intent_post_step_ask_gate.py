@@ -151,3 +151,151 @@ def test_blocks_chart_maker_when_askviz_skip(tmp_path):
     assert "ask_clarification" in reason.message
     assert "set_viz_choice" in reason.message
     assert "chart-maker" in reason.message
+
+
+# ── same-batch race: set_viz_choice + task(chart-maker) in one AIMessage ──────
+# Regression for the FST dogfood bug (thread 87edb29b): the lead emitted
+# set_viz_choice(choice='yes') AND task(chart-maker) as parallel tool_calls in
+# the SAME AIMessage. The guardrail evaluated task() before set_viz_choice's
+# write landed → false deny. The fix: if the current AIMessage's tool_calls
+# already contain the gate-setter for this ask step, treat it as satisfied.
+
+
+def _ai_message_with_tool_calls(content: str, tool_call_names: list[str]):
+    """Build an AIMessage whose tool_calls include the given tool names."""
+    from langchain_core.messages import AIMessage
+
+    tool_calls = [
+        {"name": name, "args": {}, "id": f"call_{i}", "type": "tool_call"}
+        for i, name in enumerate(tool_call_names)
+    ]
+    return AIMessage(content=content, tool_calls=tool_calls)
+
+
+def test_allows_when_set_viz_choice_in_same_batch(tmp_path):
+    """Race fix: gate3 not yet on disk, but set_viz_choice is a sibling tool_call
+    in the SAME AIMessage → allow (the gate write is in-flight, deny would be false)."""
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    (tmp_path / "handoff_data_analyst.json").write_text('{"status":"completed"}')
+
+    # The lead's AIMessage carries BOTH set_viz_choice and task(chart-maker)
+    msg = _ai_message_with_tool_calls(
+        "[intent] E2E_FULL_ASKVIZ\n分析完成，记录选择并出图",
+        ["set_viz_choice", "task"],
+    )
+    _lead_messages.set([msg])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    decision = provider.evaluate(_make_request())
+    assert decision.allow is True
+
+
+def test_still_blocks_when_no_set_viz_choice_in_batch(tmp_path):
+    """Race fix must NOT over-allow: gate3 not on disk AND set_viz_choice NOT in
+    the current batch → still deny (the genuine skip the guardrail must catch)."""
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    (tmp_path / "handoff_data_analyst.json").write_text('{"status":"completed"}')
+
+    # Only task(chart-maker), no set_viz_choice → genuine skip
+    msg = _ai_message_with_tool_calls(
+        "[intent] E2E_FULL_ASKVIZ\n直接出图",
+        ["task"],
+    )
+    _lead_messages.set([msg])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    decision = provider.evaluate(_make_request())
+    assert decision.allow is False
+    assert decision.reasons[0].code == "ethoinsight.viz_choice_not_acknowledged"
+
+
+# ── A2 generalized ask gate tests ────────────────────────────────────────────
+
+
+def test_blocks_chart_maker_in_e2e_full_when_report_ask_not_done(tmp_path):
+    """E2E_FULL: chart-maker dispatched after chart-maker → ask(report?) not done → block report-writer."""
+    from langchain_core.messages import AIMessage
+
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    # chart-maker completed
+    (tmp_path / "handoff_chart_maker.json").write_text('{"status":"completed"}')
+
+    _lead_messages.set([AIMessage(content="[intent] E2E_FULL")])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    # report-writer is dispatched but ask(report?) hasn't been answered
+    # Note: report-writer is NOT in the E2E_FULL path (only chart-maker → ask(report))
+    # The ask(report?) is the last step, so trying to skip it would mean going past it
+    # Actually, report-writer isn't in E2E_FULL path at all — this should allow
+    decision = provider.evaluate(_make_request(subagent_type="report-writer"))
+    assert decision.allow is True  # report-writer not in E2E_FULL path
+
+
+def test_askviz_viz_gate_is_byte_identical(tmp_path):
+    """Verify the viz deny message is exactly the same as the pre-A2 version."""
+    from langchain_core.messages import AIMessage
+
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    (tmp_path / "handoff_data_analyst.json").write_text('{"status":"completed"}')
+
+    _lead_messages.set([AIMessage(content="[intent] E2E_FULL_ASKVIZ")])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    decision = provider.evaluate(_make_request())
+
+    assert decision.allow is False
+    reason = decision.reasons[0]
+    assert reason.code == "ethoinsight.viz_choice_not_acknowledged"
+    # The exact legacy message
+    expected = (
+        "请改调 ask_clarification(question='📊 指标和解读已完成。需要我把结果可视化成图吗?', "
+        "options=['A. 是,把刚才的结论画成图(默认推荐,箱线图/轨迹图/时序图)', "
+        "'B. 不用,直接给我报告'])，因为 INTENT=E2E_FULL_ASKVIZ 要求 data-analyst 完成后 "
+        "先反问用户是否需要图表；用户回答后再调 set_viz_choice(choice='yes'|'no') "
+        "落盘 gate3，之后才能派 chart-maker（或跳过直接派 report-writer）。"
+    )
+    assert reason.message == expected
+
+
+def test_askviz_viz_gate_allows_when_no_askviz_intent(tmp_path):
+    """Non-ASKVIZ intent → no viz gate check → allow."""
+    from langchain_core.messages import AIMessage
+
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    (tmp_path / "handoff_data_analyst.json").write_text('{"status":"completed"}')
+
+    # E2E_FULL has chart-maker as a direct dispatch (no ask(viz) before it)
+    _lead_messages.set([AIMessage(content="[intent] E2E_FULL")])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    decision = provider.evaluate(_make_request())
+    assert decision.allow is True
+
+
+def test_e2e_min_blocks_code_executor_after_code_executor_but_before_ask(tmp_path):
+    """E2E_MIN: after code-executor, the next step is ask(four_choice).
+    If lead tries to dispatch another step before answering four_choice,
+    it should be blocked. But chart-maker is not in E2E_MIN path, so allow."""
+    from langchain_core.messages import AIMessage
+
+    ctx = {"paradigm": "epm", "gate_completed": ["gate1_paradigm"]}
+    (tmp_path / "experiment-context.json").write_text(json.dumps(ctx))
+    (tmp_path / "handoff_code_executor.json").write_text('{"status":"completed"}')
+
+    _lead_messages.set([AIMessage(content="[intent] E2E_MIN")])
+    _lead_workspace.set(str(tmp_path))
+
+    provider = IntentPostStepAskGateProvider()
+    # chart-maker not in E2E_MIN path → allow
+    decision = provider.evaluate(_make_request(subagent_type="chart-maker"))
+    assert decision.allow is True

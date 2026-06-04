@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     df = parse_trajectory(path)
-    output_path = activity_intensity_plot(df, output_path=args.output)
+    output_path = activity_intensity_plot(df, output_path=args.output, smooth_window=10)
     emit_result({"plot": "activity_intensity", "path": output_path})
     return 0
 

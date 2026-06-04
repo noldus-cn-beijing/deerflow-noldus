@@ -25,10 +25,19 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parse_batch(paths)
 
     bouts_by_subject: dict[str, list[tuple[float, float]]] = {}
+    trial_durations: dict[str, float] = {}
     for subject_name, df in parsed["subjects"].items():
         bouts_by_subject[subject_name] = extract_immobility_bouts(df)
+        if "trial_time" in df.columns:
+            tt = df["trial_time"].dropna()
+            if len(tt) > 0:
+                trial_durations[subject_name] = float(tt.iloc[-1])
 
-    output_path = struggle_distribution_plot(bouts_by_subject, output_path=args.output)
+    output_path = struggle_distribution_plot(
+        bouts_by_subject,
+        output_path=args.output,
+        trial_durations=trial_durations if trial_durations else None,
+    )
     emit_result({"plot": "struggle_distribution", "path": output_path})
     return 0
 
