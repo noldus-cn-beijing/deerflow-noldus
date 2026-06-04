@@ -219,9 +219,14 @@ def _build_task_context(payload: dict[str, Any]) -> dict[str, Any]:
         errors = payload.get("errors") or []
         tc["failed_paths"] = [e for e in errors if isinstance(e, str)]
 
-        # pending_items: status=partial 时，未完成信息在 errors 里
-        if payload.get("status") == "partial":
-            tc["pending_items"] = [e for e in errors if isinstance(e, str)]
+        # pending_items: 暂留空。
+        # 真实 partial 语义是"指标已算完、但统计检验因样本量(n=1/n=2)被跳过"，
+        # 而非"指标未算完"——partial 的原因已由 gate_signals.statistical_validity="skipped"
+        # + data_quality_warnings 充分表达，lead 据此决策无需本字段。
+        # 当前无可靠的"未完成明细"数据源（errors 在此类 partial 时恒空）。
+        # TODO: 若未来出现"指标脚本失败导致 partial"的真实场景，再从
+        #   plan_metrics.json(计划) vs metrics_summary(实际) 的差集派生。
+        # 不从 errors 派生（恒空且误导）。
     except Exception:
         pass  # 防御性：组装失败不影响 seal 主流程
     return tc

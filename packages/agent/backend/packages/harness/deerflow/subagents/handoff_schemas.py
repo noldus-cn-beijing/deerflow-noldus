@@ -54,6 +54,16 @@ class TaskContext(BaseModel):
     由 seal 工具在封存时确定性组装（不由 LLM 填）。
     刻意不含 objective/next_steps/constraints：前两者的真相源是 lead 的意图判断
     （知识双存禁忌），constraints 无干净确定性源。详见 spec 设计原则。
+
+    ⚠️ 价值现状（2026-06-04 三轮真实数据核实）：当前 EthoInsight 拓扑是
+    「subagent → lead 中转 → 下一个」，非「subagent 直接接力」，且 partial 多为
+    「统计因样本量被跳过」而非「未完成」。经核实，本结构当前字段对下游 subagent
+    冗余（下游消费原始字段），对 lead 多被 gate_signals 覆盖。故：
+    - 下游 subagent prompt **不消费** task_context（保持现状，勿加"教消费"指引）。
+    - 真实用户暂定为 audit/lineage（handoff 自描述）。
+    - pending_items 当前恒空（无可靠未完成明细源，见 seal_handoff_tools._build_task_context 注释）。
+    TODO: task_context 的整体价值待 v1.0「subagent 直接接力」拓扑或真实
+    「脚本失败型 partial」场景出现后重评估。届时参考本类的字段设计。
     """
 
     model_config = ConfigDict(extra="allow")
@@ -72,7 +82,7 @@ class TaskContext(BaseModel):
     )
     pending_items: list[str] = Field(
         default_factory=list,
-        description="未完成项（status=partial 时，seal 从 errors 自动派生）。",
+        description="未完成项。当前恒空（真实 partial 为统计跳过非未完成，无可靠数据源）。详见类 docstring。",
     )
 
 

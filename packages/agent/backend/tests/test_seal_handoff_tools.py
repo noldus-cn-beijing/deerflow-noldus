@@ -271,15 +271,16 @@ class TestBuildTaskContextFailedPaths:
 
 
 class TestBuildTaskContextPendingItems:
-    """status=partial → pending_items from errors."""
+    """status=partial → pending_items 诚实留空（真实 partial 为统计跳过，errors 恒空）。"""
 
-    def test_partial_status_populates_pending_items(self):
+    def test_partial_status_yields_empty_pending_items(self):
         payload = {
             "status": "partial",
             "errors": ["metric X not computed", "metric Y missing data"],
         }
         tc = _build_task_context(payload)
-        assert tc["pending_items"] == ["metric X not computed", "metric Y missing data"]
+        # 真实 partial 时 errors 恒空（partial 实为统计跳过非脚本失败），pending_items 诚实留空
+        assert tc["pending_items"] == []
 
     def test_completed_status_yields_empty_pending(self):
         payload = {
@@ -361,7 +362,7 @@ class TestSealIntegrationTaskContext:
         assert tc["failed_paths"] == ["group B n=1 skipped"]
         assert tc["pending_items"] == []  # status=completed → 空
 
-    def test_seal_partial_status_pending_items(self, tmp_path):
+    def test_seal_partial_status_pending_items_empty(self, tmp_path):
         ws = _make_workspace(tmp_path)
         runtime = _make_runtime(str(ws))
 
@@ -382,7 +383,8 @@ class TestSealIntegrationTaskContext:
 
         data = json.loads((ws / "handoff_code_executor.json").read_text(encoding="utf-8"))
         tc = data["task_context"]
-        assert tc["pending_items"] == ["metric X not computed - too few frames"]
+        # 真实 partial 时 pending_items 诚实留空（partial 为统计跳过，errors 恒空）
+        assert tc["pending_items"] == []
 
     def test_seal_forward_compat_explicit_task_context(self, tmp_path):
         """显式提供 task_context 时不被覆盖（payload.setdefault 语义）."""
