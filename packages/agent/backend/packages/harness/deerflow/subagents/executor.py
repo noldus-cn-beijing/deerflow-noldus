@@ -95,15 +95,39 @@ _HANDOFF_EMISSION_REQUIRED: dict[str, str] = {
 # Sprint 5.5: 各 subagent handoff 的「核心字段非空」判据。
 # 判据语义对应 handoff_schemas.py 的字段（single-source：字段含义以 schema 为准，
 # 此处只编码"哪个字段必须非空"，不复制 schema 定义）：
-#   code-executor : metrics_summary 非空 dict（CodeExecutorHandoff.metrics_summary）
+#   code-executor : metrics_summary 非空 dict（规范字段，Sprint 0 起）；
+#                   metrics / metrics_results = 历史等价字段，承认有效性但记 warning
 #   data-analyst  : key_findings 非空 list（DataAnalystHandoff.key_findings）
 #   chart-maker   : chart_files 非空 list 或 failed_charts 有说明（ChartMakerHandoff）
 #   report-writer : report_path 非空 str（ReportWriterHandoff.report_path）
 # 每个检查函数收 parsed handoff dict，返回 None=通过 / str=缺失字段说明。
 # ---------------------------------------------------------------------------
+
+# 指标数据的规范字段名（single source of truth）。
+# metrics_summary = 当前规范（Sprint 0 起）。
+# metrics / metrics_results = 历史等价字段（Sprint 0 前的旁路写入产物），
+#   承认其数据有效性以免误判残缺，但记 warning 暴露「非规范格式」。
+#
+# 已知边界：data-analyst 读 metrics_summary[*].parameters_used 做参数审计。
+# 若喂它 metrics/metrics_results 字段的历史样本（当前管道不产），
+# parameters_used 会取空 → 审计跳过（见 data_analyst.py:115-124）。
+# 此为历史样本独有，不在本任务修复范围——修复方向是让 data-analyst 也认等价字段。
+_CODE_EXECUTOR_METRICS_FIELDS = ("metrics_summary", "metrics", "metrics_results")
+
+
 def _check_code_executor_content(d: dict) -> str | None:
-    if not d.get("metrics_summary"):
-        return "metrics_summary is empty"
+    present = [f for f in _CODE_EXECUTOR_METRICS_FIELDS if d.get(f)]
+    if not present:
+        # 三个字段全空 → 真残缺
+        return "metrics data is empty (none of metrics_summary/metrics/metrics_results populated)"
+    if "metrics_summary" not in present:
+        # 数据在历史等价字段，非当前规范 → 放行但暴露，便于发现新的格式漂移
+        logger.warning(
+            "[handoff_content] code-executor handoff uses non-canonical metrics field(s) %s "
+            "instead of 'metrics_summary'. Data accepted, but this is a format drift — "
+            "current pipeline should emit metrics_summary.",
+            present,
+        )
     return None
 
 
@@ -1013,7 +1037,7 @@ class SubagentExecutor:
                     final_state = _resumed_state
                 # 补轮后重新校验（含 Sprint 5.5 内容非空检查）。
                 # Sprint 5.5 已覆盖：_validate_handoff_emitted 现在不仅查文件存在，
-                # 还查核心字段非空（metrics_summary / key_findings / chart_files /
+                # 还查核心字段非空（metrics_summary 规范 + metrics/metrics_results 等价 / key_findings / chart_files /
                 # report_path）。补轮调了 seal 但 args 残缺 → 文件产出但内容空 →
                 # 此处判 FAILED → 走 lead ask_clarification 规则。
                 _handoff_error = _validate_handoff_emitted(self.config.name, _workspace)

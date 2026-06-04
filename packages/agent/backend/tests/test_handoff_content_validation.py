@@ -131,6 +131,114 @@ class TestCodeExecutorContentValidation:
         assert _validate("code-executor", ws) is None
 
 
+# ==================== CODE-EXECUTOR: 字段名分裂回归（2026-06-04 核实发现） ====================
+
+
+class TestCodeExecutorFieldNameDivergence:
+    """契约：code-executor handoff 校验器认「字段唯一真相」的等价集。
+
+    metrics_summary = 规范字段（Sprint 0 起），metrics / metrics_results = 历史等价字段
+    （Sprint 0 前的旁路写入产物）。校验器承认所有三个字段的数据有效性以免误判残缺，
+    但数据只存在于非规范字段时记 warning 暴露格式漂移。
+
+    背景（2026-06-04 核实）：对 .deer-flow 下 56 个真实 handoff_code_executor.json
+    做统计——27 个顶层用 `metrics`、1 个用 `metrics_results`，仅 24 个用
+    `metrics_summary`。_check_code_executor_content 曾只查 metrics_summary，
+    导致 28/56 个 status=completed、数据完整的成功分析被误判为「核心内容残缺」→
+    触发 seal-resume 补轮 → 补轮也不会把数据搬进 metrics_summary →
+    第二次校验仍失败 → executor 把成功的 task 标 FAILED（executor.py:1032）。
+
+    这两个 fixture 是从真实 thread 9f77adcc（FST, completed）/ 7db437e7（FST,
+    completed）落盘内容裁剪而来，结构原样保留。
+    """
+
+    # thread 9f77adcc-2a18 的真实结构裁剪：顶层字段叫 `metrics`（list），完整数据。
+    _REAL_METRICS_FIELD_HANDOFF = {
+        "status": "completed",
+        "constitution_acknowledged": True,
+        "paradigm": "fst",
+        "metrics": [
+            {
+                "id": "immobility_time",
+                "display_name_zh": "不动时间",
+                "unit_zh": "秒",
+                "values": {"treatment": 5.52, "control": 14.56},
+            },
+            {
+                "id": "immobility_latency",
+                "display_name_zh": "首次不动潜伏期",
+                "unit_zh": "秒",
+                "values": {"treatment": 60.0, "control": 30.0},
+            },
+        ],
+        "statistics": {},
+        "data_quality_warnings": [],
+        "errors": [],
+    }
+
+    # thread 7db437e7 的真实结构裁剪：顶层字段叫 `metrics_results`（list）。
+    _REAL_METRICS_RESULTS_HANDOFF = {
+        "status": "completed",
+        "paradigm": "fst",
+        "metrics_results": [
+            {
+                "metric_id": "immobility_time",
+                "display_name_zh": "不动时间",
+                "values": [
+                    {"group": "Treatment", "subject_index": 0, "value": 0.56},
+                    {"group": "Control", "subject_index": 1, "value": 1.92},
+                ],
+            }
+        ],
+        "errors": [],
+    }
+
+    def test_real_metrics_field_handoff_should_pass(self, tmp_path: Path):
+        """顶层 `metrics`（完整数据，status=completed）不应被判残缺。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content=self._REAL_METRICS_FIELD_HANDOFF,
+        )
+        assert _validate("code-executor", ws) is None
+
+    def test_real_metrics_results_handoff_should_pass(self, tmp_path: Path):
+        """顶层 `metrics_results`（完整数据，status=completed）不应被判残缺。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content=self._REAL_METRICS_RESULTS_HANDOFF,
+        )
+        assert _validate("code-executor", ws) is None
+
+    def test_all_three_fields_empty_fails(self, tmp_path: Path):
+        """三字段全空 → 判残缺（保留 Sprint 5.5 的核心保护）。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content={"status": "completed"},
+        )
+        result = _validate("code-executor", ws)
+        assert result is not None
+        assert "metrics data is empty" in result
+
+    def test_non_canonical_field_logs_warning(self, tmp_path: Path, caplog):
+        """metrics（非规范字段）有数据 → 放行但记 warning 暴露格式漂移。"""
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content=self._REAL_METRICS_FIELD_HANDOFF,
+        )
+        assert _validate("code-executor", ws) is None
+        assert any(
+            "non-canonical metrics field" in rec.message and "'metrics'" in rec.message
+            for rec in caplog.records
+        )
+
+
 # ==================== CHART-MAKER ====================
 
 
