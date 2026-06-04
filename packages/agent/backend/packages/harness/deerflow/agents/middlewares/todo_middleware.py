@@ -22,7 +22,7 @@ from typing import Any, override
 from langchain.agents.middleware import TodoListMiddleware
 from langchain.agents.middleware.todo import Todo
 from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse, hook_config
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 
 from deerflow.agents.thread_state import ThreadState
@@ -49,6 +49,32 @@ def _reminder_in_messages(messages: list[Any]) -> bool:
 def _completion_reminder_count(messages: list[Any]) -> int:
     """Return the number of todo_completion_reminder HumanMessages in *messages*."""
     return sum(1 for msg in messages if isinstance(msg, HumanMessage) and getattr(msg, "name", None) == "todo_completion_reminder")
+
+
+def _is_awaiting_clarification(messages: list[Any]) -> bool:
+    """Return True if the agent just asked a clarification and the user hasn't answered yet.
+
+    ClarificationMiddleware intercepts an ``ask_clarification`` tool call, appends a
+    ``ToolMessage(name="ask_clarification")`` and interrupts via ``Command(goto=END)``.
+    The agent is then legitimately *waiting* for the user — its next no-tool-call
+    output is a valid waiting state, NOT a premature exit. If TodoMiddleware forces
+    re-engagement here (because a `反问...` todo is still in_progress), the agent
+    re-emits the same question every turn until the reminder cap — which is exactly
+    the "repeated 要不要画图" symptom observed in dogfood (thread ca86744f).
+
+    Detection: scan from the newest message backward. A HumanMessage means the user
+    has since replied → no longer waiting. An ``ask_clarification`` ToolMessage seen
+    first means the question is still outstanding → waiting.
+    """
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            # Skip control reminders we inject ourselves; they are not user replies.
+            if getattr(msg, "name", None) in ("todo_reminder", "todo_completion_reminder"):
+                continue
+            return False
+        if isinstance(msg, ToolMessage) and getattr(msg, "name", None) == "ask_clarification":
+            return True
+    return False
 
 
 def _format_todos(todos: list[Todo]) -> str:
@@ -291,6 +317,15 @@ class TodoMiddleware(TodoListMiddleware):
         messages = state.get("messages") or []
         last_ai = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
         if not last_ai or _has_tool_call_intent_or_error(last_ai):
+            return None
+
+        # 2.5. Do NOT force re-engagement while the agent is waiting for the user
+        # to answer an ask_clarification. The clean no-tool-call output here is a
+        # legitimate waiting state, not a premature exit. Forcing jump_to=model
+        # (because a `反问...` todo is still in_progress) makes the agent re-ask the
+        # same question every turn until the reminder cap — the repeated "要不要画图"
+        # symptom from dogfood (thread ca86744f). Let it exit quietly and wait.
+        if _is_awaiting_clarification(messages):
             return None
 
         # 3. Allow exit when all todos are completed or there are no todos.
