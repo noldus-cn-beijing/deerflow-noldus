@@ -144,7 +144,7 @@ handoff_chart_maker.json 关键字段格式速查（约束权威源见 handoff_s
         "web_fetch",
         "image_search",
     ],
-    model="inherit",
+    model="deepseek-v4-pro-summary",
     max_turns=15,
     timeout_seconds=600,
     when_to_use=(

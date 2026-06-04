@@ -278,7 +278,7 @@ handoff_report_writer.json 关键字段格式速查（约束权威源见 handoff
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "web_search", "web_fetch", "bash", "str_replace",
                        "image_search"],
-    model="inherit",
+    model="deepseek-v4-pro-summary",
     max_turns=15,
     timeout_seconds=600,
     skills=["ethoinsight", "ethoinsight-metric-catalog", "ethovision-paradigm-knowledge"],
