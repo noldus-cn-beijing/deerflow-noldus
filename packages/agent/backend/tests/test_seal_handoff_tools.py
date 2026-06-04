@@ -407,3 +407,63 @@ class TestSealIntegrationTaskContext:
         tc = data["task_context"]
         # setdefault 语义：已显式提供 → 不覆盖
         assert tc["file_changes"] == ["/custom/path.txt"]
+
+
+# ---------------------------------------------------------------------------
+# _normalize_report_image_paths — server-side path normalisation (2026-06-04)
+# Locks the three LLM-written variants + idempotency + skip-if-missing.
+# ---------------------------------------------------------------------------
+from pathlib import Path
+import tempfile
+
+from deerflow.tools.builtins.seal_handoff_tools import _normalize_report_image_paths
+
+
+class TestNormalizeReportImagePaths:
+    """Server-side normalization of markdown image paths before sealing.
+
+    Artifacts API (resolve_thread_virtual_path) requires mnt/user-data/outputs/…
+    (no leading slash). LLMs write three broken variants; all must become canonical.
+    """
+
+    def _run(self, content: str) -> str:
+        with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False, encoding="utf-8") as f:
+            f.write(content)
+            path = Path(f.name)
+        _normalize_report_image_paths(path)
+        result = path.read_text(encoding="utf-8")
+        path.unlink(missing_ok=True)
+        return result
+
+    def test_relative_outputs_prefix_fixed(self):
+        md = "![Figure 1](outputs/boxplot.png)"
+        assert self._run(md) == "![Figure 1](mnt/user-data/outputs/boxplot.png)"
+
+    def test_absolute_virtual_leading_slash_fixed(self):
+        md = "![Figure 1](/mnt/user-data/outputs/plot_s0.png)"
+        assert self._run(md) == "![Figure 1](mnt/user-data/outputs/plot_s0.png)"
+
+    def test_correct_form_unchanged(self):
+        md = "![Figure 1](mnt/user-data/outputs/plot_s0.png)"
+        assert self._run(md) == md  # idempotent
+
+    def test_multiple_images_all_fixed(self):
+        md = (
+            "![A](outputs/plot_s0.png)\n"
+            "![B](/mnt/user-data/outputs/plot_s1.png)\n"
+            "![C](mnt/user-data/outputs/plot_s2.png)\n"
+        )
+        result = self._run(md)
+        assert result.count("mnt/user-data/outputs/") == 3
+        assert "outputs/plot_s0" not in result.split("mnt/user-data/outputs/")[0]
+        assert "(/mnt/" not in result
+
+    def test_non_image_links_untouched(self):
+        md = "[link](outputs/data.csv) and ![img](outputs/chart.png)"
+        result = self._run(md)
+        assert "(outputs/data.csv)" in result  # non-image link preserved
+        assert "(mnt/user-data/outputs/chart.png)" in result
+
+    def test_missing_file_silently_skipped(self):
+        # Must not raise
+        _normalize_report_image_paths(Path("/tmp/nonexistent_report_xyz.md"))

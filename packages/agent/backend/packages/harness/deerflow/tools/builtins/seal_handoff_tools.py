@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -134,6 +135,45 @@ def _resolve_workspace(runtime: Runtime) -> Path:
     if not workspace_path:
         raise RuntimeError("seal_*_handoff: workspace_path missing")
     return Path(workspace_path)
+
+
+# Regex matching markdown image paths that reference outputs/ but lack the
+# correct virtual prefix. Covers three LLM-written variants:
+#   (outputs/file.png)            — relative, no prefix
+#   (/mnt/user-data/outputs/…)   — absolute virtual, leading slash (invalid for API)
+#   (mnt/user-data/outputs/…)    — already correct, skip
+# Capture group 1 = everything inside the parens after the bad prefix.
+_BAD_IMG_PATH_RE = re.compile(
+    r"\((?:/mnt/user-data/outputs/|outputs/)([^)]+\.(?:png|jpg|jpeg|svg|gif|webp))\)"
+)
+
+
+def _normalize_report_image_paths(report_host_path: Path) -> None:
+    """Rewrite image paths in report.md so they use the canonical virtual prefix.
+
+    The artifacts API (resolve_thread_virtual_path) requires paths starting with
+    ``mnt/user-data/`` (no leading slash). LLMs often write the relative form
+    ``outputs/file.png`` or the absolute form ``/mnt/user-data/outputs/file.png``,
+    both of which return 400. This function normalises them server-side, so the fix
+    is robust regardless of what the LLM wrote.
+
+    Idempotent: paths already in the correct ``mnt/user-data/outputs/`` form are
+    unchanged. Silently skips if the report file does not exist.
+    """
+    if not report_host_path.is_file():
+        return
+    try:
+        original = report_host_path.read_text(encoding="utf-8")
+        normalised = _BAD_IMG_PATH_RE.sub(r"(mnt/user-data/outputs/\1)", original)
+        if normalised != original:
+            report_host_path.write_text(normalised, encoding="utf-8")
+            logger.info(
+                "seal_report_writer_handoff: normalised image paths in %s",
+                report_host_path,
+            )
+    except Exception as e:
+        # Non-fatal: log and continue; the seal still succeeds.
+        logger.warning("seal_report_writer_handoff: image path normalisation skipped: %s", e)
 
 
 def _read_analysis_config_id(workspace: Path) -> str:
@@ -440,6 +480,21 @@ def seal_report_writer_handoff(
         "errors": errors or [],
         "gate_signals": gate_signals,
     }
+
+    # Normalise image paths in the report file before sealing: the artifacts API
+    # requires ``mnt/user-data/outputs/file.png`` (no leading slash), but LLMs
+    # often write ``outputs/file.png`` or ``/mnt/user-data/outputs/file.png``,
+    # both of which return 400 Bad Request in the frontend. Fix it server-side
+    # so the result is correct regardless of what the model wrote.
+    try:
+        _ws = _resolve_workspace(runtime)
+        # report_path is a virtual path like /mnt/user-data/outputs/report.md;
+        # derive the host path by replacing the virtual prefix with the outputs dir.
+        _report_host = _ws.parent / "outputs" / Path(report_path).name
+        _normalize_report_image_paths(_report_host)
+    except Exception as _e:
+        logger.warning("seal_report_writer_handoff: image normalisation pre-step failed: %s", _e)
+
     result = _seal_handoff(ReportWriterHandoff, "handoff_report_writer.json", payload, runtime)
 
     # Sprint 6: write experiment_summary memory fact on successful completion
