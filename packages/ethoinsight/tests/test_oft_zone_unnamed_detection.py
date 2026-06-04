@@ -112,7 +112,7 @@ class TestAnonymousZoneDetection:
         assert len(plan.metrics) > 0
 
     def test_oft_anonymous_zone_with_center_zone_override_resolves(self):
-        """When user has confirmed center_zone=in_zone via override, resolve succeeds."""
+        """When user has confirmed anonymous_zone_is=in_zone via unified key, resolve succeeds."""
         from ethoinsight.catalog import resolve
 
         plan = resolve(
@@ -120,7 +120,7 @@ class TestAnonymousZoneDetection:
             columns=_oft_anonymous_zone_columns(),
             raw_files=["/tmp/raw.txt"],
             workspace_dir="/tmp/workspace",
-            overrides={"center_zone": "in_zone"},
+            overrides={"anonymous_zone_is": "in_zone"},
         )
         metric_ids = {m.id for m in plan.metrics}
         # All 5 center metrics should be present
@@ -137,7 +137,7 @@ class TestAnonymousZoneDetection:
                 )
 
     def test_override_with_optional_metric_does_not_inject_center_zone(self):
-        """center_zone override must NOT leak into optional metrics' parameters_in_use."""
+        """anonymous_zone_is override must NOT leak into optional metrics' parameters_in_use."""
         from ethoinsight.catalog import resolve
 
         # Include an optional metric that does NOT accept center_zone
@@ -146,7 +146,7 @@ class TestAnonymousZoneDetection:
             columns=_oft_anonymous_zone_columns() + ["Elongation"],
             raw_files=["/tmp/raw.txt"],
             workspace_dir="/tmp/workspace",
-            overrides={"center_zone": "in_zone"},
+            overrides={"anonymous_zone_is": "in_zone"},
             include=["body_elongation_stats"],
         )
         for m in plan.metrics:
@@ -309,11 +309,14 @@ class TestDetectAnonymousZoneHelper:
 
     def test_zone_pattern_with_bare_in_zone_returns_error(self):
         from ethoinsight.catalog.resolve import _detect_anonymous_zone
+        from ethoinsight.catalog.schema import AnonymousZoneOverride
 
+        azo = AnonymousZoneOverride(target_param="center_zone", wrap_list=False)
         result = _detect_anonymous_zone(
             missing_patterns=["in_zone_center_*"],
             available_columns=["time", "in_zone", "x_center"],
             overrides={},
+            anonymous_zone_override=azo,
         )
         assert result is not None
         assert result.code == "zone_unnamed"
@@ -340,11 +343,14 @@ class TestDetectAnonymousZoneHelper:
 
     def test_zone_pattern_with_center_zone_override_returns_true(self):
         from ethoinsight.catalog.resolve import _detect_anonymous_zone
+        from ethoinsight.catalog.schema import AnonymousZoneOverride
 
+        azo = AnonymousZoneOverride(target_param="center_zone", wrap_list=False)
         result = _detect_anonymous_zone(
             missing_patterns=["in_zone_center_*"],
             available_columns=["time", "in_zone", "x_center"],
-            overrides={"center_zone": "in_zone"},
+            overrides={"anonymous_zone_is": "in_zone"},
+            anonymous_zone_override=azo,
         )
         # Override resolves the zone → returns True (proceed)
         assert result is True
@@ -366,3 +372,4 @@ class TestErrorHints:
         assert "in_zone" in hint
         assert "ask_clarification" in hint
         assert "parameter_overrides" in hint
+        assert "anonymous_zone_is" in hint

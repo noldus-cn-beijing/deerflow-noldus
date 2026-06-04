@@ -22,6 +22,7 @@ from typing import Any
 
 from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.schema import (
+    AnonymousZoneOverride,
     ChartEntry,
     MetricEntry,
     ParamSpec,
@@ -196,7 +197,7 @@ def resolve_metrics(
             #   ResolveError  → zone_unnamed (anonymous zone, no override) — raise immediately
             #   True          → zone pattern resolved by override — proceed (skip column check)
             #   None          → genuine missing column — raise columns_missing below
-            zone_check = _detect_anonymous_zone(missing, columns, overrides)
+            zone_check = _detect_anonymous_zone(missing, columns, overrides, cat.anonymous_zone_override)
             if isinstance(zone_check, ResolveError):
                 raise zone_check
             if zone_check is None:
@@ -221,6 +222,7 @@ def resolve_metrics(
             shared_params=shared_params,
             paradigm_params=cat.paradigm_parameters.parameters,
             overrides=overrides,
+            anonymous_zone_override=cat.anonymous_zone_override,
         )
         plan_metrics.extend(
             _metric_to_plan(
@@ -260,6 +262,7 @@ def resolve_metrics(
             shared_params=shared_params,
             paradigm_params=cat.paradigm_parameters.parameters,
             overrides=overrides,
+            anonymous_zone_override=cat.anonymous_zone_override,
         )
         plan_metrics.extend(
             _metric_to_plan(
@@ -470,6 +473,7 @@ def _detect_anonymous_zone(
     missing_patterns: list[str],
     available_columns: list[str],
     overrides: dict[str, str],
+    anonymous_zone_override: AnonymousZoneOverride | None = None,
 ) -> ResolveError | bool | None:
     """Detect anonymous zone: missing pattern is a named in_zone variant
     (e.g. in_zone_center_*) but bare in_zone exists in data.
@@ -491,8 +495,13 @@ def _detect_anonymous_zone(
     if "in_zone" not in available_columns:
         return None
 
-    # If center_zone override is already declared, allow it — user has confirmed.
-    if "center_zone" in overrides:
+    # Paradigm must declare anonymous_zone_override for zone_unnamed to trigger.
+    # Paradigms without it (EPM/FST/TST) fall through to columns_missing.
+    if anonymous_zone_override is None:
+        return None
+
+    # User has provided the unified key → override resolves the zone.
+    if "anonymous_zone_is" in overrides:
         return True
 
     return ResolveError(
@@ -807,6 +816,7 @@ def _compute_parameters_in_use(
     shared_params: dict[str, ParamSpec],
     paradigm_params: dict[str, ParamSpec],
     overrides: dict[str, float | int | str],
+    anonymous_zone_override: AnonymousZoneOverride | None = None,
 ) -> dict[str, float | int | str]:
     """合并 catalog default + override → 实际生效的参数集合。
 
@@ -852,8 +862,16 @@ def _compute_parameters_in_use(
     for pname, pspec in metric.parameters.items():
         result[pname] = pspec.default
 
+    # Translate unified zone key → paradigm's real param, before replace-only loop.
+    # This is where list wrapping happens (zero_maze open_zones requires list[str]).
+    effective_overrides = dict(overrides)
+    azo = anonymous_zone_override
+    if azo is not None and "anonymous_zone_is" in effective_overrides:
+        val = effective_overrides.pop("anonymous_zone_is")
+        effective_overrides[azo.target_param] = [val] if azo.wrap_list else val
+
     # 4. overrides (最高优先级)
-    for pname, override_val in overrides.items():
+    for pname, override_val in effective_overrides.items():
         if pname in result:
             result[pname] = override_val
 

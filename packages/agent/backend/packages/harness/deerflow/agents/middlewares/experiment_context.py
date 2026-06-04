@@ -226,7 +226,11 @@ def set_experiment_paradigm_tool(
         acknowledge_quality: Set True to acknowledge data quality warnings (Gate 2 mode).
                              When True, all paradigm fields may be omitted — the existing
                              experiment-context.json is read and only gate_completed is updated.
-        parameter_overrides: User-confirmed parameter overrides (e.g. {"immobility_threshold": 0.5}).
+        parameter_overrides: User-confirmed parameter overrides. Examples:
+            ``immobility_threshold=0.5`` or ``anonymous_zone_is=in_zone``.
+            The unified key ``anonymous_zone_is`` works across all three zone
+            paradigms (OFT / zero_maze / LDB); the backend translates it into
+            the paradigm-specific parameter (center_zone / open_zones / light_zone).
                              Stored in experiment-context.json; used to compute analysis_config_id.
                              Pass None or {} when no overrides are needed (defaults apply).
         workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
