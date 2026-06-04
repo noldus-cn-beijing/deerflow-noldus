@@ -3,11 +3,22 @@ ev19_templates:
   - Zero Maze XT190
   - O-Maze XT190
 
+anonymous_zone_override:
+  target_param: open_zones
+  wrap_list: true
+
 default_metrics:
   - id: open_zone_time_ratio
     script: ethoinsight.scripts.zero_maze.compute_open_zone_time_ratio
     requires_columns:
       - in_zone_open*
+    parameters:
+      open_zones:
+        default: ["in_zone_open"]
+        unit: ""
+        description: "开放区列名列表。用户确认匿名区为开放区时覆盖为 [\"in_zone\"]。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: ratio
     display_name_zh: 开放区时间比例
     unit_zh: 比例
@@ -19,6 +30,13 @@ default_metrics:
     script: ethoinsight.scripts.zero_maze.compute_open_zone_time
     requires_columns:
       - in_zone_open*
+    parameters:
+      open_zones:
+        default: ["in_zone_open"]
+        unit: ""
+        description: "开放区列名列表。用户确认匿名区为开放区时覆盖为 [\"in_zone\"]。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: seconds
     display_name_zh: 开放区时间
     unit_zh: 秒
@@ -31,6 +49,13 @@ default_metrics:
     requires_columns:
       - in_zone_open*
       - distance_moved
+    parameters:
+      open_zones:
+        default: ["in_zone_open"]
+        unit: ""
+        description: "开放区列名列表。用户确认匿名区为开放区时覆盖为 [\"in_zone\"]。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: cm
     display_name_zh: 开放区移动距离
     unit_zh: cm
@@ -42,6 +67,13 @@ default_metrics:
     script: ethoinsight.scripts.zero_maze.compute_hesitation_count
     requires_columns:
       - in_zone_open*
+    parameters:
+      open_zones:
+        default: ["in_zone_open"]
+        unit: ""
+        description: "开放区列名列表。用户确认匿名区为开放区时覆盖为 [\"in_zone\"]。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: count
     display_name_zh: 犹豫次数
     unit_zh: 次

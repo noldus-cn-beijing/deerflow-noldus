@@ -3,6 +3,10 @@ ev19_templates:
   - Open Field XT190
   - 旷场_小鼠_三点
 
+anonymous_zone_override:
+  target_param: center_zone
+  wrap_list: false
+
 default_metrics:
   - id: center_time_ratio
     script: ethoinsight.scripts.oft.compute_center_time_ratio

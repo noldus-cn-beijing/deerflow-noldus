@@ -46,6 +46,29 @@ _GROUPING_METADATA_KEYS = (
 _DATA_PREVIEW_N_ROWS = 5
 
 
+def _compute_anonymous_zone_evidence(df: "pandas.DataFrame") -> dict[str, Any] | None:
+    """Compute occupancy ratio evidence for bare in_zone column.
+
+    When data has a bare ``in_zone`` column (unnamed EthoVision analysis zone),
+    this computes the proportion of time the animal spends in each zone value,
+    which helps the user identify which zone the anonymous column represents.
+
+    Returns None if ``in_zone`` column is absent or the data is empty.
+    """
+    if "in_zone" not in df.columns:
+        return None
+    s = df["in_zone"].dropna()
+    if s.empty:
+        return None
+    vc = s.value_counts(normalize=True)
+    return {
+        "column": "in_zone",
+        "occupancy_ratio": {str(int(k)): round(float(v), 4) for k, v in vc.items()},
+        "n_frames": int(len(s)),
+        "note": "in_zone=1 表示在该匿名区内；动物在焦虑回避区（中心/开放臂/亮室）通常占时较低。",
+    }
+
+
 @tool("inspect_uploaded_file", parse_docstring=True)
 def inspect_uploaded_file_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
@@ -289,6 +312,18 @@ def _inspect_txt(virtual_path: str, real_path: str) -> dict[str, Any]:
     data_preview = _build_data_preview_txt(real_path, header)
     if data_preview is not None:
         result["data_preview"] = data_preview
+    # Add anonymous zone evidence when bare in_zone exists (requires full parse)
+    columns = result["columns"]
+    if "in_zone" in columns:
+        try:
+            from ethoinsight.parse._core import parse_trajectory
+
+            df = parse_trajectory(real_path)
+            evidence = _compute_anonymous_zone_evidence(df)
+            if evidence is not None:
+                result["anonymous_zone_evidence"] = evidence
+        except Exception as e:
+            logger.debug("anonymous_zone_evidence txt failed for %s: %s", real_path, e)
     return result
 
 
@@ -376,6 +411,12 @@ def _inspect_excel(virtual_path: str, real_path: str) -> dict[str, Any]:
                 data_preview = _build_data_preview_df(df)
                 if data_preview is not None:
                     result["data_preview"] = data_preview
+                # Add anonymous zone evidence when bare in_zone exists
+                columns = result["columns"]
+                if "in_zone" in columns:
+                    evidence = _compute_anonymous_zone_evidence(df)
+                    if evidence is not None:
+                        result["anonymous_zone_evidence"] = evidence
             except Exception as e:
                 logger.debug("data_preview xlsx ev19 failed for %s: %s", sheet_full, e)
             return result
@@ -430,6 +471,11 @@ def _inspect_csv(virtual_path: str, real_path: str) -> dict[str, Any]:
             data_preview = _build_data_preview_df(df)
             if data_preview is not None:
                 result["data_preview"] = data_preview
+            # Add anonymous zone evidence when bare in_zone exists
+            if "in_zone" in result["columns"]:
+                evidence = _compute_anonymous_zone_evidence(df)
+                if evidence is not None:
+                    result["anonymous_zone_evidence"] = evidence
         except Exception as e:
             logger.debug("data_preview csv ev19 failed for %s: %s", real_path, e)
         return result

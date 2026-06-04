@@ -2,11 +2,22 @@ paradigm: ldb
 ev19_templates:
   - Light Dark Box XT190
 
+anonymous_zone_override:
+  target_param: light_zone
+  wrap_list: false
+
 default_metrics:
   - id: light_time_ratio
     script: ethoinsight.scripts.ldb.compute_light_time_ratio
     requires_columns:
       - in_zone_light*
+    parameters:
+      light_zone:
+        default: "in_zone_light"
+        unit: ""
+        description: "亮区列名。用户确认匿名区为亮区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: ratio
     display_name_zh: 亮室时间比例
     unit_zh: 比例
@@ -18,6 +29,13 @@ default_metrics:
     script: ethoinsight.scripts.ldb.compute_transition_count
     requires_columns:
       - in_zone_light*
+    parameters:
+      light_zone:
+        default: "in_zone_light"
+        unit: ""
+        description: "亮区列名。用户确认匿名区为亮区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: count
     display_name_zh: 跨室次数
     unit_zh: 次
@@ -29,6 +47,13 @@ default_metrics:
     script: ethoinsight.scripts.ldb.compute_light_latency
     requires_columns:
       - in_zone_light*
+    parameters:
+      light_zone:
+        default: "in_zone_light"
+        unit: ""
+        description: "亮区列名。用户确认匿名区为亮区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: seconds
     display_name_zh: 首次进入亮室潜伏期
     unit_zh: 秒

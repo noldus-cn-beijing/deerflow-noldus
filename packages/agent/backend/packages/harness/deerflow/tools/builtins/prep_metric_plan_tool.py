@@ -41,12 +41,16 @@ _ERROR_HINTS: dict[str, str] = {
         "不要在缺列情况下勉强分析。"
     ),
     "zone_unnamed": (
-        "检测到一个未命名的分析区(in_zone)。"
-        "请用 ask_clarification 反问用户该区域代表什么"
-        "（如旷场的中心区）。"
-        "用户明确是中心区 → 写 parameter_overrides={\"center_zone\":\"in_zone\"} 后重调 prep_metric_plan；"
-        "用户不确定/非中心区 → 告知其数据缺明确的中心区，"
-        "请在 EthoVision 确认/命名区域后重新导出再分析，不要勉强计算。"
+        "数据里有一个未命名分析区(in_zone)，需要确认它代表哪个目标区域后再分析。"
+        "第一步：调 inspect_uploaded_file 查看该文件的 anonymous_zone_evidence，"
+        "它给出 in_zone=1 与 in_zone=0 的占时比例。"
+        "第二步：用 ask_clarification 把占时证据呈现给用户并请其确认。"
+        "行为学常识可辅助判断：动物在焦虑回避区（旷场中心区 / 零迷宫开放臂 / 明暗箱亮室）通常停留时间较短，"
+        "占时低的一侧更可能是目标区，最终以用户确认为准。"
+        "第三步：用户确认后写 parameter_overrides={\"anonymous_zone_is\": \"in_zone\"} "
+        "再重调 prep_metric_plan。"
+        "若用户判断该区不是目标区，请说明数据需在 EthoVision 重新命名区域后导出，"
+        "以保证分析建立在明确区域定义之上。"
     ),
     "schema_violation": (
         "catalog YAML 损坏——这是项目内部 bug。present_files 把错误信息呈现给用户，让他报 bug。"

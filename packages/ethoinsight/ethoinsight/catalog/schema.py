@@ -100,6 +100,22 @@ class StatisticsEntry:
 
 
 @dataclass(frozen=True)
+class AnonymousZoneOverride:
+    """Per-paradigm translation rule for unified anonymous zone key.
+
+    When a paradigm declares this, the resolve layer:
+    1. Accepts the unified key ``anonymous_zone_is`` (instead of
+       paradigm-specific keys like center_zone / open_zones / light_zone).
+    2. Translates it into the real parameter name (target_param), with
+       optional list wrapping for parameters whose compute function expects
+       a list (e.g. zero_maze open_zones).
+    """
+
+    target_param: str
+    wrap_list: bool = False
+
+
+@dataclass(frozen=True)
 class Catalog:
     paradigm: str
     ev19_templates: list[str]
@@ -110,6 +126,7 @@ class Catalog:
     paradigm_parameters: ParadigmParameters = field(
         default_factory=ParadigmParameters
     )
+    anonymous_zone_override: AnonymousZoneOverride | None = None
 
 
 @dataclass(frozen=True)

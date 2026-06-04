@@ -28,6 +28,7 @@ import yaml
 from ethoinsight.catalog.schema import (
     ALLOWED_DIRECTIONS,
     ALLOWED_STAT_DEFAULTS,
+    AnonymousZoneOverride,
     Catalog,
     ChartEntry,
     CommonCatalog,
@@ -123,6 +124,32 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
 
     paradigm_params_block = _parse_param_block(raw, "paradigm_parameters", source)
 
+    # Parse anonymous_zone_override translation rule (2026-06-04: three-paradigm unification)
+    anonymous_zone_override: AnonymousZoneOverride | None = None
+    azo_raw = raw.get("anonymous_zone_override")
+    if azo_raw is not None:
+        if not isinstance(azo_raw, dict):
+            raise CatalogError(
+                f"{source}: 'anonymous_zone_override' must be a mapping, "
+                f"got {type(azo_raw).__name__}"
+            )
+        target_param = azo_raw.get("target_param")
+        if not isinstance(target_param, str) or not target_param:
+            raise CatalogError(
+                f"{source}: 'anonymous_zone_override.target_param' "
+                f"must be a non-empty string"
+            )
+        wrap_list = azo_raw.get("wrap_list", False)
+        if not isinstance(wrap_list, bool):
+            raise CatalogError(
+                f"{source}: 'anonymous_zone_override.wrap_list' "
+                f"must be bool, got {type(wrap_list).__name__}"
+            )
+        anonymous_zone_override = AnonymousZoneOverride(
+            target_param=target_param,
+            wrap_list=wrap_list,
+        )
+
     return Catalog(
         paradigm=paradigm,
         ev19_templates=ev19_templates,
@@ -131,6 +158,7 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
         charts=charts,
         statistics_default=statistics_default,
         paradigm_parameters=ParadigmParameters(parameters=paradigm_params_block),
+        anonymous_zone_override=anonymous_zone_override,
     )
 
 
@@ -147,7 +175,7 @@ def _parse_param_spec(item: dict, where: str, source: Path) -> ParamSpec:
             )
         return v
 
-    default = req("default", (int, float, str))
+    default = req("default", (int, float, str, list))
     unit = req("unit", str)
     description = req("description", str)
     tunable = req("tunable_by_user", bool)
