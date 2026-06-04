@@ -1,17 +1,23 @@
 # Frontend 信息架构改进设计文档
 
 > 基于 2026-06-04 OFT 旷场 E2E dogfood 发现的前端问题分析与改进方案
+>
+> **审查状态**: 已由 Opus agent 对照代码库逐条核实（2026-06-04），关键修正：
+> - Level 4 全链路已实现，剩一个边界 bug 待修
+> - Level 1 warning badge 数据通路不存在
+> - Level 2 代码草图字段与实际工具返回不符
+> - 优先级已重排
 
 ## 问题总览
 
 | # | 问题 | 严重度 | 状态 |
 |---|------|--------|------|
-| 1 | 消息重复输出（reasoning+content 渲染两遍） | 🔴 P0 | ✅ 已修复 `utils.ts:getMessageGroups` |
-| 2 | 图表 markdown 图片 404（`/mnt/` 路径未解析） | 🔴 P0 | ✅ 已修复 `markdown-content.tsx` |
-| 3 | Subagent 卡片标题状态滞后（completed 后仍显示 "正在…"） | 🟡 P1 | ✅ 已修复 `subtask-card.tsx` |
-| 4 | Subagent 关键信息全在折叠中，用户不展开就看不到 | 🟡 P1 | 📝 本文档主议题 |
-| 5 | Lead agent 工具调用隐藏在 "查看其他 N 个步骤" 中 | 🟡 P2 | 📝 本文档覆盖 |
-| 6 | 新对话 sidebar 行为需优化 | 🟢 P3 | 📝 待进一步明确需求 |
+| 1 | 消息重复输出（reasoning+content 渲染两遍） | P0 | ✅ 已修复 `utils.ts:getMessageGroups` |
+| 2 | 图表 markdown 图片 404（`/mnt/` 路径未解析） | P0 | ✅ 已修复 `markdown-content.tsx` |
+| 3 | Subagent 卡片标题状态滞后（completed 后仍显示 "正在…"） | P1 | ✅ 已修复 `subtask-card.tsx` |
+| 4 | data-analyst quality warning 在 subagent group 中静默丢失 | P1 | 待修（边界 bug，真实根因见 §2.3.1） |
+| 5 | Lead agent 工具调用渲染路径与实施目标错位 | P2 | 待进一步设计 |
+| 6 | Subagent 实时进度不可见 | P3 | 待设计（需后端配合） |
 
 ---
 
@@ -32,212 +38,177 @@
 2. 在默认 `components.img` 中检测 `/mnt/` 前缀或其他 artifact 路径，自动调用 `resolveArtifactURL` / `normalizeArtifactImageSrc` 转换为正确的 API URL
 3. `message-list.tsx` 中 4 处 `MarkdownContent` 调用均传入 `threadId`
 
-**影响范围**：所有通过 `MarkdownContent` 渲染的 markdown 图片（present_files 内容、subagent handoff 摘要、报告中的图片等）。
+**影响范围**：所有通过 `MarkdownContent` 渲染的 markdown 图片。
 
 ### 1.3 Subagent 卡片状态滞后
 
-**根因**：`SubtaskCard` 的卡片标签始终使用 `getStageBroadcastForSubagent(subagent_type)` 返回的固定文案（如 "🧮 正在计算指标，预计 30-60 秒..."），不随 `task.status` 变化。
+**根因**：`SubtaskCard` 的卡片标签始终使用 `getStageBroadcastForSubagent(subagent_type)` 返回的固定文案，不随 `task.status` 变化。
 
 **修复**：
-- `completed` → 显示 "🧮 正在计算指标 — 子任务已完成"（灰色 muted）
-- `failed` → 显示 "🧮 正在计算指标 — 子任务失败"（红色）
-- `in_progress` → 保持 Shimmer 动画（同前）
-- 折叠时显示 `task.result` 第一行作为摘要，而非仅 "子任务已完成"
+- `completed` → 灰色 muted "— 子任务已完成"
+- `failed` → 红色 "— 子任务失败"
+- `in_progress` → Shimmer 动画（不变）
+- 折叠时显示 `task.result` 第一行作为摘要
 
 ---
 
-## 2. 核心议题：关键信息突破折叠
+## 2. 现有基础设施（已实现，勿重复造轮）
 
-### 2.1 当前状态
+以下组件/通路已存在，后续方案应复用它而非新建：
 
-E2E 流程中用户默认看到的信息层级：
+| 基础设施 | 位置 | 说明 |
+|---------|------|------|
+| `QualityWarningBroadcastMiddleware` | `backend/.../middlewares/quality_warning_broadcast_middleware.py` | 后端读 data-analyst handoff 的 quality_warnings，注入到 lead AIMessage 的 `additional_kwargs.quality_warnings` |
+| `extractQualityWarnings` | `frontend/src/core/messages/utils.ts:661` | 前端从 message 提取 quality_warnings |
+| `QualityWarningBanner` | `frontend/.../messages/quality-warning-banner.tsx` | 前端渲染 warning banner |
+| Banner 渲染点 | `message-list-item.tsx:228` | `MessageContent_` 中，仅 `assistant` group 触发 |
+| `convertToSteps` 已带 `step.result` | `message-group.tsx:558-567` | 每个 tool call step 已通过 `findToolCallResult` 挂载了解析后的 result |
+| `Subtask` 类型 | `core/tasks/types.ts` | **不含** `quality_warnings` 字段，`result` 是字符串 |
 
-```
-👤 分析数据（含4个文件）
-├── 🤖 [intent] E2E_FULL_ASKVIZ …收到数据，先识别模板
-│   └── 📦 查看其他 1 个步骤  ← identify_ev19_template 被折叠
-├── 🤖 数据已探查完毕…先确认 EV19 模板类型
-│   └── 📦 查看其他 2 个步骤  ← inspect_uploaded_file ×2 被折叠
-├── ❓ ask_clarification：选 A/B 模板
-├── 🤖 好的，确认模板…还需确认分组
-│   ├── 📦 查看其他 1 个步骤  ← set_experiment_paradigm 被折叠
-│   └── ❓ ask_clarification：control vs treatment
-├── 🤖 确认分组…还需确认 zone
-│   ├── 📦 查看其他 1 个步骤  ← prep_metric_plan 被折叠
-│   └── ❓ ask_clarification：in_zone=1 是中心区？
-├── 🤖 好的，启动分析
-│   ├── 💭 思考 Lead Agent  ← lead 思考被折叠
-│   ├── [SubtaskCard: code-executor]  ← 默认折叠
-│   │   └── 内部：10 个 bash 命令 + reasoning 全部折叠
-│   ├── [SubtaskCard: data-analyst]   ← 默认折叠
-│   │   └── 内部：read_file ×N + reasoning + handoff 全部折叠
-│   ├── [SubtaskCard: chart-maker]    ← 默认折叠
-│   │   └── 内部：bash 命令 + reasoning 全部折叠
-│   └── [SubtaskCard: report-writer]  ← 默认折叠
-│       └── 内部：read_file ×N + reasoning 全部折叠
-└── 🤖 最终回复：摘要/报告/图表
-```
+---
 
-**问题**：用户不展开任何折叠区时，只能看到 lead 的顶层文字和最终回复。以下关键信号全部被隐藏：
+## 3. 核心议题：关键信息突破折叠
 
-- 数据质量 critical warning（n=1 无法统计检验）
-- 指标计算结果（5 个中心区指标的具体数值）
-- 图表生成失败原因（柱状图因列缺失而失败）
-- 统计跳过原因（每组仅 n=1）
-- Subagent 的实际工作过程（10 个 bash 脚本执行、判读文档查阅等）
+### 3.1 真实待修 bug — data-analyst warning 在 subagent group 中丢失
 
-### 2.2 设计原则
+**这是 OFT dogfood 里 "n=1 critical warning 在默认视图中看不到" 的真实根因。**
 
-| 原则 | 说明 |
-|------|------|
-| **渐进披露** | 默认层 = 摘要/关键信号；展开层 = 完整细节 |
-| **关键信号前置** | data quality warnings、errors、blockers 必须在折叠状态下可见 |
-| **状态可感知** | 用户不需要展开就能知道 "进行到哪了、有没有问题" |
-| **不推翻现有架构** | 利用现有的 custom events、SubtaskCard、QualityWarningBanner 组件 |
+#### 已有通路
 
-### 2.3 改进方案
+`QualityWarningBroadcastMiddleware`（已注册、已启用）的工作流程：
+1. `data-analyst` 完成 → handoff JSON 含 `quality_warnings` 数组
+2. 中间件在 lead 产出**下一条无 tool_call 的 AIMessage** 时，读 handoff 注入 `additional_kwargs.quality_warnings`
+3. 该 AIMessage 走 `assistant` group → `MessageContent_` → `QualityWarningBanner` 渲染 ✅
 
-#### Level 1：SubtaskCard 折叠状态增强（低风险，本 PR 可做）
+#### 边界 bug
 
-```
-┌─────────────────────────────────────────────────┐
-│ 🧮 正在计算指标 — 子任务已完成        [展开 ▲]   │
-│ ✓ 10/10 脚本成功，统计跳过（n=1）                 │  ← 新增：result 第一行摘要
-│ ⚠️ 1 critical: SAMPLE_TOO_SMALL                   │  ← 新增：quality warning badge
-└─────────────────────────────────────────────────┘
-```
+当 lead 把 "播报质量警告的文字" 和 "下一个 task 派遣" **打包进同一条 AIMessage**（常见模式：`content = "n=1 无法统计..." + tool_calls = [task("chart-maker")]`）时：
 
-**实现**：
-1. ✅ 已完成：result 第一行作为折叠摘要
-2. 🆕 待做：从 `task.latestMessage.additional_kwargs` 或 `task.result` 中提取 `quality_warnings`，在折叠行中渲染 warning badge
+- `hasToolCalls(message)` = true → 消息进入 `assistant:subagent` group
+- `assistant:subagent` handler（`message-list.tsx:234-287`）**不调用 `extractQualityWarnings`，不渲染 `QualityWarningBanner`**
+- Banner 静默丢失
+
+这与历史记忆中的 "同一 AIMessage 并行 set_viz_choice+task 致竞态" 是同型打包问题。
+
+#### 修复（二选一）
+
+**方案 A（前端）**：`assistant:subagent` group handler 中对每条 `hasContent` 的 AIMessage 也调 `extractQualityWarnings` + 渲染 banner。
 
 ```tsx
-// SubtaskCard 折叠行新增 quality warning 指示
-{task.status === "completed" && qualityWarnings.length > 0 && (
-  <span className="text-amber-500 text-xs">
-    ⚠️ {qualityWarnings.length} warning{qualityWarnings.length > 1 ? "s" : ""}
-  </span>
-)}
-```
-
-#### Level 2：Lead Agent tool calls — "查看其他 N 个步骤" 摘要化（中风险）
-
-**现状**：Lead agent 的 identify/inspect/set_paradigm/prep_metric_plan 等 tool call 默认折叠，只显示 "使用 XX 工具" + "查看其他 N 个步骤"。
-
-**改进**：在 "使用 XX 工具" 右侧显示该工具的关键输出摘要。
-
-```
-使用 "inspect_uploaded_file" 工具
-  ↳ Trial 1: dark_mice 列, Trial 2: white_mice 列  ← 摘要
-
-使用 "prep_metric_plan" 工具
-  ↳ 5 个指标, Control vs Treatment 两组  ← 摘要
-
-📦 查看其他 3 个步骤  ← 次要工具折叠
-```
-
-**实现思路**：
-1. 为 `identify_ev19_template` / `inspect_uploaded_file` / `prep_metric_plan` 等高频工具编写 `extractToolCallSummary(toolName, result)` 函数
-2. 在 `message-group.tsx` 的 tool call 渲染中，展开前 1-2 个"高信息量" tool call，其余折叠
-
-```ts
-// 新增：tools/summary.ts
-export function getToolCallSummary(name: string, result: unknown): string | null {
-  if (name === "inspect_uploaded_file") {
-    const r = result as { columns?: string[]; row_count?: number };
-    if (r.columns) return `${r.row_count ?? "?"} 行, 列: ${r.columns.join(", ")}`;
+// message-list.tsx assistant:subagent handler
+if (hasContent(message)) {
+  const narrative = extractContentFromMessage(message);
+  if (narrative) {
+    results.push(<MarkdownContent ... />);
   }
-  if (name === "prep_metric_plan") {
-    const r = result as { metric_count?: number; paradigms?: string[] };
-    if (r.metric_count) return `${r.metric_count} 个指标`;
+  // 新增：渲染 quality warnings
+  const qw = extractQualityWarnings(message as unknown as Record<string, unknown>);
+  if (qw.length > 0) {
+    results.push(<QualityWarningBanner warnings={qw} />);
   }
-  return null;
 }
 ```
 
-#### Level 3：关键事件广播 — Custom Events 通道（中等风险，需后端配合）
+**方案 B（后端）**：去掉中间件 `_maybe_inject` 的 `if last.tool_calls: return None` 早退条件，即使 lead 同消息里打包了 task，也注入 warnings。
 
-**思路**：Subagent 在执行过程中，将关键 milestone 以 custom event 发送给 lead → lead 转发到前端 → 前端在 SubtaskCard 折叠行中展示。
+**推荐方案 A**（纯前端，改动最小，不影响后端契约）。
 
-**事件类型**：
+### 3.2 Level 1 — SubtaskCard 折叠增强（已部分完成，暂时不需扩展）
+
+**已完成**：折叠状态下显示 `task.result` 第一行作为摘要。
+
+**原计划但暂不可做**：在折叠行显示 quality warning badge。原因是：
+- `Subtask` 类型的 `result` 是纯字符串（从 ToolMessage split 出来），不是结构化对象
+- `Subtask` 没有 `quality_warnings` 字段
+- 要拿到 warning 计数需要改动后端数据通路（在后端把 warnings 塞进 task ToolMessage，前端在 `updateSubtask` 中解析）
+- 而且 Level 1 的 badge 与 §3.1 banner 展 示的是同一份数据，按 SSOT 原则不应两处独立取
+
+**结论**：Level 1 当前状态已足够。warning 展示统一用 lead banner（§3.1），不在 SubtaskCard 重复。
+
+### 3.3 Level 2 — Lead tool calls 摘要化（需先解决渲染路径问题，再谈摘要）
+
+#### 前置问题：lead 的 tool call 在哪个 group 渲染？
+
+当前 `assistant:processing` handler（`message-list.tsx:296-339`）对 lead 的 AIMessage 只做了两件事：
+1. `hasReasoning` → 渲染 `MessageGroup`（含 `convertToSteps` → `ToolCall`）
+2. `hasContent` → 渲染 narrative `MarkdownContent`
+
+**对既无 reasoning 又无 content 的 tool-call-only AIMessage，tool call 直接丢弃不渲染**。"查看其他 N 个步骤" 只在 `MessageGroup` 内部出现。
+
+**必须先决定**：这些 tool call 应该在哪个 group 被消费。选项：
+- 让 `assistant:processing` handler 对无 reasoning 的消息也调 `convertToSteps` + 渲染
+- 或新增一个专用渲染路径
+
+#### 摘要化方案（路径确定后实施）
+
+`convertToSteps`（`message-group.tsx:558-567`）**已经**通过 `findToolCallResult` 把 tool result 解析成 `step.result` 挂在每个 step 上，只是 `ToolCall` 组件除 `web_search` / `image_search` 外不消费它。所以不需要新建 `tools/summary.ts`——直接在 `ToolCall` 里对已知高频工具加 `step.result` 摘要分支即可。
+
+**注意**（对照真实工具返回）：
+- `inspect_uploaded_file` 返回 `{sheets, columns, raw_metadata, ...}`，**没有** `row_count` 字段
+- `prep_metric_plan` 返回 `{status: "ok", plan_summary: {paradigm, metric_count, subject_count, ...}}`，`metric_count` 嵌在 `plan_summary` 内，**不是**顶层字段
+
+### 3.4 Level 3 — Subagent 实时进度事件（收窄范围后可行）
+
+原方案的 `quality_warning` / `handoff_ready` 等终态信号与 §3.1 的 handoff 通路重叠（same data, dual source → 违反 SSOT）。Level 3 应该**只覆盖 handoff 通路做不到的事**：subagent 进行中的实时进度。
+
+**收窄后的事件类型**：
 ```typescript
-type SubagentMilestoneEvent = {
-  type: "subagent_milestone";
+type SubagentProgressEvent = {
+  type: "subagent_progress";
   task_id: string;
-  milestone: 
-    | { kind: "scripts_completed"; total: number; succeeded: number; failed: number }
-    | { kind: "quality_warning"; code: string; message: string }
-    | { kind: "chart_generated"; chart_type: string; status: "ok" | "failed" }
-    | { kind: "handoff_ready"; summary: string };
+  progress:
+    | { kind: "scripts_started"; total: number }
+    | { kind: "script_completed"; script_name: string; status: "ok" | "failed" }
+    | { kind: "chart_started"; chart_type: string };
 };
 ```
 
 **数据流**：
 ```
-subagent → ToolMessage (custom event) → lead → stream → frontend
-                                                      ↳ SubtaskCard 折叠行更新
+subagent → custom event (SSE) → lead stream → frontend useSubtask
+                                                   ↳ 折叠行进度更新
 ```
 
-**优势**：不需要改变 subagent 的工作流程，只需要在 key points 发送一个轻量 event。
+**工作量**：后端需改动 subagent executor 的 SSE event 协议 + `Subtask` 类型；估时应上调到 4-6h（前后端合计）。
 
-#### Level 4：QualityWarning 全局广播（低风险，前端优先）
+### 3.5 实施路径（重排后）
 
-**思路**：在 data-analyst handoff 中的 `quality_warnings` 数组，直接渲染为独立的 warning banner，不隐藏在卡片中。
-
-**实现**：
-1. 在 `message-list.tsx` 的 `assistant:subagent` 组渲染中，检测 `data-analyst` handoff 的 `quality_warnings`
-2. 如果有 critical warning，在 SubtaskCard 上方渲染一个 `QualityWarningBanner`
-
-```tsx
-// 在 assistant:subagent handler 中
-{dataAnalystQualityWarnings.length > 0 && (
-  <QualityWarningBanner warnings={dataAnalystQualityWarnings} />
-)}
-```
-
-这个改动已经在 `message-list-item.tsx` 中有基础设施（`extractQualityWarnings` + `QualityWarningBanner`），只需要在 message-list 的 group handler 中复用。
-
-### 2.4 推荐实施路径
-
-| Phase | 内容 | 预计工作量 |
-|-------|------|-----------|
-| **Phase 1** (本 PR) | Level 1: SubtaskCard 折叠摘要 + quality warning badge | 1-2h |
-| **Phase 2** | Level 4: data-analyst warning 独立 banner | 1h |
-| **Phase 3** | Level 2: Lead tool calls 摘要化 | 2-3h |
-| **Phase 4** (需后端) | Level 3: Custom events 通道 | 后端 2h + 前端 2h |
+| Phase | 内容 | 预计工作量 | 依赖 |
+|-------|------|-----------|------|
+| **Phase 1** | §3.1: 修复 subagent group 中 banner 丢失（方案 A） | 0.5h | 无 |
+| **Phase 2** | §3.3: 决定 lead tool call 的渲染路径 + 在 ToolCall 中加摘要 | 2-3h | Phase 1 |
+| **Phase 3** | §3.4: Subagent 实时进度事件（收窄范围） | 后端 3h + 前端 3h | Phase 1 |
+| — | §3.2: SubtaskCard warning badge | **暂不做**（数据通路缺失 + 与 banner 重复） | — |
 
 ---
 
-## 3. 新对话 Sidebar 行为（待明确）
+## 4. 新对话 Sidebar 行为
 
-观察到的行为：
-- "新对话" 链接在 `/workspace/chats/new` 时高亮
-- 发送消息后 URL 变为 `/workspace/chats/<uuid>`，"新对话" 失去高亮
-- Sidebar 的 RecentChatList 在对话开始后自动出现当前对话
-
-需要与用户确认：期望的 sidebar 行为是什么？可能的方向：
-1. 正在进行的对话在 sidebar 中应有视觉区分（如加粗/动画点）
-2. "新对话" 链接在活跃对话中应保持可点击但不干扰
-3. Sidebar 折叠时，"新对话" 应保持便捷访问
+待明确具体需求。相关组件：`recent-chat-list.tsx`、`workspace-sidebar.tsx`。当前观察到的行为已在之前测试中记录，需要用户给出具体的期望行为后再立项。
 
 ---
 
-## 4. 改动清单
+## 5. 改动清单
 
 ### 已修改文件
 
 | 文件 | 改动 |
 |------|------|
-| `core/messages/utils.ts` | `getMessageGroups`: 修复重复输出（#1） |
-| `messages/markdown-content.tsx` | 新增 `threadId` prop + 默认 `img` 组件自动解析 artifact 路径（#2） |
-| `messages/message-list.tsx` | 4 处 `MarkdownContent` 传入 `threadId`（#2） |
-| `messages/subtask-card.tsx` | 卡片标签随 status 变化 + 折叠时显示 result 摘要（#3, #4） |
+| `core/messages/utils.ts` | `getMessageGroups`: `hasContent && !hasToolCalls` 提前为 `else-if`（修复 #1） |
+| `messages/markdown-content.tsx` | 新增 `threadId` prop + 默认 `img` 组件自动解析 artifact 路径（修复 #2） |
+| `messages/message-list.tsx` | 4 处 `MarkdownContent` 传入 `threadId`（修复 #2） |
+| `messages/subtask-card.tsx` | 卡片标签随 status 变化 + 折叠时显示 result 摘要（修复 #3） |
 
-### 待实施改动（建议下个 agent 执行）
+### 待实施
 
-| 优先级 | 改动 | 涉及文件 |
-|--------|------|---------|
-| P1 | SubtaskCard 折叠行 quality warning badge | `subtask-card.tsx` |
-| P1 | assistant:subagent 组中独立渲染 QualityWarningBanner | `message-list.tsx` |
-| P2 | Lead tool calls 前 1-2 个展开摘要 | `message-group.tsx`, 新增 `tools/summary.ts` |
-| P3 | Custom events 通道（需后端配合） | backend + frontend |
+| 优先级 | 改动 | 涉及文件 | 估时 |
+|--------|------|---------|------|
+| P1 | assistant:subagent handler 渲染 QualityWarningBanner（§3.1 方案 A） | `message-list.tsx` | 0.5h |
+| P2 | 决定 lead tool call 渲染路径 + ToolCall 摘要化（§3.3） | `message-group.tsx`（新增分支在 `ToolCall` 中消费已有 `step.result`） | 2-3h |
+| P3 | Subagent 实时进度 custom events（§3.4，收窄范围） | backend executor + frontend `Subtask` 类型 + SSE | 6h |
+
+---
+
+## 审查记录
+
+- **2026-06-04 Opus agent 审查**：逐条对照前端源码和后端 harness 核实。修正：Level 4 已实现→改为边界 bug；Level 1 warning badge 数据通路缺失；Level 2 字段名与实际工具返回不符；Level 3 与 Level 4 终态信号重叠→收窄范围。关键文件均已标注绝对路径。
