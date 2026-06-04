@@ -116,6 +116,7 @@ export function MessageList({
                       options ?? [],
                     )}
                     isLoading={thread.isLoading}
+                    threadId={threadId}
                   />
                   {onSelectClarificationOption && (
                     <ClarificationOptions
@@ -143,6 +144,7 @@ export function MessageList({
                     content={extractContentFromMessage(group.messages[0])}
                     isLoading={thread.isLoading}
                     className="mb-4"
+                    threadId={threadId}
                   />
                 )}
                 <ArtifactFileList files={files} threadId={threadId} />
@@ -256,6 +258,7 @@ export function MessageList({
                       key={"narrative-" + message.id}
                       content={narrative}
                       isLoading={thread.isLoading}
+                      threadId={threadId}
                     />,
                   );
                 }
@@ -328,6 +331,7 @@ export function MessageList({
                       key={"narrative-" + message.id}
                       content={narrative}
                       isLoading={thread.isLoading}
+                      threadId={threadId}
                     />,
                   );
                 }

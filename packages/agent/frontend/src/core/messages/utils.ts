@@ -102,9 +102,16 @@ export function getMessageGroups(messages: Message[]): MessageGroup[] {
           type: "assistant:subagent",
           messages: [message],
         });
+      } else if (hasContent(message) && !hasToolCalls(message)) {
+        // Final user-visible content with no tool calls → assistant bubble.
+        // MessageContent_ already renders both reasoning and text content in
+        // a single bubble, so we don't also push to assistant:processing —
+        // that would produce a duplicate rendering of the same content.
+        groups.push({ id: message.id, type: "assistant", messages: [message] });
       } else if (hasReasoning(message) || hasToolCalls(message)) {
+        // Intermediate steps: reasoning-only or tool calls that don't produce
+        // standalone user-visible text content yet.
         const lastGroup = groups[groups.length - 1];
-        // Accumulate consecutive intermediate AI messages into one processing group.
         if (lastGroup?.type !== "assistant:processing") {
           groups.push({
             id: message.id,
@@ -114,12 +121,6 @@ export function getMessageGroups(messages: Message[]): MessageGroup[] {
         } else {
           lastGroup.messages.push(message);
         }
-      }
-
-      // Not an else-if: a message with reasoning + content (but no tool calls) goes
-      // into the processing group above AND gets its own assistant bubble here.
-      if (hasContent(message) && !hasToolCalls(message)) {
-        groups.push({ id: message.id, type: "assistant", messages: [message] });
       }
     }
   }

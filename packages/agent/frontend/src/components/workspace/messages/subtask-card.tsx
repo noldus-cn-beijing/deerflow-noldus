@@ -81,12 +81,22 @@ export function SubtaskCard({
               <ChainOfThoughtStep
                 className="font-normal"
                 label={
-                  task.status === "in_progress" ? (
+                  task.status === "completed" ? (
+                    <span className="text-muted-foreground">
+                      {getStageBroadcastForSubagent(task.subagent_type, t)}
+                      {" — "}
+                      {t.subtasks.completed}
+                    </span>
+                  ) : task.status === "failed" ? (
+                    <span className="text-red-500/67">
+                      {getStageBroadcastForSubagent(task.subagent_type, t)}
+                      {" — "}
+                      {t.subtasks.failed}
+                    </span>
+                  ) : (
                     <Shimmer duration={3} spread={3}>
                       {getStageBroadcastForSubagent(task.subagent_type, t)}
                     </Shimmer>
-                  ) : (
-                    getStageBroadcastForSubagent(task.subagent_type, t)
                   )
                 }
                 icon={<ClipboardListIcon />}
@@ -108,7 +118,10 @@ export function SubtaskCard({
                       task.latestMessage &&
                       hasToolCalls(task.latestMessage)
                         ? explainLastToolCall(task.latestMessage, t)
-                        : t.subtasks[task.status]}
+                        : task.status === "completed" && task.result
+                          ? // Show the first line of the result as a summary
+                            task.result.split("\n")[0]?.trim() || t.subtasks[task.status]
+                          : t.subtasks[task.status]}
                     </FlipDisplay>
                   </div>
                 )}

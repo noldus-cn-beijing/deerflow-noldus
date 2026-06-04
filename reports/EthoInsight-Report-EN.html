@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EthoInsight — AI Agent for Behavioral Research</title>
+<style>
+  :root {
+    --bg: #fafaf8;
+    --surface: #ffffff;
+    --border: #e8e6e1;
+    --text: #1a1a18;
+    --text-secondary: #6b6b66;
+    --accent: #0d2818;
+    --accent-light: #1a5632;
+    --gold: #3b8c5d;
+    --gold-light: #e2f0e7;
+    --red: #c44d34;
+    --green: #2d7a46;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Helvetica Neue', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Nav ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(250,250,248,0.85); backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .inner { max-width: 1200px; margin: 0 auto; padding: 16px 40px; display: flex; justify-content: space-between; align-items: center; }
+  nav .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; color: var(--accent); }
+  nav .logo span { color: var(--gold); }
+  nav a { color: var(--text-secondary); text-decoration: none; font-size: 14px; margin-left: 32px; transition: color 0.2s; }
+  nav a:hover { color: var(--text); }
+
+  /* ── Sections ── */
+  section { padding: 100px 40px; }
+  .container { max-width: 960px; margin: 0 auto; }
+
+  /* ── Hero ── */
+  .hero { padding: 180px 40px 120px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(ellipse at 60% 30%, rgba(13,40,24,0.04) 0%, transparent 60%),
+                radial-gradient(ellipse at 40% 70%, rgba(59,140,93,0.06) 0%, transparent 60%);
+  }
+  .hero .container { position: relative; z-index: 1; }
+  .hero .tag {
+    display: inline-block; padding: 6px 18px; border-radius: 20px;
+    background: var(--gold-light); color: var(--gold); font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+  .hero h1 { font-size: 56px; font-weight: 800; letter-spacing: -1.5px; line-height: 1.15; color: var(--accent); margin-bottom: 20px; }
+  .hero h1 em { font-style: normal; color: var(--gold); }
+  .hero .subtitle { font-size: 20px; color: var(--text-secondary); max-width: 680px; margin: 0 auto 40px; font-weight: 400; }
+  .hero .meta { display: flex; gap: 32px; justify-content: center; flex-wrap: wrap; }
+  .hero .meta-item { text-align: center; }
+  .hero .meta-item .num { font-size: 36px; font-weight: 800; color: var(--accent); letter-spacing: -1px; }
+  .hero .meta-item .label { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+  /* ── Section headers ── */
+  .section-tag { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--gold); margin-bottom: 12px; }
+  h2 { font-size: 36px; font-weight: 800; letter-spacing: -0.8px; color: var(--accent); margin-bottom: 16px; }
+  h3 { font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
+  p.lead { font-size: 18px; color: var(--text-secondary); max-width: 680px; margin-bottom: 48px; }
+
+  /* ── Cards ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 40px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 32px; transition: box-shadow 0.3s, transform 0.3s;
+  }
+  .card:hover { box-shadow: 0 8px 30px rgba(0,0,0,0.06); transform: translateY(-2px); }
+  .card .icon { font-size: 28px; margin-bottom: 16px; display: block; }
+  .card h4 { font-size: 17px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+  .card p { font-size: 14px; color: var(--text-secondary); line-height: 1.65; }
+
+  /* ── Comparison Table ── */
+  .compare-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 32px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+  .compare-table th { background: var(--accent); color: #fff; padding: 16px 20px; font-size: 14px; font-weight: 600; text-align: left; }
+  .compare-table td { padding: 16px 20px; font-size: 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table .winner { color: var(--green); font-weight: 600; }
+
+  /* ── Architecture ── */
+  .arch-diagram {
+    margin: 48px 0; padding: 48px 32px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); text-align: center;
+  }
+  .arch-row { display: flex; gap: 12px; justify-content: center; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+  .arch-node {
+    padding: 14px 24px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+    border: 1.5px solid;
+  }
+  .arch-node.lead { background: #e6f0ea; border-color: var(--accent); color: var(--accent); }
+  .arch-node.sub { background: #d8ece0; border-color: var(--gold); color: #2a6b43; }
+  .arch-node.data { background: #e2f5ea; border-color: var(--green); color: var(--green); }
+  .arch-node.out { background: #faf0f0; border-color: var(--red); color: #8b3a28; }
+  .arch-arrow { color: var(--text-secondary); font-size: 18px; font-weight: 300; }
+
+  /* ── Technology items ── */
+  .tech-stack { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 32px; }
+  .tech-item {
+    padding: 24px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--surface); text-align: center;
+  }
+  .tech-item .tech-name { font-weight: 700; font-size: 15px; color: var(--accent); }
+  .tech-item .tech-desc { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; margin: 48px 0; padding-left: 32px; }
+  .timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .timeline-item { position: relative; margin-bottom: 40px; padding-left: 28px; }
+  .timeline-item::before { content: ''; position: absolute; left: -24px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 3px solid var(--bg); }
+  .timeline-item.active::before { background: var(--gold); }
+  .timeline-item .date { font-size: 13px; font-weight: 700; color: var(--gold); margin-bottom: 4px; }
+  .timeline-item h4 { font-size: 17px; color: var(--accent); }
+  .timeline-item p { font-size: 14px; color: var(--text-secondary); }
+
+  /* ── Vision ── */
+  .vision-block { background: linear-gradient(135deg, var(--accent), #061a10); color: #fff; border-radius: var(--radius); padding: 56px 48px; margin-top: 48px; }
+  .vision-block h2 { color: #fff; }
+  .vision-block p { color: rgba(255,255,255,0.85); font-size: 16px; }
+  .vision-phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 36px; }
+  .vision-phase { padding: 28px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); }
+  .vision-phase .phase-num { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--gold); margin-bottom: 8px; }
+  .vision-phase h4 { color: #fff; font-size: 16px; margin-bottom: 6px; }
+  .vision-phase p { font-size: 13px; color: rgba(255,255,255,0.7); }
+
+  /* ── Image placeholders ── */
+  .img-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 48px; margin: 32px 0; color: var(--text-secondary); font-size: 14px;
+    min-height: 200px; flex-direction: column; gap: 8px;
+  }
+  .img-placeholder .prompt { font-size: 11px; color: #aaa; font-style: italic; max-width: 520px; text-align: center; }
+
+  /* ── Footer ── */
+  footer { border-top: 1px solid var(--border); padding: 48px 40px; text-align: center; }
+  footer p { font-size: 13px; color: var(--text-secondary); }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    section { padding: 64px 24px; }
+    .hero { padding: 140px 24px 80px; }
+    .hero h1 { font-size: 36px; }
+    nav .inner { padding: 12px 24px; }
+    nav a { display: none; }
+    .arch-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ NAV ═══════════ -->
+<nav>
+  <div class="inner">
+    <div class="logo">Etho<span>Insight</span></div>
+    <div>
+      <a href="#problem">Problem</a>
+      <a href="#solution">Solution</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#tech">Technology</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#vision">Vision</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════ HERO ═══════════ -->
+<section class="hero">
+  <div class="container">
+    <div class="tag">AI × Behavioral Science</div>
+    <h1>Turn Every Trajectory File<br>Into a <em>Scientific Discovery</em></h1>
+    <p class="subtitle">
+      EthoInsight is the world's first AI multi-agent analysis system purpose-built for behavioral research.
+      Researchers upload EthoVision XT trajectory data — the AI autonomously performs statistical analysis,
+      expert interpretation, and generates APA-formatted manuscript-ready reports. Zero lines of code required.
+    </p>
+    <div class="meta">
+      <div class="meta-item"><div class="num">6</div><div class="label">Paradigms Supported</div></div>
+      <div class="meta-item"><div class="num">3,213</div><div class="label">Git Commits</div></div>
+      <div class="meta-item"><div class="num">79</div><div class="label">Analysis Scripts</div></div>
+      <div class="meta-item"><div class="num">~3,800</div><div class="label">Test Cases</div></div>
+      <div class="meta-item"><div class="num">125K</div><div class="label">Docs (lines)</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ PROBLEM ═══════════ -->
+<section id="problem">
+  <div class="container">
+    <div class="section-tag">The Problem</div>
+    <h2>The Bottleneck in Behavioral Data Analysis</h2>
+    <p class="lead">
+      A behavioral researcher's core job is experimental design, behavioral interpretation, and pattern discovery —
+      not writing Python scripts. Yet the path from EthoVision XT data export to publication-ready conclusions
+      requires crossing three mountains: statistics, programming, and visualization.
+    </p>
+
+    <img src="report_1.png" alt="The Researcher's Current Workflow Pain Points" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <table class="compare-table">
+      <thead>
+        <tr><th></th><th>Traditional Approach</th><th style="background:var(--gold);color:#fff;">EthoInsight</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Analysis Time</strong></td><td>Hours (manual Python/R scripting)</td><td class="winner">Minutes (AI-powered automation)</td></tr>
+        <tr><td><strong>Statistical Rigor</strong></td><td>Depends on individual researcher expertise</td><td class="winner">Auto Shapiro-Wilk → intelligent parametric/non-parametric selection</td></tr>
+        <tr><td><strong>Chart Quality</strong></td><td>Requires matplotlib/ggplot proficiency</td><td class="winner">One-click publication-grade charts (Raincloud / Violin / Trajectory / Heatmap)</td></tr>
+        <tr><td><strong>Domain Knowledge</strong></td><td>Must search literature for reference ranges</td><td class="winner">Built-in behavioral knowledge base (graduated Skill injection)</td></tr>
+        <tr><td><strong>Report Writing</strong></td><td>Manual, inconsistent formatting</td><td class="winner">APA format with effect sizes + literature citations + limitations</td></tr>
+        <tr><td><strong>Reproducibility</strong></td><td>Script-dependent, difficult to replicate</td><td class="winner">Standardized pipeline, declarative catalog-driven, 100% reproducible</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ SOLUTION ═══════════ -->
+<section id="solution" style="background:var(--surface);">
+  <div class="container">
+    <div class="section-tag">The Solution</div>
+    <h2>A Multi-Agent AI Analysis Engine</h2>
+    <p class="lead">
+      EthoInsight is not another "ChatGPT wrapper." It's a systems engineering achievement where
+      5 specialized AI agents collaborate to complete complex analysis tasks. Each agent does one thing exceptionally well,
+      passing structured hard facts through a schema-constrained Handoff protocol — no LLM free-form improvisation.
+    </p>
+
+    <img src="report_2.png" alt="Multi-Agent Collaboration Visualization" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <div class="card-grid">
+      <div class="card">
+        <span class="icon">🧠</span>
+        <h4>Lead Agent (Orchestrator)</h4>
+        <p>Understands researcher intent in natural language, identifies the correct EthoVision XT template from 19 variants, generates a structured analysis plan (metric_plan.json), and dispatches subagents sequentially.</p>
+      </div>
+      <div class="card">
+        <span class="icon">⚙️</span>
+        <h4>Code Executor (Compute Engine)</h4>
+        <p>Invokes the ethoinsight analysis library based on a declarative Catalog (YAML SSOT). Automatically handles data parsing, metric computation, and chart generation. All computations are deterministic and reproducible.</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔬</span>
+        <h4>Data Analyst (Insight Engine)</h4>
+        <p>Audits statistical method selection, investigates confounds (unequal sample sizes, weight differences, time-of-day effects), and discovers insights the researcher might miss. Three-tier judgment: statistical → domain → quality.</p>
+      </div>
+      <div class="card">
+        <span class="icon">📝</span>
+        <h4>Report Writer (Publication Engine)</h4>
+        <p>Reads analysis results and insights to produce a structured APA-format report: Results (statistics + effect sizes + figure references) + Discussion (interpretation + literature comparison + limitations).</p>
+      </div>
+      <div class="card">
+        <span class="icon">📚</span>
+        <h4>Knowledge Assistant (Research Engine)</h4>
+        <p>Answers paradigm, terminology, and methodology follow-up questions. Cross-session memory: "Your EPM last week showed anxiety, OFT this week shows it too — converging evidence, higher confidence."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ ARCHITECTURE ═══════════ -->
+<section id="architecture">
+  <div class="container">
+    <div class="section-tag">Architecture</div>
+    <h2>Declarative Knowledge-Driven · Intelligence Inside Nodes · Constraints Between Nodes</h2>
+    <p class="lead">
+      Unlike traditional agent systems where LLMs improvise freely, EthoInsight follows a declarative orchestration philosophy:
+      all enumerable knowledge (paradigm definitions, metric formulas, chart rules) is materialized in YAML Catalogs
+      as the Single Source of Truth (SSOT). LLMs handle only the non-enumerable — intent understanding and domain reasoning.
+    </p>
+
+    <div class="arch-diagram">
+      <div style="margin-bottom:16px;font-weight:700;font-size:15px;color:var(--accent);">Agent Analysis Pipeline</div>
+      <div class="arch-row">
+        <div class="arch-node lead">🧠 Lead Agent<br><small>deepseek-v4-pro</small></div>
+      </div>
+      <div class="arch-row"><span class="arch-arrow">↓ task()</span></div>
+      <div class="arch-row">
+        <div class="arch-node sub">⚙️ Code Executor</div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node data">code_summary.json</div>
+      </div>
+      <div class="arch-row"><span class="arch-arrow">↓ task()</span></div>
+      <div class="arch-row">
+        <div class="arch-node sub">🔬 Data Analyst</div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node data">analysis_summary.md</div>
+      </div>
+      <div class="arch-row"><span class="arch-arrow">↓ task()</span></div>
+      <div class="arch-row">
+        <div class="arch-node sub">📝 Report Writer</div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node out">📄 report.md + 📊 Charts</div>
+      </div>
+
+      <div style="margin-top:40px;margin-bottom:16px;font-weight:700;font-size:15px;color:var(--accent);">Three-Tier Knowledge Injection</div>
+      <div class="arch-row">
+        <div class="arch-node sub">System Prompt<br><small>Static domain knowledge</small></div>
+        <span class="arch-arrow">+</span>
+        <div class="arch-node sub">Skill Graduated Disclosure<br><small>YAML → Agent reads on demand</small></div>
+        <span class="arch-arrow">+</span>
+        <div class="arch-node sub">noldus-kb MCP<br><small>6,200+ papers (pending)</small></div>
+      </div>
+    </div>
+
+    <img src="report_3.png" alt="Complete Technical Architecture Diagram" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+  </div>
+</section>
+
+<!-- ═══════════ TECHNOLOGY ═══════════ -->
+<section id="tech" style="background:var(--surface);">
+  <div class="container">
+    <div class="section-tag">Cutting-Edge Technology</div>
+    <h2>Technology Stack & Innovation Highlights</h2>
+    <p class="lead">
+      EthoInsight sits at the intersection of multiple frontier technology trajectories.
+      Each of the following is an actively explored research direction in academia and industry —
+      we've integrated them into a single, working product.
+    </p>
+
+    <img src="report_4.png" alt="Technology Innovation Matrix" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <h3 style="margin-top:48px;">🔬 SkillOpt: Reinforcement Learning for AI Instruction Optimization</h3>
+    <p style="color:var(--text-secondary);margin-bottom:24px;">
+      In traditional AI agent development, skills and prompts are tuned through costly, non-convergent human trial-and-error.
+      We've adopted Microsoft Research's <strong>SkillOpt methodology</strong>, which reframes skill optimization as a
+      quantifiable optimization problem:
+    </p>
+    <div class="arch-diagram" style="text-align:left;padding:32px;">
+      <div style="font-weight:700;color:var(--accent);margin-bottom:16px;">SkillOpt Optimization Loop</div>
+      <div class="arch-row" style="justify-content:flex-start;">
+        <div class="arch-node lead">Golden Cases<br><small>Expert-labeled Benchmark</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node sub">Agent Rollout<br><small>Run case with current Skill</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node data">Failure Analysis<br><small>Reflect LLM diagnoses</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node out">Skill Editing<br><small>Generate improved Skill</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node lead">Validation Gate<br><small>Benchmark score improved?</small></div>
+      </div>
+      <p style="margin-top:20px;font-size:13px;color:var(--text-secondary);">
+        <strong>Key Innovation</strong>: Custom EthoInsight EnvAdapter enables SkillOpt's training loop to directly drive our
+        multi-agent pipeline. Each paradigm is independently optimized, producing a benchmark-validated best_skill.md.
+        Optimized skills then drive the agent to generate high-quality SFT training data, ultimately fine-tuning the
+        Qwen3-30B-A3B MoE model — forming a complete flywheel: Expert Knowledge → Skill Optimization → SFT Data → Model Internalization.
+      </p>
+    </div>
+
+    <h3 style="margin-top:48px;">🧬 Multi-Agent Orchestration</h3>
+    <div class="card-grid">
+      <div class="card">
+        <h4>Declarative Orchestration</h4>
+        <p>All enumerable knowledge (metrics, charts, statistical rules) materialized in YAML Catalog as SSOT. LLMs handle only the non-enumerable — intent understanding and domain reasoning. No "LLM trial-and-error."</p>
+      </div>
+      <div class="card">
+        <h4>Structured Handoff Protocol</h4>
+        <p>Subagents communicate via JSON Schema-constrained Handoff files containing hard facts, not LLM free-text "word of mouth." Every field has an explicit contract.</p>
+      </div>
+      <div class="card">
+        <h4>Guardrail Middleware Chain</h4>
+        <p>9-layer Guardrail Provider defense-in-depth: paradigm validation → data quality gating → dispatch authorization → parameter auditing → privilege escalation prevention. Each layer independently testable.</p>
+      </div>
+      <div class="card">
+        <h4>Cross-Session Memory</h4>
+        <p>Built on DeerFlow Tier 4 persistence architecture with per-user isolation. Experiment summaries auto-stored; historical effect sizes injected as priors on subsequent same-paradigm analyses.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:48px;">🎯 Base Model Strategy: MoE Architecture + Local Deployment</h3>
+    <p style="color:var(--text-secondary);margin-bottom:24px;">
+      Current Lead Agent uses <strong>DeepSeek-v4-pro</strong> (cloud). The fine-tuning target is
+      <strong>Qwen3-30B-A3B-Instruct-2507 MoE</strong> (customer RTX 5090 32GB, fully local deployment):
+    </p>
+    <table class="compare-table" style="margin-top:16px;">
+      <thead>
+        <tr><th>Dimension</th><th>Qwen3-8B Dense (Deprecated)</th><th style="background:var(--gold);color:#fff;">Qwen3-30B-A3B MoE (Selected)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Total / Active Params</td><td>8B / 8B</td><td class="winner">30B / 3B (only 3B active per token)</td></tr>
+        <tr><td>Inference Speed</td><td>~100 tok/s</td><td class="winner">~135 tok/s (<em>faster</em>)</td></tr>
+        <tr><td>KV Cache Headroom</td><td>~14GB</td><td class="winner">~8GB (handles 100K context easily)</td></tr>
+        <tr><td>Agent Capability</td><td>Baseline</td><td class="winner">Higher (Tau2-Bench verified)</td></tr>
+        <tr><td>Deployment</td><td>—</td><td class="winner">NVFP4 quantized + vLLM, RTX 5090 on-prem</td></tr>
+        <tr><td>Data Privacy</td><td>—</td><td class="winner">100% local — data never leaves customer workstation</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ ROADMAP ═══════════ -->
+<section id="roadmap">
+  <div class="container">
+    <div class="section-tag">Roadmap</div>
+    <h2>From v0.1 to Full-Lifecycle Research Assistant</h2>
+    <p class="lead">
+      September 2026 is the hard v0.1 milestone. Currently in Phase 0 (baseline validation + robustness hardening),
+      simultaneously advancing SkillOpt infrastructure and SOTA Agent capability upgrades.
+    </p>
+
+    <img src="report_5.png" alt="Product Roadmap Timeline" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <div class="timeline">
+      <div class="timeline-item active">
+        <div class="date">2026 Q2 · In Progress</div>
+        <h4>Phase 0 — Baseline Validation + Infrastructure</h4>
+        <p>
+          6 paradigms with functional E2E pipeline (EPM / OFT / LDB / FST / Zero Maze / TST).
+          SOTA Agent v2 Sprint 0–8 in progress: data quality warnings surfaced, parameter sink to Catalog,
+          Guardrail gating system, cross-session Memory, assumption exposure panel, feedback loop.
+          SkillOpt infrastructure setup. Golden Cases expert annotation underway.
+        </p>
+      </div>
+      <div class="timeline-item">
+        <div class="date">2026 Q3 · September Deadline</div>
+        <h4>v0.1 Launch — Usable Release</h4>
+        <p>
+          6 paradigms end-to-end robust. SkillOpt optimization complete. SFT data collection flywheel operational.
+          EV19 template recognition foundation in place. Declarative Catalog covering all 6 paradigms.
+        </p>
+      </div>
+      <div class="timeline-item">
+        <div class="date">2026 Q3–Q4</div>
+        <h4>Phase 1 — SFT Fine-tuning + Paradigm Expansion</h4>
+        <p>
+          Qwen3-30B-A3B MoE SFT fine-tuning (platform: Volcano Engine verl / Fireworks.ai).
+          Paradigm expansion from 6 to 12+ (fish Shoaling / Aquatic OF / learning & memory MWM / Barnes / Y-Maze, etc.).
+          Training data flywheel reaches 1,000+ SFT samples + 300 DPO pairs. noldus-kb MCP knowledge base activated.
+        </p>
+      </div>
+      <div class="timeline-item">
+        <div class="date">2027 Q1–Q2</div>
+        <h4>v1.0 — Full-Lifecycle Behavioral Research Assistant</h4>
+        <p>
+          Qualitative leap from "data analysis tool" to "lifecycle assistant":
+          experimental design guidance → data collection protocol recommendations → automated analysis →
+          follow-up exploration → cross-paradigm evidence synthesis → knowledge Q&A.
+          Fine-tuned model internalizes domain knowledge; inference no longer depends on external Skill injection.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ VISION ═══════════ -->
+<section id="vision" style="background:var(--surface);">
+  <div class="container">
+    <div class="section-tag">Vision</div>
+    <h2>The Ultimate Goal: AI as the Behavioral Scientist's "Second Brain"</h2>
+    <p class="lead">
+      This is not "AI replacing researchers" — it's "AI becoming the researcher's analytical partner."
+      Researchers focus on experimental design and scientific judgment. AI handles the tedious data processing,
+      statistical selection, and report writing — while surfacing insights the researcher might have missed.
+    </p>
+
+    <div class="vision-block">
+      <h2>Three-Phase Vision</h2>
+      <div class="vision-phases">
+        <div class="vision-phase">
+          <div class="phase-num">Phase 1</div>
+          <h4>Data Analysis Assistant (v0.1)</h4>
+          <p>Upload data → Auto-analysis → APA report. Replaces 80% of manual data processing and statistical work.</p>
+        </div>
+        <div class="vision-phase">
+          <div class="phase-num">Phase 2</div>
+          <h4>Experimental Design Partner (v0.2)</h4>
+          <p>Pre-experiment: recommend sample sizes, grouping schemes, and detection metrics from historical data. During experiment: real-time data quality monitoring. Post-experiment: cross-paradigm evidence synthesis.</p>
+        </div>
+        <div class="vision-phase">
+          <div class="phase-num">Phase 3</div>
+          <h4>Scientific Discovery Accelerator (v1.0+)</h4>
+          <p>Proactive discovery: "Your EPM open-arm time ratio last week strongly correlates with this week's OFT center time. Recommend further investigation." Cross-experiment, cross-paradigm, cross-modal knowledge fusion.</p>
+        </div>
+      </div>
+    </div>
+
+    <img src="report_6.png" alt="Vision Concept — Scientist & AI Collaboration" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+  </div>
+</section>
+
+<!-- ═══════════ WHY IT WILL SUCCEED ═══════════ -->
+<section id="why">
+  <div class="container">
+    <div class="section-tag">Why This Will Succeed</div>
+    <h2>Six Reasons This Project Will Deliver</h2>
+    <div class="card-grid">
+      <div class="card">
+        <span class="icon">🎯</span>
+        <h4>Precise Product-Market Fit</h4>
+        <p>Behavioral researchers' pain point is extremely clear: EthoVision XT data → statistics → publication — every step is a bottleneck. Noldus is the global leader in behavioral tracking systems with an existing customer base.</p>
+      </div>
+      <div class="card">
+        <span class="icon">🧱</span>
+        <h4>Solid Engineering Foundation</h4>
+        <p>Built on the mature DeerFlow (LangGraph) framework, leveraging its Middleware / Guardrail / Memory / Skill infrastructure. 3,213 commits, 3,800+ test cases, 125K+ documentation lines.</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔬</span>
+        <h4>Domain Knowledge Moat</h4>
+        <p>Behavioral statistical decision trees (Shapiro-Wilk → parametric/non-parametric → effect sizes), EV19 template taxonomy, paradigm interpretation logic — these are not things a generic LLM can "understand." Golden Cases + SkillOpt form a systematic knowledge engineering pipeline.</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔄</span>
+        <h4>Data Flywheel Already Spinning</h4>
+        <p>Every agent session auto-records training data. Expert 3-button feedback (correct/needs_fix/wrong) flows back in real-time. SkillOpt auto-optimizes skills → better skills produce better SFT data → better models.</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔒</span>
+        <h4>Privacy-First = Competitive Advantage</h4>
+        <p>Customer data processed 100% locally on RTX 5090 workstation — never leaves the lab. This is a decisive advantage for pharmaceutical companies and biotech firms with strict compliance requirements.</p>
+      </div>
+      <div class="card">
+        <span class="icon">📐</span>
+        <h4>Declarative Architecture = Maintainability</h4>
+        <p>All domain knowledge materialized in YAML Catalog (SSOT) — never scattered across prompts, code, and documents. Adding a new paradigm = adding one YAML file, without touching a single line of agent code.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer>
+  <p>EthoInsight · Noldus Information Technology · 2026</p>
+  <p style="margin-top:8px;font-size:12px;">Built on DeerFlow (LangGraph) Framework · DeepSeek-v4-pro + Qwen3-30B-A3B MoE · On-Premise RTX 5090 Deployment</p>
+</footer>
+
+</body>
+</html>

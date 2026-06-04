@@ -1,8 +1,8 @@
 # Subagent seal/handoff 鲁棒性 — 真根因澄清 + 纯 prompt 修复
 
 **状态**：in-progress（核心卡死已解，洞察优化 spec 待实施）
-**时间跨度**：2026-05-29 ~ 2026-06-03
-**dev HEAD**：`5915a55f`（本地领先 origin/dev 5 commit，rebase 于 PR#83 之上，待 push）
+**时间跨度**：2026-05-29 ~ 2026-06-04
+**dev HEAD**：`48ac5003`
 
 ## 做了什么
 
@@ -32,11 +32,13 @@ FST n=1 dogfood 反复出现 `data-analyst terminated without emitting 'handoff_
   - 三层幽灵参数修复全部 commit（ethoinsight 路径化裁剪 `f085f0bb` + code-executor 真相源 `bce25a1e` + data-analyst step2.8 分流 `db598b8c`）——前两层是基础，第三层是真根因解。
   - data-analyst prompt：step 2.8 空 `{}` 真跳过（禁从 plan 捞）+ step 3 正面措辞"完成标志=发出 seal tool_call"。配 8 条 prompt 文本契约测试防 sync 回退。
   - dogfood 实证 + 全量回归绿 + rebase 吸收 PR#83 前端现代化。
+  - **（2026-06-04 新增）非空参数路独立复发点（commit `e5a0d53b`）**：zero_maze 实证 `4caa78b8` 只修了空 `{}` 快速路，非空参数路（step 2.8 a-f 审计分支）是独立复发点。在非空分支入口前置"至多 2-3 轮即 seal"+ 离散/类别参数捷径。memory 已更新第 6 条。
+  - **（2026-06-04 新增）handoff metrics 字段三分裂修复**：56 真实样本核实，28 个完整成功 handoff 因字段名问题被误标 FAILED（独立于 prompt 层的第二根因）。校验器加固为三字段等价集。详见 [handoff-task-context-eval-checkpoint.md](handoff-task-context-eval-checkpoint.md)。
+  - 全部 commit 已 push origin/dev（HEAD `48ac5003`）。
 - **遗留项**：
-  - 5 个 commit 待 push origin/dev（rebase 后 fast-forward）。
-  - §5.4「无 tool_call」卡死模式（trace b7566a33/cf80346f，data-analyst 整轮无 tool_call）本次未碰——本次幽灵参数解消除了最主要诱因，若未来在别的 step 复现需另案（不走强制 tool_choice，executor.py:712 探针证明产空 args）。
-  - config.yaml 明文 API key（无关本 track，建议单独外移环境变量）。
-- **下一 milestone**：data-analyst 开 thinking 提升洞察质量（spec 已就绪 `5915a55f`，**仅 data-analyst 一个**开、其余全保持关；与卡死修复正交；碰受保护文件 executor.py 1 行，待新 agent 实施 + dogfood 验洞察增益）。
+  - §5.4「无 tool_call」卡死模式（trace b7566a33/cf80346f）本次未碰——幽灵参数解消除了最主要诱因，若未来在别的 step 复现需另案（不走强制 tool_choice）。
+  - data-analyst 开 thinking 提升洞察质量 spec 待实施（`docs/superpowers/specs/2026-06-03-data-analyst-enable-thinking-spec.md`）。
+  - config.yaml 明文 API key（建议单独外移环境变量）。
 
 ## 相关 handoff / 文档
 
@@ -45,3 +47,5 @@ FST n=1 dogfood 反复出现 `data-analyst terminated without emitting 'handoff_
 - [reply-to-four-layer-proposal](../problems/2026-06-03-reply-to-four-layer-proposal.md) — 对四层方案的核实 + 实验结论
 - [batch1-implementation-handoff](../problems/2026-06-03-batch1-implementation-handoff.md) — 第 1 批纯 prompt 修复实施单
 - [data-analyst-enable-thinking-spec](../superpowers/specs/2026-06-03-data-analyst-enable-thinking-spec.md) — 下一步：仅 data-analyst 开 think 的实施 spec
+- [2026-06-04 task-context eval + fixes handoff](../handoffs/2026-06/2026-06-04-handoff-task-context-eval-and-fixes-handoff.md) — 本会话交接（handoff 字段三分裂修复 + task_context 评审）
+- [handoff-task-context-eval-checkpoint milestone](handoff-task-context-eval-checkpoint.md) — task_context 线完整 checkpoint

@@ -1,0 +1,104 @@
+# Case-001 EPM — 预期分析结论
+#
+# 这是 agent benchmark 的"标准答案"。
+# 填写指引：在每个 TODO 处填写您的判断。完成后删除 TODO。
+#
+# EPM 指标（来自 ethoinsight catalog）：
+#   open_arm_time_ratio  — 开放臂时间比例（核心焦虑指标，值越低越焦虑）
+#   open_arm_time        — 开放臂累计时间（秒）
+#   open_arm_entry_count — 开放臂进入次数
+#   open_arm_entry_ratio — 开放臂进入比例
+#   total_entry_count    — 总进入次数（运动能力对照）
+# ============================================================
+
+paradigm: "epm"
+species: ""                    # TODO: 与 metadata.yaml 一致
+n_subjects: 0                  # TODO: 与 metadata.yaml 一致
+groups:                        # TODO: 与 metadata.yaml 一致
+  # control: ["Subject 1", "Subject 2", "Subject 3"]
+  # treatment: ["Subject 4", "Subject 5", "Subject 6"]
+
+# ============================================================
+# Layer A: 指标数值期望
+# 对每个指标定义您认为合理的数值范围 [min, max]
+# 范围可以宽——比如您预期 10-30%，写 [0.08, 0.35] 即可
+# 不需要精确值，给合理的上下界
+# ============================================================
+expected_metrics:
+  # --- 核心焦虑指标 ---
+  - metric: open_arm_time_ratio
+    group: "control"
+    expected_range: []         # TODO: 如 [0.10, 0.30]（10%-30%）
+    unit: "ratio"
+    note: "对照组开放臂时间比例的正常范围"
+
+  - metric: open_arm_time_ratio
+    group: "treatment"
+    expected_range: []         # TODO: 如 [0.05, 0.15]（5%-15%，焦虑增加）或 [0.25, 0.50]（25%-50%，抗焦虑）
+    unit: "ratio"
+    note: "处理组开放臂时间比例。方向取决于处理：致焦虑→低于control，抗焦虑→高于control"
+
+  # --- 活动量指标（用于排除运动能力混杂）---
+  - metric: total_entry_count
+    group: "control"
+    expected_range: []         # TODO: 总进入次数正常范围（如 [10, 30]）
+    unit: "count"
+    note: "总进入次数，反映基础运动能力。如果 treatment 显著低于 control，需考虑运动损伤"
+
+  - metric: total_entry_count
+    group: "treatment"
+    expected_range: []         # TODO: 处理组总进入次数范围
+    unit: "count"
+
+  # --- 以下为可选的辅助指标 ---
+  # - metric: open_arm_entry_count
+  #   group: "treatment"
+  #   expected_range: []
+  #   unit: "count"
+  #
+  # - metric: open_arm_entry_ratio
+  #   group: "treatment"
+  #   expected_range: []
+  #   unit: "ratio"
+
+# ============================================================
+# Layer B: 洞察期望（必填至少 1 条 statistical_conclusion）
+# ============================================================
+expected_findings:
+
+  # --- 统计结论（必填）---
+  - type: statistical_conclusion
+    claim: ""                  # TODO: 如 "treatment 组开放臂时间比例显著低于 control 组"
+    reasoning: ""              # TODO: 如 "独立样本 t 检验 p < 0.05，Cohen's d > 0.8"
+    required_keywords: []      # TODO: 如 ["显著差异", "p < 0.05", "开放臂"]
+    forbidden_claims: []       # TODO: 如 ["无差异", "p > 0.1"]
+
+  # --- 表型指示 ---
+  - type: phenotype_indication
+    claim: ""                  # TODO: 如 "treatment 组表现出焦虑样表型（开放臂回避）"
+    reasoning: ""              # TODO: 为什么这样判断
+    required_keywords: []      # TODO: 如 ["焦虑", "回避", "开放臂"]
+    forbidden_claims: []       # TODO: agent 绝对不能说的
+    severity: "high"
+
+  # --- 混杂因素（选填）---
+  # - type: confound_note
+  #   claim: "需排除运动能力对开放臂进入的影响"
+  #   reasoning: "如果 total_entry_count 组间显著不同，开放臂指标的差异可能反映运动能力而非焦虑"
+  #   required_keywords: ["运动能力", "总进入"]
+  #   severity: "moderate"
+
+  # --- 数据质量警告（选填）---
+  # - type: data_quality_warning
+  #   claim: ""
+  #   required_keywords: []
+  #   severity: "moderate"
+
+# ============================================================
+# Layer C: 禁区 — agent 绝对不能说的
+# ============================================================
+should_not_contain:
+  # TODO: 如
+  # - "EPM 显示治疗无效"（如果实际有效）
+  # - "不存在的受试者编号"
+  # - "p < 0.001"（如果这个 p 值不可能出现）

@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EthoInsight — 行为学研究的 AI 智能体</title>
+<style>
+  :root {
+    --bg: #fafaf8;
+    --surface: #ffffff;
+    --border: #e8e6e1;
+    --text: #1a1a18;
+    --text-secondary: #6b6b66;
+    --accent: #0d2818;
+    --accent-light: #1a5632;
+    --gold: #3b8c5d;
+    --gold-light: #e2f0e7;
+    --red: #c44d34;
+    --green: #2d7a46;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Nav ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(250,250,248,0.85); backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .inner { max-width: 1200px; margin: 0 auto; padding: 16px 40px; display: flex; justify-content: space-between; align-items: center; }
+  nav .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; color: var(--accent); }
+  nav .logo span { color: var(--gold); }
+  nav a { color: var(--text-secondary); text-decoration: none; font-size: 14px; margin-left: 32px; transition: color 0.2s; }
+  nav a:hover { color: var(--text); }
+
+  /* ── Sections ── */
+  section { padding: 100px 40px; }
+  .container { max-width: 960px; margin: 0 auto; }
+
+  /* ── Hero ── */
+  .hero { padding: 180px 40px 120px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(ellipse at 60% 30%, rgba(13,40,24,0.04) 0%, transparent 60%),
+                radial-gradient(ellipse at 40% 70%, rgba(59,140,93,0.06) 0%, transparent 60%);
+  }
+  .hero .container { position: relative; z-index: 1; }
+  .hero .tag {
+    display: inline-block; padding: 6px 18px; border-radius: 20px;
+    background: var(--gold-light); color: var(--gold); font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+  .hero h1 { font-size: 56px; font-weight: 800; letter-spacing: -1.5px; line-height: 1.15; color: var(--accent); margin-bottom: 20px; }
+  .hero h1 em { font-style: normal; color: var(--gold); }
+  .hero .subtitle { font-size: 20px; color: var(--text-secondary); max-width: 640px; margin: 0 auto 40px; font-weight: 400; }
+  .hero .meta { display: flex; gap: 32px; justify-content: center; flex-wrap: wrap; }
+  .hero .meta-item { text-align: center; }
+  .hero .meta-item .num { font-size: 36px; font-weight: 800; color: var(--accent); letter-spacing: -1px; }
+  .hero .meta-item .label { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+  /* ── Section headers ── */
+  .section-tag { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--gold); margin-bottom: 12px; }
+  h2 { font-size: 36px; font-weight: 800; letter-spacing: -0.8px; color: var(--accent); margin-bottom: 16px; }
+  h3 { font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
+  p.lead { font-size: 18px; color: var(--text-secondary); max-width: 680px; margin-bottom: 48px; }
+
+  /* ── Cards ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 40px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 32px; transition: box-shadow 0.3s, transform 0.3s;
+  }
+  .card:hover { box-shadow: 0 8px 30px rgba(0,0,0,0.06); transform: translateY(-2px); }
+  .card .icon { font-size: 28px; margin-bottom: 16px; display: block; }
+  .card h4 { font-size: 17px; font-weight: 700; margin-bottom: 8px; color: var(--accent); }
+  .card p { font-size: 14px; color: var(--text-secondary); line-height: 1.65; }
+
+  /* ── Comparison Table ── */
+  .compare-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 32px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+  .compare-table th { background: var(--accent); color: #fff; padding: 16px 20px; font-size: 14px; font-weight: 600; text-align: left; }
+  .compare-table td { padding: 16px 20px; font-size: 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table .winner { color: var(--green); font-weight: 600; }
+
+  /* ── Architecture visualization ── */
+  .arch-diagram {
+    margin: 48px 0; padding: 48px 32px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); text-align: center;
+  }
+  .arch-row { display: flex; gap: 12px; justify-content: center; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+  .arch-node {
+    padding: 14px 24px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+    border: 1.5px solid;
+  }
+  .arch-node.lead { background: #e6f0ea; border-color: var(--accent); color: var(--accent); }
+  .arch-node.sub { background: #d8ece0; border-color: var(--gold); color: #2a6b43; }
+  .arch-node.data { background: #e2f5ea; border-color: var(--green); color: var(--green); }
+  .arch-node.out { background: #faf0f0; border-color: var(--red); color: #8b3a28; }
+  .arch-arrow { color: var(--text-secondary); font-size: 18px; font-weight: 300; }
+  .arch-label { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+
+  /* ── Technology highlight ── */
+  .tech-stack { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 32px; }
+  .tech-item {
+    padding: 24px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--surface); text-align: center;
+  }
+  .tech-item .tech-name { font-weight: 700; font-size: 15px; color: var(--accent); }
+  .tech-item .tech-desc { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; margin: 48px 0; padding-left: 32px; }
+  .timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .timeline-item { position: relative; margin-bottom: 40px; padding-left: 28px; }
+  .timeline-item::before { content: ''; position: absolute; left: -24px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 3px solid var(--bg); }
+  .timeline-item.active::before { background: var(--gold); }
+  .timeline-item .date { font-size: 13px; font-weight: 700; color: var(--gold); margin-bottom: 4px; }
+  .timeline-item h4 { font-size: 17px; color: var(--accent); }
+  .timeline-item p { font-size: 14px; color: var(--text-secondary); }
+
+  /* ── Vision ── */
+  .vision-block { background: linear-gradient(135deg, var(--accent), #061a10); color: #fff; border-radius: var(--radius); padding: 56px 48px; margin-top: 48px; }
+  .vision-block h2 { color: #fff; }
+  .vision-block p { color: rgba(255,255,255,0.85); font-size: 16px; }
+  .vision-phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 36px; }
+  .vision-phase { padding: 28px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); }
+  .vision-phase .phase-num { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--gold); margin-bottom: 8px; }
+  .vision-phase h4 { color: #fff; font-size: 16px; margin-bottom: 6px; }
+  .vision-phase p { font-size: 13px; color: rgba(255,255,255,0.7); }
+
+  /* ── Image placeholders ── */
+  .img-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 48px; margin: 32px 0; color: var(--text-secondary); font-size: 14px;
+    min-height: 200px; flex-direction: column; gap: 8px;
+  }
+  .img-placeholder .prompt { font-size: 11px; color: #aaa; font-style: italic; max-width: 500px; text-align: center; }
+
+  /* ── Footer ── */
+  footer { border-top: 1px solid var(--border); padding: 48px 40px; text-align: center; }
+  footer p { font-size: 13px; color: var(--text-secondary); }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    section { padding: 64px 24px; }
+    .hero { padding: 140px 24px 80px; }
+    .hero h1 { font-size: 36px; }
+    nav .inner { padding: 12px 24px; }
+    nav a { display: none; }
+    .arch-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ NAV ═══════════ -->
+<nav>
+  <div class="inner">
+    <div class="logo">Etho<span>Insight</span></div>
+    <div>
+      <a href="#problem">问题</a>
+      <a href="#solution">方案</a>
+      <a href="#architecture">架构</a>
+      <a href="#tech">技术</a>
+      <a href="#roadmap">路线图</a>
+      <a href="#vision">愿景</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════ HERO ═══════════ -->
+<section class="hero">
+  <div class="container">
+    <div class="tag">AI × Behavioral Science</div>
+    <h1>让每一条轨迹数据<br>自动变成<em>科学发现</em></h1>
+    <p class="subtitle">
+      EthoInsight 是世界首个面向行为学研究的 AI 多智能体分析系统。
+      研究员上传 EthoVision XT 轨迹数据，AI 自动完成统计分析、专业解读、APA 格式论文级报告生成 —— 全程无需写一行代码。
+    </p>
+    <div class="meta">
+      <div class="meta-item"><div class="num">6</div><div class="label">已支持范式</div></div>
+      <div class="meta-item"><div class="num">3,213</div><div class="label">Git Commits</div></div>
+      <div class="meta-item"><div class="num">79</div><div class="label">分析脚本</div></div>
+      <div class="meta-item"><div class="num">~3,800</div><div class="label">测试用例</div></div>
+      <div class="meta-item"><div class="num">125K</div><div class="label">文档行数</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ PROBLEM ═══════════ -->
+<section id="problem">
+  <div class="container">
+    <div class="section-tag">The Problem</div>
+    <h2>行为学数据分析的瓶颈</h2>
+    <p class="lead">
+      行为学研究员的核心工作不是写代码，而是设计实验、解读行为、发现规律。
+      但现实是，从 EthoVision XT 导出数据到发表级结论，中间隔着统计、编程、可视化三座大山。
+    </p>
+
+    <img src="report_1.png" alt="行为学研究员当前工作流的痛点" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <table class="compare-table">
+      <thead>
+        <tr><th></th><th>传统方式</th><th style="background:var(--gold);color:#fff;">EthoInsight</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>分析时间</strong></td><td>数小时（手动写 Python/R 脚本）</td><td class="winner">几分钟（AI 自动执行）</td></tr>
+        <tr><td><strong>统计专业度</strong></td><td>取决于研究员个人统计功底</td><td class="winner">自动 Shapiro-Wilk 检验 → 智能选择参数/非参数方法</td></tr>
+        <tr><td><strong>图表质量</strong></td><td>需要 matplotlib/ggplot 经验</td><td class="winner">一键生成发表级图表（Raincloud / Violin / Trajectory / Heatmap）</td></tr>
+        <tr><td><strong>领域知识</strong></td><td>需要翻阅文献查参考范围</td><td class="winner">内置行为学知识体系（渐进式 Skill 注入）</td></tr>
+        <tr><td><strong>报告撰写</strong></td><td>手动撰写，格式不统一</td><td class="winner">APA 格式，含效应量 + 文献引用 + 局限性讨论</td></tr>
+        <tr><td><strong>可重复性</strong></td><td>依赖个人脚本，难以复现</td><td class="winner">标准化流水线，声明式 catalog 驱动，100% 可复现</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ SOLUTION ═══════════ -->
+<section id="solution" style="background:var(--surface);">
+  <div class="container">
+    <div class="section-tag">The Solution</div>
+    <h2>多智能体协作的 AI 分析引擎</h2>
+    <p class="lead">
+      EthoInsight 不是又一个"套壳 ChatGPT"。它是一个由 5 个专业 AI 智能体协作完成复杂分析任务的系统工程
+      —— 每个智能体只做一件事，做到极致，通过结构化 Handoff 协议传递 hard fact，而非 LLM 自由发挥。
+    </p>
+
+    <img src="report_2.png" alt="多智能体协作示意图" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <div class="card-grid">
+      <div class="card">
+        <span class="icon">🧠</span>
+        <h4>Lead Agent（调度中枢）</h4>
+        <p>理解研究员的中文意图，识别 EthoVision XT 19 种模板类型，生成结构化分析计划（metric_plan.json），派遣子智能体按序执行。</p>
+      </div>
+      <div class="card">
+        <span class="icon">⚙️</span>
+        <h4>Code Executor（计算引擎）</h4>
+        <p>基于声明式 Catalog（YAML SSOT）调用 ethoinsight 分析库，自动完成数据解析、指标计算、图表生成。所有计算确定性可复现。</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔬</span>
+        <h4>Data Analyst（洞察引擎）</h4>
+        <p>审核统计方法选择、排查混杂因素（样本量不均/体重差异/时辰）、发现数据中研究员可能忽略的洞察。三层判断：统计 → 领域 → 质量。</p>
+      </div>
+      <div class="card">
+        <span class="icon">📝</span>
+        <h4>Report Writer（报告引擎）</h4>
+        <p>读取分析结果 + 洞察，生成结构化 APA 格式报告：Results（统计 + 效应量 + 图表引用）+ Discussion（解读 + 文献对比 + 局限性）。</p>
+      </div>
+      <div class="card">
+        <span class="icon">📚</span>
+        <h4>Knowledge Assistant（知识引擎）</h4>
+        <p>回答范式、术语、方法论追问。跨会话记忆：用户上次 EPM 焦虑、这次 OFT 也焦虑 → 汇聚证据链，提升结论置信度。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ ARCHITECTURE ═══════════ -->
+<section id="architecture">
+  <div class="container">
+    <div class="section-tag">Architecture</div>
+    <h2>声明式知识驱动 · 智能在节点内 · 约束在节点间</h2>
+    <p class="lead">
+      区别于传统"LLM 自由发挥"的 Agent 系统，EthoInsight 采用声明式编排哲学：所有可枚举的知识（范式定义、指标公式、图表规则）
+      下沉到 YAML Catalog 作为单一真相源（SSOT），LLM 只负责"不可枚举的"——意图理解和领域推理。
+    </p>
+
+    <!-- Architecture diagram as CSS -->
+    <div class="arch-diagram">
+      <div style="margin-bottom:16px;font-weight:700;font-size:15px;color:var(--accent);">Agent 分析流水线</div>
+      <div class="arch-row">
+        <div class="arch-node lead">🧠 Lead Agent<br><small>deepseek-v4-pro</small></div>
+      </div>
+      <div class="arch-row"><span class="arch-arrow">↓ task()</span></div>
+      <div class="arch-row">
+        <div class="arch-node sub">⚙️ Code Executor</div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node data">code_summary.json</div>
+      </div>
+      <div class="arch-row"><span class="arch-arrow">↓ task()</span></div>
+      <div class="arch-row">
+        <div class="arch-node sub">🔬 Data Analyst</div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node data">analysis_summary.md</div>
+      </div>
+      <div class="arch-row"><span class="arch-arrow">↓ task()</span></div>
+      <div class="arch-row">
+        <div class="arch-node sub">📝 Report Writer</div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node out">📄 report.md + 📊 Charts</div>
+      </div>
+
+      <div style="margin-top:40px;margin-bottom:16px;font-weight:700;font-size:15px;color:var(--accent);">知识注入三层</div>
+      <div class="arch-row">
+        <div class="arch-node sub">System Prompt<br><small>静态领域知识</small></div>
+        <span class="arch-arrow">+</span>
+        <div class="arch-node sub">Skill 渐进披露<br><small>YAML → Agent 主动读取</small></div>
+        <span class="arch-arrow">+</span>
+        <div class="arch-node sub">noldus-kb MCP<br><small>6200+ 论文（待启用）</small></div>
+      </div>
+    </div>
+
+    <img src="report_3.png" alt="完整技术架构图" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+  </div>
+</section>
+
+<!-- ═══════════ TECHNOLOGY ═══════════ -->
+<section id="tech" style="background:var(--surface);">
+  <div class="container">
+    <div class="section-tag">Cutting-Edge Technology</div>
+    <h2>技术栈与创新亮点</h2>
+    <p class="lead">
+      EthoInsight 站在多条前沿技术路线的交汇点上。以下每一项单独拿出来都是学术界/工业界正在活跃探索的方向，
+      而我们将其集成到一个可工作的产品中。
+    </p>
+
+    <img src="report_4.png" alt="技术雷达图 / 创新矩阵" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <h3 style="margin-top:48px;">🔬 SkillOpt：用强化学习自动优化 AI 指令</h3>
+    <p style="color:var(--text-secondary);margin-bottom:24px;">
+      传统的 AI Agent 开发中，Skill/Prompt 靠人工反复试错调整——成本极高且无收敛保证。
+      我们引入微软研究院的 <strong>SkillOpt 方法论</strong>，将 Skill 优化建模为可量化的优化问题：
+    </p>
+    <div class="arch-diagram" style="text-align:left;padding:32px;">
+      <div style="font-weight:700;color:var(--accent);margin-bottom:16px;">SkillOpt 优化环路</div>
+      <div class="arch-row" style="justify-content:flex-start;">
+        <div class="arch-node lead">Golden Cases<br><small>专家标注 Benchmark</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node sub">Agent 执行<br><small>用当前 Skill 跑 case</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node data">失败分析<br><small>Reflect LLM 诊断</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node out">Skill 编辑<br><small>生成改进版 Skill</small></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node lead">验证门控<br><small>Benchmark 分数提升?</small></div>
+      </div>
+      <p style="margin-top:20px;font-size:13px;color:var(--text-secondary);">
+        <strong>关键创新</strong>：自定义 EthoInsight EnvAdapter，让 SkillOpt 的训练循环直接驱动我们的多智能体流水线。
+        每个范式独立优化，产出经过 benchmark 验证的 best_skill.md。优化后的 Skill 再驱动 Agent 生成高质量 SFT 训练数据，
+        最终微调 Qwen3-30B-A3B MoE 模型 —— 形成"专家知识 → Skill 优化 → SFT 数据 → 模型内化"的完整飞轮。
+      </p>
+    </div>
+
+    <h3 style="margin-top:48px;">🧬 多智能体编排（Multi-Agent Orchestration）</h3>
+    <div class="card-grid">
+      <div class="card">
+        <h4>声明式编排</h4>
+        <p>所有可枚举知识（指标、图表、统计规则）下沉到 YAML Catalog，作为单一真相源。LLM 只处理不可枚举的——意图理解和领域推理。杜绝"LLM 试错"。</p>
+      </div>
+      <div class="card">
+        <h4>结构化 Handoff 协议</h4>
+        <p>子智能体之间通过 JSON Schema 约束的 Handoff 文件传递 hard fact，不靠 LLM 自由文本"口口相传"。每个字段有明确契约。</p>
+      </div>
+      <div class="card">
+        <h4>Guardrail 中间件链</h4>
+        <p>9 层 Guardrail Provider 组成的防御纵深：范式验证 → 数据质量门禁 → 派遣授权 → 参数审计 → 越权防御。每层独立可测试。</p>
+      </div>
+      <div class="card">
+        <h4>跨会话 Memory</h4>
+        <p>基于 DeerFlow Tier 4 持久化架构，per-user 隔离。实验摘要自动存储，下次同范式分析时注入历史 effect size 作为先验参考。</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:48px;">🎯 基座模型策略：MoE 架构 + 本地部署</h3>
+    <p style="color:var(--text-secondary);margin-bottom:24px;">
+      当前 Lead Agent 使用 <strong>DeepSeek-v4-pro</strong>（云端），最终微调目标为
+      <strong>Qwen3-30B-A3B-Instruct-2507 MoE</strong>（客户 RTX 5090 32GB 本地部署）：
+    </p>
+    <table class="compare-table" style="margin-top:16px;">
+      <thead>
+        <tr><th>维度</th><th>Qwen3-8B Dense（已放弃）</th><th style="background:var(--gold);color:#fff;">Qwen3-30B-A3B MoE（已选定）</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>总参 / 激活参</td><td>8B / 8B</td><td class="winner">30B / 3B（每次只激活 3B）</td></tr>
+        <tr><td>推理速度</td><td>~100 tok/s</td><td class="winner">~135 tok/s（更快）</td></tr>
+        <tr><td>KV Cache 余量</td><td>~14GB</td><td class="winner">~8GB（100K context 无压力）</td></tr>
+        <tr><td>Agent 能力</td><td>基线</td><td class="winner">更高（Tau2-Bench 验证）</td></tr>
+        <tr><td>部署方式</td><td>—</td><td class="winner">NVFP4 量化 + vLLM 推理，RTX 5090 本地</td></tr>
+        <tr><td>数据隐私</td><td>—</td><td class="winner">100% 本地，数据不出客户工作站</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ ROADMAP ═══════════ -->
+<section id="roadmap">
+  <div class="container">
+    <div class="section-tag">Roadmap</div>
+    <h2>路线图：从 v0.1 到全生命周期助手</h2>
+    <p class="lead">
+      2026 年 9 月 v0.1 硬里程碑。当前处于 Phase 0（基线验证 + 鲁棒性加固），
+      同步推进 SkillOpt 基础设施和 SOTA Agent 能力升级。
+    </p>
+
+    <img src="report_5.png" alt="产品路线图时间轴" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+
+    <div class="timeline">
+      <div class="timeline-item active">
+        <div class="date">2026 Q2 · 进行中</div>
+        <h4>Phase 0 — 基线验证 + 基础设施</h4>
+        <p>
+          6 范式 E2E 流水线可用（EPM / OFT / LDB / FST / Zero Maze / TST）。
+          SOTA Agent v2 Sprint 0-8 实施中：数据质量警告浮出水面、参数下沉 Catalog、
+          Guardrail 门禁体系、跨会话 Memory、假设暴露面板、Feedback 回流。
+          SkillOpt 基础设施搭建。Golden Cases 专家标注进行中。
+        </p>
+      </div>
+      <div class="timeline-item">
+        <div class="date">2026 Q3 · 9 月 Deadline</div>
+        <h4>v0.1 发布 — 可用版本</h4>
+        <p>
+          6 范式端到端鲁棒、SkillOpt 优化完成、SFT 数据采集飞轮运转。
+          EV19 模板识别地基就位、声明式 Catalog 覆盖全部 6 范式。
+        </p>
+      </div>
+      <div class="timeline-item">
+        <div class="date">2026 Q3–Q4</div>
+        <h4>Phase 1 — SFT 微调 + 范式扩展</h4>
+        <p>
+          Qwen3-30B-A3B MoE SFT 微调（平台：火山引擎 verl / Fireworks.ai）。
+          范式从 6 扩展到 12+（鱼类 Shoaling / Aquatic OF / 学习记忆 MWM / Barnes / Y-Maze 等）。
+          训练数据飞轮累计 1000+ SFT 样本 + 300 DPO 对。noldus-kb MCP 知识库启用。
+        </p>
+      </div>
+      <div class="timeline-item">
+        <div class="date">2027 Q1–Q2</div>
+        <h4>v1.0 — 全生命周期行为学研究助手</h4>
+        <p>
+          从"数据分析工具"质变为"全生命周期助手"：
+          实验设计指导 → 数据采集方案建议 → 自动分析 → 追问式探索 → 跨范式证据链汇聚 → 知识问答。
+          微调模型内置领域知识，推理时不再依赖外部 Skill 注入。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ VISION ═══════════ -->
+<section id="vision" style="background:var(--surface);">
+  <div class="container">
+    <div class="section-tag">Vision</div>
+    <h2>最终理想：AI 成为行为学家的"第二大脑"</h2>
+    <p class="lead">
+      这不是"AI 替代研究员"，而是"AI 成为研究员的分析伙伴"。
+      研究员专注于实验设计和科学判断，AI 处理繁琐的数据处理、统计选择和报告撰写
+      —— 同时发现研究员可能忽略的洞察。
+    </p>
+
+    <div class="vision-block">
+      <h2>三阶段愿景</h2>
+      <div class="vision-phases">
+        <div class="vision-phase">
+          <div class="phase-num">Phase 1</div>
+          <h4>数据分析助手（v0.1）</h4>
+          <p>上传数据 → 自动分析 → APA 报告。替代研究员 80% 的手动数据处理和统计工作。</p>
+        </div>
+        <div class="vision-phase">
+          <div class="phase-num">Phase 2</div>
+          <h4>实验设计伙伴（v0.2）</h4>
+          <p>实验前：基于历史数据推荐样本量、分组方案、检测指标。实验中：实时数据质量监控。实验后：跨范式证据链汇聚。</p>
+        </div>
+        <div class="vision-phase">
+          <div class="phase-num">Phase 3</div>
+          <h4>科学发现加速器（v1.0+）</h4>
+          <p>主动发现："你上周 EPM 的开放臂时间比例和这周 OFT 的中心区时间呈强相关，建议进一步分析。"跨实验、跨范式、跨模态的知识融合。</p>
+        </div>
+      </div>
+    </div>
+
+    <img src="report_6.png" alt="愿景概念图 — AI 与行为学家的协作" style="width:100%;border-radius:var(--radius);margin:32px 0;">
+  </div>
+</section>
+
+<!-- ═══════════ WHY IT WILL SUCCEED ═══════════ -->
+<section id="why">
+  <div class="container">
+    <div class="section-tag">Why This Will Succeed</div>
+    <h2>这个项目为什么能成</h2>
+    <div class="card-grid">
+      <div class="card">
+        <span class="icon">🎯</span>
+        <h4>精准的 PMF</h4>
+        <p>行为学研究员的痛点极度明确：EthoVision XT 导出数据 → 统计 → 论文，每个环节都是瓶颈。Noldus 是全球行为学跟踪系统的领导者，有现成的客户基础。</p>
+      </div>
+      <div class="card">
+        <span class="icon">🧱</span>
+        <h4>扎实的工程地基</h4>
+        <p>建立在 DeerFlow（LangGraph）成熟框架之上，复用其 Middleware / Guardrail / Memory / Skill 体系。3,213 commits，3,800+ 测试用例，125K+ 文档行数。</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔬</span>
+        <h4>领域知识壁垒</h4>
+        <p>行为学统计决策树（Shapiro-Wilk → 参数/非参数 → 效应量）、EV19 模板体系、范式判读逻辑——这些不是通用 LLM 能"理解"的。Golden Cases + SkillOpt 形成系统化的知识工程。</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔄</span>
+        <h4>数据飞轮已启动</h4>
+        <p>每次 Agent 会话自动录制训练数据。专家三按钮反馈（correct/needs_fix/wrong）实时回流。SkillOpt 自动优化 Skill → 更好的 Skill 产更好的 SFT 数据 → 更好的模型。</p>
+      </div>
+      <div class="card">
+        <span class="icon">🔒</span>
+        <h4>隐私优先 = 商业优势</h4>
+        <p>客户数据 100% 在本地 RTX 5090 工作站处理，不出实验室。这对于制药公司、生物科技企业的合规要求是决定性优势。</p>
+      </div>
+      <div class="card">
+        <span class="icon">📐</span>
+        <h4>声明式架构 = 可维护性</h4>
+        <p>所有领域知识下沉到 YAML Catalog（SSOT），不散落在 Prompt、代码、文档中。新增范式 = 新增一个 YAML 文件，不改一行 Agent 代码。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer>
+  <p>EthoInsight · Noldus Information Technology · 2026</p>
+  <p style="margin-top:8px;font-size:12px;">基于 DeerFlow (LangGraph) 框架构建 · DeepSeek-v4-pro + Qwen3-30B-A3B MoE · 本地部署 RTX 5090</p>
+</footer>
+
+</body>
+</html>

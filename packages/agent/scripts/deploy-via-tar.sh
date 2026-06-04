@@ -210,7 +210,7 @@ cd "$DEPLOY_PATH/docker"
 # (see docs/handoffs/2026-05/2026-05-27-channel-todos-bug-resolved-handoff.md).
 # A few seconds of unconditional recreate is cheaper than another sleuthing session.
 docker compose -p deer-flow -f docker-compose.yaml up -d --remove-orphans --force-recreate \
-    frontend gateway langgraph nginx
+    frontend gateway nginx
 
 echo "→ Pruning unused images older than 7 days"
 docker image prune -af --filter "until=168h" >/dev/null 2>&1 || true

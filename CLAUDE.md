@@ -251,6 +251,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 11. **Memory event-loop 修复（已完成 2026-04-29）** — `RuntimeError: Event loop is closed` 已通过 sync 上游 `82731aeb` 彻底修复（memory 更新改 sync `model.invoke()`，不再创建短命 event loop）。详见 [docs/handoffs/2026-04/2026-04-29-event-loop-fix-v2-completed-handoff.md](docs/handoffs/2026-04/2026-04-29-event-loop-fix-v2-completed-handoff.md)。本地 fork 现在比上游更接近最新版。
 12. **复用 deerflow 现成功能优先于自造轮子** — 实施新 agent 行为时，先调研 deerflow harness 已有的中间件 / 工具 / provider 协议，能复用就复用，不要重新发明。已知现成可用的关键能力：`ask_clarification` + `ClarificationMiddleware`（反问中断）、`LoopDetectionMiddleware`（防 tool call 死循环，已默认启用）、`GuardrailMiddleware` + `GuardrailProvider` 协议（pre-tool-call 授权决策）、`ToolErrorHandlingMiddleware`（tool 抛错自动转 error ToolMessage）、Skill 渐进披露（agent 主动 read_file SKILL.md + references/）、`update_agent` / `setup_agent` 工具（custom agent 自我修改 SOUL.md，v0.1 后启用）、`Skill Evolution`（agent 自建/改 skill，v0.1 后启用）、`/api/threads/{id}/runs/{rid}/feedback` API（替代手写飞轮反馈通道）。**自写中间件之前先看 `packages/agent/backend/packages/harness/deerflow/agents/middlewares/` 和 `tools/builtins/` 目录有没有现成的**。
 13. **项目状态修正（2026-05-12）** — 本仓库已经吃下 Tier 4 体系（unified persistence、`@require_permission`、`get_effective_user_id`、`UserRow` 等），是**多用户**研究助手。CLAUDE.md 第 11 条之前提到的"v0.1 单用户故意不要 Tier 4"在 2026-05-07/08 Tier234 round1-3 合入后已过时——这些指导仍适用于评估上游 sync 风险，但**本仓库现状**是建立在 Tier 4 之上。
+14. **Skill 优化 → SFT 路线（2026-06-04 启动）** — 采用微软 SkillOpt 方法论：行为学专家产出 Golden Cases（eval benchmark）→ 改造 SkillOpt 代码（自定义 EnvAdapter）→ 跑优化循环产出 best_skill.md → 用优化后的 skill 驱动 agent 生成高质量 SFT 轨迹 → 微调 Qwen3-30B。详见 [docs/plans/2026-06-04-skillopt-skill-optimization-plan.md](docs/plans/2026-06-04-skillopt-skill-optimization-plan.md)。**当前阻塞项：行为学专家 Golden Cases 待产出。**
 
 ## 快速上手
 
@@ -276,6 +277,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 - [docs/sop/golden-case-sop.md](docs/sop/golden-case-sop.md) — Golden-case 协作流程 SOP
 - [docs/specs/llm-finetuning-strategy.md](docs/specs/llm-finetuning-strategy.md) — 微调策略
 - [docs/plans/2026-04-13-fine-tuning-small-model-design.md](docs/plans/2026-04-13-fine-tuning-small-model-design.md) — 微调设计
+- [docs/plans/2026-06-04-skillopt-skill-optimization-plan.md](docs/plans/2026-06-04-skillopt-skill-optimization-plan.md) — **SkillOpt 方法论：Golden Cases → Skill 优化 → SFT 数据 → 微调（5 阶段实施计划）**
 - [docs/sop/deerflow-sync-sop.md](docs/sop/deerflow-sync-sop.md) — DeerFlow 同步 SOP
 - [docs/refs/2026-05-22-mousegpt-paper-review.md](docs/refs/2026-05-22-mousegpt-paper-review.md) — MouseGPT 论文借鉴分析（2026-05-22）
 - [packages/agent/backend/CLAUDE.md](packages/agent/backend/CLAUDE.md) — DeerFlow 后端架构细节

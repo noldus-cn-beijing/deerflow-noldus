@@ -1,0 +1,87 @@
+# Case-004 FST — 预期分析结论
+#
+# FST 指标（来自 ethoinsight catalog）：
+#   immobility_time       — 不动时间（抑郁核心指标，值越高越抑郁）
+#   immobility_latency    — 首次不动潜伏期（值越低越抑郁，更快放弃挣扎）
+#   immobility_bout_count — 不动次数（run-length encoding 计数）
+#
+# 注意：FST 不属于焦虑范式，direction_for_anxiety 为 null。
+# 判读方向：不动时间增加 → 抑郁样行为（行为绝望）；不动时间减少 → 抗抑郁效应。
+# ============================================================
+
+paradigm: "fst"
+species: ""                    # TODO
+n_subjects: 0                  # TODO
+groups:                        # TODO
+  # control: ["Subject 1", "Subject 2", "Subject 3"]
+  # treatment: ["Subject 4", "Subject 5", "Subject 6"]
+
+# ============================================================
+# Layer A: 指标数值期望
+# ============================================================
+expected_metrics:
+  # --- 核心抑郁指标 ---
+  - metric: immobility_time
+    group: "control"
+    expected_range: []         # TODO: 对照组不动时间（秒），如 [60, 120]
+    unit: "seconds"
+    note: "C57 小鼠 FST 典型不动时间：后 4 分钟约 80-140 秒"
+
+  - metric: immobility_time
+    group: "treatment"
+    expected_range: []         # TODO: 抗抑郁药 → 不动减少；致抑郁 → 不动增加
+    unit: "seconds"
+
+  # --- 潜伏期 ---
+  - metric: immobility_latency
+    group: "control"
+    expected_range: []         # TODO: 对照组首次不动出现时间（秒）
+    unit: "seconds"
+
+  - metric: immobility_latency
+    group: "treatment"
+    expected_range: []         # TODO: 抗抑郁则潜伏期延长
+    unit: "seconds"
+
+  # --- 不动次数 ---
+  - metric: immobility_bout_count
+    group: "control"
+    expected_range: []         # TODO
+    unit: "count"
+    note: "不动次数反映挣扎-放弃的交替模式"
+
+  - metric: immobility_bout_count
+    group: "treatment"
+    expected_range: []         # TODO
+    unit: "count"
+
+# ============================================================
+# Layer B: 洞察期望
+# ============================================================
+expected_findings:
+
+  - type: statistical_conclusion
+    claim: ""                  # TODO: 如 "fluoxetine 组不动时间显著低于 control"
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO: 如 ["显著差异", "不动时间"]
+    forbidden_claims: []       # TODO
+
+  - type: phenotype_indication
+    claim: ""                  # TODO: 如 "fluoxetine 表现出抗抑郁效应（不动时间减少）"
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO: 如 ["抗抑郁", "不动"]
+    forbidden_claims: []       # TODO: 如 ["焦虑"]（FST 不是焦虑范式）
+    severity: "high"
+
+  # - type: confound_note
+  #   claim: "FST 的 immobility 增加也可能反映运动损伤而非抑郁，需结合其他范式验证"
+  #   required_keywords: ["混杂", "运动"]
+  #   severity: "moderate"
+
+# ============================================================
+# Layer C: 禁区
+# ============================================================
+should_not_contain:
+  # TODO: 如
+  # - "焦虑"（FST 是抑郁范式，不是焦虑范式）
+  # - "开放臂"（EPM 的指标，与 FST 无关）
