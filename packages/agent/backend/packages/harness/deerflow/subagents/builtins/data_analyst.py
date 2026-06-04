@@ -126,6 +126,10 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 	   - 若至少有一个 metric 的 parameters_used 非空：只对这些非空 metric 做参数-vs-数据分布比对，
 	     parameters_used 为空 `{}` 的 metric 不产生 finding。比对方法见下方 a–f。
 
+	     **进入 a–f 之前先记住：本段至多 2-3 轮思考，到点立即带着已有 finding（哪怕只有一条 info）进入 step 3 发出 seal_data_analyst_handoff 的 tool_call。seal 是必达，审计是尽力——审计纠结到第 3 轮还没定论，就用降级字段填法记一条 info finding 收尾，随即 seal。在 thinking 里把 finding 写完是叙述，发出 seal tool_call 才是落库。**
+
+	     **捷径（命中即用，不必走完 a–f）：若该参数是离散/类别参数（如 zone 选择 `open_zones`、`body_point` 等取值而非数值阈值），且当前范式文档没有该参数的领域判据 → 这属于"判据缺失"降级场景，直接按下方降级字段填法记【一条】info finding（mismatch_kind 取最接近的 `category_mismatch`，suggestion 写"该范式 [参数名] 参数判据待补，参见 issue #63；当前值为用户/上游确认值"），不要在 Phase 2/Phase 1/mismatch_kind 之间反复权衡——记完即进入 step 3 发 seal。**
+
 		   **以下 a–f 仅适用于 parameters_used 非空的 metric；parameters_used 为空 `{}` 的 metric 已被第一步分流，不进入此段。**
 	   a. **遍历每个有 parameters_used 的 metric 的每个参数**：
 		      **Phase 2 优先路径**：先检查 per_subject 是否有 `_signal_distributions` 命名空间键。

@@ -91,6 +91,52 @@ def test_a_f_sections_scoped_to_nonempty_only():
 
 
 # ---------------------------------------------------------------------------
+# 2b. Non-empty branch seal-must-fire pre-frame + criteria-missing shortcut
+#     (2026-06-04 O-Maze fix): the empty-{} fast path from 4caa78b8 did not
+#     cover the non-empty path. open_zones="in_zone" (discrete param, no
+#     paradigm criteria) fell into the a-f marathon and the model burned its
+#     budget in step-2.8 reasoning, treating the written-out finding as "done"
+#     and never emitting the seal tool_call. These anchors lock the fix so a
+#     future sync/edit cannot silently revert it.
+# ---------------------------------------------------------------------------
+
+def test_nonempty_branch_has_seal_must_fire_preframe():
+    """Before a-f, the non-empty branch must pre-frame 'seal is mandatory, audit is best-effort'."""
+    p = _prompt()
+
+    # The pre-frame must appear (placed before the a-f scope note)
+    assert "进入 a–f 之前先记住" in p
+    # Bounded reasoning budget so the audit can't marathon
+    assert "本段至多 2-3 轮思考" in p
+    # Positive completion framing reused from the layer-4 fix
+    assert "发出 seal_data_analyst_handoff 的 tool_call" in p
+    assert "seal 是必达，审计是尽力" in p
+
+    # The pre-frame must come BEFORE the a-f scope note (ordering matters:
+    # the escape hatch has to be read before the marathon, not after).
+    preframe_idx = p.index("进入 a–f 之前先记住")
+    scope_note_idx = p.index("以下 a–f 仅适用于 parameters_used 非空的 metric")
+    assert preframe_idx < scope_note_idx, "seal pre-frame must precede the a-f scope note"
+
+
+def test_nonempty_branch_has_criteria_missing_shortcut():
+    """Discrete/categorical param + no paradigm criteria → one info finding, skip the a-f weighing."""
+    p = _prompt()
+
+    # Shortcut header
+    assert "捷径（命中即用，不必走完 a–f）" in p
+    # Must name the discrete-param trigger that O-Maze hit
+    assert "离散/类别参数" in p
+    assert "open_zones" in p
+    # Must route to a single info finding via category_mismatch + issue #63 suggestion
+    assert "category_mismatch" in p
+    assert "参见 issue #63" in p
+    # Must explicitly tell the model to stop weighing Phase 2/Phase 1/mismatch_kind and seal
+    assert "记完即进入 step 3 发 seal" in p
+
+
+
+# ---------------------------------------------------------------------------
 # 3. Layer 4 positive framing — step 3 must use "tool_call as seal" language
 # ---------------------------------------------------------------------------
 
