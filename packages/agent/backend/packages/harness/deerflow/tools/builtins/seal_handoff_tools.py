@@ -184,6 +184,49 @@ def _update_manifest(workspace: Path, handoff_filename: str, sha256: str, analys
     tmp.replace(manifest_path)
 
 
+def _build_task_context(payload: dict[str, Any]) -> dict[str, Any]:
+    """从 handoff payload 已有字段确定性组装 task_context 的 4 个字段。
+
+    纯函数、无 LLM、无副作用、任何异常返回部分结果（防御性）。
+    """
+    tc: dict[str, Any] = {
+        "file_changes": [],
+        "verify_commands": [],
+        "failed_paths": [],
+        "pending_items": [],
+    }
+    try:
+        # file_changes: 从 output_files 的 value（路径）提取
+        output_files = payload.get("output_files") or {}
+        paths: list[str] = []
+        for v in output_files.values():
+            if isinstance(v, str):
+                paths.append(v)
+            elif isinstance(v, list):
+                paths.extend(p for p in v if isinstance(p, str))
+        tc["file_changes"] = paths
+
+        # verify_commands: 对每个产物文件生成存在性 + JSON 校验命令（模板）
+        cmds: list[str] = []
+        for p in paths:
+            if p.endswith(".json"):
+                cmds.append(f"python -m json.tool {p} > /dev/null")
+            else:
+                cmds.append(f"ls {p}")
+        tc["verify_commands"] = cmds
+
+        # failed_paths: 从 errors 提取（errors 是产出方记录的失败事实）
+        errors = payload.get("errors") or []
+        tc["failed_paths"] = [e for e in errors if isinstance(e, str)]
+
+        # pending_items: status=partial 时，未完成信息在 errors 里
+        if payload.get("status") == "partial":
+            tc["pending_items"] = [e for e in errors if isinstance(e, str)]
+    except Exception:
+        pass  # 防御性：组装失败不影响 seal 主流程
+    return tc
+
+
 def _seal_handoff(
     model_cls: type,
     filename: str,
@@ -198,6 +241,10 @@ def _seal_handoff(
 
     # 1. 注入 analysis_config_id (subagent 不用手动传)
     payload.setdefault("analysis_config_id", _read_analysis_config_id(workspace))
+
+    # 1.5. 自动组装 task_context（确定性，subagent 无感知）。
+    # 仅当 payload 未显式提供 task_context 时注入（向前兼容）。
+    payload.setdefault("task_context", _build_task_context(payload))
 
     # 2. Pydantic 校验
     try:

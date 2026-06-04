@@ -15,7 +15,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 # Virtual path contract: all subagent handoff JSON files must reference user-data
 # files via virtual paths (e.g. /mnt/user-data/uploads/x.txt), never host absolute
 # paths (e.g. /home/.../user-data/uploads/x.txt). Downstream consumers like
@@ -47,6 +46,34 @@ def _validate_virtual_user_data_paths(paths: list[str]) -> list[str]:
             "Copy paths verbatim from plan_metrics.json; do not run Path.resolve() / realpath."
         )
     return paths
+
+
+class TaskContext(BaseModel):
+    """任务状态包——只装「产出方独有、消费方无法自行推导」的执行事实。
+
+    由 seal 工具在封存时确定性组装（不由 LLM 填）。
+    刻意不含 objective/next_steps/constraints：前两者的真相源是 lead 的意图判断
+    （知识双存禁忌），constraints 无干净确定性源。详见 spec 设计原则。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    file_changes: list[str] = Field(
+        default_factory=list,
+        description="本 subagent 创建/修改的产物文件虚拟路径（seal 从 output_files 自动提取）。",
+    )
+    verify_commands: list[str] = Field(
+        default_factory=list,
+        description="下游验证本 handoff 完整性的命令（seal 按模板自动生成）。",
+    )
+    failed_paths: list[str] = Field(
+        default_factory=list,
+        description="已尝试且失败、下游不应重试的方法（seal 从 errors 自动派生）。",
+    )
+    pending_items: list[str] = Field(
+        default_factory=list,
+        description="未完成项（status=partial 时，seal 从 errors 自动派生）。",
+    )
 
 
 class MetricStat(BaseModel):
@@ -418,6 +445,10 @@ class CodeExecutorHandoff(BaseModel):
             "Populated by code-executor from experiment-context.json."
         ),
     )
+    task_context: TaskContext | None = Field(
+        default=None,
+        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
+    )
 
 
 class FailedChart(BaseModel):
@@ -448,6 +479,10 @@ class ChartMakerHandoff(BaseModel):
     analysis_config_id: str = Field(
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
+    task_context: TaskContext | None = Field(
+        default=None,
+        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
 
     @field_validator("chart_files")
@@ -534,6 +569,10 @@ class DataAnalystHandoff(BaseModel):
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
     )
+    task_context: TaskContext | None = Field(
+        default=None,
+        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
+    )
     quality_warnings: list[DataQualityWarning] = Field(
         default_factory=list,
         description=(
@@ -569,6 +608,10 @@ class ReportWriterHandoff(BaseModel):
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
     )
+    task_context: TaskContext | None = Field(
+        default=None,
+        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
+    )
 
 
 __all__ = [
@@ -583,5 +626,6 @@ __all__ = [
     "OutlierFinding",
     "ParameterAuditFinding",
     "ReportWriterHandoff",
+    "TaskContext",
     "WARNING_CODE_PREFIXES",
 ]
