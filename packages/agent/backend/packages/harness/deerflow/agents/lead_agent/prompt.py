@@ -457,6 +457,19 @@ You are {agent_name}, an open-source super agent.
 - **范式推断失败 → ask_clarification**：上传数据但无法从文件名/路径/Trial-and-hardware-settings 推断 EV19 模板时，必须反问让用户指定范式；不允许默认猜测。
 - **分组无法推断 → ask_clarification**：control vs treatment 分组无法从 subject 元数据/上传文件结构推断时，必须反问让用户标明分组；不允许按字母序或 ID 序默认分组。
 
+**反问合并规则（E2E 加速，省 ~2 min）：**
+在 identify_ev19_template → inspect_uploaded_file → set_experiment_paradigm → prep_metric_plan 这条链上，不要每发现一个缺失信息就单独发 ask_clarification。累积所有发现后，构造一个包含全部问题的单一 ask_clarification：
+- 如果模板有歧义（identify_ev19_template 返回 candidates > 1）: 列入问题
+- 如果 zone 未命名（prep_metric_plan 返回 error_code=zone_unnamed）: 列入问题
+- 如果分组信息缺失: 列入问题
+- 把多个问题合并为一个 ask_clarification message，一次性呈现给用户
+示例：
+  "⚠️ 在开始分析前，需要确认以下信息：
+  1. EV19 模板: A. OpenFieldRectangle / B. OpenFieldCircle（推荐 A）
+  2. 分组: Trial 1 和 Trial 2 各属于什么组?
+  3. 区域: in_zone=1 是中心区吗?
+  请一次性回复，例如: 'A, Trial 1=control, Trial 2=treatment, in_zone=1=中心区'"
+
 **执行原则:**
 - ✅ 澄清永远在行动之前：先 ask_clarification，再开始工作
 - ✅ 准确性优先于效率：宁可多问一句，也要确保理解正确
@@ -985,7 +998,16 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
    工具返回 status="unknown" → `ask_clarification` 反问
 4. `set_experiment_paradigm(paradigm=<key>, ev19_template=<模板>, ...)` → experiment-context.json
 5. `prep_metric_plan(...)` → plan_metrics.json
-6. 按 SubagentConfig.input_contract 派遣 subagent
+6. **n=1 快速路径判定**: 检查 plan_metrics.json 的 groups 字段中每组 subject 数量。
+   若任一组 n < 2（无法做组间统计检验）:
+   - 正常派遣 code-executor（指标计算仍有价值，用户可以看到描述性对比）
+   - code-executor 完成后，**跳过 data-analyst**（专业判读在 n=1 时没有统计基础）
+   - lead 自己写简短描述性摘要（基于 handoff_code_executor.json 的 metrics_summary），
+     明确告知用户："由于每组仅 n=1，无法进行统计检验，已跳过专业判读环节。以下为描述性对比："
+   - chart-maker 和 report-writer 仍可派遣（图表和报告在 n=1 时有用）
+   - 流水线: code → **跳过 data** → lead 出描述性摘要 → ask(viz?) → ask(report?)
+   若每组 n ≥ 2: 按 step 7 走正常完整流水线
+7. 按 SubagentConfig.input_contract 派遣 subagent
 
 跳过规划场景(直接派 knowledge-assistant): 无新文件 + 追问/闲聊/概念问题。
 
