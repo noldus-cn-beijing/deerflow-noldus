@@ -75,9 +75,9 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
    ```bash
    bash cat /mnt/user-data/workspace/handoff_code_executor.json \
             /mnt/user-data/workspace/plan_metrics.json \
-            > /tmp/da_context_bundle.txt
+            > /mnt/user-data/workspace/da_context_bundle.txt
    ```
-   然后 read_file /tmp/da_context_bundle.txt 一次拿到全部上下文。
+   然后 read_file /mnt/user-data/workspace/da_context_bundle.txt 一次拿到全部上下文。
    如果文件数 ≤ 2 或某文件 > 5MB，直接 read_file 即可，batch 优势不大。
    范式文档（by-experiment/<paradigm>.md）在 step 2.6 单独 read。
 2.5 **读 quality warnings**: 遍历 handoff_code_executor.json 的 data_quality_warnings:

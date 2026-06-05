@@ -88,10 +88,10 @@ wait
 ```bash
 bash cat /mnt/user-data/workspace/plan_metrics.json \
          /mnt/user-data/workspace/experiment-context.json \
-         > /tmp/code_context_bundle.txt
+         > /mnt/user-data/workspace/code_context_bundle.txt
 ```
 
-然后 read_file /tmp/code_context_bundle.txt 一次拿到全部上下文。
+然后 read_file /mnt/user-data/workspace/code_context_bundle.txt 一次拿到全部上下文。
 
 **注意**：
 - 不要 batch 读超大文件（如原始轨迹 txt，5MB+）—— 这些保持单独 read_file

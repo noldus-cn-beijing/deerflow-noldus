@@ -998,7 +998,9 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
    工具返回 status="unknown" → `ask_clarification` 反问
 4. `set_experiment_paradigm(paradigm=<key>, ev19_template=<模板>, ...)` → experiment-context.json
 5. `prep_metric_plan(...)` → plan_metrics.json
-6. **n=1 快速路径判定**: 检查 plan_metrics.json 的 groups 字段中每组 subject 数量。
+6. **n=1 快速路径判定**: prep_metric_plan 工具的返回值含 `plan_summary.subject_count`（总受试数）。
+    prep_metric_plan 同时会写 `groups.json`（subject → group_name 映射）。
+    **从 groups.json 中统计每组 subject 数量**，交叉参考 subject_count 确认总数一致。
    若任一组 n < 2（无法做组间统计检验）:
    - 正常派遣 code-executor（指标计算仍有价值，用户可以看到描述性对比）
    - code-executor 完成后，**跳过 data-analyst**（专业判读在 n=1 时没有统计基础）
