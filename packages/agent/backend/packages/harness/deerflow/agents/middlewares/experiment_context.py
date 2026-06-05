@@ -201,6 +201,8 @@ def set_experiment_paradigm_tool(
     subject: str | None = None,
     ev19_template: str | None = None,
     acknowledge_quality: bool = False,
+    confirm_template_change: bool = False,
+    user_confirmed_template: bool = False,
     parameter_overrides: dict[str, float | int | str] | None = None,
     workspace_dir: str = "/mnt/user-data/workspace/",
     runtime: ToolRuntime[ContextT, ThreadState] = None,
@@ -226,6 +228,13 @@ def set_experiment_paradigm_tool(
         acknowledge_quality: Set True to acknowledge data quality warnings (Gate 2 mode).
                              When True, all paradigm fields may be omitted — the existing
                              experiment-context.json is read and only gate_completed is updated.
+        confirm_template_change: Set True to confirm intentional change of ev19_template
+                                 when it was already set. Required to prevent accidental
+                                 mid-analysis template switching. Default False.
+        user_confirmed_template: Set True when identify_ev19_template returned ambiguous
+                                 (2-3 candidates) and the user has explicitly chosen one.
+                                 Required to prevent the agent from silently defaulting
+                                 to "recommended" without user confirmation. Default False.
         parameter_overrides: User-confirmed parameter overrides. Examples:
             ``immobility_threshold=0.5`` or ``anonymous_zone_is=in_zone``.
             The unified key ``anonymous_zone_is`` works across all three zone

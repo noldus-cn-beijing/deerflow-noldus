@@ -216,6 +216,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 secure=is_https,
                 samesite="strict",
             )
+        elif request.method == "GET":
+            # Replenish missing CSRF cookie so browser-restart survivors
+            # (access_token still valid, csrf_token session-cookie gone) can
+            # make state-changing requests without a 403.
+            cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+            if not cookie_token:
+                csrf_token = generate_csrf_token()
+                is_https = is_secure_request(request)
+                response.set_cookie(
+                    key=CSRF_COOKIE_NAME,
+                    value=csrf_token,
+                    httponly=False,
+                    secure=is_https,
+                    samesite="strict",
+                )
 
         return response
 

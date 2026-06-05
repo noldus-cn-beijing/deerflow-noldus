@@ -281,6 +281,19 @@ _ERROR_HINTS: dict[str, str] = {
 }
 
 
+def _write_template_candidates(workspace: str, data: dict) -> None:
+    """Persist identify_ev19_template result so guardrail can enforce confirmation."""
+    import json
+    from pathlib import Path
+
+    p = Path(workspace) / "template_candidates.json"
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # Non-critical; guardrail will skip if file missing
+
+
 def _error_result(code: str, message: str, failed_file: str | None = None) -> dict:
     hint = _ERROR_HINTS.get(code, "未知错误，请联系开发者。")
     result: dict = {"status": "error", "error_code": code, "message": message, "hint": hint}
@@ -513,6 +526,8 @@ def identify_ev19_template_tool(
 
     # Step 9: determine status and build response
     if not candidates:
+        # Write ok status to overwrite any stale ambiguous state from a prior run
+        _write_template_candidates(real_workspace, {"status": "unknown", "paradigm_key": paradigm_key})
         return {
             "status": "unknown",
             "evidence": evidence,
@@ -521,6 +536,12 @@ def identify_ev19_template_tool(
 
     if len(candidates) == 1:
         # Unique candidate — can proceed directly
+        # Write ok status to overwrite any stale ambiguous state from a prior run
+        _write_template_candidates(real_workspace, {
+            "status": "ok",
+            "paradigm_key": paradigm_key,
+            "ev19_template": candidates[0]["template_id"],
+        })
         domain_summary = ""
         if by_experiment_md:
             # Extract the one-liner definition
@@ -538,6 +559,14 @@ def identify_ev19_template_tool(
         }
 
     # 2-3 candidates — need user clarification
+    # Write candidates to workspace so guardrail can enforce user-confirmation requirement
+    _write_template_candidates(real_workspace, {
+        "status": "ambiguous",
+        "paradigm_key": paradigm_key,
+        "candidates": candidates,
+        "clarification_question": _build_clarification_question(paradigm_key or "unknown", candidates, evidence),
+    })
+
     return {
         "status": "ambiguous",
         "paradigm_key": paradigm_key,

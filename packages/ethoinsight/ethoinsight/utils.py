@@ -94,6 +94,8 @@ def _slugify(text: str) -> str:
         "开放臂": "open_arms",
         "封闭臂": "closed_arms",
         "闭合臂": "closed_arms",
+        "中央区": "center",
+        "中心区": "center",
         "轮替": "alternation",
         "最大轮替次数": "max_alternation",
         "直接再次逗留次数": "direct_revisit",
@@ -112,6 +114,9 @@ def _slugify(text: str) -> str:
         "活跃": "mobile",
         "静止": "immobile",
         "到墙壁距离": "distance_to_wall",
+        # EthoVision 中文版 mobility/activity state 列名
+        "活动状态": "mobility_state",
+        "活动": "activity",
     }
     for cn, en in subs.items():
         text = text.replace(cn, en)
@@ -125,6 +130,23 @@ def _slugify(text: str) -> str:
     return text.lower()
 
 
+# Zone identifiers that appear as direct column prefixes when the user
+# defined zones in EthoVision but didn't check "In zone" in export settings.
+# "开放臂(开放臂1 / 中心点)" → "in_zone_open_arms_open_arms1_center"
+_ZONE_PREFIX_TOKENS: set[str] = {
+    "开放臂", "封闭臂", "闭合臂", "中央区",
+    "Open arms", "Closed arms", "Center",
+}
+
+
+def _is_zone_prefix_column(name: str) -> bool:
+    """Check if `name` starts with a known zone identifier followed by `(`."""
+    for prefix in _ZONE_PREFIX_TOKENS:
+        if name.startswith(prefix + "("):
+            return True
+    return False
+
+
 def normalize_column_name(raw_name: str) -> str:
     """Normalize a raw EthoVision column name to English snake_case.
 
@@ -132,7 +154,8 @@ def normalize_column_name(raw_name: str) -> str:
     1. Strip quotes and whitespace
     2. Try exact match in COLUMN_MAP
     3. Try dynamic pattern matching
-    4. Fall back to slugify
+    4. Try zone-prefix detection (e.g. "开放臂(开放臂1 / 中心点)")
+    5. Fall back to slugify
     """
     name = raw_name.strip().strip('"').strip()
     if not name:
@@ -150,6 +173,14 @@ def normalize_column_name(raw_name: str) -> str:
                 suffix = _slugify(m.group(1))
                 return f"{prefix}_{suffix}"
             return prefix
+
+    # Zone-prefix detection: e.g. "开放臂(开放臂1 / 中心点)" → "in_zone_open_arms_open_arms1_center"
+    if _is_zone_prefix_column(name):
+        # Split at first '(': zone_prefix = "开放臂", detail = "开放臂1 / 中心点)"
+        idx = name.index("(")
+        zone_part = name[:idx]
+        detail = name[idx:]  # includes the parentheses
+        return f"in_zone_{_slugify(zone_part)}_{_slugify(detail)}"
 
     # Fallback: slugify the whole name
     return _slugify(name)

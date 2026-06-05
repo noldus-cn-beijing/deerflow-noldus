@@ -53,6 +53,21 @@ _ALLOWED_PYTHON_PATTERN = re.compile(
     r"^\s*python\s+-m\s+ethoinsight\.(scripts\.\w+\.\w+|catalog\.resolve|parse\.dump_headers)(\s|$)"
 )
 
+# Allow parallel script execution via bash -c wrapper.
+# Matches: bash -c "python -m ethoinsight.scripts.epm.compute_... --input ... & ... wait"
+# Also allows optional cd prefix: cd /mnt/user-data/workspace && bash -c "..."
+# The inner content between quotes is validated separately (see _validate_parallel_bash).
+_PARALLEL_BASH_PATTERN = re.compile(
+    r"^\s*(?:cd\s+\S+\s*&&\s*)?bash\s+-c\s+([\"'])(.+?)\1\s*$",
+    re.DOTALL,
+)
+
+# Inside a bash -c block: allowed tokens between script invocations.
+# Each script call is python -m ethoinsight.scripts.* ... optionally followed by & or ;
+# The last line must be wait or echo.
+# Split on &, ;, and newlines (wait and echo are typically on their own lines).
+_PARALLEL_INNER_SPLITTER = re.compile(r"\s*[&;\n]\s*")
+
 # Match read-only file-operation commands at start of command (no path validation needed).
 _READ_ONLY_FILE_OPS = re.compile(
     r"^\s*(ls|cat|grep|head|tail)(\s|$)"
@@ -157,6 +172,40 @@ def _is_path_safe(target: str) -> bool:
     return True
 
 
+def _validate_parallel_bash_content(inner: str) -> bool:
+    """Validate the content inside a bash -c "..." block for parallel execution.
+
+    Each "line" (split by ``&`` or ``;``) must be either:
+    - A ``python -m ethoinsight.scripts.*`` invocation (with args)
+    - ``wait``
+    - ``echo ...`` (status message)
+    - Empty/whitespace-only
+
+    Shell metacharacters (``|``, ``>``, ``<``, ``$()``, backticks) are
+    rejected because parallel script execution never needs them, and they
+    are common injection vectors.
+    """
+    # Reject shell metacharacters that are never needed for parallel script exec
+    _DANGEROUS_META = re.compile(r"[|><`$]")
+    if _DANGEROUS_META.search(inner):
+        return False
+
+    segments = _PARALLEL_INNER_SPLITTER.split(inner.strip())
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+        # Allow wait and echo as control/status commands
+        if seg == "wait":
+            continue
+        if seg.startswith("echo "):
+            continue
+        # Each non-empty segment must be a valid script invocation
+        if not _ALLOWED_PYTHON_PATTERN.match(seg):
+            return False
+    return True
+
+
 class ScriptInvocationOnlyProvider:
     """Whitelist bash commands for code-executor + chart-maker + block write_file for handoff JSONs."""
 
@@ -195,6 +244,28 @@ class ScriptInvocationOnlyProvider:
         # Allow python -m ethoinsight.scripts.* invocations.
         if _ALLOWED_PYTHON_PATTERN.match(cmd):
             return GuardrailDecision(allow=True)
+
+        # Allow parallel script execution via bash -c wrapper.
+        # e.g. bash -c "python -m ethoinsight.scripts.epm.compute_... & ... wait"
+        m = _PARALLEL_BASH_PATTERN.match(cmd)
+        if m:
+            inner = m.group(2)
+            if _validate_parallel_bash_content(inner):
+                return GuardrailDecision(allow=True)
+            return GuardrailDecision(
+                allow=False,
+                reasons=[
+                    GuardrailReason(
+                        code="script_invocation_only.parallel_bash_invalid_content",
+                        message=(
+                            "bash -c 内仅允许 python -m ethoinsight.scripts.* 调用"
+                            "（用 & 或 ; 分隔，最后以 wait 或 echo 结尾）。"
+                            "不允许其他命令。"
+                        ),
+                    )
+                ],
+                policy_id="script_invocation_only",
+            )
 
         # Allow file operations; write ops get additional path validation.
         if _ALLOWED_FILE_OPS.match(cmd):

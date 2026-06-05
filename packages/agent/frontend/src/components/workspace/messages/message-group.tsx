@@ -12,7 +12,7 @@ import {
   SquareTerminalIcon,
   WrenchIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ChainOfThought,
@@ -53,9 +53,17 @@ export function MessageGroup({
   const [showAbove, setShowAbove] = useState(
     env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
   );
+  // 1A: 流式期间默认展开思考面板，与最终答案的 ReasoningPanel（默认展开）行为一致。
+  // 用户手动折叠后不再跟随 isLoading，尊重用户操作。
+  const thinkingToggledByUser = useRef(false);
   const [showLastThinking, setShowLastThinking] = useState(
-    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
+    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || isLoading,
   );
+  useEffect(() => {
+    if (isLoading && !thinkingToggledByUser.current) {
+      setShowLastThinking(true);
+    }
+  }, [isLoading]);
   const steps = useMemo(() => convertToSteps(messages), [messages]);
   const lastToolCallStep = useMemo(() => {
     const filteredSteps = steps.filter((step) => step.type === "toolCall");
@@ -176,7 +184,10 @@ export function MessageGroup({
             key={lastReasoningStep.id}
             className="w-full items-start justify-start text-left"
             variant="ghost"
-            onClick={() => setShowLastThinking(!showLastThinking)}
+            onClick={() => {
+              thinkingToggledByUser.current = true;
+              setShowLastThinking(!showLastThinking);
+            }}
           >
             <div className="flex w-full items-center justify-between">
               <div className="flex items-center gap-2">

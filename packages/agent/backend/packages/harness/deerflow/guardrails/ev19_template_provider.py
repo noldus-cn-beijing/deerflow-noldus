@@ -71,6 +71,30 @@ class Ev19TemplateGuardrailProvider:
 
             workspace = self._resolve_workspace()
             if workspace is not None:
+                # ── Ambiguous template check: identify_ev19_template returned 2-3 candidates ──
+                # Guardrail enforces that the user must explicitly pick one — the agent
+                # cannot silently default to "recommended" without user confirmation.
+                tc = self._read_template_candidates(workspace)
+                if tc and tc.get("status") == "ambiguous":
+                    chosen = args.get("ev19_template")
+                    candidate_ids = [c["template_id"] for c in tc.get("candidates", [])]
+                    if chosen and chosen in candidate_ids and not args.get("user_confirmed_template"):
+                        return GuardrailDecision(
+                            allow=False,
+                            reasons=[
+                                GuardrailReason(
+                                    code="ethoinsight.template_not_confirmed",
+                                    message=(
+                                        f"identify_ev19_template 返回了 {len(candidate_ids)} 个候选模板"
+                                        f"（{', '.join(candidate_ids)}），"
+                                        f"你必须先让用户明确选择其中一个，不能默认选推荐项。"
+                                        f"用户明确选择后，传 user_confirmed_template=True 重新调用。"
+                                    ),
+                                )
+                            ],
+                            policy_id="ev19-template-guardrail",
+                        )
+
                 ctx = self._read_context(workspace)
                 if ctx and ctx.get("ev19_template"):
                     if not args.get("confirm_template_change"):
@@ -141,6 +165,16 @@ class Ev19TemplateGuardrailProvider:
             return json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Failed to read experiment-context.json: %s", e)
+            return None
+
+    def _read_template_candidates(self, workspace: str) -> dict | None:
+        """Read identify_ev19_template result if it was written as ambiguous."""
+        path = Path(workspace) / "template_candidates.json"
+        try:
+            if not path.exists():
+                return None
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
             return None
 
 
