@@ -444,6 +444,63 @@ export function ToolCall({
         icon={ListTodoIcon}
       ></ChainOfThoughtStep>
     );
+  } else if (name === "inspect_uploaded_file") {
+    // Show filepath + compact summary of what was found (sheets, columns, treatment).
+    const description: string | undefined = (args as { description: string })
+      ?.description;
+    const filepath: string | undefined = (args as { filepath: string })?.filepath;
+    const summary = summarizeInspectResult(result);
+    return (
+      <ChainOfThoughtStep
+        key={id}
+        label={description ?? t.toolCalls.useTool(name)}
+        icon={SearchIcon}
+      >
+        {filepath && (
+          <ChainOfThoughtSearchResult className="cursor-pointer">
+            {filepath}
+          </ChainOfThoughtSearchResult>
+        )}
+        {summary && (
+          <div className="text-muted-foreground mt-1 text-xs">{summary}</div>
+        )}
+      </ChainOfThoughtStep>
+    );
+  } else if (name === "prep_metric_plan") {
+    // Show what was planned: paradigm, metric count, subject count.
+    const description: string | undefined = (args as { description: string })
+      ?.description;
+    const summary = summarizePrepResult(result);
+    return (
+      <ChainOfThoughtStep
+        key={id}
+        label={description ?? t.toolCalls.useTool(name)}
+        icon={ListTodoIcon}
+      >
+        {summary && (
+          <div className="text-muted-foreground mt-1 text-xs">{summary}</div>
+        )}
+      </ChainOfThoughtStep>
+    );
+  } else if (name === "set_experiment_paradigm") {
+    // Show which paradigm was set.
+    const description: string | undefined = (args as { description: string })
+      ?.description;
+    const paradigm = (args as { paradigm?: string })?.paradigm;
+    const ev19Template = (args as { ev19_template?: string })?.ev19_template;
+    return (
+      <ChainOfThoughtStep
+        key={id}
+        label={description ?? t.toolCalls.useTool(name)}
+        icon={WrenchIcon}
+      >
+        {(paradigm ?? ev19Template) && (
+          <div className="text-muted-foreground mt-1 text-xs">
+            {[paradigm, ev19Template].filter(Boolean).join(" · ")}
+          </div>
+        )}
+      </ChainOfThoughtStep>
+    );
   } else {
     const description: string | undefined = (args as { description: string })
       ?.description;
@@ -571,4 +628,62 @@ export function convertToSteps(
     }
   }
   return steps;
+}
+
+// ── ToolCall result summarisers ──────────────────────────────────────
+//
+// These extract human-readable one-liners from structured tool results.
+// The step.result field is already populated by convertToSteps (using
+// findToolCallResult → JSON.parse), so we only need to read known keys.
+//
+// Field shapes verified against actual tool returns (2026-06-04 audit):
+// - inspect_uploaded_file → {sheets, columns, raw_metadata, …}  (NO row_count)
+// - prep_metric_plan      → {status, plan_summary: {paradigm, metric_count, subject_count, …}}
+//   (metric_count is nested inside plan_summary, NOT a top-level key)
+
+function summarizeInspectResult(
+  result: string | Record<string, unknown> | undefined,
+): string | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const parts: string[] = [];
+
+  if (result.sheets && typeof result.sheets === "object") {
+    const sheetNames = Object.keys(result.sheets as Record<string, unknown>);
+    if (sheetNames.length > 0) {
+      parts.push(`${sheetNames.length} sheet(s): ${sheetNames.join(", ")}`);
+    }
+  }
+  if (Array.isArray(result.columns)) {
+    parts.push(`${result.columns.length} columns`);
+  }
+  if (result.raw_metadata && typeof result.raw_metadata === "object") {
+    const meta = result.raw_metadata as Record<string, unknown>;
+    const treatment = meta.Treatment;
+    if (typeof treatment === "string") parts.push(`Treatment: ${treatment}`);
+    const groups = meta.Group ?? meta.Groups;
+    if (typeof groups === "string") parts.push(`Groups: ${groups}`);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function summarizePrepResult(
+  result: string | Record<string, unknown> | undefined,
+): string | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const planSummary = result.plan_summary;
+  if (!planSummary || typeof planSummary !== "object" || Array.isArray(planSummary)) return null;
+  const ps = planSummary as Record<string, unknown>;
+
+  const parts: string[] = [];
+  if (typeof ps.paradigm === "string") {
+    parts.push(ps.paradigm);
+  }
+  if (typeof ps.metric_count === "number") {
+    parts.push(`${ps.metric_count} metrics`);
+  }
+  if (typeof ps.subject_count === "number") {
+    parts.push(`${ps.subject_count} subjects`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
