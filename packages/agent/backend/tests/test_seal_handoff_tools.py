@@ -467,3 +467,277 @@ class TestNormalizeReportImagePaths:
     def test_missing_file_silently_skipped(self):
         # Must not raise
         _normalize_report_image_paths(Path("/tmp/nonexistent_report_xyz.md"))
+
+
+# ---------------------------------------------------------------------------
+# _resolve_report_image_placeholders — chart image placeholder resolution (2026-06-05)
+# Layer 1 of the two-layer defence: resolves {{img:<basename>}} placeholders
+# to canonical virtual paths from handoff_chart_maker.json.chart_files.
+# ---------------------------------------------------------------------------
+from deerflow.tools.builtins.seal_handoff_tools import (
+    _load_chart_files_map,
+    _resolve_report_image_placeholders,
+)
+
+
+class TestResolveReportImagePlaceholders:
+    """Server-side resolution of {{img:<basename>}} placeholders before sealing.
+
+    Chart-maker writes handoff_chart_maker.json with chart_files; LLM writes
+    {{img:<basename>}} in report.md; seal_report_writer_handoff resolves them.
+    """
+
+    def _make_chart_handoff(self, workspace: Path, chart_files: list[str]) -> None:
+        """Write a handoff_chart_maker.json to workspace."""
+        data = {
+            "status": "completed",
+            "paradigm": "epm",
+            "summary": "charts done",
+            "chart_files": chart_files,
+        }
+        (workspace / "handoff_chart_maker.json").write_text(
+            json.dumps(data), encoding="utf-8"
+        )
+
+    def _write_report(self, outputs_dir: Path, content: str) -> Path:
+        report = outputs_dir / "report.md"
+        report.write_text(content, encoding="utf-8")
+        return report
+
+    def test_resolves_valid_basename(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_trajectory_s0.png"])
+        report = self._write_report(out, "![Figure 1]({{img:plot_trajectory_s0.png}})")
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert result == "![Figure 1](mnt/user-data/outputs/plot_trajectory_s0.png)"
+
+    def test_resolves_multiple_placeholders(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, [
+            "/mnt/user-data/outputs/plot_s0.png",
+            "/mnt/user-data/outputs/box_open_arm.png",
+        ])
+        report = self._write_report(
+            out,
+            "![A]({{img:plot_s0.png}})\n![B]({{img:box_open_arm.png}})",
+        )
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert "mnt/user-data/outputs/plot_s0.png" in result
+        assert "mnt/user-data/outputs/box_open_arm.png" in result
+        assert "{{img:" not in result
+
+    def test_unmatched_basename_stub(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/real_chart.png"])
+        report = self._write_report(out, "![X]({{img:invented_name.png}})")
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert "图表 'invented_name.png' 未找到" in result
+        assert "可用: real_chart.png" in result
+
+    def test_missing_handoff_file_noop(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        # No handoff_chart_maker.json
+        report = self._write_report(out, "![X]({{img:anything.png}})")
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert "{{img:anything.png}}" in result  # preserved as-is
+
+    def test_empty_chart_files_noop(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, [])
+        report = self._write_report(out, "![X]({{img:anything.png}})")
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert "{{img:anything.png}}" in result  # preserved as-is
+
+    def test_missing_report_file_noop(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/x.png"])
+        # Don't create report.md — must not raise
+        _resolve_report_image_placeholders(Path("/tmp/no_such_report.md"), ws)
+
+    def test_basename_exact_match_only(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_trajectory_s0.png"])
+        report = self._write_report(out, "![X]({{img:trajectory.png}})")
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        # "trajectory" ≠ "plot_trajectory_s0" — partial match should NOT resolve
+        assert "图表 'trajectory.png' 未找到" in result
+
+    def test_idempotent_on_already_resolved(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot.png"])
+        # Already has correct path, no placeholder
+        report = self._write_report(
+            out, "![X](mnt/user-data/outputs/plot.png)"
+        )
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert result == "![X](mnt/user-data/outputs/plot.png)"
+
+    def test_leading_slash_stripped(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot.png"])
+        report = self._write_report(out, "![X]({{img:plot.png}})")
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        # Value must NOT start with / (artifacts API requires no leading slash)
+        assert "](/mnt/" not in result
+        assert "](mnt/user-data/outputs/plot.png)" in result
+
+    def test_whitespace_in_placeholder(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_X.png"])
+        report = self._write_report(out, "![X]({{img: plot_X.png }})")
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert "mnt/user-data/outputs/plot_X.png" in result
+
+    def test_mixed_placeholders_and_literal(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_s0.png"])
+        report = self._write_report(
+            out,
+            "![A]({{img:plot_s0.png}})\n"
+            "![B](outputs/legacy_chart.png)\n"
+            "![C](/mnt/user-data/outputs/legacy_abs.png)",
+        )
+
+        _resolve_report_image_placeholders(report, ws)
+
+        # Layer 1 resolves placeholder
+        result = report.read_text(encoding="utf-8")
+        assert "mnt/user-data/outputs/plot_s0.png" in result
+        # Layer 1 does NOT touch literal paths (Layer 2 handles those)
+        assert "outputs/legacy_chart.png" in result
+        assert "/mnt/user-data/outputs/legacy_abs.png" in result
+
+    def test_corrupt_handoff_json(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        (ws / "handoff_chart_maker.json").write_text("not valid json {{{")
+        report = self._write_report(out, "![X]({{img:plot.png}})")
+
+        # Must not raise
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert "{{img:plot.png}}" in result  # preserved as-is
+
+    def test_no_placeholders_in_content(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        out = tmp_path / "outputs"
+        out.mkdir()
+        self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot.png"])
+        original = "# Report\n\nSome text without any placeholders.\n"
+        report = self._write_report(out, original)
+
+        _resolve_report_image_placeholders(report, ws)
+
+        result = report.read_text(encoding="utf-8")
+        assert result == original  # no unintended side-effects
+
+
+class TestLoadChartFilesMap:
+    """Unit tests for _load_chart_files_map helper."""
+
+    def test_returns_basename_to_path_map(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        (ws / "handoff_chart_maker.json").write_text(json.dumps({
+            "chart_files": [
+                "/mnt/user-data/outputs/plot_s0.png",
+                "/mnt/user-data/outputs/box_open_arm.png",
+            ],
+        }))
+
+        result = _load_chart_files_map(ws)
+
+        assert result == {
+            "plot_s0.png": "mnt/user-data/outputs/plot_s0.png",
+            "box_open_arm.png": "mnt/user-data/outputs/box_open_arm.png",
+        }
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        assert _load_chart_files_map(ws) == {}
+
+    def test_empty_chart_files_returns_empty(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        (ws / "handoff_chart_maker.json").write_text(json.dumps({"chart_files": []}))
+        assert _load_chart_files_map(ws) == {}
+
+    def test_chart_files_not_list_returns_empty(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        (ws / "handoff_chart_maker.json").write_text(json.dumps({"chart_files": "not a list"}))
+        assert _load_chart_files_map(ws) == {}
+
+    def test_non_string_entries_filtered(self, tmp_path):
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        (ws / "handoff_chart_maker.json").write_text(json.dumps({
+            "chart_files": ["/mnt/user-data/outputs/real.png", 42, None],
+        }))
+
+        result = _load_chart_files_map(ws)
+
+        assert result == {"real.png": "mnt/user-data/outputs/real.png"}
