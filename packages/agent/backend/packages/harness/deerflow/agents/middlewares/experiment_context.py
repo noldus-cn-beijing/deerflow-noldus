@@ -131,6 +131,40 @@ def is_quality_acknowledged(workspace_dir: str) -> bool:
     return "gate2_quality_acknowledged" in gate_completed
 
 
+def _normalize_column_semantics(cs: dict) -> dict:
+    """Normalize raw column_semantics dict — add confirmed_at if missing."""
+    if "confirmed_at" not in cs:
+        cs = {**cs, "confirmed_at": datetime.now(UTC).isoformat()}
+    return cs
+
+
+def _derive_column_aliases(cs: dict) -> dict[str, str]:
+    """D8/D11: derive column_aliases from column_semantics.columns.
+
+    For each confirmed entry with a non-None resolves_to that is not "__ignore__":
+      entry_key (normalized or raw_name) → resolves_to
+
+    This is a deterministic pure function computed at write-time (no resolve-time
+    recomputation — preserves analysis_config_id input timing determinism).
+    """
+    aliases: dict[str, str] = {}
+    columns = cs.get("columns", {})
+    if not isinstance(columns, dict):
+        return aliases
+    for col_key, entry in columns.items():
+        if not isinstance(entry, dict):
+            continue
+        if not entry.get("confirmed"):
+            continue
+        resolves_to = entry.get("resolves_to")
+        if resolves_to is None or resolves_to == "__ignore__":
+            continue
+        # Use normalized name as alias source if available, else raw_name.
+        source = entry.get("normalized", entry.get("raw_name", col_key))
+        aliases[source] = resolves_to
+    return aliases
+
+
 @tool("set_experiment_paradigm", parse_docstring=True)
 def set_experiment_paradigm_tool(
     paradigm: str | None = None,
@@ -139,6 +173,8 @@ def set_experiment_paradigm_tool(
     subject: str | None = None,
     ev19_template: str | None = None,
     acknowledge_quality: bool = False,
+    column_semantics: dict | None = None,
+    confirm_template_change: bool = False,
     workspace_dir: str = "/mnt/user-data/workspace/",
     runtime: ToolRuntime[ContextT, ThreadState] = None,
 ) -> str:
@@ -153,6 +189,12 @@ def set_experiment_paradigm_tool(
          set_experiment_paradigm(acknowledge_quality=True)
          → reads existing experiment-context.json, appends "gate2_quality_acknowledged"
            to gate_completed (preserving all other fields). Requires Gate 1 already done.
+      3) Column semantics alignment (Sprint 1):
+         set_experiment_paradigm(column_semantics={...})
+         → writes column_semantics + derived column_aliases into experiment-context.json.
+           Can be combined with Gate 1 or called separately. column_semantics schema:
+           {"columns": {"中心区": {"raw_name": "...", "normalized": "...",
+            "resolves_to": "in_zone_center", "meaning_zh": "...", "confirmed": true}, ...}}
 
     Args:
         paradigm: English paradigm name key. Required for Gate 1 mode.
@@ -163,6 +205,9 @@ def set_experiment_paradigm_tool(
         acknowledge_quality: Set True to acknowledge data quality warnings (Gate 2 mode).
                              When True, all paradigm fields may be omitted — the existing
                              experiment-context.json is read and only gate_completed is updated.
+        column_semantics: Column semantics dict (Sprint 1). Written as-is; column_aliases
+                          is derived from it as a deterministic projection.
+        confirm_template_change: Set True to confirm changing an already-set ev19_template.
         workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
 
     Returns:
@@ -243,6 +288,15 @@ def set_experiment_paradigm_tool(
         "paradigm_confirmed_at": datetime.now(UTC).isoformat(),
         "gate_completed": gate_completed,
     }
+
+    # Sprint 1: column semantics alignment — write column_semantics + derive
+    # column_aliases as a deterministic, write-time projection (D8/D11).
+    if column_semantics is not None and isinstance(column_semantics, dict):
+        cs = _normalize_column_semantics(column_semantics)
+        data["column_semantics"] = cs
+        aliases = _derive_column_aliases(cs)
+        if aliases:
+            data["column_aliases"] = aliases
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:

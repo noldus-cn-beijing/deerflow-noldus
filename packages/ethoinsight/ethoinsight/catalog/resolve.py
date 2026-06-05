@@ -69,6 +69,7 @@ def resolve(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    column_aliases: dict[str, str] | None = None,
 ) -> Plan:
     """生成 Plan dataclass。失败抛 ResolveError。
 
@@ -92,6 +93,7 @@ def resolve(
         columns_file=columns_file,
         ev19_template=ev19_template,
         virtual_workspace_dir=virtual_workspace_dir,
+        column_aliases=column_aliases,
     )
     return Plan(
         schema_version=pm.schema_version,
@@ -121,12 +123,16 @@ def resolve_metrics(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    column_aliases: dict[str, str] | None = None,
 ) -> PlanMetrics:
     """生成 PlanMetrics dataclass（不含 charts）。失败抛 ResolveError。
 
     workspace_dir: 真实物理路径（用于脚本实际执行时的 input 引用等）。
     virtual_workspace_dir: plan.json output 字段使用的虚拟路径（面向 downstream subagent）。
                            未提供时兜底使用 workspace_dir（兼容旧调用方）。
+    column_aliases: {原始列 or normalized: catalog 概念} — Sprint 1 通用列别名表。
+                    在 columns 入口单点重映射后喂给所有下游消费入口。
+                    含 alias → None/__ignore__ 的列从 columns 移除。
     """
     try:
         cat = load_catalog(paradigm)
@@ -162,6 +168,12 @@ def resolve_metrics(
 
     plan_metrics: list[PlanMetric] = []
     skipped: list[PlanSkipped] = []
+
+    # Sprint 1 column-semantics: apply alias remapping before any downstream
+    # consumer touches columns.  _missing_columns / _compute_parameters_in_use
+    # / chart resolution ALL consume the post-alias columns list.
+    if column_aliases:
+        columns = _apply_aliases(columns, column_aliases)
 
     # Step 1: process default_metrics
     for m in cat.default_metrics:
@@ -422,6 +434,27 @@ def _missing_columns(patterns: list[str], available: list[str]) -> list[str]:
         if not any(fnmatch.fnmatchcase(col, pat) for col in available):
             missing.append(pat)
     return missing
+
+
+def _apply_aliases(columns: list[str], aliases: dict[str, str]) -> list[str]:
+    """Apply column alias remapping: {raw_or_normalized → catalog concept}.
+
+    Columns whose alias value is None or "__ignore__" are removed
+    (user confirmed the column is irrelevant — D4).
+
+    Returns a new list; the input is not mutated.
+    """
+    ignore_values = {None, "__ignore__"}
+    result: list[str] = []
+    for col in columns:
+        if col in aliases:
+            target = aliases[col]
+            if target in ignore_values:
+                continue
+            result.append(target)
+        else:
+            result.append(col)
+    return result
 
 
 def _metric_to_plan(

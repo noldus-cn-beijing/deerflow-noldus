@@ -10,6 +10,7 @@ from deerflow.sandbox.security import is_host_bash_allowed
 from deerflow.tools.builtins import (
     ask_clarification_tool,
     identify_ev19_template_tool,
+    inspect_uploaded_file_tool,
     prep_metric_plan_tool,
     present_file_tool,
     task_tool,
@@ -26,6 +27,7 @@ BUILTIN_TOOLS = [
     set_experiment_paradigm_tool,
     set_viz_choice_tool,
     identify_ev19_template_tool,
+    inspect_uploaded_file_tool,
     prep_metric_plan_tool,
 ]
 
