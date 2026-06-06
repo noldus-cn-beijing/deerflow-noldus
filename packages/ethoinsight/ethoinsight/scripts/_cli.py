@@ -25,10 +25,12 @@ RESULT_MARKER = "[result]"
 def emit_result(payload: dict[str, Any]) -> None:
     """Print a `[result] {json}` line to stdout for subagent extraction.
 
-    Also runs metric validation (NaN / Inf / out-of-range) on the payload
-    and prints VALIDATION_ERROR lines when violations are found.  These are
-    informational — the result is still emitted so downstream can decide
-    how to handle partial data.
+    Also runs the L-A safety net (NaN / Inf only) on the payload and prints
+    VALIDATION_ERROR lines when violations are found.  Range checks (ratio /
+    pct / non-negative) are NOT done here — they are L-B's job, run against
+    the catalog's output_unit by ``ethoinsight.validate_catalog`` at the
+    code-executor layer.  These are informational — the result is still
+    emitted so downstream can decide how to handle partial data.
     """
     from ethoinsight.validate import validate_metrics
 

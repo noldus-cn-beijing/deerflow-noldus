@@ -144,6 +144,52 @@ class TestChartMakerResolveAndDumpHeadersAllowed:
         assert not decision.allow
 
 
+class TestValidateCatalogGuardrail:
+    """2026-06-06: L-B catalog-driven validation CLI added to whitelist.
+
+    ``ethoinsight.validate_catalog`` must be allowed for code-executor;
+    lookalike modules (validate_catalogX, validate) must still be denied.
+    """
+
+    def test_validate_catalog_allowed_for_code_executor(self, provider):
+        decision = provider.evaluate(_req(
+            "bash",
+            command=(
+                "python -m ethoinsight.validate_catalog "
+                "--plan /mnt/user-data/workspace/plan_metrics.json"
+            ),
+            agent_id="subagent:code-executor",
+        ))
+        assert decision.allow
+
+    def test_validate_catalog_allowed_for_chart_maker_too(self, provider):
+        # Whitelisting is agent-agnostic; chart-maker passing through is harmless.
+        decision = provider.evaluate(_req(
+            "bash",
+            command="python -m ethoinsight.validate_catalog --plan /mnt/user-data/workspace/plan_metrics.json",
+            agent_id="subagent:chart-maker",
+        ))
+        assert decision.allow
+
+    def test_lookalike_validate_catalog_x_still_denied(self, provider):
+        # Only validate_catalog exactly, not validate_catalogX.
+        decision = provider.evaluate(_req(
+            "bash",
+            command="python -m ethoinsight.validate_catalogX --plan /tmp/p.json",
+            agent_id="subagent:code-executor",
+        ))
+        assert not decision.allow
+
+    def test_lookalike_ethoinsight_validate_still_denied(self, provider):
+        # Only validate_catalog, not ethoinsight.validate.
+        decision = provider.evaluate(_req(
+            "bash",
+            command="python -m ethoinsight.validate --plan /tmp/p.json",
+            agent_id="subagent:code-executor",
+        ))
+        assert not decision.allow
+
+
 class TestCodeExecutorBashDenyList:
     def test_python_c_help_denied(self, provider):
         decision = provider.evaluate(_req(

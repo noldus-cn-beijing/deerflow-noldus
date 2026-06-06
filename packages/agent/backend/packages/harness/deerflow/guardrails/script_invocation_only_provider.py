@@ -38,7 +38,7 @@ from deerflow.guardrails.provider import (
 # Allowed `python -m ethoinsight.*` invocations at the start of the command.
 # Supports leading whitespace and any args after the module name.
 #
-# Three shapes are whitelisted (white-list stays small + stable):
+# Four shapes are whitelisted (white-list stays small + stable):
 #   1. ethoinsight.scripts.<paradigm>.<script>  — per-metric compute / plot scripts
 #   2. ethoinsight.catalog.resolve              — chart-maker self-runs `--mode charts`
 #      to produce plan_charts.json (execution-conventions.md §CLI 例外; chart-maker
@@ -46,11 +46,14 @@ from deerflow.guardrails.provider import (
 #      so only the charts path reaches this guardrail via chart-maker bash.
 #   3. ethoinsight.parse.dump_headers           — produces columns.json, which
 #      catalog.resolve consumes via its REQUIRED --columns-file arg.
-# Whitelisting resolve/dump_headers is safe: both only read inputs + write JSON into
+    #   4. ethoinsight.validate_catalog             — catalog-driven metric range
+    #      validation (L-B layer). Reads plan + result files from workspace,
+    #      prints VALIDATION_ERROR lines to stdout. No side effects, no network.
+# Whitelisting resolve/dump_headers/validate_catalog is safe: both only read inputs + write JSON into
 # the workspace; they execute no arbitrary code. Path safety for their args is the
 # same as for scripts (the plotting scripts themselves still re-validate paths).
 _ALLOWED_PYTHON_PATTERN = re.compile(
-    r"^\s*python\s+-m\s+ethoinsight\.(scripts\.\w+\.\w+|catalog\.resolve|parse\.dump_headers)(\s|$)"
+    r"^\s*python\s+-m\s+ethoinsight\.(scripts\.\w+\.\w+|catalog\.resolve|parse\.dump_headers|validate_catalog)(\s|$)"
 )
 
 # Allow parallel script execution via bash -c wrapper.
@@ -88,7 +91,9 @@ _DENY_MESSAGE = (
     "  1. 调脚本：python -m ethoinsight.scripts.<paradigm>.<name> --input ... --output ...\n"
     "  2. chart-maker 专用：python -m ethoinsight.parse.dump_headers --input ... --output columns.json\n"
     "     与 python -m ethoinsight.catalog.resolve --mode charts ... --output plan_charts.json\n"
-    "  3. 文件操作：mkdir / cp / mv / ls / cat / grep / head / tail\n"
+    "  3. code-executor 专用：python -m ethoinsight.validate_catalog --plan plan_metrics.json\n"
+    "     （catalog-driven 指标范围验证，所有 compute 脚本跑完后执行）\n"
+    "  4. 文件操作：mkdir / cp / mv / ls / cat / grep / head / tail\n"
     "请改用以上形式之一。可用脚本清单见 by-paradigm/<范式>.md。"
 )
 
