@@ -16,11 +16,12 @@ type: workflow
 
 code-executor 的工作流程：
 
-1. **read** `${workspace_path}/plan_metrics.json` —— lead 已生成的施工单
+1. **读一次** `${workspace_path}/plan_metrics.json`，然后立即开始跑第一个脚本（不要反复 read 同一个文件）
 2. **for each entry in plan.metrics**：
    ```
    python -m <entry.script> --input <entry.input> --output <entry.output>
    ```
+   **同指标不同 subject 用一条 bash 并行**：`bash -c "python -m ... & python -m ... & wait; echo ALL_DONE_<id>"`
 3. **if plan.statistics 非空且 skip_reason is null**：
    ```
    python -m <plan.statistics.script> --inputs ... --groups ... --output ...
@@ -31,6 +32,7 @@ code-executor 的工作流程：
 
 ### 重要约束
 
+- **每个文件最多读一次**：plan_metrics.json 只在开头读一次，不要在执行中途反复 read 确认；每个 metric 的 output JSON 只在聚合时读一次
 - 不要写胶水脚本拼接代码 —— 所有指标 + 统计都在脚本里
 - 不要读 catalog YAML —— plan.json 已经把你需要的执行字段（script、input、output）展开
 - bash 命令必须是脚本调用（`python -m ethoinsight.scripts.*`）或文件操作（mkdir / cp / mv / ls / cat / grep / head / tail）。其他形式的 bash（包括 `python -c`、`pip install`）会被运行时拦截

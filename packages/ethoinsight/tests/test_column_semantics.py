@@ -7,6 +7,9 @@ _build_zone_aliases_overrides. Tests verify parameters_in_use uses
 PHYSICAL column names, not catalog concept names.
 """
 
+import pytest
+
+from ethoinsight.catalog.loader import load_catalog
 from ethoinsight.catalog.resolve import ResolveError, _apply_aliases, resolve_metrics
 from ethoinsight.utils import assess_column_confidence
 
@@ -410,3 +413,168 @@ class TestColumnAliasesParametersInUse:
             f"non-wrap_list target_param should be str, got {type(cz).__name__}: {cz}"
         )
         assert cz in ("中心区", "中心区2"), f"should pick one physical col, got {cz}"
+
+
+class TestEPMZoneConceptParams:
+    """EPM column_aliases → open_arm_zones / closed_arm_zones 注入。"""
+
+    def test_open_arm_zones_injected(self, tmp_path):
+        """open→open_arms alias → open_arm_zones=["open"]。"""
+        plan = resolve_metrics(
+            paradigm="epm",
+            columns=["trial_time", "x_center", "y_center", "distance_moved",
+                     "velocity", "open", "closed", "result_1"],
+            raw_files=["/mnt/user-data/uploads/test.xlsx"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"open": "open_arms", "closed": "closed_arms"},
+        )
+        m = next(m for m in plan.metrics if m.id == "open_arm_time_ratio")
+        assert m.parameters_in_use["open_arm_zones"] == ["open"], \
+            f"open_arm_zones should be ['open'], got {m.parameters_in_use.get('open_arm_zones')}"
+
+    def test_closed_arm_zones_injected(self, tmp_path):
+        """closed→closed_arms alias → closed_arm_zones=["closed"]。"""
+        plan = resolve_metrics(
+            paradigm="epm",
+            columns=["trial_time", "x_center", "y_center", "distance_moved",
+                     "velocity", "open", "closed", "result_1"],
+            raw_files=["/mnt/user-data/uploads/test.xlsx"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"open": "open_arms", "closed": "closed_arms"},
+        )
+        m = next(m for m in plan.metrics if m.id == "open_arm_entry_ratio")
+        assert m.parameters_in_use["closed_arm_zones"] == ["closed"], \
+            f"closed_arm_zones should be ['closed'], got {m.parameters_in_use.get('closed_arm_zones')}"
+
+    def test_multi_concept_routing(self, tmp_path):
+        """两个概念分别落到两个不同参数。"""
+        plan = resolve_metrics(
+            paradigm="epm",
+            columns=["trial_time", "x_center", "y_center", "distance_moved",
+                     "velocity", "open", "closed", "result_1"],
+            raw_files=["/mnt/user-data/uploads/test.xlsx"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"open": "open_arms", "closed": "closed_arms"},
+        )
+        m = next(m for m in plan.metrics if m.id == "open_arm_entry_ratio")
+        assert m.parameters_in_use["open_arm_zones"] == ["open"]
+        assert m.parameters_in_use["closed_arm_zones"] == ["closed"]
+
+    def test_no_alias_standard_columns_still_work(self, tmp_path):
+        """无 column_aliases 时（标准 in_zone_open_arms_center 列）不回归。"""
+        plan = resolve_metrics(
+            paradigm="epm",
+            columns=["trial_time", "x_center", "y_center", "distance_moved",
+                     "velocity", "in_zone_open_arms_center", "in_zone_closed_arms_center", "result_1"],
+            raw_files=["/mnt/user-data/uploads/test.xlsx"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+        )
+        m = next(m for m in plan.metrics if m.id == "open_arm_time_ratio")
+        # 无 alias 时参数应为空字符串（default），由 autodiscovery 处理
+        assert m.parameters_in_use.get("open_arm_zones", "") == ""
+        # 关键：open_arm_time_ratio 函数不收 closed_arm_zones → 不应出现在参数中
+        assert "closed_arm_zones" not in m.parameters_in_use, (
+            "open_arm_time_ratio 不接受 closed_arm_zones 参数"
+        )
+
+    def test_parameter_subset_matches_function_signature(self, tmp_path):
+        """每个 metric 的 parameters_in_use 仅含其函数支持的参数子集。"""
+        plan = resolve_metrics(
+            paradigm="epm",
+            columns=["trial_time", "x_center", "y_center", "distance_moved",
+                     "velocity", "open", "closed", "result_1"],
+            raw_files=["/mnt/user-data/uploads/test.xlsx"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"open": "open_arms", "closed": "closed_arms"},
+        )
+        # 只接受 open_arm_zones 的 metric
+        for mid in ("open_arm_time_ratio", "open_arm_time", "open_arm_entry_count"):
+            m = next(m for m in plan.metrics if m.id == mid)
+            assert "open_arm_zones" in m.parameters_in_use
+            assert "closed_arm_zones" not in m.parameters_in_use, \
+                f"{mid} 不接受 closed_arm_zones，但出现在了 parameters_in_use"
+        # 接受两者的 metric
+        for mid in ("open_arm_entry_ratio", "total_entry_count"):
+            m = next(m for m in plan.metrics if m.id == mid)
+            assert "open_arm_zones" in m.parameters_in_use
+            assert "closed_arm_zones" in m.parameters_in_use
+
+    def test_explicit_override_wins(self, tmp_path):
+        """显式 overrides 优先于 zone_concept_params。"""
+        plan = resolve_metrics(
+            paradigm="epm",
+            columns=["trial_time", "x_center", "y_center", "distance_moved",
+                     "velocity", "open", "closed", "result_1"],
+            raw_files=["/mnt/user-data/uploads/test.xlsx"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"open": "open_arms", "closed": "closed_arms"},
+            overrides={"open_arm_zones": ["in_zone"]},
+        )
+        m = next(m for m in plan.metrics if m.id == "open_arm_time_ratio")
+        assert m.parameters_in_use["open_arm_zones"] == ["in_zone"], \
+            f"explicit override should win, got {m.parameters_in_use.get('open_arm_zones')}"
+
+    def test_oft_anonymous_zone_override_not_regressed(self, tmp_path):
+        """OFT anonymous_zone_is 路径不回归。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "in_zone", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            overrides={"anonymous_zone_is": "in_zone"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "in_zone", (
+            f"OFT anonymous_zone_is should still work, got {center_metric.parameters_in_use.get('center_zone')}"
+        )
+
+
+class TestLoaderZoneConceptParams:
+    """loader 正确解析 zone_concept_params。"""
+
+    def test_epm_zone_concept_params_loaded(self):
+        cat = load_catalog("epm")
+        assert "open_arms" in cat.zone_concept_params
+        assert cat.zone_concept_params["open_arms"].param == "open_arm_zones"
+        assert cat.zone_concept_params["open_arms"].wrap_list is True
+        assert "closed_arms" in cat.zone_concept_params
+        assert cat.zone_concept_params["closed_arms"].param == "closed_arm_zones"
+        assert cat.zone_concept_params["closed_arms"].wrap_list is True
+
+    def test_oft_has_no_zone_concept_params(self):
+        """OFT 没有 zone_concept_params（仅用 anonymous_zone_override）。"""
+        cat = load_catalog("open_field")
+        assert cat.zone_concept_params == {}
+
+    def test_invalid_zone_concept_params_raises(self, tmp_path):
+        """非法 shape 报 CatalogError。"""
+        import yaml
+        from ethoinsight.catalog.loader import CatalogError, _parse_catalog
+        raw = {
+            "paradigm": "test",
+            "ev19_templates": ["test"],
+            "default_metrics": [],
+            "optional_metrics": [],
+            "charts": [],
+            "zone_concept_params": {
+                "bad_concept": "not_a_dict",
+            },
+        }
+        try:
+            _parse_catalog(raw, source=tmp_path / "test.yaml")
+            pytest.fail("expected CatalogError for non-dict zone_concept_param entry")
+        except CatalogError as e:
+            assert "must be a dict" in str(e)

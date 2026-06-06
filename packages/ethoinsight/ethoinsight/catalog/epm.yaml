@@ -13,6 +13,13 @@ default_metrics:
     one_liner: 动物在开放臂中停留时间占总时长的比例，用于评估焦虑样回避行为
     direction_for_anxiety: lower_is_anxious
     statistical_default: groupwise_compare
+    parameters:
+      open_arm_zones:
+        default: ""
+        unit: ""
+        description: "开臂区域列名列表。由 HITL column_aliases 自动注入。"
+        tunable_by_user: false
+        valid_range: null
 
   - id: open_arm_time
     script: ethoinsight.scripts.epm.compute_open_arm_time
@@ -24,6 +31,13 @@ default_metrics:
     one_liner: 动物在开放臂内的累计停留时间
     direction_for_anxiety: lower_is_anxious
     statistical_default: groupwise_compare
+    parameters:
+      open_arm_zones:
+        default: ""
+        unit: ""
+        description: "开臂区域列名列表。由 HITL column_aliases 自动注入。"
+        tunable_by_user: false
+        valid_range: null
 
   - id: open_arm_entry_count
     script: ethoinsight.scripts.epm.compute_open_arm_entry_count
@@ -35,6 +49,13 @@ default_metrics:
     one_liner: 进入开放臂的累计次数
     direction_for_anxiety: lower_is_anxious
     statistical_default: groupwise_compare
+    parameters:
+      open_arm_zones:
+        default: ""
+        unit: ""
+        description: "开臂区域列名列表。由 HITL column_aliases 自动注入。"
+        tunable_by_user: false
+        valid_range: null
 
   - id: open_arm_entry_ratio
     script: ethoinsight.scripts.epm.compute_open_arm_entry_ratio
@@ -47,6 +68,19 @@ default_metrics:
     one_liner: 进入开放臂次数占总进入次数的比例
     direction_for_anxiety: lower_is_anxious
     statistical_default: groupwise_compare
+    parameters:
+      open_arm_zones:
+        default: ""
+        unit: ""
+        description: "开臂区域列名列表。由 HITL column_aliases 自动注入。"
+        tunable_by_user: false
+        valid_range: null
+      closed_arm_zones:
+        default: ""
+        unit: ""
+        description: "闭臂区域列名列表。由 HITL column_aliases 自动注入。"
+        tunable_by_user: false
+        valid_range: null
 
   - id: total_entry_count
     script: ethoinsight.scripts.epm.compute_total_entry_count
@@ -59,6 +93,19 @@ default_metrics:
     one_liner: 进入所有臂的累计次数，反映动物的整体探索活动量
     direction_for_anxiety: null
     statistical_default: groupwise_compare
+    parameters:
+      open_arm_zones:
+        default: ""
+        unit: ""
+        description: "开臂区域列名列表。由 HITL column_aliases 自动注入。"
+        tunable_by_user: false
+        valid_range: null
+      closed_arm_zones:
+        default: ""
+        unit: ""
+        description: "闭臂区域列名列表。由 HITL column_aliases 自动注入。"
+        tunable_by_user: false
+        valid_range: null
 
 optional_metrics:
   - id: body_elongation_stats
@@ -164,3 +211,11 @@ paradigm_parameters:
     description: "EPM: subject 总进臂次数 < 此值时,触发 MOTOR.LOW_ENTRIES 警告 (运动抑制嫌疑)。"
     tunable_by_user: true
     valid_range: [1, 50]
+
+zone_concept_params:
+  open_arms:
+    param: open_arm_zones
+    wrap_list: true
+  closed_arms:
+    param: closed_arm_zones
+    wrap_list: true

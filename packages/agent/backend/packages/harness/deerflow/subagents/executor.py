@@ -652,7 +652,10 @@ class SubagentExecutor:
         # avoids thread_id-based history pollution with lead agent.
         from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 
-        middlewares.append(LoopDetectionMiddleware())
+        middlewares.append(LoopDetectionMiddleware(
+            tool_freq_warn=30,
+            tool_freq_hard_limit=50,
+        ))
 
         return middlewares
 

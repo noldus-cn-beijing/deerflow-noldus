@@ -116,6 +116,18 @@ class AnonymousZoneOverride:
 
 
 @dataclass(frozen=True)
+class ZoneConceptParam:
+    """范式级 zone 概念 → compute 参数映射。
+
+    EPM 的 open_arms/closed_arms → open_arm_zones/closed_arm_zones
+    参数注入通过此映射实现，不依赖 convention 推导。
+    """
+
+    param: str
+    wrap_list: bool = False
+
+
+@dataclass(frozen=True)
 class Catalog:
     paradigm: str
     ev19_templates: list[str]
@@ -127,6 +139,7 @@ class Catalog:
         default_factory=ParadigmParameters
     )
     anonymous_zone_override: AnonymousZoneOverride | None = None
+    zone_concept_params: dict[str, ZoneConceptParam] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
