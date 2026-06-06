@@ -7,6 +7,7 @@
 
 | Feature | 状态 | Milestone | 最新 handoff |
 |---------|------|-----------|-------------|
+| **EV19 列语义对齐** | Sprint 1 已合 dev（自定义分析区列 HITL 对齐）· Sprint 2 结构聚合等专家 · [Issue #98](https://github.com/noldus-cn-beijing/noldus-insight/issues/98) | [column-semantics-alignment.md](column-semantics-alignment.md) | [6/5 design v2](../design/2026-06-05-column-semantics-hitl-design-v2.md) |
 | **Skill 优化 → SFT（SkillOpt 方法论）** | 计划已就绪 · 等待行为学专家 Golden Cases · [Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90) | — | [6/4 实施计划](../plans/2026-06-04-skillopt-skill-optimization-plan.md) |
 | **SOTA Agent v2** | Sprint 0/1/2a 已合 dev · Sprint 5.7 实施中 | [sota-agent-v2-sprint-0.md](sota-agent-v2-sprint-0.md) | [5/28 Sprint1+2a deploy 准备 + seal bug 真根因](../handoffs/2026-05/2026-05-28-sprint1-2a-deploy-prep-and-seal-bug-handoff.md) |
 | **Subagent seal/handoff 鲁棒性** | 核心卡死已解 · 非空参数路 + 字段三分裂修复完 · data-analyst thinking spec 待实施 | [subagent-seal-handoff-robustness.md](subagent-seal-handoff-robustness.md) | [6/4 task-context eval+fixes](../handoffs/2026-06/2026-06-04-handoff-task-context-eval-and-fixes-handoff.md) |

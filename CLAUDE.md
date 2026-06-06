@@ -6,7 +6,7 @@
 
 **EthoInsight** — 面向行为学研究员的 AI 分析助手。研究员上传 EthoVision XT 导出的轨迹数据，Agent 自动完成统计分析、专业解读、APA 格式报告生成。
 
-- **当前状态**：端到端流水线可用，v0.1 已支持 6 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze/TST）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）
+- **当前状态**：端到端流水线可用，v0.1 已支持 6 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze/TST）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）。**用户自定义分析区列的 HITL 列语义对齐 Sprint 1 已合 dev**（真实 OFT 数据中 `中心区`/`边缘区` 等用户命名列经反问对齐后可正确算指标；结构聚合 Sprint 2 等行为学专家，见 [milestone](docs/milestone/column-semantics-alignment.md)）
 - **愿景**：从"数据分析工具"演进为"全生命周期行为学研究助手"（实验指导 → 数据分析 → 追问 → 知识问答 → 跨范式证据链）
 - **关键里程碑**：2026 年 9 月 v0.1 可用版本
 - **路线图**：见 [docs/roadmap.md](docs/roadmap.md)
@@ -226,7 +226,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 ## 重要注意事项
 
-1. **skills/custom/ 是项目定制 skill 的目录** — `ethoinsight`、`ethoinsight-code`、`ethoinsight-charts`、`ethoinsight-planning`、`ethovision-paradigm-knowledge`（实施完成后）共 5 个定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）
+1. **skills/custom/ 是项目定制 skill 的目录** — ethoinsight 系列定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）。**权威清单以 `packages/agent/skills/custom/` 目录 + `extensions_config.json` 的 `skills` 段为准**（不在此处手工枚举以免漂移）。当前含 `ethoinsight` / `ethoinsight-code` / `ethoinsight-charts` / `ethoinsight-chart-maker` / `ethoinsight-grouping` / `ethoinsight-metric-catalog` / `ethoinsight-lead-interaction` / `ethovision-paradigm-knowledge` / **`ethoinsight-column-confirmation`（新增 — EV19 自定义分析区列的 HITL 列语义对齐，见 [milestone](docs/milestone/column-semantics-alignment.md)）** 等。新增 skill 须三件一起：① 建文件 ② extensions_config 注册 ③ lead prompt 加触发/read 指引。
 2. **noldus-kb 当前禁用** — `extensions_config.json` 里 `"enabled": false`，等 `180.184.84.124:7001` 恢复后再启用。禁用状态不要提交为 true
 3. **受保护文件修改后同步要小心** — `scripts/sync-deerflow.sh` 会把它们标为"需人工判断"
 4. **v0.1 是 9 月硬指标** — Phase 0（当前阶段）要完成 EPM + OFT 范式 + 鲁棒性验证 + 基础设施修复
