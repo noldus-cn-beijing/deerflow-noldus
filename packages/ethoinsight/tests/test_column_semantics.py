@@ -365,3 +365,48 @@ class TestColumnAliasesParametersInUse:
         )
         center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
         assert center_metric.parameters_in_use["center_zone"] == "in_zone"
+
+    def test_direct_target_param_wins_over_column_aliases(self, tmp_path):
+        """直接传 target_param（center_zone）优先于 column_aliases 派生覆盖（review 发现 #1）。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "中心区", "in_zone", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"中心区": "center"},
+            overrides={"center_zone": "in_zone"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "in_zone", (
+            f"direct target_param should win, got {center_metric.parameters_in_use.get('center_zone')}"
+        )
+
+    def test_multicolumn_same_concept_produces_str_for_non_wrap_list(self, tmp_path):
+        """OFT（wrap_list=False）多列映射到同一概念 → str（取首个），非 list（review 发现 #2）。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "中心区", "中心区2", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"中心区": "center", "中心区2": "center"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        cz = center_metric.parameters_in_use["center_zone"]
+        assert isinstance(cz, str), (
+            f"non-wrap_list target_param should be str, got {type(cz).__name__}: {cz}"
+        )
+        assert cz in ("中心区", "中心区2"), f"should pick one physical col, got {cz}"

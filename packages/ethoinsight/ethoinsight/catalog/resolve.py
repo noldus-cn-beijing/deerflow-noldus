@@ -586,8 +586,8 @@ def _build_zone_aliases_overrides(
     if azo is None:
         return {}
 
-    # 显式用户指定的 anonymous_zone_is 优先
-    if "anonymous_zone_is" in existing_overrides:
+    # 显式用户指定的 anonymous_zone_is 或直接 target_param 优先
+    if "anonymous_zone_is" in existing_overrides or azo.target_param in existing_overrides:
         return {}
 
     # 从 catalog 收集所有 in_zone* 模式作为 zone_concept glob
@@ -618,7 +618,8 @@ def _build_zone_aliases_overrides(
     # - OFT: target_param="center_zone" → str
     # - zero_maze: target_param="open_zones" → list (wrap_list=true)
     # - LDB: target_param="light_zone" → str
-    value: str | list[str] = matches if (azo.wrap_list or len(matches) > 1) else matches[0]
+    # 类型仅由 wrap_list 决定：str 参数多列取首个（不因数量改变类型）。
+    value: str | list[str] = matches if azo.wrap_list else matches[0]
     return {azo.target_param: value}
 
 
