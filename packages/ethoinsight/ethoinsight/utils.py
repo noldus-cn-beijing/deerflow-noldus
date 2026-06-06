@@ -7,6 +7,7 @@ and "分析区中(...)".
 
 from __future__ import annotations
 
+import fnmatch
 import re
 
 # ============================================================================
@@ -228,6 +229,97 @@ PARADIGM_KEYWORDS: dict[str, list[str]] = {
     "fear_conditioning": ["fear conditioning", "恐惧条件"],
     "t_maze": ["t maze", "t迷宫"],
 }
+
+
+# ============================================================================
+# Column confidence assessment — L1 固定列（normalize 后）
+# ============================================================================
+
+# L1 fixed columns: always recognised regardless of paradigm.
+# These are the seven core EthoVision columns + common movement/morphology
+# columns that COLUMN_MAP already covers. Used by assess_column_confidence
+# only for rule (c) — NOT a second column catalog.
+_FIXED_COLUMNS: frozenset[str] = frozenset(
+    {
+        "trial_time",
+        "recording_time",
+        "x_center",
+        "y_center",
+        "x_nose",
+        "y_nose",
+        "x_tail",
+        "y_tail",
+        "distance_moved",
+        "velocity",
+        "heading",
+        "body_area",
+        "area_change",
+        "elongation",
+        "result_1",
+        "result_2",
+        "train",
+    }
+)
+
+
+def assess_column_confidence(
+    raw_columns: list[str],
+    required_patterns: list[str] | None = None,
+) -> dict:
+    """Assess whether the system recognises each raw column name.
+
+    Used by inspect_uploaded_file to decide which columns trigger HITL
+    column-semantics alignment. The function is a pure, deterministic
+    computation — no LLM involvement (D 触发闸门客观可算).
+
+    Args:
+        raw_columns: Raw column names from the uploaded file.
+        required_patterns: Catalog ``requires_columns`` patterns (fnmatch
+            globs), deduplicated across all metrics. Used for rule (b).
+            When empty/None, only rules (a) and (c) apply — unrecognized
+            columns are conservatively NOT reported (avoids false positives
+            on standard data).
+
+    Returns:
+        {
+          "recognized":   [{"raw": str, "normalized": str}, ...],
+          "unrecognized": [{"raw": str, "normalized": str}, ...],
+        }
+
+    Recognition rules (satisfying any ONE is sufficient):
+      (a) raw in COLUMN_MAP (exact match)
+      (b) normalize_column_name(raw) matches a required_pattern (fnmatch glob)
+      (c) normalize result is in _FIXED_COLUMNS
+      Otherwise → unrecognized.
+    """
+    recognized: list[dict[str, str]] = []
+    unrecognized: list[dict[str, str]] = []
+
+    patterns = required_patterns or []
+
+    for raw in raw_columns:
+        entry = {"raw": raw, "normalized": normalize_column_name(raw)}
+        norm = entry["normalized"]
+
+        # Rule (a): exact hit in COLUMN_MAP
+        if raw in COLUMN_MAP:
+            recognized.append(entry)
+            continue
+
+        # Rule (b): normalized name matches a catalog requires_columns glob
+        if patterns:
+            if any(fnmatch.fnmatchcase(norm, pat) for pat in patterns):
+                recognized.append(entry)
+                continue
+
+        # Rule (c): normalized name is a known L1 fixed column
+        if norm in _FIXED_COLUMNS:
+            recognized.append(entry)
+            continue
+
+        unrecognized.append(entry)
+
+    return {"recognized": recognized, "unrecognized": unrecognized}
 
 
 def detect_paradigm(experiment_name: str) -> str | None:
