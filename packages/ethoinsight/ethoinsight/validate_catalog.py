@@ -2,11 +2,19 @@
 
 两层分工：
   L-A（validate.py）    — 进程内安全网，只查 NaN/Inf
-  L-B（本模块）          — 按 catalog output_unit 查范围 + 孤儿指标 + 未知单位
+  L-B（本模块）          — 按 output_unit 查范围 + 复合_stats + 孤儿/未知单位
 
-调用方式：
-  代码内：validate_metrics_against_catalog(results, paradigm)
-  CLI：   python -m ethoinsight.validate_catalog --plan <plan.json>
+两个入口：
+  1. validate_metrics_against_catalog(results, paradigm)
+     —— 直接调函数：load_catalog 查 output_unit，能检出 catalog 之外的孤儿指标
+        （catalog_unknown）。供单测 / 程序内调用。
+  2. validate_plan_results(plan)  ←  CLI 用
+     —— 吃 plan_metrics.json：用每条 metric 自带的 output_unit（resolve.py 从
+        catalog 透传），不再 load_catalog（P1-1）。按 subject 逐条验证，同 metric_id
+        多 subject 不互相覆盖（P0-2）。注意：plan 由 resolve 生成，只含 catalog 内
+        指标，故 CLI 路径不会遇到孤儿（孤儿检测仅在入口 1 生效）。
+
+CLI： python -m ethoinsight.validate_catalog --plan <plan_metrics.json>
 
 TODO: radians 上限待确认（关联指标定义）。当前只验 ≥0。
 TODO: plausible_max 机制预留，等 catalog MetricEntry 增加可选字段后启用。
@@ -292,15 +300,101 @@ def validate_metrics_against_catalog(
 
 
 # ============================================================================
-# B.6: CLI 入口
+# B.6: plan-driven 验证（CLI 用，直接吃 plan 条目的 output_unit）
+# ============================================================================
+
+
+def _validate_one_value(
+    label: str, value: Any, output_unit: str
+) -> list[dict[str, str]]:
+    """Validate a single value (scalar or composite dict) against an output_unit.
+
+    ``label`` is the violation's metric label — may carry a subject suffix
+    (e.g. "center_time_ratio#0") so per-subject violations are distinguishable.
+    """
+    if output_unit not in _RANGE_RULES:
+        return [{
+            "metric": label,
+            "issue": "unknown_output_unit",
+            "value": f"output_unit={output_unit}",
+        }]
+    if value is None or not isinstance(value, (int, float, dict)):
+        return []
+    if isinstance(value, dict):
+        return _validate_composite_stats(label, value, output_unit)
+    return _apply_range_rule(label, value, output_unit)
+
+
+def validate_plan_results(plan: dict[str, Any]) -> list[dict[str, str]]:
+    """Validate every metric output declared in a plan_metrics.json dict.
+
+    Uses each metric entry's own ``output_unit`` field (resolve.py emits it
+    verbatim from the catalog), so this does NOT re-load the catalog — the
+    plan IS the resolved-catalog projection (P1-1).
+
+    plan_metrics.json expands one PlanMetric PER SUBJECT (resolve.py: each
+    subject gets its own output path + subject_index). The same metric_id
+    therefore appears multiple times; each is validated independently and
+    labelled with a ``#<subject_index>`` suffix so per-subject violations
+    are not collapsed (P0-2).
+
+    Returns: violation list, each {"metric", "issue", "value"}.
+    """
+    violations: list[dict[str, str]] = []
+
+    for entry in plan.get("metrics", []):
+        metric_id = entry.get("id", "")
+        output_path = entry.get("output", "")
+        output_unit = entry.get("output_unit", "")
+        subject_index = entry.get("subject_index")
+        if not metric_id or not output_path:
+            continue
+
+        # Plan entry is missing output_unit → cannot range-check; surface it.
+        if not output_unit:
+            violations.append({
+                "metric": metric_id,
+                "issue": "plan_missing_output_unit",
+                "value": f"subject_index={subject_index}",
+            })
+            continue
+
+        try:
+            data = json.loads(Path(output_path).read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            # Missing/unreadable result file — completeness gap, surface it.
+            violations.append({
+                "metric": metric_id,
+                "issue": "result_file_unreadable",
+                "value": str(output_path),
+            })
+            continue
+
+        # Extract value from [result]-style output: {"metric": ..., "value": ...}
+        value = data.get("value")
+        if value is None and metric_id in data:
+            value = data[metric_id]
+
+        # Per-subject label so multiple subjects of the same metric don't collide.
+        label = (
+            f"{metric_id}#{subject_index}" if subject_index is not None else metric_id
+        )
+        violations.extend(_validate_one_value(label, value, output_unit))
+
+    return violations
+
+
+# ============================================================================
+# CLI 入口
 # ============================================================================
 
 
 def main(argv: list[str] | None = None) -> None:
     """CLI: python -m ethoinsight.validate_catalog --plan <plan.json>
 
-    Reads plan_metrics.json (paradigm + metrics[].output paths),
-    loads each result file, and prints VALIDATION_ERROR lines to stdout.
+    Reads plan_metrics.json (paradigm + metrics[] with per-entry output_unit
+    + output path), validates each metric output PER SUBJECT, and prints
+    VALIDATION_ERROR lines to stdout.
 
     Exit code is always 0 (informational; downstream decides how to handle).
     """
@@ -309,7 +403,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     ap.add_argument(
         "--plan", required=True,
-        help="Path to plan_metrics.json (contains paradigm + metrics[].id + metrics[].output)",
+        help="Path to plan_metrics.json (paradigm + metrics[] with output_unit + output)",
     )
     args = ap.parse_args(argv)
 
@@ -324,37 +418,10 @@ def main(argv: list[str] | None = None) -> None:
         print(f"VALIDATION_ERROR: plan file read failed: {e}", file=sys.stderr)
         sys.exit(0)
 
-    paradigm = plan.get("paradigm", "")
-    if not paradigm:
-        print("VALIDATION_ERROR: plan missing paradigm field", file=sys.stderr)
-        sys.exit(0)
-
-    # Collect results from individual metric output files
-    results: dict[str, Any] = {}
-    for entry in plan.get("metrics", []):
-        metric_id = entry.get("id", "")
-        output_path = entry.get("output", "")
-        if not metric_id or not output_path:
-            continue
-
-        try:
-            data = json.loads(Path(output_path).read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-
-        # Extract value from [result]-style output: {"metric": ..., "value": ...}
-        value = data.get("value")
-        if value is not None:
-            results[metric_id] = value
-        elif metric_id in data:
-            # Direct mapping
-            results[metric_id] = data[metric_id]
-
-    # Validate
     try:
-        violations = validate_metrics_against_catalog(results, paradigm)
+        violations = validate_plan_results(plan)
     except Exception as e:
-        print(f"VALIDATION_ERROR: catalog validation failed: {e}", file=sys.stderr)
+        print(f"VALIDATION_ERROR: plan validation failed: {e}", file=sys.stderr)
         sys.exit(0)
 
     for v in violations:

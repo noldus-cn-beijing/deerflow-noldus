@@ -7,10 +7,7 @@ And detects orphan metrics (not in catalog) and unknown output_unit.
 """
 
 import json
-import math
-from pathlib import Path
 
-import pytest
 
 from ethoinsight.validate_catalog import (
     validate_metrics_against_catalog,
@@ -299,15 +296,13 @@ class TestValidateMetricsAgainstCatalog:
 
     # --- normal values pass ---
     def test_all_normal_values_pass(self):
-        v = validate_metrics_against_catalog({
-            "open_arm_time_ratio": 0.452,
-            "distance_moved": 1500.0,
-            "velocity_stats": {"mean": 5.2, "std": 1.0, "max": 10.0, "min": 1.0, "median": 5.0},
+        """Direct-function entry: in-catalog metric with a normal value passes,
+        while metrics not in the given paradigm's catalog surface as orphans."""
+        violations = validate_metrics_against_catalog({
+            "center_time_ratio": 0.452,   # real open_field metric, in range → OK
         }, "open_field")
-        # open_arm_time_ratio: in epm catalog; distance_moved: orphan if not in oft catalog
-        # velocity_stats: orphan
-        # Only check that ratio passes
-        pass  # integration-level; exact assertion depends on catalog content
+        assert violations == []
+
 
     # --- None / non-numeric values are skipped ---
     def test_none_value_skipped(self):
@@ -318,20 +313,22 @@ class TestValidateMetricsAgainstCatalog:
 
 
 class TestMainCLI:
-    """B.6: CLI entry point."""
+    """B.6: CLI entry point — plan-driven (uses plan entry's own output_unit)."""
 
     def test_cli_emits_validation_error_lines(self, tmp_path):
         """CLI with a plan pointing to a result file that has a violation."""
         import subprocess
         import sys
 
-        # Write a plan_metrics.json
+        # Write a plan_metrics.json (entry carries its own output_unit, P1-1)
         plan = {
             "paradigm": "epm",
             "metrics": [
                 {
                     "id": "open_arm_time_ratio",
                     "output": str(tmp_path / "metric_0.json"),
+                    "output_unit": "ratio",
+                    "subject_index": 0,
                 }
             ],
         }
@@ -364,6 +361,8 @@ class TestMainCLI:
                 {
                     "id": "open_arm_time_ratio",
                     "output": str(tmp_path / "metric_0.json"),
+                    "output_unit": "ratio",
+                    "subject_index": 0,
                 }
             ],
         }
@@ -381,8 +380,15 @@ class TestMainCLI:
         assert proc.returncode == 0
         assert "VALIDATION_ERROR" not in proc.stdout
 
-    def test_cli_orphan_metric(self, tmp_path):
-        """CLI detects orphan (catalog_unknown) metrics."""
+    def test_cli_per_subject_no_collision(self, tmp_path):
+        """P0-2: same metric_id across N subjects → each validated independently.
+
+        plan_metrics.json expands one entry per subject. A buggy implementation
+        that keys results by metric_id alone would only validate the LAST
+        subject. This test has subject 0 = OK, subject 1 = violation, and
+        asserts subject 1's violation is reported (not dropped) and labelled
+        with its subject suffix.
+        """
         import subprocess
         import sys
 
@@ -390,16 +396,29 @@ class TestMainCLI:
             "paradigm": "epm",
             "metrics": [
                 {
-                    "id": "thigmotaxis_index",
-                    "output": str(tmp_path / "metric_0.json"),
-                }
+                    "id": "open_arm_time_ratio",
+                    "output": str(tmp_path / "metric_s0.json"),
+                    "output_unit": "ratio",
+                    "subject_index": 0,
+                },
+                {
+                    "id": "open_arm_time_ratio",
+                    "output": str(tmp_path / "metric_s1.json"),
+                    "output_unit": "ratio",
+                    "subject_index": 1,
+                },
             ],
         }
         plan_path = tmp_path / "plan_metrics.json"
         plan_path.write_text(json.dumps(plan))
 
-        result = {"metric": "thigmotaxis_index", "value": 0.5}
-        (tmp_path / "metric_0.json").write_text(json.dumps(result))
+        # subject 0: valid; subject 1: out of range (would be lost if keyed by id)
+        (tmp_path / "metric_s0.json").write_text(
+            json.dumps({"metric": "open_arm_time_ratio", "value": 0.4})
+        )
+        (tmp_path / "metric_s1.json").write_text(
+            json.dumps({"metric": "open_arm_time_ratio", "value": 1.7})
+        )
 
         proc = subprocess.run(
             [sys.executable, "-m", "ethoinsight.validate_catalog",
@@ -407,4 +426,141 @@ class TestMainCLI:
             capture_output=True, text=True,
         )
         assert proc.returncode == 0
-        assert "catalog_unknown" in proc.stdout
+        # The violating subject IS reported, labelled with its subject index.
+        assert "open_arm_time_ratio#1" in proc.stdout
+        assert "value_above_upper_bound" in proc.stdout
+        # The valid subject is NOT reported.
+        assert "open_arm_time_ratio#0" not in proc.stdout
+
+    def test_cli_all_subjects_violating_all_reported(self, tmp_path):
+        """P0-2: when every subject violates, every subject is reported."""
+        import subprocess
+        import sys
+
+        plan = {
+            "paradigm": "epm",
+            "metrics": [
+                {
+                    "id": "center_entry_count",
+                    "output": str(tmp_path / f"m_{i}.json"),
+                    "output_unit": "count",
+                    "subject_index": i,
+                }
+                for i in range(3)
+            ],
+        }
+        plan_path = tmp_path / "plan_metrics.json"
+        plan_path.write_text(json.dumps(plan))
+
+        # All three subjects: negative count → all violate
+        for i in range(3):
+            (tmp_path / f"m_{i}.json").write_text(
+                json.dumps({"metric": "center_entry_count", "value": -1})
+            )
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "ethoinsight.validate_catalog",
+             "--plan", str(plan_path)],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0
+        # Each subject reported separately.
+        for i in range(3):
+            assert f"center_entry_count#{i}" in proc.stdout
+
+    def test_cli_uses_plan_output_unit_not_catalog(self, tmp_path):
+        """P1-1: CLI uses the plan entry's output_unit, no catalog re-load.
+
+        Proof: an entry whose id is NOT in any catalog still gets range-checked
+        purely from its declared output_unit (load_catalog would have rejected
+        / orphaned it). Here a made-up metric with output_unit=ratio and value
+        2.0 must produce a range violation.
+        """
+        import subprocess
+        import sys
+
+        plan = {
+            "paradigm": "epm",
+            "metrics": [
+                {
+                    "id": "made_up_metric_not_in_catalog",
+                    "output": str(tmp_path / "m.json"),
+                    "output_unit": "ratio",
+                    "subject_index": 0,
+                }
+            ],
+        }
+        plan_path = tmp_path / "plan_metrics.json"
+        plan_path.write_text(json.dumps(plan))
+        (tmp_path / "m.json").write_text(
+            json.dumps({"metric": "made_up_metric_not_in_catalog", "value": 2.0})
+        )
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "ethoinsight.validate_catalog",
+             "--plan", str(plan_path)],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0
+        # Range-checked from output_unit alone — no catalog lookup needed.
+        assert "made_up_metric_not_in_catalog#0" in proc.stdout
+        assert "value_above_upper_bound" in proc.stdout
+
+    def test_cli_missing_output_unit_surfaced(self, tmp_path):
+        """A plan entry lacking output_unit is surfaced, not silently skipped."""
+        import subprocess
+        import sys
+
+        plan = {
+            "paradigm": "epm",
+            "metrics": [
+                {
+                    "id": "open_arm_time_ratio",
+                    "output": str(tmp_path / "m.json"),
+                    "subject_index": 0,
+                    # output_unit intentionally absent
+                }
+            ],
+        }
+        plan_path = tmp_path / "plan_metrics.json"
+        plan_path.write_text(json.dumps(plan))
+        (tmp_path / "m.json").write_text(
+            json.dumps({"metric": "open_arm_time_ratio", "value": 0.4})
+        )
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "ethoinsight.validate_catalog",
+             "--plan", str(plan_path)],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0
+        assert "plan_missing_output_unit" in proc.stdout
+
+    def test_cli_unreadable_result_file_surfaced(self, tmp_path):
+        """A metric whose output file is missing is surfaced as a gap."""
+        import subprocess
+        import sys
+
+        plan = {
+            "paradigm": "epm",
+            "metrics": [
+                {
+                    "id": "open_arm_time_ratio",
+                    "output": str(tmp_path / "does_not_exist.json"),
+                    "output_unit": "ratio",
+                    "subject_index": 0,
+                }
+            ],
+        }
+        plan_path = tmp_path / "plan_metrics.json"
+        plan_path.write_text(json.dumps(plan))
+        # deliberately do NOT create the result file
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "ethoinsight.validate_catalog",
+             "--plan", str(plan_path)],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0
+        assert "result_file_unreadable" in proc.stdout
+
