@@ -1,10 +1,21 @@
 """Metric validation — deterministic range/NaN checks.
 
 AutoResearch-inspired: code-enforced checks that shouldn't be left to LLM judgment.
+
+Naming conventions follow the real catalog metric names (suffix-based):
+  - *_ratio   → 0–1 range (real: open_arm_time_ratio, center_distance_ratio, …)
+  - *_pct     → 0–100 range (future percentage metrics)
+  - *_count   → non-negative (real: center_entry_count, transition_count, …)
+  - *_time    → non-negative (real: open_zone_time, immobility_time, …)
+  - *_latency → non-negative (real: light_latency, immobility_latency, …)
+  - *_distance → non-negative (real: cumulative_distance, …)
 """
 
 import math
 from typing import Any
+
+# Suffixes that imply non-negative values (matching real catalog metric names)
+_NON_NEGATIVE_SUFFIXES = ("_count", "_time", "_latency", "_distance")
 
 
 def validate_metrics(metrics: dict[str, Any]) -> list[dict[str, str]]:
@@ -20,10 +31,13 @@ def validate_metrics(metrics: dict[str, Any]) -> list[dict[str, str]]:
     violations: list[dict[str, str]] = []
 
     for name, value in metrics.items():
+        # Skip bool (isinstance(True, int) is True, so check bool first)
+        if isinstance(value, bool):
+            continue
         if not isinstance(value, (int, float)):
             continue
 
-        # NaN/Inf check
+        # NaN/Inf check (name-agnostic — the core AutoResearch safety net)
         if math.isnan(value):
             violations.append({"metric": name, "issue": "NaN", "value": "NaN"})
             continue
@@ -31,7 +45,7 @@ def validate_metrics(metrics: dict[str, Any]) -> list[dict[str, str]]:
             violations.append({"metric": name, "issue": "Inf", "value": str(value)})
             continue
 
-        # Percentage range check (naming convention: *_pct, 0-100)
+        # Percentage range check (naming convention: *_pct, 0–100)
         if name.endswith("_pct") and not (0.0 <= value <= 100.0):
             violations.append({
                 "metric": name,
@@ -39,7 +53,7 @@ def validate_metrics(metrics: dict[str, Any]) -> list[dict[str, str]]:
                 "value": str(value),
             })
 
-        # Ratio range check (naming convention: *_ratio, 0-1)
+        # Ratio range check (naming convention: *_ratio, 0–1)
         if name.endswith("_ratio") and not (0.0 <= value <= 1.0):
             violations.append({
                 "metric": name,
@@ -47,11 +61,9 @@ def validate_metrics(metrics: dict[str, Any]) -> list[dict[str, str]]:
                 "value": str(value),
             })
 
-        # Non-negative check for duration/distance/velocity/count
-        if any(
-            name.startswith(prefix)
-            for prefix in ("distance_", "duration_", "velocity_", "count_")
-        ):
+        # Non-negative check — suffix-based to match real catalog names
+        # (center_entry_count, immobility_time, light_latency, cumulative_distance, …)
+        if any(name.endswith(suffix) for suffix in _NON_NEGATIVE_SUFFIXES):
             if value < 0:
                 violations.append({
                     "metric": name,

@@ -80,8 +80,10 @@ or status="partial" — do NOT produce a full analysis.
    → Emit handoff status="partial". Report descriptive statistics only.
    Do NOT perform inferential tests. Note "n<3: descriptive only".
 
-2. **All metrics failed**: code-executor output contains VALIDATION_ERROR
-   for every metric, or all metrics are null/missing.
+2. **All metrics failed**: data_quality_warnings 中存在 severity="critical"
+   且 code="METRIC_VALIDATION" 的条目覆盖了所有已计算的指标
+   （即：每个 metric 都有对应的 METRIC_VALIDATION warning），
+   或者所有 metrics_summary 的值为 null/missing。
    → Emit handoff status="failed". Note "all metrics invalid".
 
 3. **Data quality gate not passed**: Gate 2 gate_signals indicate
@@ -123,7 +125,8 @@ or status="partial" — do NOT produce a full analysis.
    范式文档（by-experiment/<paradigm>.md）在 step 2.6 单独 read。
 2.1 **快速失败检查（必须做，不可跳过）**：读完上下文后，执行 Fast-Fail 规则检查：
    - 检查 per_subject 的 n_per_group：任一组 n < 3 → emit handoff status="partial"
-   - 检查 metrics_summary 中 VALIDATION_ERROR 覆盖情况：所有 metric 都有 error 或 null → status="failed"
+   - 检查 data_quality_warnings 中的 METRIC_VALIDATION 条目：
+     若 severity="critical" 且 code="METRIC_VALIDATION" 的条目覆盖了所有已计算指标 → status="failed"
    - 检查 gate_signals 中 quality_warnings_critical_count：若指示不可恢复的数据质量门失败 → status="failed"
    **若任何硬失败触发**：直接调 seal_data_analyst_handoff 写入 status="partial"/"failed"，
    在 key_findings 和 errors 中说明原因，跳过 step 2.5–2.8 的全部解释工作。
