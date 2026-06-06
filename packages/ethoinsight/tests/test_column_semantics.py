@@ -1,5 +1,10 @@
 """Tests for column-semantics Sprint 1: assess_column_confidence, _apply_aliases,
 and resolve_metrics with column_aliases.
+
+Updated 2026-06-06: _apply_aliases now only removes __ignore__ columns;
+concept matching is done on-the-fly by _missing_columns and
+_build_zone_aliases_overrides. Tests verify parameters_in_use uses
+PHYSICAL column names, not catalog concept names.
 """
 
 from ethoinsight.catalog.resolve import ResolveError, _apply_aliases, resolve_metrics
@@ -33,26 +38,19 @@ class TestAssessColumnConfidence:
         """Custom zone columns are unrecognized when no catalog patterns provided."""
         columns = ["中心区", "边缘区", "边缘区到中心区"]
         result = assess_column_confidence(columns)
-        # Without required_patterns, these should be unrecognized
         assert len(result["unrecognized"]) == 3
         assert {e["raw"] for e in result["unrecognized"]} == {"中心区", "边缘区", "边缘区到中心区"}
 
     def test_custom_zone_columns_recognized_with_patterns(self):
         """Custom zone columns ARE recognized when catalog patterns match the normalized name."""
         columns = ["中心区", "边缘区", "边缘区到中心区", "Trial time"]
-        # "中心区" normalizes to "center" via _slugify
-        # "边缘区" normalizes to "边缘区" (no substitution)
         patterns = ["in_zone_center_*", "in_zone_border_*", "in_zone_*"]
         result = assess_column_confidence(columns, required_patterns=patterns)
-        # "中心区" → "center" → does NOT match any glob (center ≠ in_zone_center_*)
-        # "边缘区" → "边缘区" → does NOT match
-        # So they should still be unrecognized with these patterns
         recognized_raw = {e["raw"] for e in result["recognized"]}
         assert "Trial time" in recognized_raw  # COLUMN_MAP hit
 
     def test_34_file_real_columns(self):
         """Simulate real 34-file OFT columns — zone columns unrecognized, standard recognized."""
-        # Real columns from a typical OFT file with custom zone names
         real_columns = [
             "Trial time", "Recording time",
             "X center", "Y center",
@@ -68,12 +66,10 @@ class TestAssessColumnConfidence:
         recognized_raw = {e["raw"] for e in result["recognized"]}
         unrecognized_raw = {e["raw"] for e in result["unrecognized"]}
 
-        # Standard columns should be recognized
         for std in ["Trial time", "Recording time", "X center", "Y center",
                      "Distance moved", "Velocity", "Result 1", "Result 2"]:
             assert std in recognized_raw, f"{std} should be recognized"
 
-        # Custom zone columns should be unrecognized (without catalog patterns)
         assert "中心区" in unrecognized_raw
         assert "边缘区" in unrecognized_raw
         assert "边缘区到中心区" in unrecognized_raw
@@ -91,43 +87,37 @@ class TestAssessColumnConfidence:
     def test_with_catalog_patterns_oft(self):
         """With OFT catalog patterns, 'center' (normalized from 中心区) should match."""
         columns = ["中心区", "边缘区", "Trial time"]
-        # OFT requires_columns uses in_zone_center_* pattern
         oft_patterns = ["in_zone_center_*", "in_zone_*", "distance_moved", "x_center", "y_center", "trial_time"]
         result = assess_column_confidence(columns, required_patterns=oft_patterns)
         recognized_raw = {e["raw"] for e in result["recognized"]}
-        # "中心区" normalizes to "center" — does NOT match in_zone_center_* (fnmatch glob)
-        # This is expected: the alias remapping happens later via column_aliases, not here
         assert "Trial time" in recognized_raw
 
 
+class TestConceptMatching:
+    """_concept_matches_pattern — concept keywords and full names matching zone patterns."""
+
+    def test_concept_keyword_matches_zone_pattern(self):
+        """概念关键词 'center' → 满足 'in_zone_center_*' 模式。"""
+        from ethoinsight.catalog.resolve import _concept_matches_pattern
+
+        # concept keyword → zone pattern (new path)
+        assert _concept_matches_pattern("center", "in_zone_center_*")
+        assert _concept_matches_pattern("open", "in_zone_open*")
+        assert _concept_matches_pattern("open_arms", "in_zone_open_arms_*")
+        assert _concept_matches_pattern("light", "in_zone_light*")
+
+        # full concept name → zone pattern (also supported)
+        assert _concept_matches_pattern("in_zone_center", "in_zone_center_*")
+        assert _concept_matches_pattern("in_zone_center_aligned", "in_zone_center_*")
+        assert _concept_matches_pattern("in_zone_open_arms_1", "in_zone_open*")
+
+        # non-zone patterns: only fnmatch applies
+        assert _concept_matches_pattern("distance_moved", "distance_moved")
+        assert not _concept_matches_pattern("distance_moved", "velocity")
+
+
 class TestApplyAliases:
-    """_apply_aliases — column alias remapping."""
-
-    def test_concept_keyword_translation_from_catalog(self):
-        """Concept keyword 'center' → matchable in_zone_center_* column via catalog map."""
-        from ethoinsight.catalog.loader import load_catalog
-        from ethoinsight.catalog.resolve import _zone_concept_map
-
-        cat = load_catalog("open_field")
-        cmap = _zone_concept_map(cat)
-        assert cmap.get("center") == "in_zone_center_*"
-
-        columns = ["中心区", "x_center"]
-        result = _apply_aliases(columns, {"中心区": "center"}, cmap)
-        # 中心区 → concept "center" → a column that matches in_zone_center_*
-        import fnmatch
-        assert any(fnmatch.fnmatchcase(c, "in_zone_center_*") for c in result)
-        assert "x_center" in result
-
-    def test_simple_remap(self):
-        """Simple 1:1 remap."""
-        columns = ["center", "border", "x_center", "y_center"]
-        aliases = {"center": "in_zone_center_point"}
-        result = _apply_aliases(columns, aliases)
-        assert "in_zone_center_point" in result
-        assert "center" not in result
-        assert "border" in result
-        assert "x_center" in result
+    """_apply_aliases — now only removes __ignore__ columns, no renaming."""
 
     def test_ignore_column(self):
         """Column with alias None or __ignore__ is removed."""
@@ -146,12 +136,12 @@ class TestApplyAliases:
         assert "border" not in result
         assert "center" in result
 
-    def test_multiple_remaps(self):
-        """Multiple columns remapped at once."""
+    def test_columns_preserved_when_not_ignored(self):
+        """Non-ignored columns keep their physical names (no renaming to concept names)."""
         columns = ["center", "边缘区", "x_center"]
-        aliases = {"center": "in_zone_center_point", "边缘区": "in_zone_border_point"}
+        aliases = {"center": "in_zone_center", "边缘区": "in_zone_border"}
         result = _apply_aliases(columns, aliases)
-        assert result == ["in_zone_center_point", "in_zone_border_point", "x_center"]
+        assert result == ["center", "边缘区", "x_center"]
 
     def test_no_op_when_no_match(self):
         """Columns not in aliases pass through unchanged."""
@@ -187,11 +177,7 @@ class TestResolveWithColumnAliases:
     ]
 
     def test_without_aliases_raises_on_custom_columns(self, tmp_path):
-        """Without aliases, real custom zone columns (中心区) cause columns_missing for OFT.
-
-        This is the exact failure that the 34-file OFT upload hit: 中心区 normalizes to
-        中心区 (NOT center), which does not match in_zone_center_*.
-        """
+        """Without aliases, real custom zone columns (中心区) cause columns_missing for OFT."""
         try:
             resolve_metrics(
                 paradigm="open_field",
@@ -206,13 +192,9 @@ class TestResolveWithColumnAliases:
             assert any("in_zone_center" in p for p in e.details.get("missing_patterns", []))
 
     def test_with_concept_keyword_aliases_resolves(self, tmp_path):
-        """REAL pipeline: concept-keyword aliases on real normalized columns → metrics resolve.
-
-        The LLM writes a CONCEPT KEYWORD ("center"), NOT a machine column name. The catalog
-        concept-translation layer turns it into a column that satisfies in_zone_center_*.
-        """
+        """REAL pipeline: concept-keyword aliases → metrics resolve + parameters_in_use 用物理列名。"""
         aliases = {
-            "中心区": "center",   # concept keyword — translated by _zone_concept_map
+            "中心区": "center",   # concept keyword — matched by _concept_matches_pattern
             "边缘区": "border",   # concept keyword (OFT has no border metric; harmless)
             "边缘区到中心区": "__ignore__",
         }
@@ -228,6 +210,12 @@ class TestResolveWithColumnAliases:
         assert "center_time_ratio" in metric_ids
         assert "center_distance_ratio" in metric_ids
         assert "center_entry_count" in metric_ids
+
+        # New assertion (spec §4.3): parameters_in_use must use PHYSICAL column names
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "中心区", (
+            f"center_zone should be physical '中心区', got {center_metric.parameters_in_use.get('center_zone')}"
+        )
 
     def test_concrete_column_name_aliases_still_work(self, tmp_path):
         """Backward-compat: a concrete column-name target (in_zone_center_point) also works."""
@@ -246,6 +234,11 @@ class TestResolveWithColumnAliases:
         metric_ids = {m.id for m in plan.metrics}
         assert "center_time_ratio" in metric_ids
 
+        # concrete name like "in_zone_center_point" fnmatch-matches "in_zone_center_*"
+        # → qualifies as zone concept → physical override injected
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "中心区"
+
     def test_with_aliases_ignore_removes_column(self, tmp_path):
         """When a column is ignored, it should not cause issues."""
         aliases = {
@@ -262,3 +255,158 @@ class TestResolveWithColumnAliases:
         )
         metric_ids = {m.id for m in plan.metrics}
         assert "center_time_ratio" in metric_ids
+
+        # Ignored column "边缘区到中心区" should not appear in columns
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "中心区"
+
+
+class TestColumnAliasesParametersInUse:
+    """column_aliases 产出的 parameters_in_use 必须是物理列名（spec §4.1）。"""
+
+    def test_center_zone_uses_physical_column_name(self, tmp_path):
+        """OFT: column_aliases → center_zone 应为物理列。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "中心区", "边缘区", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"中心区": "center", "边缘区": "border"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "中心区", (
+            f"center_zone should be physical '中心区', got {center_metric.parameters_in_use.get('center_zone')}"
+        )
+
+    def test_anonymous_zone_is_wins_over_column_aliases(self, tmp_path):
+        """anonymous_zone_is（显式用户指定）优先于 column_aliases 派生覆盖。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "in_zone", "中心区", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"中心区": "center"},
+            overrides={"anonymous_zone_is": "in_zone"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "in_zone", (
+            f"anonymous_zone_is should win, got {center_metric.parameters_in_use.get('center_zone')}"
+        )
+
+    def test_zero_maze_open_zones_list_param(self, tmp_path):
+        """zero_maze 的 open_zones 是 list[str]（spec §4.2）。"""
+        columns = [
+            "trial_time", "x_center", "y_center",
+            "distance_moved", "velocity",
+            "open1", "open2", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="zero_maze",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"open1": "open", "open2": "open"},
+        )
+        zm_metric = next(m for m in plan.metrics if m.id == "open_zone_time_ratio")
+        open_zones = zm_metric.parameters_in_use.get("open_zones", [])
+        assert isinstance(open_zones, list), f"open_zones should be list, got {type(open_zones)}"
+        assert set(open_zones) == {"open1", "open2"}, f"open_zones should be physical cols, got {open_zones}"
+
+    def test_concrete_concept_name_also_produces_physical_override(self, tmp_path):
+        """完整概念名 'in_zone_center' 也应产出物理列名覆盖。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "中心区", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"中心区": "in_zone_center"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "中心区"
+
+    def test_non_zone_alias_does_not_inject_override(self, tmp_path):
+        """非 zone 的 alias 不触发 zone override 注入。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "in_zone", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"distance_moved": "velocity"},
+            overrides={"anonymous_zone_is": "in_zone"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "in_zone"
+
+    def test_direct_target_param_wins_over_column_aliases(self, tmp_path):
+        """直接传 target_param（center_zone）优先于 column_aliases 派生覆盖（review 发现 #1）。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "中心区", "in_zone", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"中心区": "center"},
+            overrides={"center_zone": "in_zone"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        assert center_metric.parameters_in_use["center_zone"] == "in_zone", (
+            f"direct target_param should win, got {center_metric.parameters_in_use.get('center_zone')}"
+        )
+
+    def test_multicolumn_same_concept_produces_str_for_non_wrap_list(self, tmp_path):
+        """OFT（wrap_list=False）多列映射到同一概念 → str（取首个），非 list（review 发现 #2）。"""
+        columns = [
+            "trial_time", "recording_time",
+            "x_center", "y_center",
+            "distance_moved", "velocity",
+            "中心区", "中心区2", "result_1",
+        ]
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=columns,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases={"中心区": "center", "中心区2": "center"},
+        )
+        center_metric = next(m for m in plan.metrics if m.id == "center_time_ratio")
+        cz = center_metric.parameters_in_use["center_zone"]
+        assert isinstance(cz, str), (
+            f"non-wrap_list target_param should be str, got {type(cz).__name__}: {cz}"
+        )
+        assert cz in ("中心区", "中心区2"), f"should pick one physical col, got {cz}"
