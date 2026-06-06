@@ -17,8 +17,6 @@ from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
-from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
-from ethoinsight.parse._core import detect_ethovision, parse_header
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +37,22 @@ _ERROR_HINTS: dict[str, str] = {
     ),
     "columns_missing": (
         "缺失的列是 in_zone_* 分析区列时，通常不是数据缺列，而是用户自定义了分析区列名"
-        "（如把中心区命名为「中心区」/「Center」）——先调 inspect_uploaded_file 看 "
-        "column_assessment.open_questions，按 ethoinsight-column-confirmation skill 与用户对齐列语义，"
+        "（如把中心区命名为「中心区」/「Center」）——先调 inspect_uploaded_file(paradigm=...) 看是否有"
+        "未识别的自定义分析区列，按 ethoinsight-column-confirmation skill 与用户对齐列语义，"
         "再调 set_experiment_paradigm(column_semantics={...}) 落盘后重试 prep_metric_plan。"
         "仅当确认数据真的没有该分析区列（录制设置漏了）时，才用 ask_clarification 让用户确认实验录制设置。"
+    ),
+    "zone_unnamed": (
+        "数据里有一个未命名分析区(in_zone)，需要确认它代表哪个目标区域后再分析。"
+        "第一步：调 inspect_uploaded_file 查看该文件的 anonymous_zone_evidence，"
+        "它给出 in_zone=1 与 in_zone=0 的占时比例。"
+        "第二步：用 ask_clarification 把占时证据呈现给用户并请其确认。"
+        "行为学常识可辅助判断：动物在焦虑回避区（旷场中心区 / 零迷宫开放臂 / 明暗箱亮室）通常停留时间较短，"
+        "占时低的一侧更可能是目标区，最终以用户确认为准。"
+        "第三步：用户确认后写 parameter_overrides={\"anonymous_zone_is\": \"in_zone\"} "
+        "再重调 prep_metric_plan。"
+        "若用户判断该区不是目标区，请说明数据需在 EthoVision 重新命名区域后导出，"
+        "以保证分析建立在明确区域定义之上。"
     ),
     "schema_violation": (
         "catalog YAML 损坏——这是项目内部 bug。present_files 把错误信息呈现给用户，让他报 bug。"
@@ -68,6 +78,7 @@ def prep_metric_plan_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
     uploaded_files: list[str],
     paradigm: str,
+    groups: dict[str, str] | None = None,
 ) -> dict:
     """一步生成 plan_metrics.json，无需 bash。
 
@@ -84,6 +95,7 @@ def prep_metric_plan_tool(
                 其他 paradigm_key (如 'shoaling'/'tail_suspension'/'morris_water_maze' 等)
                 会在 catalog.resolve 阶段报错; lead 应在 identify_ev19_template 看到
                 status=unsupported 时就反问用户, 不要走到这一步
+      groups: 可选的 subject -> group_name 映射。当用户已经在 ask_clarification 中说清分组(如"第一个是实验组，第二个是对照组")，lead 必须把它翻译成 dict 传进来。dict 的 key 必须是 uploaded_files 列表中的某个文件路径(普通多文件直接用文件路径；FST 多 sheet 用 sheet-suffixed virtual path 如 "/mnt/.../foo.xlsx::轨迹-Arena 1-Subject 1")，value 是 group_name 字符串(如 "treatment" / "control" / "vehicle")。详见 ethoinsight-grouping skill 的 references/lead-translates-answer.md。传入后会写入 /mnt/user-data/workspace/groups.json 并在 plan_metrics.json 的 inputs.groups_file 字段记录路径，下游 code-executor 据此进行分组聚合统计，避免 code-executor 看不到分组幻觉脚本去探测 drug 列。None = 无分组信息(单组分析，或 lead 还没收集到分组)。
 
     Returns:
       status="ok" 时:
@@ -94,9 +106,9 @@ def prep_metric_plan_tool(
       status="error" 时:
         {"status": "error",
          "error_code": "file_not_found"|"format_unrecognized"|"parse_failed"|
-                       "unknown_paradigm"|"columns_missing"|"schema_violation"|
-                       "empty_plan"|"unknown_metric"|"workspace_missing"|
-                       "no_files_provided",
+                       "unknown_paradigm"|"columns_missing"|"zone_unnamed"|
+                       "schema_violation"|"empty_plan"|"unknown_metric"|
+                       "workspace_missing"|"no_files_provided",
          "message": str,
          "hint": str,
          "failed_file": str | None}
@@ -118,6 +130,13 @@ def prep_metric_plan_tool(
     real_workspace_path = thread_data["workspace_path"]
     # Lazy import to avoid circular dependency (sandbox.tools → agents.factory → tools.builtins → here)
     from deerflow.sandbox.tools import replace_virtual_path
+
+    # Lazy import of the ethoinsight domain library: keep the deerflow harness
+    # importable (agent stack / middleware / other tools) without ethoinsight
+    # installed. The package is only required when this tool actually runs.
+    from ethoinsight.catalog.loader import load_common_catalog
+    from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
+    from ethoinsight.parse._core import detect_ethovision, parse_header
 
     # Step 1.5: expand multi-sheet XLSX files into individual sheet entries.
     # FST-style exports pack 2 subjects in 1 XLSX via separate sheets;
@@ -187,18 +206,61 @@ def prep_metric_plan_tool(
                     failed_file=uploaded_file,
                 )
 
-    # Step 4.6 (Sprint 1 列语义对齐): read column_aliases from experiment-context.json.
-    # 写入端 = set_experiment_paradigm(column_semantics=...) 投影出的 column_aliases。
-    # 不读到它 → resolve 拿不到别名 → 自定义分析区列(中心区/边缘区)仍 columns_missing。
+    # Step 4.5/4.6: read parameter_overrides + column_aliases from experiment-context.json.
+    # parameter_overrides (Sprint 4.5): 用户确认的参数覆盖 + analysis_config_id。
+    # column_aliases (Sprint 1 列语义对齐): set_experiment_paradigm(column_semantics=...)
+    #   投影出的别名表；不读到它 → resolve 拿不到别名 → 自定义分析区列仍 columns_missing。
     from deerflow.agents.middlewares.experiment_context import read_context
 
     ctx = read_context(real_workspace_path)
+    parameter_overrides = ctx.get("parameter_overrides", {}) if ctx else {}
+    analysis_config_id = ctx.get("analysis_config_id", "PENDING") if ctx else "PENDING"
     column_aliases = ctx.get("column_aliases") if ctx else None
 
     # Step 5: resolve catalog → PlanMetrics
     # raw_files 走虚拟路径,避免宿主机路径泄漏到 plan_metrics.json 后被 subagent
     # 照抄进 bash --input。IO 部分(detect_ethovision / parse_header)已在 Step 2-4
     # 完成,resolve_metrics 内部按 raw_files 展开 N 个 PlanMetric(每个 subject 一个)。
+
+    # Step 4.5 (Bug #3 fix 2026-05-28): 若 lead 传入 groups 映射,写入 groups.json
+    # 并透传给 resolve_metrics;否则 code-executor 看不到分组会幻觉脚本探测 drug 列。
+    groups_file_virtual: str | None = None
+    groups_file_real: str | None = None
+    if groups:
+        if not isinstance(groups, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in groups.items()
+        ):
+            return _error_result(
+                "schema_violation",
+                f"groups must be dict[str, str] (subject -> group_name), got {type(groups).__name__}",
+            )
+        # 校验所有 key 都对应 uploaded_files 中的某个文件
+        unknown_keys = [k for k in groups if k not in uploaded_files]
+        if unknown_keys:
+            return _error_result(
+                "schema_violation",
+                f"groups keys 必须出现在 uploaded_files 中: 未知键 {unknown_keys}; "
+                f"可用键 {uploaded_files}",
+            )
+        groups_path = Path(real_workspace_path) / "groups.json"
+        try:
+            groups_path.write_text(
+                json.dumps(groups, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as e:
+            return _error_result(
+                "parse_failed",
+                f"Failed to write groups.json: {e}",
+            )
+        groups_file_real = str(groups_path)
+        groups_file_virtual = "/mnt/user-data/workspace/groups.json"
+        logger.info(
+            "prep_metric_plan: wrote groups.json with %d entries, groups=%s",
+            len(groups),
+            sorted(set(groups.values())),
+        )
+
     try:
         plan = resolve_metrics(
             paradigm=paradigm,
@@ -207,6 +269,9 @@ def prep_metric_plan_tool(
             workspace_dir=real_workspace_path,
             virtual_workspace_dir="/mnt/user-data/workspace",
             column_aliases=column_aliases,
+            groups_file=groups_file_virtual,
+            overrides=parameter_overrides,  # Sprint 4.5: 把用户确认的参数覆盖真正传入计算（非仅展示）
+            common_catalog=load_common_catalog(),  # Sprint 4.5: shared_parameters 来源；缺它则 velocity_*/pendulum_* 等共享参数进不了 parameters_in_use，override 无可覆盖
         )
     except ResolveError as e:
         return _error_result(
@@ -223,6 +288,10 @@ def prep_metric_plan_tool(
 
     # Step 6: serialize plan to workspace/plan_metrics.json
     plan_dict = plan_metrics_to_dict(plan)
+    # Sprint 4.5: embed analysis_config_id in plan for lineage tracing
+    plan_dict["analysis_config_id"] = analysis_config_id
+    if parameter_overrides:
+        plan_dict["parameter_overrides"] = parameter_overrides
     plan_path = Path(real_workspace_path) / "plan_metrics.json"
     try:
         plan_path.write_text(json.dumps(plan_dict, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -231,6 +300,17 @@ def prep_metric_plan_tool(
             "parse_failed",
             f"Failed to write plan_metrics.json: {e}",
         )
+
+    # Step 6.5: lineage — write overrides file when overrides exist (Sprint 4.5)
+    if parameter_overrides:
+        overrides_path = Path(real_workspace_path) / f"overrides_{analysis_config_id}.json"
+        try:
+            overrides_path.write_text(
+                json.dumps({"analysis_config_id": analysis_config_id, "parameter_overrides": parameter_overrides}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.warning("Failed to write overrides file %s (non-critical)", overrides_path)
 
     # Step 7: build summary (paradigm/metric_count/subject_count/metric_ids,不含完整 plan)
     metric_dicts = plan_dict.get("metrics", [])
@@ -249,6 +329,7 @@ def prep_metric_plan_tool(
     return {
         "status": "ok",
         "plan_path": "/mnt/user-data/workspace/plan_metrics.json",
+        "analysis_config_id": analysis_config_id,
         "plan_summary": {
             "paradigm": paradigm,
             "metric_count": len(metric_ids),

@@ -1,0 +1,86 @@
+# Case-006 TST — 预期分析结论
+#
+# TST 指标（来自 ethoinsight catalog）：
+#   immobility_time       — 不动时间（抑郁核心指标，值越高越抑郁）
+#   immobility_latency    — 首次不动潜伏期（值越低越抑郁）
+#   immobility_bout_count — 不动次数
+#
+# TST 与 FST 类似，都是抑郁样行为（行为绝望）范式。
+# 区别：TST 用悬挂而非游泳，避免了 FST 的体温降低和游泳能力混杂。
+# ============================================================
+
+paradigm: "tst"
+species: ""                    # TODO
+n_subjects: 0                  # TODO
+groups:                        # TODO
+  # control: ["Subject 1", "Subject 2", "Subject 3"]
+  # treatment: ["Subject 4", "Subject 5", "Subject 6"]
+
+# ============================================================
+# Layer A: 指标数值期望
+# ============================================================
+expected_metrics:
+  # --- 核心抑郁指标 ---
+  - metric: immobility_time
+    group: "control"
+    expected_range: []         # TODO: 对照组不动时间（秒）
+    unit: "seconds"
+    note: "小鼠 TST 典型 6 分钟测试，后 4 分钟不动时间约 80-160 秒"
+
+  - metric: immobility_time
+    group: "treatment"
+    expected_range: []         # TODO: 抗抑郁 → 不动减少
+    unit: "seconds"
+
+  # --- 潜伏期 ---
+  - metric: immobility_latency
+    group: "control"
+    expected_range: []         # TODO
+    unit: "seconds"
+
+  - metric: immobility_latency
+    group: "treatment"
+    expected_range: []         # TODO
+    unit: "seconds"
+
+  # --- 不动次数 ---
+  - metric: immobility_bout_count
+    group: "control"
+    expected_range: []         # TODO
+    unit: "count"
+
+  - metric: immobility_bout_count
+    group: "treatment"
+    expected_range: []         # TODO
+    unit: "count"
+
+# ============================================================
+# Layer B: 洞察期望
+# ============================================================
+expected_findings:
+
+  - type: statistical_conclusion
+    claim: ""                  # TODO
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO: 如 ["显著差异", "不动时间"]
+    forbidden_claims: []       # TODO
+
+  - type: phenotype_indication
+    claim: ""                  # TODO: 如 "imipramine 表现出抗抑郁效应"
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO
+    forbidden_claims: []       # TODO: 如 ["焦虑"]（TST 不是焦虑范式）
+    severity: "high"
+
+  # - type: confound_note
+  #   claim: "TST 悬挂姿势异常可能导致假阳性不动，需检查视频确认"
+  #   required_keywords: ["悬挂", "姿势"]
+  #   severity: "moderate"
+
+# ============================================================
+# Layer C: 禁区
+# ============================================================
+should_not_contain:
+  # TODO: 如
+  # - "焦虑"（TST 是抑郁范式）
+  # - "游泳"（这是 FST 的术语，与 TST 无关）

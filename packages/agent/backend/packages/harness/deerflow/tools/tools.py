@@ -13,6 +13,10 @@ from deerflow.tools.builtins import (
     inspect_uploaded_file_tool,
     prep_metric_plan_tool,
     present_file_tool,
+    seal_chart_maker_handoff,
+    seal_code_executor_handoff,
+    seal_data_analyst_handoff,
+    seal_report_writer_handoff,
     task_tool,
     view_image_tool,
 )
@@ -29,6 +33,10 @@ BUILTIN_TOOLS = [
     identify_ev19_template_tool,
     inspect_uploaded_file_tool,
     prep_metric_plan_tool,
+    seal_code_executor_handoff,
+    seal_data_analyst_handoff,
+    seal_chart_maker_handoff,
+    seal_report_writer_handoff,
 ]
 
 SUBAGENT_TOOLS = [

@@ -31,6 +31,7 @@ author: noldus-insight
 |---|---|
 | 识别用户的实验 / 模板 / 变体 | **调 `identify_ev19_template` 工具**（1 次 tool call 完成）。不要自己 `read_file` 读取引用文件。 |
 | 分析 / 解读 / 写报告 | `read_file` `references/by-experiment/<范式>.md`（领域知识供 data-analyst / report-writer 使用） |
+| 回答"EV19 如何计算 X" | `read_file` `references/ev19-dependent-variables.md`（EV19 因变量权威公式，供 knowledge-assistant 引用） |
 
 **路径占位符**：
 

@@ -109,3 +109,23 @@ class TestSkillReferencePresent:
     def test_section_references_lead_interaction_skill(self):
         section = _section()
         assert "ethoinsight-lead-interaction" in section
+
+
+class TestClarificationWaitingGuidance:
+    """2026-06-04: lead must stay silent (not re-ask) when re-invoked while a
+    previously-asked ask_clarification is still unanswered. Locks the prompt
+    guidance that pairs with the TodoMiddleware await-clarification short-circuit
+    (the repeated '要不要画图' fix).
+    """
+
+    def test_prompt_has_stay_silent_while_awaiting_clarification(self):
+        p = _prompt()
+        assert "已发出 ask_clarification、用户尚未回复时" in p
+        assert "保持静默等待即可" in p
+
+    def test_guidance_is_positive_framed_no_reverse_activation(self):
+        # CLAUDE.md §6: positive phrasing only. The new line must not use the
+        # banned negative imperatives around re-asking.
+        p = _prompt()
+        assert "不要重复问" not in p
+        assert "禁止重述" not in p

@@ -81,7 +81,7 @@ export default function NewAgentPage() {
 
   const threadId = useMemo(() => uuid(), []);
 
-  const [thread, sendMessage] = useThreadStream({
+  const { thread: streamThread, sendMessage } = useThreadStream({
     threadId: step === "chat" ? threadId : undefined,
     context: {
       mode: "auto",
@@ -105,6 +105,7 @@ export default function NewAgentPage() {
       });
     },
   });
+  const thread = streamThread;
 
   useEffect(() => {
     if (typeof window === "undefined" || step !== "chat") {

@@ -10,11 +10,9 @@
 
 利用啮齿类动物对开放高处的天然回避倾向，通过量化开放臂探索行为来评估焦虑样行为水平。
 
-## 🟡 适用模板（按推荐顺序 + 取舍说明）
+## 🟡 EV19 模板识别
 
-- `PlusMaze-FewZones` — **推荐首选**。包含 Closed arms + Open arms zone，覆盖开臂时间百分比、开臂进入百分比、总进臂次数等核心指标，是 EPM 最通用的配置
-- `PlusMaze-AllZones` — 额外包含 head dip zone，仅当需要分析探头行为时选用
-- `PlusMaze-NoZones` — 无预定义 zone，需实验员自行划定区域；不推荐常规使用
+调 `identify_ev19_template` 工具获取候选模板，**不要自己列举候选**。工具会根据数据结构返回唯一或 ambiguous 结果。
 
 ## 🟡 必须计算的指标
 

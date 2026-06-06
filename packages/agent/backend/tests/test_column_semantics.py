@@ -14,8 +14,26 @@ import pytest
 class TestInspectReturnsColumnAssessment:
     """inspect_uploaded_file returns column_assessment + open_questions."""
 
-    @pytest.mark.asyncio
-    async def test_inspect_returns_open_questions_for_custom_columns(
+    def _setup_txt(self, tmp_path, ethovision_txt_file):
+        """Write a real-like EthoVision TXT into uploads_path and return (runtime, virtual_path)."""
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        txt_path = uploads / "test.txt"
+        # EthoVision TXT files need UTF-16 LE with BOM (\xff\xfe)
+        with open(txt_path, "wb") as f:
+            f.write(b"\xff\xfe")
+            f.write(ethovision_txt_file.encode("utf-16-le"))
+        runtime = MagicMock()
+        runtime.state = {
+            "thread_data": {
+                "workspace_path": str(tmp_path / "workspace"),
+                "uploads_path": str(uploads),
+                "outputs_path": str(tmp_path / "outputs"),
+            }
+        }
+        return runtime, "/mnt/user-data/uploads/test.txt"
+
+    def test_inspect_returns_open_questions_for_custom_columns(
         self, tmp_path, ethovision_txt_file
     ):
         """With a real-like EthoVision file, inspect returns column assessment."""
@@ -23,23 +41,10 @@ class TestInspectReturnsColumnAssessment:
             inspect_uploaded_file_tool,
         )
 
-        # Build a minimal TXT file that parse_header can handle
-        txt_path = tmp_path / "test.txt"
-        # EthoVision TXT files need UTF-16 LE with BOM (\xff\xfe)
-        with open(txt_path, "wb") as f:
-            f.write(b"\xff\xfe")
-            f.write(ethovision_txt_file.encode("utf-16-le"))
-
-        runtime = MagicMock()
-        runtime.state = {
-            "thread_data": {
-                "workspace_path": str(tmp_path),
-            }
-        }
-
+        runtime, vpath = self._setup_txt(tmp_path, ethovision_txt_file)
         result = inspect_uploaded_file_tool.func(
             runtime=runtime,
-            uploaded_files=[str(txt_path)],
+            uploaded_file=vpath,
             paradigm="open_field",
         )
         assert result["status"] == "ok"
@@ -48,47 +53,42 @@ class TestInspectReturnsColumnAssessment:
         assert "recognized" in result["column_assessment"]
         assert "unrecognized" in result["column_assessment"]
 
-    @pytest.mark.asyncio
-    async def test_inspect_without_paradigm(self, tmp_path, ethovision_txt_file):
+    def test_inspect_without_paradigm(self, tmp_path, ethovision_txt_file):
         """Without paradigm, inspect still works (degraded but no false unrecognized)."""
         from deerflow.tools.builtins.inspect_uploaded_file_tool import (
             inspect_uploaded_file_tool,
         )
 
-        txt_path = tmp_path / "test.txt"
-        with open(txt_path, "wb") as f:
-            f.write(b"\xff\xfe")
-            f.write(ethovision_txt_file.encode("utf-16-le"))
-
-        runtime = MagicMock()
-        runtime.state = {
-            "thread_data": {
-                "workspace_path": str(tmp_path),
-            }
-        }
-
+        runtime, vpath = self._setup_txt(tmp_path, ethovision_txt_file)
         result = inspect_uploaded_file_tool.func(
             runtime=runtime,
-            uploaded_files=[str(txt_path)],
+            uploaded_file=vpath,
             # paradigm=None — should still return ok (degraded mode)
         )
         assert result["status"] == "ok"
         assert "column_assessment" in result
 
-    @pytest.mark.asyncio
-    async def test_inspect_no_files(self):
-        """Empty uploaded_files returns error."""
+    def test_inspect_missing_file(self, tmp_path):
+        """Nonexistent file returns error."""
         from deerflow.tools.builtins.inspect_uploaded_file_tool import (
             inspect_uploaded_file_tool,
         )
 
+        (tmp_path / "uploads").mkdir()
         runtime = MagicMock()
+        runtime.state = {
+            "thread_data": {
+                "workspace_path": str(tmp_path / "workspace"),
+                "uploads_path": str(tmp_path / "uploads"),
+                "outputs_path": str(tmp_path / "outputs"),
+            }
+        }
         result = inspect_uploaded_file_tool.func(
             runtime=runtime,
-            uploaded_files=[],
+            uploaded_file="/mnt/user-data/uploads/nope.txt",
         )
         assert result["status"] == "error"
-        assert result["error_code"] == "no_files_provided"
+        assert result["error_code"] == "file_not_found"
 
 
 # ── column_semantics projection tests ─────────────────────────────────
@@ -99,9 +99,11 @@ class TestColumnSemanticsProjection:
     def test_derive_column_aliases_basic(self):
         """_derive_column_aliases keys aliases by RE-NORMALIZED raw_name (+ raw verbatim).
 
-        It does NOT trust the LLM-supplied 'normalized' field. For 中心区,
-        normalize_column_name("中心区") == "中心区", so the alias key is 中心区 (not 'center').
-        resolves_to holds a concept keyword which the resolve layer translates later.
+        It does NOT trust the LLM-supplied 'normalized' field — it recomputes via
+        normalize_column_name(raw_name). On the current pipeline normalize("中心区")=="center",
+        so the alias dict contains BOTH "center" (normalized) and "中心区" (raw verbatim) →
+        the remap fires whether resolve sees the raw or the normalized column. resolves_to
+        holds a concept keyword which the resolve layer translates later.
         """
         from deerflow.agents.middlewares.experiment_context import (
             _derive_column_aliases,
@@ -112,7 +114,7 @@ class TestColumnSemanticsProjection:
             "columns": {
                 "中心区": {
                     "raw_name": "中心区",
-                    "normalized": "center",  # WRONG LLM value — must be ignored by the code
+                    "normalized": "WRONG",  # bogus LLM value — must be ignored by the code
                     "resolves_to": "center",  # concept keyword
                     "meaning_zh": "中心分析区",
                     "confirmed": True,
@@ -126,10 +128,11 @@ class TestColumnSemanticsProjection:
             },
         }
         aliases = _derive_column_aliases(cs)
-        # Keyed by re-normalized raw_name (中心区 stays 中心区) — NOT the bogus "center".
+        # Keyed by BOTH re-normalized raw_name AND raw_name verbatim.
         assert aliases["中心区"] == "center"
         assert aliases["边缘区"] == "border"
-        assert "center" not in aliases  # the wrong LLM "normalized" did not leak in as a key
+        # The bogus LLM "normalized": "WRONG" did NOT leak in as a key.
+        assert "WRONG" not in aliases
 
     def test_derive_column_aliases_skips_unconfirmed(self):
         """Unconfirmed columns are NOT included in aliases."""

@@ -1,4 +1,4 @@
-"""Zero Maze: 开放区移动距离占比 (open zone distance ratio).
+"""Zero Maze: 开放区移动距离 (open zone distance, cm).
 
 CLI: python -m ethoinsight.scripts.zero_maze.compute_open_zone_distance \
        --input <轨迹文件> --output <metric.json>
@@ -18,6 +18,7 @@ from ethoinsight.parse import parse_trajectory
 from ethoinsight.scripts._cli import (
     emit_result,
     make_compute_parser,
+    parse_parameters,
     save_output_json,
 )
 
@@ -30,9 +31,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     df = parse_trajectory(args.input)
-    value = compute_open_zone_distance(df)
+    parameters = parse_parameters(args)
+    value = compute_open_zone_distance(df, **parameters)
 
-    payload = {"metric": METRIC_NAME, "value": value}
+    payload = {"metric": METRIC_NAME, "value": value, "parameters_used": parameters}
     save_output_json(args.output, payload)
     emit_result(payload)
     return 0

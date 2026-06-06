@@ -186,7 +186,7 @@ class TestComputeOpenZoneTime:
 class TestComputeOpenZoneDistance:
     """Tests for compute_open_zone_distance."""
 
-    def test_distance_ratio_matches_open_frames(self):
+    def test_distance_matches_open_frames(self):
         from ethoinsight.metrics.zero_maze import compute_open_zone_distance
 
         rng = np.random.default_rng(0)
@@ -204,7 +204,7 @@ class TestComputeOpenZoneDistance:
             }
         )
         result = compute_open_zone_distance(df)
-        expected = dist[:25].sum() / dist.sum()
+        expected = dist[:25].sum()
         assert result == pytest.approx(expected)
 
     def test_no_distance_moved_returns_none(self):
@@ -227,7 +227,7 @@ class TestComputeOpenZoneDistance:
         result = compute_open_zone_distance(df)
         assert result is None
 
-    def test_zero_total_distance_returns_none(self):
+    def test_zero_total_distance_returns_zero(self):
         from ethoinsight.metrics.zero_maze import compute_open_zone_distance
 
         n = 50
@@ -241,9 +241,9 @@ class TestComputeOpenZoneDistance:
             }
         )
         result = compute_open_zone_distance(df)
-        assert result is None
+        assert result == 0.0
 
-    def test_all_in_open_zone_returns_1(self):
+    def test_all_in_open_zone_equals_total_distance(self):
         from ethoinsight.metrics.zero_maze import compute_open_zone_distance
 
         n = 50
@@ -257,7 +257,7 @@ class TestComputeOpenZoneDistance:
             }
         )
         result = compute_open_zone_distance(df)
-        assert result == pytest.approx(1.0)
+        assert result == pytest.approx(50.0)
 
 
 # ============================================================================

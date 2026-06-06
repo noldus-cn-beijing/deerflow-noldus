@@ -47,6 +47,41 @@ def _prepare_database_sqlite_checkpointer_path(db_config) -> str:
     return conn_str
 
 
+def _build_postgres_pool(conn_string: str):
+    """Build an AsyncConnectionPool with TCP keepalive and connection checking."""
+    from psycopg.rows import dict_row
+    from psycopg_pool import AsyncConnectionPool
+
+    return AsyncConnectionPool(
+        conn_string,
+        kwargs={
+            "autocommit": True,
+            "prepare_threshold": 0,
+            "row_factory": dict_row,
+            "keepalives": 1,
+            "keepalives_idle": 60,
+            "keepalives_interval": 10,
+            "keepalives_count": 6,
+        },
+        check=AsyncConnectionPool.check_connection,
+    )
+
+
+def _ensure_postgres_imports():
+    """Import and return (AsyncPostgresSaver, AsyncConnectionPool), raising ImportError on failure."""
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    except ImportError as exc:
+        raise ImportError(POSTGRES_INSTALL) from exc
+
+    try:
+        from psycopg_pool import AsyncConnectionPool
+    except ImportError as exc:
+        raise ImportError(POSTGRES_INSTALL) from exc
+
+    return AsyncPostgresSaver, AsyncConnectionPool
+
+
 # ---------------------------------------------------------------------------
 # Async factory
 # ---------------------------------------------------------------------------
@@ -67,26 +102,20 @@ async def _async_checkpointer(config) -> AsyncIterator[Checkpointer]:
         except ImportError as exc:
             raise ImportError(SQLITE_INSTALL) from exc
 
-        from deerflow.runtime.checkpointer.deerflow_saver import (
-            DeerFlowAsyncSqliteSaver,
-        )
-
         conn_str = await asyncio.to_thread(_prepare_sqlite_checkpointer_path, config.connection_string or "store.db")
-        async with DeerFlowAsyncSqliteSaver.from_conn_string(conn_str) as saver:
+        async with AsyncSqliteSaver.from_conn_string(conn_str) as saver:
             await saver.setup()
             yield saver
         return
 
     if config.type == "postgres":
-        try:
-            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        except ImportError as exc:
-            raise ImportError(POSTGRES_INSTALL) from exc
-
         if not config.connection_string:
             raise ValueError(POSTGRES_CONN_REQUIRED)
 
-        async with AsyncPostgresSaver.from_conn_string(config.connection_string) as saver:
+        AsyncPostgresSaver, _ = _ensure_postgres_imports()
+        pool = _build_postgres_pool(config.connection_string)
+        async with pool:
+            saver = AsyncPostgresSaver(conn=pool)
             await saver.setup()
             yield saver
         return
@@ -114,26 +143,20 @@ async def _async_checkpointer_from_database(db_config) -> AsyncIterator[Checkpoi
         except ImportError as exc:
             raise ImportError(SQLITE_INSTALL) from exc
 
-        from deerflow.runtime.checkpointer.deerflow_saver import (
-            DeerFlowAsyncSqliteSaver,
-        )
-
         conn_str = await asyncio.to_thread(_prepare_database_sqlite_checkpointer_path, db_config)
-        async with DeerFlowAsyncSqliteSaver.from_conn_string(conn_str) as saver:
+        async with AsyncSqliteSaver.from_conn_string(conn_str) as saver:
             await saver.setup()
             yield saver
         return
 
     if db_config.backend == "postgres":
-        try:
-            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        except ImportError as exc:
-            raise ImportError(POSTGRES_INSTALL) from exc
-
         if not db_config.postgres_url:
             raise ValueError("database.postgres_url is required for the postgres backend")
 
-        async with AsyncPostgresSaver.from_conn_string(db_config.postgres_url) as saver:
+        AsyncPostgresSaver, _ = _ensure_postgres_imports()
+        pool = _build_postgres_pool(db_config.postgres_url)
+        async with pool:
+            saver = AsyncPostgresSaver(conn=pool)
             await saver.setup()
             yield saver
         return

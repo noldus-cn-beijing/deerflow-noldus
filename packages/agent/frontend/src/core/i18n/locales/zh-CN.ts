@@ -36,6 +36,7 @@ export const zhCN: Translations = {
     custom: "自定义",
     notAvailableInDemoMode: "在演示模式下不可用",
     loading: "加载中...",
+    loadMore: "加载更多",
     version: "版本",
     lastUpdated: "最后更新",
     code: "代码",
@@ -76,6 +77,7 @@ export const zhCN: Translations = {
     createSkillPrompt:
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
+    tooManyFiles: "文件数量超出上限，一次最多上传 {max} 份。",
     mode: "模式",
     autoMode: "全自动",
     autoModeDescription:
@@ -301,9 +303,34 @@ export const zhCN: Translations = {
   // Token Usage
   tokenUsage: {
     title: "Token 用量",
+    label: "Token",
     input: "输入",
     output: "输出",
     total: "总计",
+    view: "查看用量",
+    unavailable: "暂不可用",
+    unavailableShort: "N/A",
+    note: "用量由模型自动报告",
+    presets: {
+      off: "关闭",
+      summary: "摘要",
+      perTurn: "每轮",
+      debug: "调试",
+    },
+    presetDescriptions: {
+      off: "不显示 token 用量",
+      summary: "在标题栏显示总用量",
+      perTurn: "每轮对话显示用量",
+      debug: "每步操作显示详细用量",
+    },
+    finalAnswer: "最终回答",
+    stepTotal: "步骤合计",
+    sharedAttribution: "共享归属",
+    subagent: (description: string) => `子代理: ${description}`,
+    startTodo: (content: string) => `开始: ${content}`,
+    completeTodo: (content: string) => `完成: ${content}`,
+    updateTodo: (content: string) => `更新: ${content}`,
+    removeTodo: (content: string) => `移除: ${content}`,
   },
 
   // Shortcuts

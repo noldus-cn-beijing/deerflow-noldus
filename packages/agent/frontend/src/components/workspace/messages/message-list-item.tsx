@@ -23,6 +23,7 @@ import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   extractContentFromMessage,
+  extractQualityWarnings,
   extractReasoningContentFromMessage,
   parseUploadedFiles,
   stripUploadedFilesTag,
@@ -34,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { CopyButton } from "../copy-button";
 
 import { MarkdownContent } from "./markdown-content";
+import { QualityWarningBanner } from "./quality-warning-banner";
 
 export function MessageListItem({
   className,
@@ -170,6 +172,11 @@ function MessageContent_({
       <RichFilesList files={files} threadId={thread_id} />
     ) : null;
 
+  const qualityWarnings = useMemo(
+    () => extractQualityWarnings(message as unknown as Record<string, unknown>),
+    [message],
+  );
+
   // Uploading state: mock AI message shown while files upload
   if (message.additional_kwargs?.element === "task") {
     return (
@@ -217,6 +224,9 @@ function MessageContent_({
           isStreaming={isLoading}
           reasoningContent={reasoningContent}
         />
+      )}
+      {qualityWarnings.length > 0 && (
+        <QualityWarningBanner warnings={qualityWarnings} />
       )}
       {contentToDisplay && (
         <MarkdownContent

@@ -1,0 +1,81 @@
+# Case-003 LDB — 预期分析结论
+#
+# LDB 指标（来自 ethoinsight catalog）：
+#   light_time_ratio  — 亮室时间比例（焦虑核心指标，值越低越焦虑）
+#   transition_count  — 跨室次数（明暗穿梭，值越低越焦虑）
+#   light_latency     — 首次进入亮室潜伏期（值越高越焦虑）
+# ============================================================
+
+paradigm: "ldb"
+species: ""                    # TODO
+n_subjects: 0                  # TODO
+groups:                        # TODO
+  # control: ["Subject 1", "Subject 2", "Subject 3"]
+  # treatment: ["Subject 4", "Subject 5", "Subject 6"]
+
+# ============================================================
+# Layer A: 指标数值期望
+# ============================================================
+expected_metrics:
+  # --- 核心焦虑指标 ---
+  - metric: light_time_ratio
+    group: "control"
+    expected_range: []         # TODO: 对照组在亮室的时间比例（如 [0.30, 0.60]）
+    unit: "ratio"
+
+  - metric: light_time_ratio
+    group: "treatment"
+    expected_range: []         # TODO: 处理组亮室时间比例
+    unit: "ratio"
+
+  # --- 活动性 / 探索指标 ---
+  - metric: transition_count
+    group: "control"
+    expected_range: []         # TODO: 对照组跨室次数（如 [10, 30]）
+    unit: "count"
+    note: "跨室次数反映探索活性，也与焦虑相关（越焦虑越不敢穿梭）"
+
+  - metric: transition_count
+    group: "treatment"
+    expected_range: []         # TODO: 处理组跨室次数
+    unit: "count"
+
+  # --- 潜伏期 ---
+  - metric: light_latency
+    group: "control"
+    expected_range: []         # TODO: 对照组首次进入亮室的潜伏期（秒）
+    unit: "seconds"
+
+  - metric: light_latency
+    group: "treatment"
+    expected_range: []         # TODO: 处理组潜伏期（焦虑增加则更长）
+    unit: "seconds"
+
+# ============================================================
+# Layer B: 洞察期望
+# ============================================================
+expected_findings:
+
+  - type: statistical_conclusion
+    claim: ""                  # TODO
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO
+    forbidden_claims: []       # TODO
+
+  - type: phenotype_indication
+    claim: ""                  # TODO
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO
+    forbidden_claims: []       # TODO
+    severity: "high"
+
+  # - type: confound_note       # 如果跨室次数过低
+  #   claim: "跨室次数 < 4，需考虑运动抑制或设备问题"
+  #   required_keywords: ["跨室", "运动"]
+  #   severity: "moderate"
+
+# ============================================================
+# Layer C: 禁区
+# ============================================================
+should_not_contain:
+  # TODO

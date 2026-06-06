@@ -20,6 +20,7 @@ def test_outlier_finding_schema():
 def test_data_analyst_handoff_accepts_outlier_findings():
     h = DataAnalystHandoff(
         status="completed",
+        analysis_config_id="test-config-id",
         outlier_findings=[
             OutlierFinding(
                 subject="Subject 3",

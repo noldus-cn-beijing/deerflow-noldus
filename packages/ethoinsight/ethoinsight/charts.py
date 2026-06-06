@@ -302,6 +302,7 @@ def trajectory_plot(
     ax.set_ylabel("Y (position)")
     ax.set_title("Trajectory Plot")
     ax.set_aspect("equal")
+    ax.set_box_aspect(3 / 4)
     fig.tight_layout()
 
     path = _resolve_output_path(output_path, "trajectory")
@@ -683,6 +684,7 @@ def heatmap_plot(
         ax.set_xlabel("X (cm)")
         ax.set_ylabel("Y (cm)")
         ax.set_aspect("equal", adjustable="box")
+        ax.set_box_aspect(3 / 4)
         ax.set_title("Position density heatmap")
     else:
         ax.text(0.5, 0.5, "x_center/y_center missing", ha="center", va="center", transform=ax.transAxes)
@@ -695,24 +697,50 @@ def heatmap_plot(
 def activity_intensity_plot(
     df: pd.DataFrame,
     output_path: str | None = None,
+    smooth_window: int | None = None,
 ) -> str:
-    """Activity intensity time-series (velocity as proxy).
+    """Activity intensity time-series (pixel change %, per EV19 definition).
 
-    Plots a filled area chart of velocity vs trial_time. Title labels proxy.
+    Prefers the Activity column (pixel change %) when available — this is the
+    correct signal for TST/FST where the animal is fixed and velocity ≈ 0.
+    Falls back to velocity when no Activity column is present.
+
+    Args:
+        smooth_window: If set, apply SMA smoothing with this window size
+            before plotting (Noldus JS default: 10).
     """
+    from ethoinsight.metrics._common import _find_activity_column
+
     _setup_style()
     output_path = _resolve_output_path(output_path, "activity_intensity")
     fig, ax = plt.subplots(figsize=(10, 4))
-    if "trial_time" in df.columns and "velocity" in df.columns:
+
+    activity_col = _find_activity_column(df)
+    use_activity = activity_col is not None and "trial_time" in df.columns
+
+    if use_activity:
+        v = pd.to_numeric(df[activity_col], errors="coerce").fillna(0)
+        t = pd.to_numeric(df["trial_time"], errors="coerce")
+        if smooth_window and smooth_window > 0:
+            v = v.rolling(window=smooth_window, min_periods=1).mean()
+        ax.fill_between(t, v, color="#4C9F70", alpha=0.5)
+        ax.plot(t, v, color="#2D5F3F", linewidth=0.7)
+        ax.set_xlabel("Trial time (s)")
+        ax.set_ylabel("Activity (pixel change %)")
+        ax.set_title("Activity intensity")
+    elif "trial_time" in df.columns and "velocity" in df.columns:
         v = pd.to_numeric(df["velocity"], errors="coerce").fillna(0)
         t = pd.to_numeric(df["trial_time"], errors="coerce")
+        if smooth_window and smooth_window > 0:
+            v = v.rolling(window=smooth_window, min_periods=1).mean()
         ax.fill_between(t, v, color="#4C9F70", alpha=0.5)
         ax.plot(t, v, color="#2D5F3F", linewidth=0.7)
         ax.set_xlabel("Trial time (s)")
         ax.set_ylabel("Velocity (cm/s)")
-        ax.set_title("Activity intensity (velocity proxy)")
+        ax.set_title("Activity intensity (velocity fallback — Activity column missing)")
     else:
-        ax.text(0.5, 0.5, "velocity column missing", ha="center", va="center", transform=ax.transAxes)
+        ax.text(0.5, 0.5, "no Activity or velocity column", ha="center",
+                va="center", transform=ax.transAxes)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
@@ -722,50 +750,174 @@ def activity_intensity_plot(
 def struggle_distribution_plot(
     bouts_by_subject: dict[str, list[tuple[float, float]]],
     output_path: str | None = None,
+    trial_durations: dict[str, float] | None = None,
 ) -> str:
-    """eventplot of immobility bouts per subject.
+    """Immobility vs struggle time distribution per subject.
 
-    Each subject = one row of horizontal bars marking immobility bouts.
+    Each subject = one row.  Immobility (giving-up) periods drawn in red;
+    struggle periods drawn in blue when *trial_durations* is provided
+    (struggle = complement of immobility over [0, duration]).
+
+    When *trial_durations* is None, only immobility bouts are shown
+    (backward compatible).
     """
     _setup_style()
     output_path = _resolve_output_path(output_path, "struggle_distribution")
     subjects = list(bouts_by_subject.keys())
     fig, ax = plt.subplots(figsize=(10, max(2, len(subjects) * 0.6)))
+
     for i, sub in enumerate(subjects):
         bouts = bouts_by_subject[sub]
+        # Immobility (giving-up) in red
         for start, end in bouts:
-            ax.broken_barh([(start, end - start)], (i - 0.35, 0.7), facecolors="#B33A3A")
+            ax.broken_barh([(start, end - start)], (i - 0.35, 0.7),
+                           facecolors="#B33A3A")
+        # Struggle in blue (complement of immobility)
+        if trial_durations and sub in trial_durations:
+            duration = trial_durations[sub]
+            gaps = _invert_intervals(bouts, duration)
+            for g_start, g_end in gaps:
+                ax.broken_barh([(g_start, g_end - g_start)], (i - 0.35, 0.7),
+                               facecolors="#3A6FB3", alpha=0.5)
+
     ax.set_yticks(range(len(subjects)))
     ax.set_yticklabels(subjects)
     ax.set_xlabel("Trial time (s)")
-    ax.set_title("Immobility (giving-up) bouts over time")
+    has_struggle = trial_durations is not None
+    ax.set_title("Struggle (blue) vs giving-up (red) bouts over time" if has_struggle
+                 else "Immobility (giving-up) bouts over time")
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
     return output_path
 
 
+def _invert_intervals(
+    intervals: list[tuple[float, float]],
+    end: float,
+    start: float = 0.0,
+) -> list[tuple[float, float]]:
+    """Return the gaps between intervals over [start, end]."""
+    if not intervals:
+        return [(start, end)] if end > start else []
+    gaps: list[tuple[float, float]] = []
+    cur = start
+    for s, e in sorted(intervals):
+        if s > cur:
+            gaps.append((cur, s))
+        cur = max(cur, e)
+    if cur < end:
+        gaps.append((cur, end))
+    return gaps
+
+
 def time_progress_plot(
     per_bin_data: list[dict],
     output_path: str | None = None,
+    *,
+    group_label: str | None = None,
 ) -> str:
-    """OFT time-progress dual-line chart (5-min bins: distance + center time)."""
+    """OFT time-progress dual-line chart (5-min bins: distance + center time).
+
+    When *group_label* is provided, the line is labelled with the group name
+    and SEM shading is drawn when ``distance_sem`` / ``center_time_sem`` keys
+    are present in *per_bin_data*. Call once per group with the same *output_path*
+    to overlay multiple groups on one figure.
+
+    Args:
+        per_bin_data: List of dicts with keys ``bin_start_sec``, ``bin_end_sec``,
+            ``distance``, ``center_time``, and optionally ``distance_sem``,
+            ``center_time_sem`` for group-aggregate mode.
+        output_path: Output PNG path.
+        group_label: If set, used as legend label suffix for this line pair.
+    """
     _setup_style()
     output_path = _resolve_output_path(output_path, "time_progress")
     fig, ax_left = plt.subplots(figsize=(10, 4))
+
     bin_centers = [(b["bin_start_sec"] + b["bin_end_sec"]) / 2 / 60.0 for b in per_bin_data]
     distance = [b["distance"] for b in per_bin_data]
     center_time = [b["center_time"] for b in per_bin_data]
-    ax_left.plot(bin_centers, distance, "o-", color="#2D5F3F", label="Distance moved")
+    distance_sem = [b.get("distance_sem") for b in per_bin_data]
+    center_time_sem = [b.get("center_time_sem") for b in per_bin_data]
+    has_sem = any(s is not None for s in distance_sem)
+
+    dist_label = f"Distance ({group_label})" if group_label else "Distance moved"
+    ct_label = f"Center time ({group_label})" if group_label else "Center time"
+
+    ax_left.plot(bin_centers, distance, "o-", color="#2D5F3F", label=dist_label)
+    if has_sem:
+        dist_sem_vals = [s if s is not None else 0.0 for s in distance_sem]
+        ax_left.fill_between(
+            bin_centers,
+            [d - s for d, s in zip(distance, dist_sem_vals)],
+            [d + s for d, s in zip(distance, dist_sem_vals)],
+            color="#2D5F3F", alpha=0.15,
+        )
+
     ax_left.set_xlabel("Time bin center (min)")
     ax_left.set_ylabel("Distance moved (cm)")
+
     ax_right = ax_left.twinx()
-    ax_right.plot(bin_centers, center_time, "s--", color="#B33A3A", label="Center time")
+    ax_right.plot(bin_centers, center_time, "s--", color="#B33A3A", label=ct_label)
+    if has_sem:
+        ct_sem_vals = [s if s is not None else 0.0 for s in center_time_sem]
+        ax_right.fill_between(
+            bin_centers,
+            [c - s for c, s in zip(center_time, ct_sem_vals)],
+            [c + s for c, s in zip(center_time, ct_sem_vals)],
+            color="#B33A3A", alpha=0.15,
+        )
     ax_right.set_ylabel("Center zone time (s)")
+
     lines_l, labels_l = ax_left.get_legend_handles_labels()
     lines_r, labels_r = ax_right.get_legend_handles_labels()
     ax_left.legend(lines_l + lines_r, labels_l + labels_r, loc="upper right")
     ax_left.set_title("Time-progress: distance + center time per 5-min bin")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def rose_plot(
+    directions: "np.ndarray",
+    n_bins: int = 12,
+    output_path: str | None = None,
+    *,
+    title: str = "Head direction distribution",
+) -> str:
+    """Polar histogram (rose plot) of angular data.
+
+    Args:
+        directions: 1D array of angles in radians.
+        n_bins: Number of angular bins (default 12 = 30° bins).
+        output_path: Output PNG path.
+        title: Plot title.
+
+    Returns:
+        Path to saved PNG.
+    """
+    _setup_style()
+    output_path = _resolve_output_path(output_path, "rose")
+    fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(6, 6))
+
+    if len(directions) == 0:
+        ax.set_title(f"{title}\n(no data)", va="bottom")
+        fig.savefig(output_path, dpi=150)
+        plt.close(fig)
+        return output_path
+
+    bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
+    counts, _ = np.histogram(directions % (2 * np.pi), bins=bin_edges)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    width = 2 * np.pi / n_bins
+
+    ax.bar(bin_centers, counts, width=width, alpha=0.7, edgecolor="black", linewidth=0.5)
+    ax.set_title(title, va="bottom")
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)

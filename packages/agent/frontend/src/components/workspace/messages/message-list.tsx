@@ -8,12 +8,14 @@ import { useI18n } from "@/core/i18n/hooks";
 import {
   extractContentFromMessage,
   extractPresentFilesFromMessage,
+  extractQualityWarnings,
   extractTextFromMessage,
   findToolCallArgs,
   groupMessages,
   hasContent,
   hasPresentFiles,
   hasReasoning,
+  hasToolCalls,
   stripClarificationOptionsFromContent,
 } from "@/core/messages/utils";
 import type { Subtask } from "@/core/tasks";
@@ -28,6 +30,7 @@ import { ClarificationOptions } from "./clarification-options";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
+import { QualityWarningBanner } from "./quality-warning-banner";
 import { MessageListSkeleton } from "./skeleton";
 import { SubtaskCard } from "./subtask-card";
 
@@ -116,6 +119,7 @@ export function MessageList({
                       options ?? [],
                     )}
                     isLoading={thread.isLoading}
+                    threadId={threadId}
                   />
                   {onSelectClarificationOption && (
                     <ClarificationOptions
@@ -143,6 +147,7 @@ export function MessageList({
                     content={extractContentFromMessage(group.messages[0])}
                     isLoading={thread.isLoading}
                     className="mb-4"
+                    threadId={threadId}
                   />
                 )}
                 <ArtifactFileList files={files} threadId={threadId} />
@@ -256,9 +261,28 @@ export function MessageList({
                       key={"narrative-" + message.id}
                       content={narrative}
                       isLoading={thread.isLoading}
+                      threadId={threadId}
                     />,
                   );
                 }
+              }
+              // Render quality warnings that may be packed into the same
+              // AIMessage alongside task dispatches. When the lead agent
+              // reports "n=1 cannot compute statistics" and dispatches the
+              // next subagent in one message, the message lands in
+              // assistant:subagent (because hasToolCalls → hasSubagent).
+              // Without this branch, QualityWarningBanner is silently lost
+              // (see §3.1 of 2026-06-04-frontend-info-architecture-fixes).
+              const qw = extractQualityWarnings(
+                message as unknown as Record<string, unknown>,
+              );
+              if (qw.length > 0) {
+                results.push(
+                  <QualityWarningBanner
+                    key={"qw-" + message.id}
+                    warnings={qw}
+                  />,
+                );
               }
               results.push(
                 <div
@@ -328,9 +352,28 @@ export function MessageList({
                       key={"narrative-" + message.id}
                       content={narrative}
                       isLoading={thread.isLoading}
+                      threadId={threadId}
                     />,
                   );
                 }
+              }
+              // Tool-call-only AIMessages (no reasoning, no content) still
+              // carry useful signal — inspect_uploaded_file, prep_metric_plan,
+              // set_experiment_paradigm etc. Without this branch they are
+              // silently dropped because the handler only checks hasReasoning
+              // and hasContent (§3.3 of 2026-06-04-frontend-info-architecture-fixes).
+              if (
+                !hasReasoning(message) &&
+                !hasContent(message) &&
+                hasToolCalls(message)
+              ) {
+                results.push(
+                  <MessageGroup
+                    key={"tool-only-" + message.id}
+                    messages={[message]}
+                    isLoading={thread.isLoading}
+                  />,
+                );
               }
             }
             if (results.length === 0) {
@@ -349,7 +392,6 @@ export function MessageList({
           // Returning null keeps TypeScript's exhaustive narrowing happy.
           return null;
         },
-        { isStreaming: thread.isLoading },
         )}
         {thread.isLoading && <StreamingIndicator className="my-4" />}
         <div style={{ height: `${paddingBottom}px` }} />

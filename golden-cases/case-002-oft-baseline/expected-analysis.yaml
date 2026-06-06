@@ -1,0 +1,79 @@
+# Case-002 OFT — 预期分析结论
+#
+# OFT 指标（来自 ethoinsight catalog）：
+#   center_time_ratio     — 中心区时间比例（焦虑核心指标，值越低越焦虑）
+#   center_distance_ratio — 中心区移动距离比例
+#   center_entry_count    — 中心区进入次数
+#   distance_moved        — 总移动距离（运动能力对照）
+#   thigmotaxis_index     — 趋触性指数（贴壁程度）
+# ============================================================
+
+paradigm: "oft"
+species: ""                    # TODO
+n_subjects: 0                  # TODO
+groups:                        # TODO
+  # control: ["Subject 1", "Subject 2", "Subject 3"]
+  # treatment: ["Subject 4", "Subject 5", "Subject 6"]
+
+# ============================================================
+# Layer A: 指标数值期望
+# ============================================================
+expected_metrics:
+  # --- 核心焦虑指标 ---
+  - metric: center_time_ratio
+    group: "control"
+    expected_range: []         # TODO: 对照组中心区时间比例（如 [0.05, 0.20]）
+    unit: "ratio"
+    note: "对照组在中心区的时间比例"
+
+  - metric: center_time_ratio
+    group: "treatment"
+    expected_range: []         # TODO: 处理组中心区时间比例
+    unit: "ratio"
+    note: "致焦虑则低于 control，抗焦虑则高于 control"
+
+  # --- 运动能力对照 ---
+  - metric: distance_moved
+    group: "control"
+    expected_range: []         # TODO: 对照组总移动距离（cm）
+    unit: "cm"
+
+  - metric: distance_moved
+    group: "treatment"
+    expected_range: []         # TODO: 处理组总移动距离（cm）
+    unit: "cm"
+
+  # --- 辅助指标（选填）---
+  # - metric: center_entry_count
+  #   group: "treatment"
+  #   expected_range: []
+  #   unit: "count"
+
+# ============================================================
+# Layer B: 洞察期望
+# ============================================================
+expected_findings:
+
+  - type: statistical_conclusion
+    claim: ""                  # TODO
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO: 如 ["显著差异", "中心区时间"]
+    forbidden_claims: []       # TODO
+
+  - type: phenotype_indication
+    claim: ""                  # TODO: 如 "treatment 组表现出焦虑样表型（中心区回避）"
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO
+    forbidden_claims: []       # TODO
+    severity: "high"
+
+  # - type: confound_note       # 如果运动量有差异，必须排查
+  #   claim: "需排除运动能力对中心区指标的混杂"
+  #   required_keywords: ["运动能力", "总移动距离"]
+  #   severity: "moderate"
+
+# ============================================================
+# Layer C: 禁区
+# ============================================================
+should_not_contain:
+  # TODO

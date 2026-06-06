@@ -1,12 +1,12 @@
 """Tests for TodoMiddleware context-loss detection."""
 
 import asyncio
-from typing import Annotated, Any, NotRequired
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from langchain.agents import AgentState, create_agent
+from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import PrivateAttr
 
 from deerflow.agents.middlewares.todo_middleware import (
@@ -14,16 +14,11 @@ from deerflow.agents.middlewares.todo_middleware import (
     _completion_reminder_count,
     _format_todos,
     _has_tool_call_intent_or_error,
+    _is_awaiting_clarification,
     _reminder_in_messages,
     _todos_in_messages,
 )
-from deerflow.agents.thread_state import merge_todos
-
-
-class _TestThreadState(AgentState):
-    """Minimal state for TodoMiddleware tests — includes todos channel."""
-
-    todos: Annotated[NotRequired[list | None], merge_todos]
+from deerflow.agents.thread_state import ThreadState
 
 
 def _ai_with_write_todos():
@@ -517,6 +512,42 @@ class TestWrapModelCall:
 
 
 class TestTodoMiddlewareAgentGraphIntegration:
+    def test_reuses_thread_state_todos_schema_in_real_agent_graph(self):
+        mw = TodoMiddleware()
+        model = _CapturingFakeMessagesListChatModel(
+            responses=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "write_todos",
+                            "id": "todos-1",
+                            "args": {
+                                "todos": [
+                                    {"content": "Step 1", "status": "pending"},
+                                ]
+                            },
+                        }
+                    ],
+                ),
+                AIMessage(content="final"),
+            ],
+        )
+
+        graph = create_agent(
+            model=model,
+            tools=[],
+            middleware=[mw],
+            state_schema=ThreadState,
+        )
+
+        result = graph.invoke(
+            {"messages": [("user", "create a todo")]},
+            context={"thread_id": "schema-thread", "run_id": "schema-run"},
+        )
+
+        assert result["todos"] == [{"content": "Step 1", "status": "pending"}]
+
     def test_completion_reminder_is_transient_in_real_agent_graph(self):
         mw = TodoMiddleware()
         model = _CapturingFakeMessagesListChatModel(
@@ -541,7 +572,7 @@ class TestTodoMiddlewareAgentGraphIntegration:
                 AIMessage(content="premature final 3"),
             ],
         )
-        graph = create_agent(model=model, tools=[], middleware=[mw], state_schema=_TestThreadState)
+        graph = create_agent(model=model, tools=[], middleware=[mw])
 
         result = graph.invoke(
             {"messages": [("user", "finish all todos")]},
@@ -651,3 +682,95 @@ class TestAwrapModelCall:
         injected_messages = request.override.call_args.kwargs["messages"]
         assert injected_messages[-1].name == "todo_completion_reminder"
         handler.assert_awaited_once_with("patched-request")
+
+
+def _ask_clarification_toolmsg():
+    return ToolMessage(
+        name="ask_clarification",
+        content="🔀 需要我把结果可视化成图吗？\n  1. 是\n  2. 否",
+        tool_call_id="clarification:tc_viz",
+    )
+
+
+class TestIsAwaitingClarification:
+    """2026-06-04 fix: detect the 'asked clarification, user hasn't answered' state.
+
+    Locks the helper that stops TodoMiddleware from force-re-engaging the agent
+    while it waits on ask_clarification (the repeated '要不要画图' symptom).
+    """
+
+    def test_true_when_ask_clarification_is_last(self):
+        msgs = [
+            HumanMessage(content="分析数据"),
+            _ai_no_tool_calls(),
+            _ask_clarification_toolmsg(),
+        ]
+        assert _is_awaiting_clarification(msgs) is True
+
+    def test_true_when_only_text_reasks_follow_clarification(self):
+        # Re-ask text AIMessages after the clarification, but NO user reply →
+        # still waiting (this is exactly the dogfood failure shape).
+        msgs = [
+            _ask_clarification_toolmsg(),
+            AIMessage(content="还在等待你的选择哦～"),
+            AIMessage(content="请从三个选项中回复一个"),
+        ]
+        assert _is_awaiting_clarification(msgs) is True
+
+    def test_false_when_user_replied_after_clarification(self):
+        msgs = [
+            _ask_clarification_toolmsg(),
+            HumanMessage(content="1"),
+        ]
+        assert _is_awaiting_clarification(msgs) is False
+
+    def test_false_when_no_clarification_at_all(self):
+        msgs = [HumanMessage(content="hi"), _ai_no_tool_calls()]
+        assert _is_awaiting_clarification(msgs) is False
+
+    def test_control_reminders_do_not_count_as_user_reply(self):
+        # Our own injected reminders must not be mistaken for a user answer.
+        msgs = [
+            _ask_clarification_toolmsg(),
+            HumanMessage(name="todo_completion_reminder", content="<system_reminder>...</system_reminder>"),
+        ]
+        assert _is_awaiting_clarification(msgs) is True
+
+    def test_empty_messages(self):
+        assert _is_awaiting_clarification([]) is False
+
+
+class TestAfterModelSkipsWhenAwaitingClarification:
+    """after_model must NOT jump_to model while awaiting a clarification answer,
+    even when an incomplete todo (e.g. '反问是否需要出图') is still in_progress.
+    """
+
+    def test_returns_none_when_awaiting_clarification_with_incomplete_todo(self):
+        mw = TodoMiddleware()
+        state = {
+            "messages": [
+                HumanMessage(content="分析数据"),
+                _ask_clarification_toolmsg(),
+                _ai_no_tool_calls(),  # the re-ask text the model would emit
+            ],
+            "todos": _incomplete_todos(),
+        }
+        # Without the fix this returns {"jump_to": "model"} and forces a re-ask.
+        assert mw.after_model(state, _make_runtime()) is None
+
+    def test_still_jumps_when_user_answered_and_todo_incomplete(self):
+        # Regression guard: the normal "agent exited early with work left" nudge
+        # must still fire once the user has replied (no longer awaiting).
+        mw = TodoMiddleware()
+        runtime = _make_runtime()
+        state = {
+            "messages": [
+                _ask_clarification_toolmsg(),
+                HumanMessage(content="1"),  # user answered
+                _ai_no_tool_calls(),
+            ],
+            "todos": _incomplete_todos(),
+        }
+        result = mw.after_model(state, runtime)
+        assert result is not None
+        assert result["jump_to"] == "model"

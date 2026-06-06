@@ -41,6 +41,9 @@ class FeedbackRow(Base):
     verdict: Mapped[str | None] = mapped_column(String(16))
     revised_text: Mapped[str | None] = mapped_column(Text)
 
+    # Sprint 8: 范式标识，用于按范式检索历史纠正（从 experiment-context.json 读取）
+    paradigm: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

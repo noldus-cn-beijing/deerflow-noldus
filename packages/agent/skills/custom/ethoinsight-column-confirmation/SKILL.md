@@ -1,7 +1,6 @@
 ---
 name: ethoinsight-column-confirmation
 description: EV19 自定义分析区列的 HITL 列语义对齐 — 预填反诘话术、答案映射、落盘指引
-allowed-tools: read_file, ask_clarification, set_experiment_paradigm, inspect_uploaded_file
 ---
 
 # EthoInsight 列语义确认 Skill

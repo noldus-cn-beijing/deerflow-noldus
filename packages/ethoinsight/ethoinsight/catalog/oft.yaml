@@ -3,11 +3,22 @@ ev19_templates:
   - Open Field XT190
   - 旷场_小鼠_三点
 
+anonymous_zone_override:
+  target_param: center_zone
+  wrap_list: false
+
 default_metrics:
   - id: center_time_ratio
     script: ethoinsight.scripts.oft.compute_center_time_ratio
     requires_columns:
       - in_zone_center_*
+    parameters:
+      center_zone:
+        default: "in_zone_center"
+        unit: ""
+        description: "中心区列名。用户确认匿名区为中心区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: ratio
     display_name_zh: 中心区时间比例
     unit_zh: 比例
@@ -20,6 +31,13 @@ default_metrics:
     requires_columns:
       - in_zone_center_*
       - distance_moved
+    parameters:
+      center_zone:
+        default: "in_zone_center"
+        unit: ""
+        description: "中心区列名。用户确认匿名区为中心区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: ratio
     display_name_zh: 中心区移动距离比例
     unit_zh: 比例
@@ -31,6 +49,13 @@ default_metrics:
     script: ethoinsight.scripts.oft.compute_center_entry_count
     requires_columns:
       - in_zone_center_*
+    parameters:
+      center_zone:
+        default: "in_zone_center"
+        unit: ""
+        description: "中心区列名。用户确认匿名区为中心区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: count
     display_name_zh: 中心区进入次数
     unit_zh: 次
@@ -42,6 +67,13 @@ default_metrics:
     script: ethoinsight.scripts.oft.compute_center_time
     requires_columns:
       - in_zone_center_*
+    parameters:
+      center_zone:
+        default: "in_zone_center"
+        unit: ""
+        description: "中心区列名。用户确认匿名区为中心区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: seconds
     display_name_zh: 中心区时间
     unit_zh: 秒
@@ -54,6 +86,13 @@ default_metrics:
     requires_columns:
       - in_zone_center_*
       - distance_moved
+    parameters:
+      center_zone:
+        default: "in_zone_center"
+        unit: ""
+        description: "中心区列名。用户确认匿名区为中心区时覆盖为 in_zone。"
+        tunable_by_user: true
+        valid_range: null
     output_unit: cm
     display_name_zh: 中心区移动距离
     unit_zh: cm
@@ -61,12 +100,82 @@ default_metrics:
     direction_for_anxiety: lower_is_anxious
     statistical_default: groupwise_compare
 
-optional_metrics: []
+optional_metrics:
+  - id: body_elongation_stats
+    script: ethoinsight.scripts.oft.compute_body_elongation_stats
+    requires_columns: [Elongation]
+    output_unit: ratio
+    display_name_zh: 身体拉伸度统计
+    unit_zh: 比例
+    one_liner: 身体拉伸度的均值/标准差（EV19 GetElongation × 100）
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: turn_angle_stats
+    script: ethoinsight.scripts.oft.compute_turn_angle_stats
+    requires_columns: [TurnAngle]
+    output_unit: radians
+    display_name_zh: 转角统计
+    unit_zh: 弧度
+    one_liner: 绝对转角的均值/标准差（EV19 TurnAngle），thigmotaxis 旋转模式分析
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: turn_angle_filtered
+    script: ethoinsight.scripts.oft.compute_turn_angle_filtered
+    requires_columns: [x_center, y_center]
+    output_unit: radians
+    display_name_zh: 过滤转角统计
+    unit_zh: 弧度
+    one_liner: 带位移过滤的转角统计（排除静止抖动），基于 Noldus Turn Angle with Distance moved filter
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: velocity_bins
+    script: ethoinsight.scripts.oft.compute_velocity_bins
+    requires_columns: [velocity]
+    output_unit: ratio
+    display_name_zh: 速度分箱分布
+    unit_zh: 比例
+    one_liner: 速度按预设边界分箱的时间占比分布，基于 Noldus Split track in bins based on velocity
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: cumulative_distance
+    script: ethoinsight.scripts.oft.compute_cumulative_distance
+    requires_columns: [distance_moved]
+    output_unit: cm
+    display_name_zh: 滑动窗口累计距离
+    unit_zh: cm
+    one_liner: 滑动窗口内累计移动距离，用于习惯化分析，基于 Noldus Distance moved - Cumulative in last k samples
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: acceleration_stats
+    script: ethoinsight.scripts.oft.compute_acceleration_stats
+    requires_columns: [velocity]
+    output_unit: mm_s2
+    display_name_zh: 加速度统计
+    unit_zh: mm/s²
+    one_liner: 平滑后的加速度统计（均值/标准差/最大/最小），基于 Noldus Acceleration - Smoothed
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
+
+  - id: body_length
+    script: ethoinsight.scripts.oft.compute_body_length
+    requires_columns: [x_nose, y_nose, x_center, y_center, x_tail, y_tail]
+    output_unit: cm
+    display_name_zh: 身体长度（分段求和）
+    unit_zh: cm
+    one_liner: Nose→Center + Center→Tail 欧氏距离求和，基于 Noldus Body Length - Sum of segments
+    direction_for_anxiety: null
+    statistical_default: groupwise_compare
 
 charts:
   - id: box_center
     script: ethoinsight.scripts.oft.plot_box_center
     when: n_per_group >= 3
+    confidence: must_have
     display_name_zh: "中心时间箱线图"
     output_mode: aggregate
     needs_groups: true
@@ -75,18 +184,21 @@ charts:
   - id: center_time_ratio_bar
     script: ethoinsight.scripts.oft.plot_center_time_ratio_bar
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "中心时间比例柱状图"
     requires_columns:
       - in_zone*
   - id: center_entry_summary
     script: ethoinsight.scripts.oft.plot_center_entry_summary
     when: total_subjects >= 1
+    confidence: optional
     display_name_zh: "中心进入汇总图"
     requires_columns:
       - in_zone*
   - id: trajectory
     script: ethoinsight.scripts._common.plot_trajectory
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "轨迹图"
     requires_columns:
       - x_center
@@ -94,6 +206,7 @@ charts:
   - id: heatmap
     script: ethoinsight.scripts._common.plot_heatmap
     when: total_subjects >= 1
+    confidence: must_have
     display_name_zh: "热区图"
     requires_columns:
       - x_center
@@ -101,6 +214,7 @@ charts:
   - id: time_progress
     script: ethoinsight.scripts.oft.plot_time_progress
     when: total_duration_seconds > 300
+    confidence: optional
     display_name_zh: "时间进程图（5min bin）"
     requires_columns:
       - x_center
@@ -112,3 +226,5 @@ statistics:
     id: groupwise_compare
     script: ethoinsight.scripts.oft.run_groupwise_stats
     when: n_per_group >= 2 and n_groups >= 2
+
+paradigm_parameters: {}

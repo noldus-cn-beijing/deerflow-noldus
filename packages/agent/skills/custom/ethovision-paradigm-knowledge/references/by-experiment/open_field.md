@@ -10,12 +10,9 @@
 
 利用啮齿类动物对开阔环境的天然回避倾向，通过量化中心区与周边区的探索行为来评估焦虑样行为水平和自主活动性。
 
-## 🟡 适用模板（按推荐顺序 + 取舍说明）
+## 🟡 EV19 模板识别
 
-- `OpenFieldRectangle-AllZones` — **推荐首选（啮齿动物）**。包含 Center + Border + Corners zone，可直接计算中心区相关指标
-- `OpenFieldCircle-AllZones` — 圆形旷场，包含 Border + Center + Quadrants zone，适用于需要圆形竞技场的实验设计
-- `OpenFieldRectangle-NoZones` / `OpenFieldCircle-NoZones-Rodents-Other` — 无预定义 zone，需实验员自行划定区域
-- 注意：鱼类应选 `OpenFieldCircle-NoZones-Fish`，昆虫应选 `OpenFieldCircle-NoZones-Insects`，不属于 OFT 啮齿动物场景
+调 `identify_ev19_template` 工具获取候选模板，**不要自己列举候选**。工具会根据数据结构返回唯一或 ambiguous 结果。
 
 ## 🟡 必须计算的指标
 

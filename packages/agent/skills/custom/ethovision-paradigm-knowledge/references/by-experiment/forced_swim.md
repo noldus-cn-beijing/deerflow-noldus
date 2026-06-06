@@ -10,10 +10,9 @@
 
 利用啮齿类动物在不可逃避的强迫游泳环境中产生的不动行为，评估抑郁样行为中的绝望表型。
 
-## 🟡 适用模板（按推荐顺序 + 取舍说明）
+## 🟡 EV19 模板识别
 
-- `PorsoltCylinder-NoZones` — **推荐首选**。无预定义 zone，适合标准 FST 仅需记录不动行为的场景
-- `PorsoltCylinder-AllZones` — 包含 Diving zone，用于识别动物是否力竭溺水以自动停止采集
+调 `identify_ev19_template` 工具获取候选模板，**不要自己列举候选**。工具会根据数据结构返回唯一或 ambiguous 结果。
 
 ## 🟡 必须计算的指标
 
@@ -42,3 +41,10 @@
 
 - 与 TST（悬尾实验）的区别：FST 将动物置于水中，TST 将动物悬吊于空中；两者均测量不动行为评估绝望表型，但物理刺激方式不同，结果可相互验证但不可混用
 - 与焦虑类范式（EPM/OFT/Zero Maze/LDB）的区别：FST 评估抑郁样行为（绝望），焦虑类范式评估焦虑样行为（回避）
+
+## 🟡 pendulum 参数判据
+
+FST 使用钟摆算法检测不动行为（动物停止挣扎后身体规律摆动需与真实挣扎区分）。参数判据详见配套文档：
+`/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/forced_swim-pendulum-params.md`
+
+data-analyst 在 step 2.8 参数审计时，对 FST pendulum 参数按该文档判据审计。

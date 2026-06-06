@@ -1,0 +1,84 @@
+# Case-005 Zero Maze — 预期分析结论
+#
+# Zero Maze 指标（来自 ethoinsight catalog）：
+#   open_zone_time_ratio — 开放区时间比例（焦虑核心指标，值越低越焦虑）
+#   open_zone_time       — 开放区累计时间（秒）
+#   open_zone_distance   — 开放区移动距离（cm）
+#   hesitation_count     — 犹豫次数（接近边界但未跨入，值越高越焦虑）
+#
+# Zero Maze 与 EPM 类似但不含闭合臂交叉区域，避免了 EPM 中心区的歧义。
+# ============================================================
+
+paradigm: "zero_maze"
+species: ""                    # TODO
+n_subjects: 0                  # TODO
+groups:                        # TODO
+  # control: ["Subject 1", "Subject 2", "Subject 3"]
+  # treatment: ["Subject 4", "Subject 5", "Subject 6"]
+
+# ============================================================
+# Layer A: 指标数值期望
+# ============================================================
+expected_metrics:
+  # --- 核心焦虑指标 ---
+  - metric: open_zone_time_ratio
+    group: "control"
+    expected_range: []         # TODO: 对照组开放区时间比例（如 [0.10, 0.30]）
+    unit: "ratio"
+
+  - metric: open_zone_time_ratio
+    group: "treatment"
+    expected_range: []         # TODO: 处理组开放区时间比例
+    unit: "ratio"
+
+  # --- 活动量 ---
+  - metric: open_zone_distance
+    group: "control"
+    expected_range: []         # TODO: 对照组开放区移动距离（cm）
+    unit: "cm"
+
+  - metric: open_zone_distance
+    group: "treatment"
+    expected_range: []         # TODO
+    unit: "cm"
+
+  # --- 犹豫行为 ---
+  - metric: hesitation_count
+    group: "control"
+    expected_range: []         # TODO: 对照组犹豫次数
+    unit: "count"
+    note: "犹豫次数 = 接近开放区边界但未进入的次数，反映 approach-avoidance conflict"
+
+  - metric: hesitation_count
+    group: "treatment"
+    expected_range: []         # TODO: 焦虑增加→犹豫更多
+    unit: "count"
+
+# ============================================================
+# Layer B: 洞察期望
+# ============================================================
+expected_findings:
+
+  - type: statistical_conclusion
+    claim: ""                  # TODO
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO
+    forbidden_claims: []       # TODO
+
+  - type: phenotype_indication
+    claim: ""                  # TODO
+    reasoning: ""              # TODO
+    required_keywords: []      # TODO
+    forbidden_claims: []       # TODO
+    severity: "high"
+
+  # - type: confound_note
+  #   claim: "犹豫次数增加 + 开放区时间减少，提示焦虑增加而非单纯运动减少"
+  #   required_keywords: ["犹豫", "焦虑"]
+  #   severity: "moderate"
+
+# ============================================================
+# Layer C: 禁区
+# ============================================================
+should_not_contain:
+  # TODO: 如 "闭合臂"（Zero Maze 没有闭合臂，那是 EPM 的术语）

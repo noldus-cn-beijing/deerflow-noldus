@@ -25,6 +25,7 @@ export interface Translations {
     custom: string;
     notAvailableInDemoMode: string;
     loading: string;
+    loadMore: string;
     version: string;
     lastUpdated: string;
     code: string;
@@ -61,6 +62,7 @@ export interface Translations {
     placeholder: string;
     createSkillPrompt: string;
     addAttachments: string;
+    tooManyFiles: string;
     mode: string;
     autoMode: string;
     autoModeDescription: string;
@@ -238,9 +240,34 @@ export interface Translations {
   // Token Usage
   tokenUsage: {
     title: string;
+    label: string;
     input: string;
     output: string;
     total: string;
+    view: string;
+    unavailable: string;
+    unavailableShort: string;
+    note: string;
+    presets: {
+      off: string;
+      summary: string;
+      perTurn: string;
+      debug: string;
+    };
+    presetDescriptions: {
+      off: string;
+      summary: string;
+      perTurn: string;
+      debug: string;
+    };
+    finalAnswer: string;
+    stepTotal: string;
+    sharedAttribution: string;
+    subagent: (description: string) => string;
+    startTodo: (content: string) => string;
+    completeTodo: (content: string) => string;
+    updateTodo: (content: string) => string;
+    removeTodo: (content: string) => string;
   };
 
   // Shortcuts

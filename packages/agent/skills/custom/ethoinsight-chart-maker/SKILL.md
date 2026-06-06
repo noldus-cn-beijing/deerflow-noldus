@@ -20,6 +20,7 @@ author: noldus-insight
 ## 工作流
 1. read `handoff_code_executor.json` → 拿 paradigm / n_per_group / n_groups / total_subjects
 2. bash `python -m ethoinsight.catalog.resolve --mode charts --paradigm <p> --user-intent "<原话>" ... --output plan_charts.json`
+   - **前置:catalog.resolve 的 `--columns-file` 是必填参数**,先 bash `python -m ethoinsight.parse.dump_headers --input "<raw_files[0]>" --output /mnt/user-data/workspace/columns.json` 产出 columns.json,再把 `--columns-file /mnt/user-data/workspace/columns.json` 传给 resolve。这是 catalog.resolve 自带的标准入口,直接调即可(sandbox 已放行)。
    - **`--raw-files-json` 必须指向一个 JSON 数组,里面是虚拟路径**(`/mnt/user-data/uploads/xxx.txt`),**不可写宿主机绝对路径**。
    - raw_files 路径的**单一真源是 `plan_metrics.json.inputs.raw_files`**: read 这个文件,数组**原样**写进 raw_files.json,**不要**从 handoff_code_executor.json 抄(其 inputs 字段历史上有过宿主路径污染),**不要**用 `Path(...).resolve()` / `realpath`。
    - **若 handoff_code_executor.json.inputs.groups 存在,把它整个 dict 写到 `groups.json` 并加 `--groups-json /mnt/user-data/workspace/groups.json` 参数**;catalog 中 `needs_groups: true` 的 aggregate chart(box/bar 等)依赖该文件做组间对比。

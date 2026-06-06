@@ -29,6 +29,7 @@ from deerflow.agents.middlewares.archiving_summarization import ArchivingSummari
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
+from deerflow.agents.middlewares.paradigm_identification_gate_middleware import ParadigmIdentificationGateMiddleware
 from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 from deerflow.agents.middlewares.think_tag_middleware import ThinkTagMiddleware
@@ -329,6 +330,11 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         max_concurrent_subagents = config.get("configurable", {}).get("max_concurrent_subagents", 3)
         middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
 
+    # ParadigmIdentificationGateMiddleware — after_model gate to force
+    # identify_ev19_template call when uploaded data is present (layer 3a).
+    # Placed before LoopDetection so reminders are counted properly.
+    middlewares.append(ParadigmIdentificationGateMiddleware())
+
     # LoopDetectionMiddleware — append the instance created earlier
     middlewares.append(loop_detection)
 
@@ -350,6 +356,25 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         provider = Ev19TemplateGuardrailProvider()
         middlewares.append(Ev19WorkspaceBridgeMiddleware())
         middlewares.append(GuardrailMiddleware(provider=provider, fail_closed=guardrails_cfg.fail_closed))
+
+        # InspectGateGuardrail — block ask_clarification when identify_ev19_template
+        # hasn't been called with uploaded data (layer 3b safety net).
+        from deerflow.guardrails.inspect_gate_provider import (
+            InspectGateBridgeMiddleware,
+            InspectGateGuardrailProvider,
+        )
+
+        middlewares.append(InspectGateBridgeMiddleware())
+        middlewares.append(GuardrailMiddleware(provider=InspectGateGuardrailProvider(), fail_closed=guardrails_cfg.fail_closed))
+
+        # S5: DataQualityGuardrailProvider — block downstream subagents on
+        # critical+blocks_downstream warnings (manual mode only)
+        workflow_mode_dq = config.get("configurable", {}).get("workflow_mode", "auto")
+        if workflow_mode_dq == "manual":
+            from deerflow.guardrails.data_quality_provider import DataQualityGuardrailProvider
+
+            dq_provider = DataQualityGuardrailProvider()
+            middlewares.append(GuardrailMiddleware(provider=dq_provider, fail_closed=guardrails_cfg.fail_closed))
 
         # W17: Intent classification — block non-read_file calls before lead declares [intent]
         from deerflow.guardrails.intent_classification_provider import (
@@ -387,6 +412,19 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
 
         middlewares.append(HandoffPlaceholderInjectionMiddleware())
 
+        # W18a: Path sequence — 校验 task(X) 按路径顺序派遣(前序 dispatch 已完成)
+        # 在 W18 之前: 顺序校验先于占位符校验,给出更早更具体的反馈
+        from deerflow.guardrails.path_sequence_provider import (
+            PathSequenceBridge,
+            PathSequenceProvider,
+        )
+
+        middlewares.append(PathSequenceBridge())
+        middlewares.append(GuardrailMiddleware(
+            provider=PathSequenceProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
         # W18: Task handoff authorization — 校验 task(subagent_type=X) prompt 含必需 {{handoff://X}} 占位符
         from deerflow.guardrails.task_handoff_authorization_provider import (
             TaskHandoffAuthorizationProvider,
@@ -418,6 +456,15 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         from deerflow.agents.middlewares.gate_enforcement_middleware import GateEnforcementMiddleware
 
         middlewares.append(GateEnforcementMiddleware(enabled=True))
+
+    # QualityWarningBroadcastMiddleware — surface data-analyst handoff
+    # quality_warnings onto the broadcast AIMessage so the frontend banner
+    # can render. Active in both auto and manual modes.
+    from deerflow.agents.middlewares.quality_warning_broadcast_middleware import (
+        QualityWarningBroadcastMiddleware,
+    )
+
+    middlewares.append(QualityWarningBroadcastMiddleware())
 
     # SafetyFinishReasonMiddleware — suppress tool execution when the provider
     # safety-terminates the response (OpenAI content_filter / Anthropic refusal /
@@ -466,24 +513,29 @@ def make_lead_agent(config: RunnableConfig):
         return effort  # "low", None, or unknown → keep
 
     thread_id = cfg.get("thread_id")
-    if thread_id and reasoning_effort:
+    # Resolve the current paradigm + user from the thread workspace once, so it can
+    # feed both reasoning_effort downgrade and Sprint 8 prior-corrections injection.
+    lead_paradigm: str | None = None
+    lead_user_id: str | None = None
+    if thread_id:
         try:
             from deerflow.agents.middlewares.experiment_context import read_context
             from deerflow.runtime.user_context import get_effective_user_id
 
-            user_id = get_effective_user_id()
+            lead_user_id = get_effective_user_id()
             app_config = get_app_config()
-            workspace = app_config.paths.sandbox_work_dir(thread_id, user_id=user_id)
+            workspace = app_config.paths.sandbox_work_dir(thread_id, user_id=lead_user_id)
             ctx = read_context(str(workspace))
             if ctx:
+                lead_paradigm = ctx.get("paradigm")
                 gate_completed = ctx.get("gate_completed", [])
-                if isinstance(gate_completed, list):
+                if reasoning_effort and isinstance(gate_completed, list):
                     if "gate2_quality_acknowledged" in gate_completed:
                         reasoning_effort = _step_down(_step_down(reasoning_effort))
                     elif "gate1_paradigm" in gate_completed:
                         reasoning_effort = _step_down(reasoning_effort)
         except Exception:
-            pass  # fail-safe: keep configured reasoning_effort
+            pass  # fail-safe: keep configured reasoning_effort, no paradigm context
 
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
     is_plan_mode = cfg.get("is_plan_mode", False)
@@ -584,7 +636,7 @@ def make_lead_agent(config: RunnableConfig):
         tools=filtered_lead_tools,
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(
-            subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None
+            subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None, paradigm=lead_paradigm, user_id=lead_user_id
         ),
         state_schema=ThreadState,
     )

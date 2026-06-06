@@ -126,6 +126,74 @@ DEPLOY_TAG=v0.1.0 make deploy-tar
 
 ---
 
+## 3.5 数据库 schema 迁移 (⚠️ 加了新列/新表的版本必看)
+
+**部署链不自动跑 alembic。** `make deploy-tar` 只做 `docker load` + `docker compose up -d`;生产 `gateway` 容器启动命令里**没有** `alembic upgrade head`。
+
+应用启动时只跑 `Base.metadata.create_all`,它是 **create-if-not-exists**:
+- **全新表** → 建表时带上所有列(含新列),没问题。
+- **已存在的表**(如 `feedback`、`threads_meta`、`runs`)→ **不会补新列**。代码一旦查/写新列就会 `sqlite3.OperationalError: no such column: ...`。
+
+> ECS 上 `feedback` 表自训练飞轮上线后一直有历史数据(见 CLAUDE.md 飞轮条),属于"已存在的表"。
+
+### 何时需要手动迁移
+
+本次部署的代码**给已存在的表加了列/约束**时(典型信号:`persistence/*/model.py` 改了 `mapped_column`,且 `migrations/versions/` 下有新 revision 文件)。新表、纯逻辑改动无需迁移。
+
+**已知需要迁移的版本**:
+- **S8 feedback `paradigm` 列**(`20260601_1500_feedback_paradigm.py`):给已有 `feedback` 表加 `paradigm`。不跑 → 提交反馈 + lead 查 prior_corrections 全部 500/报错。
+
+### 操作(部署后,在 ECS 上跑一次)
+
+⚠️ **不要直接 `alembic upgrade head`,也不要靠 `-x sqlalchemy.url=`**:
+- `alembic.ini` 里 `sqlalchemy.url` 硬编码成 `./data/deerflow.db`,**不是**生产真实 DB。真实库是 checkpointer 与 app 共用的 `${DEER_FLOW_HOME}/data/deerflow.db`(容器内 `/app/backend/.deer-flow/data/deerflow.db`)。
+- 本仓库的 `env.py` 用 `config.get_main_option("sqlalchemy.url")` 取 url,**既不读 `-x` 参数也不读环境变量**,所以 `alembic -x sqlalchemy.url=...` 会被无视、仍迁错库。
+
+正确做法:用内联 Python 调 `command.upgrade` 并 `set_main_option` 显式覆盖真实 url(下面这段已实测可用):
+
+```bash
+ssh eth-ecs
+cd /opt/ethoinsight/docker
+
+docker compose -p deer-flow exec gateway sh -c 'cd /app/backend && PYTHONPATH=. uv run python - <<PY
+from alembic.config import Config
+from alembic import command
+from deerflow.config import get_app_config
+
+mig = "/app/backend/packages/harness/deerflow/persistence/migrations"
+url = get_app_config().database.app_sqlalchemy_url   # 真实库,与运行时同一文件
+cfg = Config(f"{mig}/alembic.ini")
+cfg.set_main_option("script_location", mig)
+cfg.set_main_option("sqlalchemy.url", url)
+print("current:")
+command.current(cfg)
+print(f"upgrading head on: {url}")
+command.upgrade(cfg, "head")
+print("done")
+PY'
+```
+
+> **兜底**(取 url 的 import 路径与版本不符时):把上面 `url = ...` 那行换成写死的真实路径
+> `url = "sqlite+aiosqlite:////app/backend/.deer-flow/data/deerflow.db"`
+> (sqlite 绝对路径是 **4 个斜杠**:`sqlite+aiosqlite:////app/...`)
+
+校验列已加(以 `feedback.paradigm` 为例):
+
+```bash
+docker compose -p deer-flow exec gateway sh -c \
+  "uv run python -c \"import sqlite3; print([r[1] for r in sqlite3.connect('/app/backend/.deer-flow/data/deerflow.db').execute('PRAGMA table_info(feedback)')])\""
+# 输出应含 'paradigm'
+```
+
+> alembic env.py 已 scope 到 deerflow 自己的表,**不碰 LangGraph checkpointer 表**(两者共用同一 .db 文件,但 checkpointer schema 由 LangGraph 自管)。
+> 迁移用 `op.batch_alter_table`(SQLite ALTER 必需),`add_column(nullable=True)`,历史行新列留 NULL,不破坏老数据。重复跑只执行未应用的 revision(`command.current` 先看停在哪)。
+
+### 回滚时
+
+代码回滚到加列之前的镜像,**但已迁移的 DB 仍带新列** —— `nullable=True` 的新列对旧代码无害(旧代码不读它),所以**通常无需 downgrade**。确需回退 schema 才 `alembic downgrade -1`。
+
+---
+
 ## 4. 远程操作 (无需 ssh)
 
 通过 1Panel 面板:

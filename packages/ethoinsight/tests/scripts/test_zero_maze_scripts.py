@@ -102,7 +102,7 @@ class TestComputeOpenZoneDistance:
         payload = json.loads(out_path.read_text())
         assert payload["metric"] == "open_zone_distance"
         assert payload["value"] is None or (
-            isinstance(payload["value"], float) and 0.0 <= payload["value"] <= 1.0
+            isinstance(payload["value"], float) and payload["value"] >= 0.0
         )
 
 

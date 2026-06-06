@@ -20,13 +20,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any, override
 
 from langchain.agents.middleware import TodoListMiddleware
-from langchain.agents.middleware.todo import PlanningState, Todo
-from langchain.agents.middleware.types import AgentState, ModelCallResult, ModelRequest, ModelResponse, hook_config
+from langchain.agents.middleware.todo import Todo
+from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse, hook_config
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
-from langchain.tools import InjectedToolCallId, tool
-from langgraph.types import Command
-from typing_extensions import Annotated
+
+from deerflow.agents.thread_state import ThreadState
 
 
 def _todos_in_messages(messages: list[Any]) -> bool:
@@ -50,6 +49,32 @@ def _reminder_in_messages(messages: list[Any]) -> bool:
 def _completion_reminder_count(messages: list[Any]) -> int:
     """Return the number of todo_completion_reminder HumanMessages in *messages*."""
     return sum(1 for msg in messages if isinstance(msg, HumanMessage) and getattr(msg, "name", None) == "todo_completion_reminder")
+
+
+def _is_awaiting_clarification(messages: list[Any]) -> bool:
+    """Return True if the agent just asked a clarification and the user hasn't answered yet.
+
+    ClarificationMiddleware intercepts an ``ask_clarification`` tool call, appends a
+    ``ToolMessage(name="ask_clarification")`` and interrupts via ``Command(goto=END)``.
+    The agent is then legitimately *waiting* for the user — its next no-tool-call
+    output is a valid waiting state, NOT a premature exit. If TodoMiddleware forces
+    re-engagement here (because a `反问...` todo is still in_progress), the agent
+    re-emits the same question every turn until the reminder cap — which is exactly
+    the "repeated 要不要画图" symptom observed in dogfood (thread ca86744f).
+
+    Detection: scan from the newest message backward. A HumanMessage means the user
+    has since replied → no longer waiting. An ``ask_clarification`` ToolMessage seen
+    first means the question is still outstanding → waiting.
+    """
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            # Skip control reminders we inject ourselves; they are not user replies.
+            if getattr(msg, "name", None) in ("todo_reminder", "todo_completion_reminder"):
+                continue
+            return False
+        if isinstance(msg, ToolMessage) and getattr(msg, "name", None) == "ask_clarification":
+            return True
+    return False
 
 
 def _format_todos(todos: list[Todo]) -> str:
@@ -107,21 +132,6 @@ def _has_tool_call_intent_or_error(message: AIMessage) -> bool:
     return response_metadata.get("finish_reason") in _TOOL_CALL_FINISH_REASONS
 
 
-class _TodoState(AgentState):
-    """Minimal state schema for TodoMiddleware — ThreadState owns todos exclusively.
-
-    Without this, LangChain's PlanningState (which defines ``todos`` with
-    ``OmitFromInput``) and ThreadState (which defines ``todos`` with
-    ``merge_todos`` reducer) would register conflicting channel types during
-    StateGraph compilation, raising::
-
-        ValueError: Channel 'todos' already exists with a different type
-
-    This schema carries no ``todos`` field so ThreadState is the single source.
-    """
-    pass
-
-
 class TodoMiddleware(TodoListMiddleware):
     """Extends TodoListMiddleware with `write_todos` context-loss detection.
 
@@ -131,12 +141,12 @@ class TodoMiddleware(TodoListMiddleware):
     and injects a reminder message so the model can continue tracking progress.
     """
 
-    state_schema = _TodoState
+    state_schema = ThreadState
 
     @override
     def before_model(
         self,
-        state: PlanningState,
+        state: ThreadState,
         runtime: Runtime,
     ) -> dict[str, Any] | None:
         """Inject a todo-list reminder when write_todos has left the context window."""
@@ -174,7 +184,7 @@ class TodoMiddleware(TodoListMiddleware):
     @override
     async def abefore_model(
         self,
-        state: PlanningState,
+        state: ThreadState,
         runtime: Runtime,
     ) -> dict[str, Any] | None:
         """Async version of before_model."""
@@ -188,29 +198,6 @@ class TodoMiddleware(TodoListMiddleware):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-
-        # Replace write_todos with a version that accepts an optional `reason`
-        # parameter. The reason value is ignored functionally but read by
-        # TodoPlanningDisciplineProvider as an explicit intent escape hatch.
-        if self.tools:
-            _original_desc = self.tools[0].description if self.tools else ""
-
-            @tool(description=_original_desc)
-            def write_todos(
-                todos: list[Todo],
-                reason: str | None = None,
-                tool_call_id: Annotated[str, InjectedToolCallId] = "",
-            ) -> Command:
-                """Create and manage a structured task list for your current work session."""
-                return Command(
-                    update={
-                        "todos": todos,
-                        "messages": [ToolMessage(f"Updated todo list to {todos}", tool_call_id=tool_call_id)],
-                    }
-                )
-
-            self.tools = [write_todos]
-
         self._lock = threading.Lock()
         self._pending_completion_reminders: dict[tuple[str, str], list[str]] = {}
         self._completion_reminder_counts: dict[tuple[str, str], int] = {}
@@ -292,12 +279,12 @@ class TodoMiddleware(TodoListMiddleware):
             self._drop_completion_reminder_key_locked(key)
 
     @override
-    def before_agent(self, state: PlanningState, runtime: Runtime) -> dict[str, Any] | None:
+    def before_agent(self, state: ThreadState, runtime: Runtime) -> dict[str, Any] | None:
         self._clear_other_run_completion_reminders(runtime)
         return None
 
     @override
-    async def abefore_agent(self, state: PlanningState, runtime: Runtime) -> dict[str, Any] | None:
+    async def abefore_agent(self, state: ThreadState, runtime: Runtime) -> dict[str, Any] | None:
         self._clear_other_run_completion_reminders(runtime)
         return None
 
@@ -305,7 +292,7 @@ class TodoMiddleware(TodoListMiddleware):
     @override
     def after_model(
         self,
-        state: PlanningState,
+        state: ThreadState,
         runtime: Runtime,
     ) -> dict[str, Any] | None:
         """Prevent premature agent exit when todo items are still incomplete.
@@ -332,6 +319,15 @@ class TodoMiddleware(TodoListMiddleware):
         if not last_ai or _has_tool_call_intent_or_error(last_ai):
             return None
 
+        # 2.5. Do NOT force re-engagement while the agent is waiting for the user
+        # to answer an ask_clarification. The clean no-tool-call output here is a
+        # legitimate waiting state, not a premature exit. Forcing jump_to=model
+        # (because a `反问...` todo is still in_progress) makes the agent re-ask the
+        # same question every turn until the reminder cap — the repeated "要不要画图"
+        # symptom from dogfood (thread ca86744f). Let it exit quietly and wait.
+        if _is_awaiting_clarification(messages):
+            return None
+
         # 3. Allow exit when all todos are completed or there are no todos.
         todos: list[Todo] = state.get("todos") or []  # type: ignore[assignment]
         if not todos or all(t.get("status") == "completed" for t in todos):
@@ -351,7 +347,7 @@ class TodoMiddleware(TodoListMiddleware):
     @hook_config(can_jump_to=["model"])
     async def aafter_model(
         self,
-        state: PlanningState,
+        state: ThreadState,
         runtime: Runtime,
     ) -> dict[str, Any] | None:
         """Async version of after_model."""
@@ -392,11 +388,11 @@ class TodoMiddleware(TodoListMiddleware):
         return await handler(self._augment_request(request))
 
     @override
-    def after_agent(self, state: PlanningState, runtime: Runtime) -> dict[str, Any] | None:
+    def after_agent(self, state: ThreadState, runtime: Runtime) -> dict[str, Any] | None:
         self._clear_current_run_completion_reminders(runtime)
         return None
 
     @override
-    async def aafter_agent(self, state: PlanningState, runtime: Runtime) -> dict[str, Any] | None:
+    async def aafter_agent(self, state: ThreadState, runtime: Runtime) -> dict[str, Any] | None:
         self._clear_current_run_completion_reminders(runtime)
         return None

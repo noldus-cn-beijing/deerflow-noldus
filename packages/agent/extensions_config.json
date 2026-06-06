@@ -42,6 +42,12 @@
     "ethoinsight-metric-catalog": {
       "enabled": true
     },
+    "ethovision-paradigm-knowledge": {
+      "enabled": true
+    },
+    "ethoinsight-grouping": {
+      "enabled": true
+    },
     "ethoinsight-column-confirmation": {
       "enabled": true
     }
