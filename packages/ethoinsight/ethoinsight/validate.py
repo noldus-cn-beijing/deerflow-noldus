@@ -1,25 +1,22 @@
-"""Metric validation — deterministic range/NaN checks.
+"""Metric validation — L-A 安全网（NaN/Inf only, 不依赖 catalog）。
 
-AutoResearch-inspired: code-enforced checks that shouldn't be left to LLM judgment.
+两层分工：
+  L-A（本模块） — 进程内安全网，只查 NaN/Inf（name-agnostic 确定性检查）
+  L-B（validate_catalog.py）— 语义范围校验，按 catalog output_unit 查范围
 
-Naming conventions follow the real catalog metric names (suffix-based):
-  - *_ratio   → 0–1 range (real: open_arm_time_ratio, center_distance_ratio, …)
-  - *_pct     → 0–100 range (future percentage metrics)
-  - *_count   → non-negative (real: center_entry_count, transition_count, …)
-  - *_time    → non-negative (real: open_zone_time, immobility_time, …)
-  - *_latency → non-negative (real: light_latency, immobility_latency, …)
-  - *_distance → non-negative (real: cumulative_distance, …)
+范围校验（ratio/pct/非负）已从本模块移除，全部迁移到 L-B。
 """
 
 import math
 from typing import Any
 
-# Suffixes that imply non-negative values (matching real catalog metric names)
-_NON_NEGATIVE_SUFFIXES = ("_count", "_time", "_latency", "_distance")
-
 
 def validate_metrics(metrics: dict[str, Any]) -> list[dict[str, str]]:
-    """Validate computed metrics are in plausible ranges.
+    """Validate computed metrics for NaN / Inf (L-A safety net).
+
+    Range checks (ratio/pct/non-negative) are now done by L-B
+    (``ethoinsight.validate_catalog.validate_metrics_against_catalog``)
+    which uses the catalog's ``output_unit`` to drive validation.
 
     Args:
         metrics: {metric_name: value} dict from compute script output.
@@ -37,38 +34,14 @@ def validate_metrics(metrics: dict[str, Any]) -> list[dict[str, str]]:
         if not isinstance(value, (int, float)):
             continue
 
-        # NaN/Inf check (name-agnostic — the core AutoResearch safety net)
+        # NaN check (name-agnostic — the core AutoResearch safety net)
         if math.isnan(value):
             violations.append({"metric": name, "issue": "NaN", "value": "NaN"})
             continue
+
+        # Inf check
         if math.isinf(value):
             violations.append({"metric": name, "issue": "Inf", "value": str(value)})
             continue
-
-        # Percentage range check (naming convention: *_pct, 0–100)
-        if name.endswith("_pct") and not (0.0 <= value <= 100.0):
-            violations.append({
-                "metric": name,
-                "issue": "percentage_out_of_range",
-                "value": str(value),
-            })
-
-        # Ratio range check (naming convention: *_ratio, 0–1)
-        if name.endswith("_ratio") and not (0.0 <= value <= 1.0):
-            violations.append({
-                "metric": name,
-                "issue": "ratio_out_of_range",
-                "value": str(value),
-            })
-
-        # Non-negative check — suffix-based to match real catalog names
-        # (center_entry_count, immobility_time, light_latency, cumulative_distance, …)
-        if any(name.endswith(suffix) for suffix in _NON_NEGATIVE_SUFFIXES):
-            if value < 0:
-                violations.append({
-                    "metric": name,
-                    "issue": "negative_value",
-                    "value": str(value),
-                })
 
     return violations

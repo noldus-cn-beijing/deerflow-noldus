@@ -1,22 +1,14 @@
-"""Tests for ethoinsight.validate — deterministic metric validation (S2).
+"""Tests for ethoinsight.validate — NaN/Inf safety net (L-A layer).
 
-AutoResearch-inspired: code-enforced NaN / Inf / range checks that should
-not be left to LLM judgment.
-
-Naming conventions tested (suffix-based, matching real catalog metric names):
-  - *_pct     → 0–100 range (future percentage metrics)
-  - *_ratio   → 0–1 range (real: open_arm_time_ratio, center_distance_ratio, …)
-  - *_count   → non-negative (real: center_entry_count, transition_count, …)
-  - *_time    → non-negative (real: open_zone_time, immobility_time, …)
-  - *_latency → non-negative (real: light_latency, immobility_latency, …)
-  - *_distance → non-negative (real: cumulative_distance, …)
+L-A 只保留 NaN/Inf 确定性安全检查（不依赖 catalog）。
+范围校验（ratio/pct/非负）已迁移到 L-B（catalog-driven validate_catalog.py）。
 """
 
 from ethoinsight.validate import validate_metrics
 
 
 class TestValidateMetrics:
-    """Unit tests for validate_metrics."""
+    """Unit tests for validate_metrics — L-A NaN/Inf safety net."""
 
     # ------------------------------------------------------------------
     # Happy path — real catalog metric names
@@ -56,7 +48,7 @@ class TestValidateMetrics:
         assert validate_metrics({"has_data": False}) == []
 
     # ------------------------------------------------------------------
-    # NaN / Inf — name-agnostic (the core AutoResearch safety net)
+    # NaN / Inf (L-A 唯一保留的检查, name-agnostic)
     # ------------------------------------------------------------------
 
     def test_nan_is_detected(self):
@@ -79,71 +71,53 @@ class TestValidateMetrics:
         assert violations[0]["issue"] == "Inf"
 
     # ------------------------------------------------------------------
-    # Ratio range (0–1) — *_ratio suffix, real catalog convention
+    # L-A 不再做 suffix 范围校验 — 全部迁移到 L-B catalog-driven 验证
     # ------------------------------------------------------------------
 
-    def test_ratio_out_of_range_high(self):
-        violations = validate_metrics({"open_arm_time_ratio": 1.5})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "ratio_out_of_range"
+    def test_ratio_out_of_range_no_longer_checked_by_la(self):
+        """Ratios above 1.0 are NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"open_arm_time_ratio": 1.5}) == []
 
-    def test_ratio_out_of_range_negative(self):
-        violations = validate_metrics({"center_distance_ratio": -0.1})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "ratio_out_of_range"
+    def test_ratio_negative_no_longer_checked_by_la(self):
+        """Negative ratios are NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"center_time_ratio": -0.1}) == []
 
-    def test_ratio_at_boundary_passes(self):
+    def test_ratio_at_boundary_still_passes(self):
+        """0.0 and 1.0 — no issue in either L-A or L-B."""
         assert validate_metrics({"open_arm_time_ratio": 0.0}) == []
         assert validate_metrics({"open_arm_time_ratio": 1.0}) == []
 
-    # ------------------------------------------------------------------
-    # Percentage range (0–100) — *_pct suffix
-    # ------------------------------------------------------------------
+    def test_pct_out_of_range_no_longer_checked_by_la(self):
+        """Percentages above 100 are NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"mobility_pct": 150.0}) == []
 
-    def test_pct_out_of_range_high(self):
-        violations = validate_metrics({"mobility_pct": 150.0})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "percentage_out_of_range"
+    def test_pct_negative_no_longer_checked_by_la(self):
+        """Negative percentages are NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"immobility_pct": -5.0}) == []
 
-    def test_pct_out_of_range_negative(self):
-        violations = validate_metrics({"immobility_pct": -5.0})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "percentage_out_of_range"
-
-    def test_pct_at_boundary_passes(self):
+    def test_pct_at_boundary_still_passes(self):
+        """0% and 100% — no issue in either L-A or L-B."""
         assert validate_metrics({"mobility_pct": 0.0}) == []
         assert validate_metrics({"mobility_pct": 100.0}) == []
 
-    # ------------------------------------------------------------------
-    # Non-negative checks — suffix-based, real catalog metric names
-    # ------------------------------------------------------------------
+    def test_negative_count_no_longer_checked_by_la(self):
+        """Negative count is NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"center_entry_count": -1}) == []
 
-    def test_negative_count(self):
-        """Real metric: center_entry_count"""
-        violations = validate_metrics({"center_entry_count": -1})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "negative_value"
+    def test_negative_time_no_longer_checked_by_la(self):
+        """Negative time is NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"immobility_time": -10.0}) == []
 
-    def test_negative_time(self):
-        """Real metric: immobility_time"""
-        violations = validate_metrics({"immobility_time": -10.0})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "negative_value"
+    def test_negative_latency_no_longer_checked_by_la(self):
+        """Negative latency is NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"light_latency": -2.0}) == []
 
-    def test_negative_latency(self):
-        """Real metric: light_latency"""
-        violations = validate_metrics({"light_latency": -2.0})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "negative_value"
+    def test_negative_distance_no_longer_checked_by_la(self):
+        """Negative distance is NOT checked by L-A — moved to L-B."""
+        assert validate_metrics({"cumulative_distance": -50.0}) == []
 
-    def test_negative_distance(self):
-        """Real metric: cumulative_distance"""
-        violations = validate_metrics({"cumulative_distance": -50.0})
-        assert len(violations) == 1
-        assert violations[0]["issue"] == "negative_value"
-
-    def test_non_negative_suffix_at_zero_passes(self):
-        """Zero is valid for all non-negative metrics."""
+    def test_non_negative_values_at_zero_pass(self):
+        """Zero is valid (and L-A never flags non-NaN/Inf anyway)."""
         assert validate_metrics({
             "center_entry_count": 0,
             "immobility_time": 0.0,
@@ -152,30 +126,30 @@ class TestValidateMetrics:
         }) == []
 
     # ------------------------------------------------------------------
-    # Multiple violations
+    # Multiple violations (L-A: only NaN/Inf now)
     # ------------------------------------------------------------------
 
-    def test_multiple_violations_with_real_names(self):
-        """All violating metrics should be reported in a single pass."""
-        violations = validate_metrics({
-            "immobility_pct": 120.0,             # percentage_out_of_range
-            "cumulative_distance": -5.0,          # negative_value
-            "center_entry_count": -1,             # negative_value
-            "immobility_time": float("nan"),      # NaN
-            "light_latency": -0.5,                # negative_value
-            "open_arm_time_ratio": 0.45,          # OK
-        })
-        assert len(violations) == 5
-        issues = {v["issue"] for v in violations}
-        assert "percentage_out_of_range" in issues
-        assert "negative_value" in issues
-        assert "NaN" in issues
+    def test_multiple_violations_only_nan_inf(self):
+        """After narrowing, only NaN/Inf produce violations in L-A.
 
-    def test_ratio_and_pct_have_different_ranges(self):
-        """*_ratio uses 0-1 range, *_pct uses 0-100 range."""
+        Range-violating values (out-of-range pct, negative distance) are
+        silently passed by L-A — they are L-B's responsibility now.
+        """
+        violations = validate_metrics({
+            "immobility_pct": 120.0,            # L-A no longer checks
+            "cumulative_distance": -5.0,        # L-A no longer checks
+            "immobility_time": float("nan"),    # NaN — still caught
+            "center_entry_count": 3,            # OK
+            "open_zone_time": float("-inf"),    # Inf — still caught
+        })
+        assert len(violations) == 2
+        issues = {v["issue"] for v in violations}
+        assert issues == {"NaN", "Inf"}
+
+    def test_ratio_and_pct_no_longer_checked(self):
+        """L-A no longer checks *_ratio or *_pct ranges (moved to L-B)."""
         assert validate_metrics({"open_arm_time_ratio": 0.8}) == []
         assert validate_metrics({"mobility_pct": 80.0}) == []
-        v_ratio = validate_metrics({"open_arm_time_ratio": 1.5})
-        v_pct = validate_metrics({"mobility_pct": 150.0})
-        assert v_ratio[0]["issue"] == "ratio_out_of_range"
-        assert v_pct[0]["issue"] == "percentage_out_of_range"
+        # These used to be violations — now empty (moved to L-B)
+        assert validate_metrics({"open_arm_time_ratio": 1.5}) == []
+        assert validate_metrics({"mobility_pct": 150.0}) == []

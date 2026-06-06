@@ -15,6 +15,8 @@ inspect_uploaded_file 报告有**未被系统识别的自定义分析区列**时
 
 ## 方法论
 
+**处理用户自定义列前，先 `read_file references/column-processing-methodology.md`** 了解三层列处理框架（固定列 / 自定义区 1:1 映射 / 子区聚合）与工具分工（identify → inspect → dump_headers）。
+
 ### 1. 理解 catalog 合法概念菜单
 
 先读 `identify_ev19_template` 结果中的 `paradigm_key`，按范式查 catalog 的合法分析区概念：
