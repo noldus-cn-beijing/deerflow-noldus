@@ -142,11 +142,23 @@ def _derive_column_aliases(cs: dict) -> dict[str, str]:
     """D8/D11: derive column_aliases from column_semantics.columns.
 
     For each confirmed entry with a non-None resolves_to that is not "__ignore__":
-      entry_key (normalized or raw_name) → resolves_to
+      → map BOTH the re-normalized raw_name AND the raw_name itself to resolves_to.
+
+    CRITICAL: the alias source key is computed by re-running normalize_column_name()
+    on raw_name — NOT by trusting the LLM-supplied ``normalized`` field. The real
+    pipeline feeds resolve already-normalized columns (parse_header → normalize_columns),
+    and e.g. normalize_column_name("中心区") == "中心区" (Chinese passes through slugify),
+    NOT "center". If we trusted a wrong LLM ``normalized`` value the alias key would not
+    match the actual column and the remap would silently miss → metric drops.
+
+    Mapping both the normalized form and the raw_name makes the alias fire whether resolve
+    receives raw or normalized column names.
 
     This is a deterministic pure function computed at write-time (no resolve-time
     recomputation — preserves analysis_config_id input timing determinism).
     """
+    from ethoinsight.utils import normalize_column_name
+
     aliases: dict[str, str] = {}
     columns = cs.get("columns", {})
     if not isinstance(columns, dict):
@@ -159,9 +171,12 @@ def _derive_column_aliases(cs: dict) -> dict[str, str]:
         resolves_to = entry.get("resolves_to")
         if resolves_to is None or resolves_to == "__ignore__":
             continue
-        # Use normalized name as alias source if available, else raw_name.
-        source = entry.get("normalized", entry.get("raw_name", col_key))
-        aliases[source] = resolves_to
+        # Source of truth for the raw name: explicit raw_name, else the dict key.
+        raw_name = entry.get("raw_name", col_key)
+        # Re-normalize deterministically — do NOT trust the LLM-supplied "normalized".
+        aliases[normalize_column_name(raw_name)] = resolves_to
+        # Belt-and-suspenders: also map the raw name verbatim.
+        aliases[raw_name] = resolves_to
     return aliases
 
 
@@ -193,8 +208,14 @@ def set_experiment_paradigm_tool(
          set_experiment_paradigm(column_semantics={...})
          → writes column_semantics + derived column_aliases into experiment-context.json.
            Can be combined with Gate 1 or called separately. column_semantics schema:
-           {"columns": {"中心区": {"raw_name": "...", "normalized": "...",
-            "resolves_to": "in_zone_center", "meaning_zh": "...", "confirmed": true}, ...}}
+           {"columns": {"<raw column name verbatim>": {
+              "raw_name": "中心区",            # exact data column header (NOT translated)
+              "resolves_to": "center",         # CONCEPT KEYWORD (center/border/open_arms/...),
+                                               #   NOT a machine column name — the catalog layer
+                                               #   translates it to a matchable column. Use null
+                                               #   + "ignore": true for irrelevant columns.
+              "meaning_zh": "中心分析区",       # Chinese narrative meaning for report-writer
+              "confirmed": true}, ...}}
 
     Args:
         paradigm: English paradigm name key. Required for Gate 1 mode.

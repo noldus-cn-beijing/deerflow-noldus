@@ -103,6 +103,22 @@ class TestAssessColumnConfidence:
 class TestApplyAliases:
     """_apply_aliases — column alias remapping."""
 
+    def test_concept_keyword_translation_from_catalog(self):
+        """Concept keyword 'center' → matchable in_zone_center_* column via catalog map."""
+        from ethoinsight.catalog.loader import load_catalog
+        from ethoinsight.catalog.resolve import _zone_concept_map
+
+        cat = load_catalog("open_field")
+        cmap = _zone_concept_map(cat)
+        assert cmap.get("center") == "in_zone_center_*"
+
+        columns = ["中心区", "x_center"]
+        result = _apply_aliases(columns, {"中心区": "center"}, cmap)
+        # 中心区 → concept "center" → a column that matches in_zone_center_*
+        import fnmatch
+        assert any(fnmatch.fnmatchcase(c, "in_zone_center_*") for c in result)
+        assert "x_center" in result
+
     def test_simple_remap(self):
         """Simple 1:1 remap."""
         columns = ["center", "border", "x_center", "y_center"]
@@ -153,25 +169,33 @@ class TestApplyAliases:
 
 
 class TestResolveWithColumnAliases:
-    """Integration: resolve_metrics with column_aliases."""
+    """Integration: resolve_metrics with column_aliases — REAL data, REAL normalize.
+
+    CRITICAL regression coverage: earlier drafts assumed 中心区 → "center" via slugify.
+    That is FALSE: normalize_column_name("中心区") == "中心区" (Chinese passes through).
+    These tests use the actual normalized columns the pipeline produces, and concept-keyword
+    aliases (what the LLM writes), to prove the seam works end-to-end at the resolve layer.
+    """
+
+    # Real OFT columns after parse_header → normalize_columns (中心区/边缘区 unchanged).
+    REAL_OFT_COLUMNS = [
+        "trial_time", "recording_time",
+        "x_center", "y_center",
+        "area", "areachange", "elongation",
+        "distance_moved", "velocity",
+        "中心区", "边缘区到中心区", "边缘区", "result_1",
+    ]
 
     def test_without_aliases_raises_on_custom_columns(self, tmp_path):
-        """Without aliases, custom-named columns cause columns_missing for OFT."""
-        # parse_header normalizes columns, so resolve_metrics receives
-        # already-normalized names. Custom zone names like "中心区" become
-        # "center" via _slugify — which does NOT match in_zone_center_*.
-        columns = [
-            "trial_time", "recording_time",
-            "x_center", "y_center",
-            "distance_moved", "velocity",
-            "heading", "result_1", "result_2",
-            "center",  # normalized from 中心区 — won't match in_zone_center_*
-            "border",  # normalized from 边缘区 — won't match in_zone_* patterns
-        ]
+        """Without aliases, real custom zone columns (中心区) cause columns_missing for OFT.
+
+        This is the exact failure that the 34-file OFT upload hit: 中心区 normalizes to
+        中心区 (NOT center), which does not match in_zone_center_*.
+        """
         try:
             resolve_metrics(
                 paradigm="open_field",
-                columns=columns,
+                columns=self.REAL_OFT_COLUMNS,
                 raw_files=["/mnt/user-data/uploads/test.txt"],
                 workspace_dir=str(tmp_path),
                 virtual_workspace_dir="/mnt/user-data/workspace",
@@ -179,54 +203,58 @@ class TestResolveWithColumnAliases:
             assert False, "Should have raised ResolveError"
         except ResolveError as e:
             assert e.code == "columns_missing"
-            # in_zone_center_* should be in the missing patterns
             assert any("in_zone_center" in p for p in e.details.get("missing_patterns", []))
 
-    def test_with_aliases_resolves_successfully(self, tmp_path):
-        """With column_aliases, custom zone columns → catalog concepts → resolve succeeds."""
-        columns = [
-            "trial_time", "recording_time",
-            "x_center", "y_center",
-            "distance_moved", "velocity",
-            "heading", "result_1", "result_2",
-            "center",  # normalized from 中心区
-            "border",  # normalized from 边缘区
-        ]
+    def test_with_concept_keyword_aliases_resolves(self, tmp_path):
+        """REAL pipeline: concept-keyword aliases on real normalized columns → metrics resolve.
+
+        The LLM writes a CONCEPT KEYWORD ("center"), NOT a machine column name. The catalog
+        concept-translation layer turns it into a column that satisfies in_zone_center_*.
+        """
         aliases = {
-            "center": "in_zone_center_point",
-            "border": "in_zone_border_point",
+            "中心区": "center",   # concept keyword — translated by _zone_concept_map
+            "边缘区": "border",   # concept keyword (OFT has no border metric; harmless)
+            "边缘区到中心区": "__ignore__",
         }
         plan = resolve_metrics(
             paradigm="open_field",
-            columns=columns,
+            columns=self.REAL_OFT_COLUMNS,
             raw_files=["/mnt/user-data/uploads/test.txt"],
             workspace_dir=str(tmp_path),
             virtual_workspace_dir="/mnt/user-data/workspace",
             column_aliases=aliases,
         )
-        # Should have at least the 5 OFT default metrics
         metric_ids = {m.id for m in plan.metrics}
         assert "center_time_ratio" in metric_ids
         assert "center_distance_ratio" in metric_ids
         assert "center_entry_count" in metric_ids
 
-    def test_with_aliases_ignore_removes_column(self, tmp_path):
-        """When a column is ignored, it should not cause issues."""
-        columns = [
-            "trial_time", "recording_time",
-            "x_center", "y_center",
-            "distance_moved", "velocity",
-            "heading", "result_1", "result_2",
-            "center",
-            "border_to_center",
-        ]
+    def test_concrete_column_name_aliases_still_work(self, tmp_path):
+        """Backward-compat: a concrete column-name target (in_zone_center_point) also works."""
         aliases = {
-            "center": "in_zone_center_point",
-            "border_to_center": "__ignore__",
+            "中心区": "in_zone_center_point",  # concrete name — used as-is (not a concept)
+            "边缘区到中心区": "__ignore__",
         }
         plan = resolve_metrics(
             paradigm="open_field",
-            columns=columns,
+            columns=self.REAL_OFT_COLUMNS,
+            raw_files=["/mnt/user-data/uploads/test.txt"],
+            workspace_dir=str(tmp_path),
+            virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases=aliases,
+        )
+        metric_ids = {m.id for m in plan.metrics}
+        assert "center_time_ratio" in metric_ids
+
+    def test_with_aliases_ignore_removes_column(self, tmp_path):
+        """When a column is ignored, it should not cause issues."""
+        aliases = {
+            "中心区": "center",
+            "边缘区到中心区": "__ignore__",
+        }
+        plan = resolve_metrics(
+            paradigm="open_field",
+            columns=self.REAL_OFT_COLUMNS,
             raw_files=["/mnt/user-data/uploads/test.txt"],
             workspace_dir=str(tmp_path),
             virtual_workspace_dir="/mnt/user-data/workspace",

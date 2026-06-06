@@ -126,7 +126,16 @@ class Ev19TemplateGuardrailProvider:
                 policy_id="ev19-template-guardrail",
             )
 
-        # Check 2 (Sprint 1): column_semantics.open_questions must be empty
+        # Check 2 (Sprint 1): column_semantics.open_questions must be empty.
+        #
+        # Layering note: this guardrail catches the case where the lead WROTE
+        # column_semantics but left entries unconfirmed. The case where the lead
+        # NEVER wrote column_semantics despite unrecognised columns is caught
+        # deterministically upstream: prep_metric_plan → resolve raises
+        # columns_missing (no plan_metrics.json is written → code-executor has
+        # nothing to run). So custom columns cannot silently slip through even
+        # without this check; this check additionally stops a half-finished
+        # alignment from proceeding.
         cs = ctx.get("column_semantics")
         if isinstance(cs, dict):
             columns = cs.get("columns", {})

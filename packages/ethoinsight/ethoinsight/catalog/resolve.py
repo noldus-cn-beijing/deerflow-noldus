@@ -22,6 +22,7 @@ from typing import Any
 
 from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.schema import (
+    Catalog,
     ChartEntry,
     MetricEntry,
     Plan,
@@ -173,7 +174,7 @@ def resolve_metrics(
     # consumer touches columns.  _missing_columns / _compute_parameters_in_use
     # / chart resolution ALL consume the post-alias columns list.
     if column_aliases:
-        columns = _apply_aliases(columns, column_aliases)
+        columns = _apply_aliases(columns, column_aliases, _zone_concept_map(cat))
 
     # Step 1: process default_metrics
     for m in cat.default_metrics:
@@ -306,6 +307,7 @@ def resolve_charts(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    column_aliases: dict[str, str] | None = None,
 ) -> PlanCharts:
     """生成 PlanCharts dataclass。失败抛 ResolveError。
 
@@ -341,6 +343,12 @@ def resolve_charts(
 
     # Apply user_intent filter — keep entries whose id matches the intent keyword(s).
     candidate_charts = _filter_charts_by_user_intent(cat.charts, user_intent)
+
+    # Sprint 1 column-semantics: apply alias remapping before chart _missing_columns
+    # checks, identical to resolve_metrics — custom zone columns must remap to catalog
+    # concepts or zone-dependent charts silently drop.
+    if column_aliases:
+        columns = _apply_aliases(columns, column_aliases, _zone_concept_map(cat))
 
     charts: list[PlanChart] = []
     skipped: list[PlanSkipped] = []
@@ -436,8 +444,64 @@ def _missing_columns(patterns: list[str], available: list[str]) -> list[str]:
     return missing
 
 
-def _apply_aliases(columns: list[str], aliases: dict[str, str]) -> list[str]:
+def _zone_concept_map(cat: Catalog) -> dict[str, str]:
+    """Build {concept_keyword → glob_pattern} from a catalog's zone requires_columns.
+
+    Sprint 1 列语义对齐: the LLM writes a concept keyword (e.g. "center", "open_arms")
+    as ``resolves_to`` — NOT a machine column name with a specific suffix. This map lets
+    ``_apply_aliases`` translate that concept into a column name that actually satisfies
+    the catalog glob, so the LLM never has to know suffixes like ``_point``/``_aligned``.
+
+    The catalog YAML is the single source of truth (no second knowledge store): we scan
+    every metric/chart ``requires_columns`` for ``in_zone_<concept>*`` patterns and key
+    them by ``<concept>`` (the part between the ``in_zone_`` prefix and the glob ``*``).
+
+    Example for OFT:
+      requires_columns ``in_zone_center_*`` → {"center": "in_zone_center_*"}
+    """
+    concept_map: dict[str, str] = {}
+    entries = list(cat.default_metrics) + list(cat.optional_metrics) + list(cat.charts)
+    for entry in entries:
+        for pat in getattr(entry, "requires_columns", []) or []:
+            if not pat.startswith("in_zone_") or "*" not in pat:
+                continue
+            # Strip the in_zone_ prefix and the trailing glob to get the concept keyword.
+            # "in_zone_center_*" → "center"; "in_zone_open_arms_*" → "open_arms";
+            # "in_zone_light*" → "light"; "in_zone_open*" → "open".
+            core = pat[len("in_zone_"):]
+            core = core.rstrip("*").rstrip("_")
+            if core:
+                concept_map.setdefault(core, pat)
+    return concept_map
+
+
+def _materialize_concept(concept: str, glob_pattern: str) -> str:
+    """Turn a concept keyword into a concrete column name that satisfies ``glob_pattern``.
+
+    "center" + "in_zone_center_*" → "in_zone_center_aligned" (matches the glob).
+    If the concept already looks like a full column name (starts with in_zone_ and
+    matches the glob), it is returned unchanged.
+    """
+    if concept.startswith("in_zone_") and fnmatch.fnmatchcase(concept, glob_pattern):
+        return concept
+    # Replace the trailing glob with a synthetic, deterministic suffix.
+    base = glob_pattern.rstrip("*")
+    if base.endswith("_"):
+        return f"{base}aligned"
+    return f"{base}_aligned"
+
+
+def _apply_aliases(
+    columns: list[str],
+    aliases: dict[str, str],
+    concept_map: dict[str, str] | None = None,
+) -> list[str]:
     """Apply column alias remapping: {raw_or_normalized → catalog concept}.
+
+    The alias *target* may be either:
+      * a concept keyword (e.g. "center") — translated via ``concept_map`` into a
+        column name that satisfies the catalog glob (preferred; LLM writes this); or
+      * already a concrete column name (e.g. "in_zone_center_point") — used as-is.
 
     Columns whose alias value is None or "__ignore__" are removed
     (user confirmed the column is irrelevant — D4).
@@ -445,12 +509,16 @@ def _apply_aliases(columns: list[str], aliases: dict[str, str]) -> list[str]:
     Returns a new list; the input is not mutated.
     """
     ignore_values = {None, "__ignore__"}
+    concept_map = concept_map or {}
     result: list[str] = []
     for col in columns:
         if col in aliases:
             target = aliases[col]
             if target in ignore_values:
                 continue
+            # Translate concept keyword → matchable column name when recognised.
+            if target in concept_map:
+                target = _materialize_concept(target, concept_map[target])
             result.append(target)
         else:
             result.append(col)

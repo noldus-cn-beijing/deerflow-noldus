@@ -38,8 +38,11 @@ _ERROR_HINTS: dict[str, str] = {
         "或检查 set_experiment_paradigm 调用是否正确。"
     ),
     "columns_missing": (
-        "数据缺关键列（可能录制设置漏了 Open/Closed arms 进入次数或相关区域）。"
-        "用 ask_clarification 让用户确认实验录制设置。"
+        "缺失的列是 in_zone_* 分析区列时，通常不是数据缺列，而是用户自定义了分析区列名"
+        "（如把中心区命名为「中心区」/「Center」）——先调 inspect_uploaded_file 看 "
+        "column_assessment.open_questions，按 ethoinsight-column-confirmation skill 与用户对齐列语义，"
+        "再调 set_experiment_paradigm(column_semantics={...}) 落盘后重试 prep_metric_plan。"
+        "仅当确认数据真的没有该分析区列（录制设置漏了）时，才用 ask_clarification 让用户确认实验录制设置。"
     ),
     "schema_violation": (
         "catalog YAML 损坏——这是项目内部 bug。present_files 把错误信息呈现给用户，让他报 bug。"
@@ -184,6 +187,14 @@ def prep_metric_plan_tool(
                     failed_file=uploaded_file,
                 )
 
+    # Step 4.6 (Sprint 1 列语义对齐): read column_aliases from experiment-context.json.
+    # 写入端 = set_experiment_paradigm(column_semantics=...) 投影出的 column_aliases。
+    # 不读到它 → resolve 拿不到别名 → 自定义分析区列(中心区/边缘区)仍 columns_missing。
+    from deerflow.agents.middlewares.experiment_context import read_context
+
+    ctx = read_context(real_workspace_path)
+    column_aliases = ctx.get("column_aliases") if ctx else None
+
     # Step 5: resolve catalog → PlanMetrics
     # raw_files 走虚拟路径,避免宿主机路径泄漏到 plan_metrics.json 后被 subagent
     # 照抄进 bash --input。IO 部分(detect_ethovision / parse_header)已在 Step 2-4
@@ -195,6 +206,7 @@ def prep_metric_plan_tool(
             raw_files=list(uploaded_files),
             workspace_dir=real_workspace_path,
             virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases=column_aliases,
         )
     except ResolveError as e:
         return _error_result(
