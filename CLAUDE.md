@@ -69,7 +69,8 @@ report-writer（结构化简单报告 + 文献引用）
 
 1. **自动统计决策树**（`ethoinsight/statistics.py`）— Shapiro-Wilk 正态性检验 → 自动选择参数/非参数检验
 2. **领域知识驱动解读**（Skills + `ethoinsight/assess.py`）— 表型推断、混杂因素排查、效应量判断
-3. **质量审核关卡**（data-analyst）— 统计方法适配性检查、异常检测
+3. **质量审核关卡**（data-analyst + 两层指标验证）— 统计方法适配性检查、异常检测
+   - **两层指标验证（catalog-driven，2026-06-06 落地）**：L-A（`ethoinsight/validate.py`）进程内 `emit_result` 只查 NaN/Inf（name-agnostic 安全网，拿不到 paradigm）；L-B（`ethoinsight/validate_catalog.py`）在 code-executor 层调 `python -m ethoinsight.validate_catalog --plan`，按 catalog `output_unit` 做范围校验（ratio→[0,1]/count→≥0整数/物理单位→≥0），**按 subject 逐条验证**、**直接用 plan 自带的 output_unit**。两层都把 `VALIDATION_ERROR` 行汇入 data_quality_warnings（`code=METRIC_VALIDATION`）供 data-analyst fast-fail。详见 [docs/design/2026-06-06-data-processing-methodology-design.md](docs/design/2026-06-06-data-processing-methodology-design.md)。
 
 ### 知识注入三层
 
