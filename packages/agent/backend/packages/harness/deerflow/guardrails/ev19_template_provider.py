@@ -132,6 +132,8 @@ class Ev19TemplateGuardrailProvider:
             return GuardrailDecision(allow=True, reasons=[GuardrailReason(code="oap.allowed")])
 
         ctx = self._read_context(workspace)
+
+        # Check 1: ev19_template must be set
         if ctx is None or not ctx.get("ev19_template"):
             return GuardrailDecision(
                 allow=False,
@@ -147,6 +149,42 @@ class Ev19TemplateGuardrailProvider:
                 ],
                 policy_id="ev19-template-guardrail",
             )
+
+        # Check 2 (Sprint 1): column_semantics.open_questions must be empty.
+        #
+        # Layering note: this guardrail catches the case where the lead WROTE
+        # column_semantics but left entries unconfirmed. The case where the lead
+        # NEVER wrote column_semantics despite unrecognised columns is caught
+        # deterministically upstream: prep_metric_plan → resolve raises
+        # columns_missing (no plan_metrics.json is written → code-executor has
+        # nothing to run). So custom columns cannot silently slip through even
+        # without this check; this check additionally stops a half-finished
+        # alignment from proceeding.
+        cs = ctx.get("column_semantics")
+        if isinstance(cs, dict):
+            columns = cs.get("columns", {})
+            if isinstance(columns, dict):
+                unconfirmed = [
+                    col_key
+                    for col_key, entry in columns.items()
+                    if isinstance(entry, dict) and not entry.get("confirmed")
+                ]
+                if unconfirmed:
+                    return GuardrailDecision(
+                        allow=False,
+                        reasons=[
+                            GuardrailReason(
+                                code="ethoinsight.column_semantics_unconfirmed",
+                                message=(
+                                    f"自定义分析区列尚未确认：{unconfirmed}。"
+                                    f"请先通过 ask_clarification 与用户对齐列语义，"
+                                    f"然后调用 set_experiment_paradigm(column_semantics={{...}}) 落盘。"
+                                    f"参考 skill：ethoinsight-column-confirmation。"
+                                ),
+                            )
+                        ],
+                        policy_id="ev19-template-guardrail",
+                    )
 
         return GuardrailDecision(allow=True, reasons=[GuardrailReason(code="oap.allowed")])
 

@@ -98,6 +98,9 @@ def _build_parser() -> argparse.ArgumentParser:
                         "or {group_name: [subject_path, ...]}. Threaded to aggregate plots that need "
                         "group labels (chart entries with needs_groups: true).")
     p.add_argument("--ev19-template", default=None)
+    p.add_argument("--column-aliases-file", default=None,
+                   help="JSON file mapping {raw_or_normalized column → catalog concept} "
+                        "(Sprint 1 列语义对齐). Remaps user-named zone columns before resolve.")
     p.add_argument("--overrides-file", default=None,
                    help="Optional JSON file with parameter overrides (Sprint 2b). "
                         "Content must be a JSON dict, e.g. "
@@ -203,6 +206,27 @@ def main(argv: list[str] | None = None) -> int:
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Optional column aliases JSON (Sprint 1 列语义对齐): {raw_or_normalized → catalog concept}.
+    column_aliases: dict | None = None
+    if getattr(args, "column_aliases_file", None):
+        try:
+            aliases_data = json.loads(
+                Path(args.column_aliases_file).read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as e:
+            return _emit_error(
+                "schema_violation",
+                f"Cannot read column-aliases-file: {e}",
+                {"path": args.column_aliases_file},
+            )
+        if not isinstance(aliases_data, dict):
+            return _emit_error(
+                "schema_violation",
+                f"column-aliases-file must be a JSON object: {args.column_aliases_file}",
+                {"path": args.column_aliases_file},
+            )
+        column_aliases = aliases_data
+
     if args.mode == "charts":
         # charts mode: resolve_charts → plan_charts.json
         try:
@@ -220,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
                 columns_file=args.columns_file,
                 ev19_template=args.ev19_template,
                 virtual_workspace_dir=virtual_workspace_dir,
+                column_aliases=column_aliases,
             )
         except ResolveError as e:
             return _emit_error(e.code, str(e), e.details)
@@ -253,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
                 columns_file=args.columns_file,
                 ev19_template=args.ev19_template,
                 virtual_workspace_dir=virtual_workspace_dir,
+                column_aliases=column_aliases,
                 overrides=overrides,
                 common_catalog=common_catalog,
             )

@@ -36,9 +36,11 @@ _ERROR_HINTS: dict[str, str] = {
         "或检查 set_experiment_paradigm 调用是否正确。"
     ),
     "columns_missing": (
-        "数据缺少指标必需的列。这通常意味着实验录制或导出设置不完整。"
-        "请向用户说明数据缺列、建议检查实验设计与导出配置后重新提供数据，"
-        "不要在缺列情况下勉强分析。"
+        "缺失的列是 in_zone_* 分析区列时，通常不是数据缺列，而是用户自定义了分析区列名"
+        "（如把中心区命名为「中心区」/「Center」）——先调 inspect_uploaded_file(paradigm=...) 看是否有"
+        "未识别的自定义分析区列，按 ethoinsight-column-confirmation skill 与用户对齐列语义，"
+        "再调 set_experiment_paradigm(column_semantics={...}) 落盘后重试 prep_metric_plan。"
+        "仅当确认数据真的没有该分析区列（录制设置漏了）时，才用 ask_clarification 让用户确认实验录制设置。"
     ),
     "zone_unnamed": (
         "数据里有一个未命名分析区(in_zone)，需要确认它代表哪个目标区域后再分析。"
@@ -204,12 +206,16 @@ def prep_metric_plan_tool(
                     failed_file=uploaded_file,
                 )
 
-    # Step 4.5: read parameter_overrides from experiment-context.json (Sprint 4.5)
+    # Step 4.5/4.6: read parameter_overrides + column_aliases from experiment-context.json.
+    # parameter_overrides (Sprint 4.5): 用户确认的参数覆盖 + analysis_config_id。
+    # column_aliases (Sprint 1 列语义对齐): set_experiment_paradigm(column_semantics=...)
+    #   投影出的别名表；不读到它 → resolve 拿不到别名 → 自定义分析区列仍 columns_missing。
     from deerflow.agents.middlewares.experiment_context import read_context
 
     ctx = read_context(real_workspace_path)
     parameter_overrides = ctx.get("parameter_overrides", {}) if ctx else {}
     analysis_config_id = ctx.get("analysis_config_id", "PENDING") if ctx else "PENDING"
+    column_aliases = ctx.get("column_aliases") if ctx else None
 
     # Step 5: resolve catalog → PlanMetrics
     # raw_files 走虚拟路径,避免宿主机路径泄漏到 plan_metrics.json 后被 subagent
@@ -262,6 +268,7 @@ def prep_metric_plan_tool(
             raw_files=list(uploaded_files),
             workspace_dir=real_workspace_path,
             virtual_workspace_dir="/mnt/user-data/workspace",
+            column_aliases=column_aliases,
             groups_file=groups_file_virtual,
             overrides=parameter_overrides,  # Sprint 4.5: 把用户确认的参数覆盖真正传入计算（非仅展示）
             common_catalog=load_common_catalog(),  # Sprint 4.5: shared_parameters 来源；缺它则 velocity_*/pendulum_* 等共享参数进不了 parameters_in_use，override 无可覆盖

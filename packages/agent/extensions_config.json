@@ -47,6 +47,9 @@
     },
     "ethoinsight-grouping": {
       "enabled": true
+    },
+    "ethoinsight-column-confirmation": {
+      "enabled": true
     }
   }
 }
