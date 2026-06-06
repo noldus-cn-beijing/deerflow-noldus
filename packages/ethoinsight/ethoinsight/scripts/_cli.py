@@ -23,7 +23,23 @@ RESULT_MARKER = "[result]"
 
 
 def emit_result(payload: dict[str, Any]) -> None:
-    """Print a `[result] {json}` line to stdout for subagent extraction."""
+    """Print a `[result] {json}` line to stdout for subagent extraction.
+
+    Also runs metric validation (NaN / Inf / out-of-range) on the payload
+    and prints VALIDATION_ERROR lines when violations are found.  These are
+    informational — the result is still emitted so downstream can decide
+    how to handle partial data.
+    """
+    from ethoinsight.validate import validate_metrics
+
+    # Validate the result value if it looks like a single-metric payload.
+    if "metric" in payload and "value" in payload:
+        violations = validate_metrics({payload["metric"]: payload["value"]})
+        for v in violations:
+            print(
+                f"VALIDATION_ERROR: {v['metric']}: {v['issue']} (value={v['value']})"
+            )
+
     print(f"{RESULT_MARKER} {json.dumps(payload, ensure_ascii=False)}")
 
 
