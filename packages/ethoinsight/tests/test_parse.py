@@ -81,6 +81,28 @@ class TestDetectEthovision:
     def test_directory_returns_false(self, tmp_path):
         assert parse.detect_ethovision(str(tmp_path)) is False
 
+    def test_english_locale_trajectory_file(self, tmp_path):
+        """TXT with 'Number of header lines:' (English locale) → True."""
+        import codecs
+
+        f = tmp_path / "english_locale.txt"
+        content = "Number of header lines: 39\r\n"
+        with open(str(f), "wb") as fh:
+            fh.write(codecs.BOM_UTF16_LE)
+            fh.write(content.encode("utf-16-le"))
+        assert parse.detect_ethovision(str(f)) is True
+
+    def test_chinese_locale_trajectory_file(self, tmp_path):
+        """TXT with '标题行数：' (Chinese locale) → True (regression)."""
+        import codecs
+
+        f = tmp_path / "chinese_locale.txt"
+        content = "标题行数：39\r\n"
+        with open(str(f), "wb") as fh:
+            fh.write(codecs.BOM_UTF16_LE)
+            fh.write(content.encode("utf-16-le"))
+        assert parse.detect_ethovision(str(f)) is True
+
 
 # ============================================================================
 # parse_header
@@ -444,6 +466,48 @@ class TestDetectEthovisionXlsx:
 
         path = _require_xlsx_file()
         assert detect_ethovision(path) is True
+
+    def test_detect_xlsx_english_locale_marker(self, tmp_path):
+        """A1 = 'Number of header lines:' (English locale) → True."""
+        from ethoinsight.parse._core import detect_ethovision
+
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.cell(1, 1, "Number of header lines:")
+        ws.cell(1, 2, 39)
+        path = tmp_path / "english_locale.xlsx"
+        wb.save(str(path))
+        assert detect_ethovision(str(path)) is True
+
+    def test_detect_xlsx_chinese_locale_marker(self, tmp_path):
+        """A1 = '标题行数：' (Chinese locale) → True (regression)."""
+        from ethoinsight.parse._core import detect_ethovision
+
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.cell(1, 1, "标题行数：")
+        ws.cell(1, 2, 39)
+        path = tmp_path / "chinese_locale.xlsx"
+        wb.save(str(path))
+        assert detect_ethovision(str(path)) is True
+
+    def test_detect_xlsx_no_marker(self, tmp_path):
+        """A1 is something else → False."""
+        from ethoinsight.parse._core import detect_ethovision
+
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.cell(1, 1, "Sales Report")
+        ws.cell(1, 2, 42)
+        path = tmp_path / "not_ethovision.xlsx"
+        wb.save(str(path))
+        assert detect_ethovision(str(path)) is False
 
     def test_detect_txt_regression(self):
         from ethoinsight.parse._core import detect_ethovision

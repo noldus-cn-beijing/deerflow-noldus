@@ -1,9 +1,11 @@
 """ethoinsight.parse — EthoVision XT data file parser.
 
 Handles EthoVision XT exported trajectory files in three formats:
-- TXT: UTF-16 LE with BOM, semicolon-delimited, "标题行数：" header
+- TXT: UTF-16 LE with BOM, semicolon-delimited, EthoVision header-line-count marker
 - CSV: UTF-16 LE with BOM, semicolon-delimited
-- XLSX/XLS: Excel export with "标题行数：" in row 0, column 0
+- XLSX/XLS: Excel export with EthoVision header-line-count marker in row 0, column 0
+
+The marker is locale-dependent: "标题行数：" (Chinese) or "Number of header lines:" (English).
 """
 
 from __future__ import annotations
@@ -22,7 +24,8 @@ def detect_ethovision(file_path: str) -> bool:
     """Detect whether a file is an EthoVision export.
 
     Supports TXT/CSV (UTF-16 LE with BOM) and XLSX/XLS (Excel export
-    with "标题行数：" in row 0, column 0).
+    with locale-dependent header-line-count marker in row 0, column 0:
+    "标题行数：" or "Number of header lines:").
     """
     real_path, sheet_name = _parse_path_and_sheet(file_path)
     path = real_path
@@ -53,8 +56,8 @@ def detect_ethovision(file_path: str) -> bool:
 
     first_line = text.split("\r\n")[0].strip("\ufeff").strip()
 
-    # Trajectory file: starts with "标题行数："
-    if "标题行数" in first_line:
+    # Trajectory file: starts with locale-dependent header-line-count marker
+    if "标题行数" in first_line or "number of header lines" in first_line.lower():
         return True
 
     # Statistics file: semicolon-separated quoted fields
@@ -81,7 +84,8 @@ def _detect_ethovision_xlsx(path: Path, sheet_name: str | int = 0) -> bool:
     """Detect whether an XLSX/XLS file (or specific sheet) is an EthoVision export.
 
     Reads only the first cell (row 0, column 0) and checks for
-    "标题行数" — the EthoVision header-line-count marker.
+    the EthoVision header-line-count marker (locale-dependent:
+    "标题行数" for Chinese, "Number of header lines" for English).
     """
     try:
         df = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=1)
@@ -89,8 +93,8 @@ def _detect_ethovision_xlsx(path: Path, sheet_name: str | int = 0) -> bool:
         return False
     if df.empty or df.iloc[0, 0] is None:
         return False
-    first_cell = str(df.iloc[0, 0])
-    return "标题行数" in first_cell
+    first_cell = str(df.iloc[0, 0]).lower()
+    return "标题行数" in first_cell or "number of header lines" in first_cell
 
 
 def parse_header(file_path: str) -> dict:
