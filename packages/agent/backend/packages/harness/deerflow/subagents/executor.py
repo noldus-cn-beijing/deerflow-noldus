@@ -648,6 +648,12 @@ class SubagentExecutor:
             passport=f"subagent:{self.config.name}",
         ))
 
+        # Loop detection per subagent run — fresh instance each call
+        # avoids thread_id-based history pollution with lead agent.
+        from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
+
+        middlewares.append(LoopDetectionMiddleware())
+
         return middlewares
 
     def _create_agent(self, tools: list[BaseTool] | None = None):

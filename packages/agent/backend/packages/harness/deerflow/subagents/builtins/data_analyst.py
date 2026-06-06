@@ -69,6 +69,47 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
 半角双引号，内部内容里没有另一对未转义的 `"`。
 </json_writing>
 
+<fast_fail>
+Before proceeding to full interpretation, check for these conditions.
+If any hard-fail triggers, emit handoff immediately with status="failed"
+or status="partial" — do NOT produce a full analysis.
+
+### Hard Fail (abort interpretation)
+
+1. **Insufficient sample size**: any group has n < 3.
+   → Emit handoff status="partial". Report descriptive statistics only.
+   Do NOT perform inferential tests. Note "n<3: descriptive only".
+
+2. **All metrics failed**: code-executor output contains VALIDATION_ERROR
+   for every metric, or all metrics are null/missing.
+   → Emit handoff status="failed". Note "all metrics invalid".
+
+3. **Data quality gate not passed**: Gate 2 gate_signals indicate
+   unrecoverable issues (wrong file format, completely mismatched columns).
+   → Do not proceed. Emit handoff status="failed". Report the gate failure.
+
+### Soft Fail (continue with limitation note)
+
+4. **Normality-test mismatch**: Shapiro-Wilk p < 0.05 but parametric test
+   was chosen by the statistical decision tree (statistics.py).
+   → Flag as potential issue but do NOT override. The decision tree is
+   deterministic. Note the mismatch for expert review.
+
+5. **Small effect with non-significant p**: Cliff's δ < 0.3 AND p > 0.05.
+   → Report findings but mark confidence="low".
+
+### Warning (continue with caveat)
+
+6. **Conclusion-statistics inconsistency**: finding text claims "significant"
+   but p ≥ 0.05 for the relevant metric.
+   → Flag as report-writer error if detected in final report.
+
+7. **Forbidden claims**: absolute threshold judgment ("X% is normal"),
+   hallucinated mechanisms ("acts on GABA receptors"), or claims not
+   supported by statistical output.
+   → Flag and request revision. Never include in final findings.
+</fast_fail>
+
 <workflow>
 1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
 2. **Batch read 上下文文件（E2E 加速）**: 一次性 cat 所有互不依赖的输入文件到临时文件再读，避免逐文件 read_file 浪费 turns：
@@ -80,6 +121,13 @@ handoff_data_analyst.json 必须是**合法的 JSON**——下游工具会 parse
    然后 read_file /mnt/user-data/workspace/da_context_bundle.txt 一次拿到全部上下文。
    如果文件数 ≤ 2 或某文件 > 5MB，直接 read_file 即可，batch 优势不大。
    范式文档（by-experiment/<paradigm>.md）在 step 2.6 单独 read。
+2.1 **快速失败检查（必须做，不可跳过）**：读完上下文后，执行 Fast-Fail 规则检查：
+   - 检查 per_subject 的 n_per_group：任一组 n < 3 → emit handoff status="partial"
+   - 检查 metrics_summary 中 VALIDATION_ERROR 覆盖情况：所有 metric 都有 error 或 null → status="failed"
+   - 检查 gate_signals 中 quality_warnings_critical_count：若指示不可恢复的数据质量门失败 → status="failed"
+   **若任何硬失败触发**：直接调 seal_data_analyst_handoff 写入 status="partial"/"failed"，
+   在 key_findings 和 errors 中说明原因，跳过 step 2.5–2.8 的全部解释工作。
+   **若没有硬失败**：继续 step 2.5。
 2.5 **读 quality warnings**: 遍历 handoff_code_executor.json 的 data_quality_warnings:
    - severity=critical AND blocks_downstream=true → method_warnings 前置一条:
      "[阻断级 {code}] {message}; 证据: {evidence}"
