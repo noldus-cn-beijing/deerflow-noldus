@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -126,6 +127,44 @@ def _check_plan_precondition(
     return None
 
 
+def _is_single_subject_run(workspace: str) -> bool:
+    """n<2 判定：读 handoff_code_executor.json，任一组最大 n < 2 → True。
+
+    数据源理由：groups.json/plan_metrics.json 在本场景为空/无 n 字段；
+    handoff_code_executor.json 在 chart-maker/report-writer 被拦时一定已存在
+    （它是这两者的 plan precondition），且含可靠的 per_subject + metrics_summary.n。
+    Fails open（返回 False = 不放宽）当文件缺失/解析失败/无 n 信号——
+    即拿不准时维持原有"data-analyst 必需"行为，不误放行。
+    """
+    try:
+        p = Path(workspace) / "handoff_code_executor.json"
+        if not p.exists() or p.stat().st_size == 0:
+            return False
+        data = json.loads(p.read_text(encoding="utf-8"))
+        # 优先 per_subject 长度
+        per_subject = data.get("per_subject") or {}
+        if isinstance(per_subject, dict) and len(per_subject) >= 2:
+            return False
+        # 再看 metrics_summary 各组 n 的最大值
+        ms = data.get("metrics_summary") or {}
+        max_n = 0
+        for _group, metrics in ms.items():
+            if not isinstance(metrics, dict):
+                continue
+            for _metric, stats in metrics.items():
+                if isinstance(stats, dict) and isinstance(stats.get("n"), int):
+                    max_n = max(max_n, stats["n"])
+        # per_subject 给了 1，或 metrics 给了 max_n<2 → 单 subject
+        if len(per_subject) == 1 or (max_n == 1):
+            return True
+        # per_subject 空 + 无 n 信号 → 拿不准，fail open（必需）
+        if not per_subject and max_n == 0:
+            return False
+        return max_n < 2
+    except Exception:
+        return False
+
+
 class PathSequenceProvider:
     """Block task(X) when preceding dispatch steps in the path haven't completed.
 
@@ -186,9 +225,13 @@ class PathSequenceProvider:
 
         # Verify all preceding dispatch steps have completed (handoff file exists)
         missing: list[str] = []
+        single_subject = _is_single_subject_run(workspace)
         for i in range(target_idx):
             step = steps[i]
             if step.kind != "dispatch":
+                continue
+            # n<2 fast-path: data-analyst 在单 subject 时非必需（与 lead prompt n=1 规则对齐）
+            if step.target == "data-analyst" and single_subject:
                 continue
             # Check if the handoff file exists for this subagent
             handoff_name = to_handoff_name(step.target)
