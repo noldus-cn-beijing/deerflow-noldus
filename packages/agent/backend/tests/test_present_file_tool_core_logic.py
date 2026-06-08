@@ -66,3 +66,28 @@ def test_present_files_rejects_paths_outside_outputs(tmp_path):
 
     assert "artifacts" not in result.update
     assert result.update["messages"][0].content == f"Error: Only files in /mnt/user-data/outputs can be presented: {leaked_path}"
+
+
+def test_present_files_rejects_nonexistent_file(tmp_path):
+    """present_files must reject files whose virtual path resolves under
+    outputs/ but whose physical file does not exist on disk.
+
+    This guards against LLM-hallucinated filenames (e.g. chart-maker
+    inventing ``epm_bar_open_arm_entry_ratio.png``) from polluting the
+    artifacts list with paths that will 404 at render time.
+    """
+    outputs_dir = tmp_path / "threads" / "thread-1" / "user-data" / "outputs"
+    outputs_dir.mkdir(parents=True)
+    nonexistent = outputs_dir / "epm_bar_open_arm_entry_ratio.png"
+    # deliberately do NOT create the file
+
+    result = present_file_tool_module.present_file_tool.func(
+        runtime=_make_runtime(str(outputs_dir)),
+        filepaths=[str(nonexistent)],
+        tool_call_id="tc-nonexistent",
+    )
+
+    assert "artifacts" not in result.update
+    error_msg = result.update["messages"][0].content
+    assert "File does not exist" in error_msg
+    assert "epm_bar_open_arm_entry_ratio.png" in error_msg
