@@ -133,3 +133,53 @@ class TestTaskContextForwardCompat:
         assert handoff.task_context is not None
         # extra="allow" on TaskContext → custom_future_field accessible
         assert handoff.task_context.file_changes == ["/a.txt"]
+
+
+# ============================================================================
+# 2026-06-08: handoff status 三态一致性 — partial 补全 (spec §1 改动 A)
+# ============================================================================
+
+
+class TestHandoffStatusPartialConsistency:
+    """四个 handoff schema 的 status 必须统一支持 completed / partial / failed。
+
+    DataAnalyst/ReportWriter 此前缺 partial，prompt 教传但 schema 拒收 → Pydantic
+    ValidationError → seal 失败 → subagent 卡死 (EPM dogfood 1bda1847 trace=acdfb7e5)。
+    """
+
+    def test_data_analyst_accepts_partial(self):
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
+
+        # red 锚点：修复前这里抛 ValidationError
+        h = DataAnalystHandoff(status="partial")
+        assert h.status == "partial"
+
+    def test_report_writer_accepts_partial(self):
+        from deerflow.subagents.handoff_schemas import ReportWriterHandoff
+
+        h = ReportWriterHandoff(status="partial", report_path="/x/r.md")
+        assert h.status == "partial"
+
+    def test_all_four_handoffs_share_same_status_enum(self):
+        from deerflow.subagents.handoff_schemas import (
+            CodeExecutorHandoff,
+            ChartMakerHandoff,
+            DataAnalystHandoff,
+            ReportWriterHandoff,
+        )
+
+        for cls, extra in [
+            (CodeExecutorHandoff, {"summary": "s", "paradigm": "epm", "analysis_config_id": "deadbeef12345678"}),
+            (ChartMakerHandoff, {"summary": "s", "paradigm": "epm"}),
+            (DataAnalystHandoff, {}),
+            (ReportWriterHandoff, {"report_path": "/x/r.md"}),
+        ]:
+            for st in ("completed", "partial", "failed"):
+                obj = cls(status=st, **extra)
+                assert obj.status == st
+
+    def test_invalid_status_still_rejected(self):
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
+
+        with pytest.raises(ValidationError):
+            DataAnalystHandoff(status="garbage")

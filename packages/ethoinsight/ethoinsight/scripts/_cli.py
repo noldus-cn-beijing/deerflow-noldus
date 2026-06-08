@@ -51,7 +51,13 @@ def emit_result(payload: dict[str, Any]) -> None:
 
 
 def save_output_json(path: str | Path, data: dict[str, Any]) -> None:
-    """Write `data` to `path` atomically (temp file + rename), creating parent dirs."""
+    """Write `data` to `path` atomically (temp file + rename), creating parent dirs.
+
+    Note: tempfile.mkstemp() creates the temp file with 0o600 (owner-only). The
+    metric JSONs must be world-readable so the L-B catalog validator
+    (``python -m ethoinsight.validate_catalog``) — which may run under a different
+    sandbox uid — can read them. So we relax to 0o644 after the atomic rename.
+    """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
@@ -59,6 +65,7 @@ def save_output_json(path: str | Path, data: dict[str, Any]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp_path, p)
+        os.chmod(p, 0o644)
     except Exception:
         Path(tmp_path).unlink(missing_ok=True)
         raise

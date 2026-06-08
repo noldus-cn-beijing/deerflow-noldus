@@ -549,7 +549,7 @@ class DataAnalystHandoff(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "partial", "failed"]
     key_findings: list[str] = Field(
         default_factory=list,
         description="1-5 bullet findings surfaced to the user.",
@@ -606,7 +606,7 @@ class ReportWriterHandoff(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "partial", "failed"]
     report_path: str
     sections_written: list[str] = Field(
         default_factory=list,
