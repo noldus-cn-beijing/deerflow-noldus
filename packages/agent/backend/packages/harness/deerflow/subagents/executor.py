@@ -24,7 +24,9 @@ from langchain_core.runnables import RunnableConfig
 from deerflow.agents.thread_state import SandboxState, ThreadDataState, ThreadState
 from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
+from deerflow.subagents.handoff_schemas import ChartMakerHandoff, ReportWriterHandoff
 from deerflow.subagents.token_collector import SubagentTokenCollector
+from deerflow.tools.builtins.seal_handoff_tools import _seal_handoff_to_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +262,133 @@ def _validate_handoff_emitted(
         f"REQUIRED by downstream subagents. Lead should re-dispatch this task "
         f"with an explicit reminder to invoke the seal tool at the end."
     )
+
+
+# ---------------------------------------------------------------------------
+# Spec C: seal-resume 失败后的确定性 auto-seal 兜底。
+#
+# 当 subagent 完成了实质产出（写了 report.md / plot_*.png）但漏调 seal 工具时，
+# harness 用已有产出确定性构造 handoff，不再依赖 LLM "记得调工具"。
+#
+# 仅限 handoff 核心字段可从产出文件机械推导的 subagent。
+# code-executor（指标数值）/ data-analyst（判读结论）的 handoff 是认知产物，
+# 不能从文件重建 → 永不 auto-seal（维持 FAILED）。
+# ---------------------------------------------------------------------------
+
+# Spec C: subagent → handoff filename 映射（仅 report-writer / chart-maker）。
+# 这两个 subagent 的 handoff 核心字段可从 outputs/ 下的文件确定性推导。
+_AUTO_SEALABLE: dict[str, str] = {
+    "report-writer": "handoff_report_writer.json",
+    "chart-maker": "handoff_chart_maker.json",
+}
+
+
+def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | None) -> bool:
+    """seal-resume 失败后的确定性兜底。返回 True=已 auto-seal，False=无法兜底（维持 FAILED）。
+
+    仅对 report-writer / chart-maker 生效——其 handoff 核心字段（report_path、
+    sections_written / chart_files）可从 outputs/ 下的文件确定性推导。
+    code-executor / data-analyst 的 handoff 是认知产物，永不 auto-seal。
+
+    ROBUSTNESS (Spec C §2.4): 绝不抛异常。调用点在 executor try/except 内，
+    任何异常 → 返回 False → 外层走 FAILED。
+
+    Args:
+        subagent_name: SubagentConfig.name, e.g. "report-writer".
+        workspace_path: Host-side workspace dir from thread_data["workspace_path"].
+            None when ThreadDataMiddleware didn't set it.
+
+    Returns:
+        True  -> handoff 已确定性构造并写入 workspace。
+        False -> subagent 不在白名单 / 无产出文件 / workspace 不可用 / 异常。
+    """
+    if subagent_name not in _AUTO_SEALABLE or not workspace_path:
+        return False
+
+    try:
+        import json
+
+        ws = Path(workspace_path)
+        handoff_filename = _AUTO_SEALABLE[subagent_name]
+        handoff_path = ws / handoff_filename
+
+        # 保险：已有非空 handoff 文件 → 不覆盖（不该到这，防御性）
+        if handoff_path.exists() and handoff_path.stat().st_size > 0:
+            return False
+
+        # outputs 目录：thread 的 user-data/outputs（workspace 是 user-data/workspace，同级）
+        outputs = ws.parent / "outputs"
+
+        if subagent_name == "report-writer":
+            report = outputs / "report.md"
+            if not report.exists() or report.stat().st_size == 0:
+                return False  # 没产出 → 不兜底
+
+            # 确定性构造：report_path + 从 markdown 标题解析 sections_written
+            text = report.read_text(encoding="utf-8")
+            sections = [
+                ln.lstrip("#").strip()
+                for ln in text.splitlines()
+                if ln.strip().startswith("#")
+            ]
+            payload = {
+                "status": "completed",
+                "report_path": "/mnt/user-data/outputs/report.md",
+                "sections_written": sections or ["（harness auto-seal：未能解析标题）"],
+                "errors": [
+                    "harness auto-seal: report-writer 完成报告产出但未调用 "
+                    "seal_report_writer_handoff 工具；handoff 由 harness 依据 "
+                    "outputs/report.md 确定性构造"
+                ],
+                "gate_signals": None,
+            }
+            _seal_handoff_to_workspace(
+                ReportWriterHandoff, handoff_filename, payload, ws,
+            )
+            return True
+
+        elif subagent_name == "chart-maker":
+            if not outputs.exists():
+                return False
+            charts = sorted(p.name for p in outputs.glob("plot_*.png"))
+            if not charts:
+                return False
+
+            # 虚拟路径前缀（ChartMakerHandoff schema 校验要求 /mnt/user-data/outputs/ 前缀）
+            chart_paths = [f"/mnt/user-data/outputs/{c}" for c in charts]
+
+            # 尝试从 code_executor handoff 读 paradigm（chart-maker schema paradigm 必填）
+            paradigm = ""
+            ce_path = ws / "handoff_code_executor.json"
+            if ce_path.exists():
+                try:
+                    ce = json.loads(ce_path.read_text(encoding="utf-8"))
+                    paradigm = ce.get("paradigm", "")
+                except Exception:
+                    pass
+
+            payload = {
+                "status": "completed",
+                "paradigm": paradigm,
+                "summary": "harness auto-seal：图表已生成但 subagent 未调用 seal_chart_maker_handoff 工具",
+                "chart_files": chart_paths,
+                "failed_charts": [],
+                "gate_signals": None,
+            }
+            _seal_handoff_to_workspace(
+                ChartMakerHandoff, handoff_filename, payload, ws,
+            )
+            return True
+
+        else:
+            return False
+
+    except Exception:
+        logger.exception(
+            "[auto_seal] Subagent %s: auto-seal failed; falling back to FAILED",
+            subagent_name,
+        )
+        return False
 
 
 class SubagentStatus(Enum):
@@ -1055,14 +1184,26 @@ class SubagentExecutor:
                     result.token_usage_records = collector.snapshot_records()
 
             if _handoff_error is not None:
-                logger.warning(
-                    "[trace=%s] Subagent %s terminated without emitting handoff "
-                    "(seal-resume did not recover): %s",
-                    self.trace_id,
-                    self.config.name,
-                    _handoff_error,
+                # Spec C: seal-resume 仍失败 → 在判 FAILED 前，尝试确定性 auto-seal。
+                # 仅对"handoff 核心字段可从产出文件机械推导"的 subagent（report-writer/
+                # chart-maker）生效；code-executor/data-analyst 的认知产物无法重建，跳过。
+                _auto_sealed = _attempt_auto_seal_from_artifacts(
+                    self.config.name, _workspace,
                 )
-                result.try_set_terminal(SubagentStatus.FAILED, error=_handoff_error)
+                if _auto_sealed:
+                    logger.warning(
+                        "[trace=%s] Subagent %s: seal-resume failed but artifacts "
+                        "exist; harness auto-sealed handoff deterministically.",
+                        self.trace_id, self.config.name,
+                    )
+                    result.try_set_terminal(SubagentStatus.COMPLETED)
+                else:
+                    logger.warning(
+                        "[trace=%s] Subagent %s terminated without emitting handoff "
+                        "(seal-resume did not recover, no artifacts to auto-seal): %s",
+                        self.trace_id, self.config.name, _handoff_error,
+                    )
+                    result.try_set_terminal(SubagentStatus.FAILED, error=_handoff_error)
             else:
                 result.try_set_terminal(SubagentStatus.COMPLETED)
 
