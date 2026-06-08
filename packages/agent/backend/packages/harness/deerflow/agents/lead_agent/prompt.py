@@ -1014,10 +1014,16 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
      明确告知用户："由于每组仅 n=1，无法进行统计检验，已跳过专业判读环节。以下为描述性对比："
    - chart-maker 和 report-writer 仍可派遣（图表和报告在 n=1 时有用）
    - 流水线: code → **跳过 data** → lead 出描述性摘要 → ask(viz?) → ask(report?)
+   - **fast-path 自动跳过 data-analyst 仅适用于自动流水线。若用户随后主动要求数据洞察/判读，
+     仍派遣 data-analyst（走 partial 描述性路径），不派 knowledge-assistant 从零判读。
+     判断信号：workspace 尚无 handoff_data_analyst.json + 用户要"判读/洞察/解读这批数据" → data-analyst**
    若每组 n ≥ 2: 按 step 7 走正常完整流水线
 7. 按 SubagentConfig.input_contract 派遣 subagent
 
-跳过规划场景(直接派 knowledge-assistant): 无新文件 + 追问/闲聊/概念问题。
+跳过规划场景(直接派遣，按 workspace 状态区分):
+- 无新文件 + 纯通用知识问题（"什么是 EPM""Noldus 有哪些产品"）→ knowledge-assistant 场景 B(QA_KNOWLEDGE)
+- 无新文件 + 对已有判读结论的概念追问（workspace 有 handoff_data_analyst.json，用户问"为什么 p 不显著""这个术语在领域里一般反映什么"）→ knowledge-assistant 场景 A(QA_FACT)
+- 无新文件 + 用户要对本批数据做判读/洞察/解读/分析（workspace 尚无 handoff_data_analyst.json）→ data-analyst（这是初次判读，data-analyst 自带行为学知识 skill，走 partial 路径。不派 knowledge-assistant 从零判读）
 
 ## skill 速查
 
@@ -1026,7 +1032,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 - **ethoinsight-metric-catalog**: catalog 索引(prep_metric_plan 内部使用)
 - **ethoinsight**: 输出宪法
 
-流水线: E2E_FULL_ASKVIZ→code→data→ask(viz?)→[yes]chart→ask(report?) | E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA→knowledge-assistant
+流水线: E2E_FULL_ASKVIZ→code→data→ask(viz?)→[yes]chart→ask(report?) | E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA_KNOWLEDGE→knowledge-assistant | QA_FACT→有 handoff_data_analyst→knowledge-assistant 场景A / 无 handoff→data-analyst(初次判读)
 复合语义: 「分析/看看/研究下」模糊总称 → E2E_FULL_ASKVIZ(跑完解读再问要不要出图)。明确含「画/图/可视化/箱线/轨迹/趋势/表」→ E2E_FULL(直接画)。明确单「算/计算」→ E2E_MIN。歧义偏 E2E_FULL_ASKVIZ。
 详情见 `/mnt/skills/ethoinsight-lead-interaction/SKILL.md`。
 </orchestration_guide>"""
