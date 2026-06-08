@@ -568,29 +568,48 @@ def _build_zone_aliases_overrides(
     cat: Catalog,
     existing_overrides: dict[str, float | int | str],
 ) -> dict[str, float | int | str | list[str]]:
-    """从 column_aliases 提取 zone param overrides。
+    """从 column_aliases 提取 zone param overrides（多 concept 路由）。
 
-    对 column_aliases 中每个映射到 catalog zone 概念的物理列，
-    找到对应范式的 anonymous_zone_override.target_param，
-    产出 {target_param: 物理列名} 的 overrides。
-
-    若 anonymous_zone_is 已为同一 target_param 设值，不覆盖（显式优先）。
-
-    zone_concept 从 catalog 指标/图表的 requires_columns 中派生：
-    收集所有 in_zone* 模式，匹配 column_alias 中的概念名。
+    1. 从 zone_concept_params + anonymous_zone_override 收集 (concept → param, wrap_list) 映射
+    2. 从 catalog entries 收集 zone_patterns（in_zone* requires_columns）
+    3. 对 column_aliases 中匹配 zone_patterns 的物理列 → 按 concept 分组
+    4. 每个 concept → 查映射得 (param, wrap_list) → 注入 overrides
+    5. existing_overrides 含同名 target_param → 该 param 不覆盖（显式优先）
     """
     if not column_aliases:
         return {}
 
+    # ── Step 1: 构建 (concept_keyword → param_name, wrap_list) 映射 ──
+    concept_param_map: dict[str, tuple[str, bool]] = {}
+
+    # 1a: zone_concept_params 中的每条直接加入
+    for concept_key, zcp in cat.zone_concept_params.items():
+        concept_param_map[concept_key] = (zcp.param, zcp.wrap_list)
+
+    # 1b: anonymous_zone_override fallback — 其 target_param 未被 zone_concept_params
+    #     中任何条目覆盖时，从 catalog requires_columns 推导 concept keyword
     azo = cat.anonymous_zone_override
-    if azo is None:
+    if azo is not None:
+        occupied_params = {p for p, _ in concept_param_map.values()}
+        if azo.target_param not in occupied_params:
+            # 从 catalog entries 收集 zone_patterns 用于推导 concept keyword
+            zone_patterns: set[str] = set()
+            entries = list(cat.default_metrics) + list(cat.optional_metrics) + list(cat.charts)
+            for entry in entries:
+                for pat in getattr(entry, "requires_columns", []) or []:
+                    if pat.startswith("in_zone") and "*" in pat:
+                        zone_patterns.add(pat)
+            # 为 azo.target_param 推导一个 concept keyword
+            azo_concept = _derive_concept_from_zone_patterns(
+                zone_patterns, azo.target_param
+            )
+            if azo_concept and azo_concept not in concept_param_map:
+                concept_param_map[azo_concept] = (azo.target_param, azo.wrap_list)
+
+    if not concept_param_map:
         return {}
 
-    # 显式用户指定的 anonymous_zone_is 或直接 target_param 优先
-    if "anonymous_zone_is" in existing_overrides or azo.target_param in existing_overrides:
-        return {}
-
-    # 从 catalog 收集所有 in_zone* 模式作为 zone_concept glob
+    # ── Step 2: 收集 zone_patterns ──
     zone_patterns: set[str] = set()
     entries = list(cat.default_metrics) + list(cat.optional_metrics) + list(cat.charts)
     for entry in entries:
@@ -601,26 +620,88 @@ def _build_zone_aliases_overrides(
     if not zone_patterns:
         return {}
 
-    # 匹配：物理列的 alias 概念名是否属于某个 zone pattern
-    matches: list[str] = []
+    # ── Step 3: 匹配物理列 → concept → 按 concept 分组 ──
+    concept_cols: dict[str, list[str]] = {}
     for physical_col, concept in column_aliases.items():
         if concept in (None, "__ignore__"):
             continue
-        for pat in zone_patterns:
-            if _concept_matches_pattern(concept, pat):
-                matches.append(physical_col)
-                break
+        # 尝试匹配 concept 到 zone pattern
+        matched_concept: str | None = None
+        # 先检查 concept 是否直接是 concept_param_map 的 key
+        if concept in concept_param_map:
+            matched_concept = concept
+        else:
+            # 检查 concept 是否匹配某个 zone_pattern
+            for pat in zone_patterns:
+                if _concept_matches_pattern(concept, pat):
+                    # 从 pattern 提取 keyword 并检查是否在 concept_param_map 中
+                    keyword = _extract_concept_keyword(pat)
+                    if keyword and keyword in concept_param_map:
+                        matched_concept = keyword
+                        break
+                    # Fallback: 直接用 concept 名作为 keyword
+                    if concept in concept_param_map:
+                        matched_concept = concept
+                        break
+            # 额外检查：concept 匹配 zone pattern 但 keyword 不在 map →
+            # 用 azo 的 target_param（如果有）
+            if matched_concept is None and azo is not None:
+                for pat in zone_patterns:
+                    if _concept_matches_pattern(concept, pat):
+                        matched_concept = _derive_concept_from_zone_patterns(
+                            zone_patterns, azo.target_param
+                        )
+                        if matched_concept and matched_concept in concept_param_map:
+                            break
+                        matched_concept = None
 
-    if not matches:
+        if matched_concept is not None:
+            concept_cols.setdefault(matched_concept, []).append(physical_col)
+
+    if not concept_cols:
         return {}
 
-    # target_param 类型来自 catalog anonymous_zone_override：
-    # - OFT: target_param="center_zone" → str
-    # - zero_maze: target_param="open_zones" → list (wrap_list=true)
-    # - LDB: target_param="light_zone" → str
-    # 类型仅由 wrap_list 决定：str 参数多列取首个（不因数量改变类型）。
-    value: str | list[str] = matches if azo.wrap_list else matches[0]
-    return {azo.target_param: value}
+    # ── Step 4 & 5: 按概念→参数映射注入 overrides，显式覆盖优先 ──
+    overrides: dict[str, float | int | str | list[str]] = {}
+    for concept_key, cols in concept_cols.items():
+        mapping = concept_param_map.get(concept_key)
+        if mapping is None:
+            continue
+        param_name, wrap_list = mapping
+        # 显式覆盖优先：anonymous_zone_is 或同名 target_param 已在 existing_overrides 中
+        if param_name in existing_overrides:
+            continue
+        if azo is not None and azo.target_param == param_name and "anonymous_zone_is" in existing_overrides:
+            continue
+        # 类型仅由 wrap_list 决定
+        overrides[param_name] = cols if wrap_list else cols[0]
+
+    return overrides
+
+
+def _extract_concept_keyword(pat: str) -> str | None:
+    """从 zone pattern 提取概念关键词。"""
+    if not pat.startswith("in_zone") or "*" not in pat:
+        return None
+    keyword = pat[len("in_zone_"):].rstrip("*").rstrip("_")
+    return keyword if keyword else None
+
+
+def _derive_concept_from_zone_patterns(
+    zone_patterns: set[str],
+    target_param: str,
+) -> str | None:
+    """从 zone_patterns 和 target_param 反向推导 concept keyword。
+
+    例如：target_param="center_zone" + pattern "in_zone_center_*" → "center"
+    """
+    # Remove _zone / _zones suffix from target_param to guess concept keyword
+    candidate = target_param.replace("_zones", "").replace("_zone", "")
+    for pat in zone_patterns:
+        keyword = _extract_concept_keyword(pat)
+        if keyword and keyword in candidate:
+            return keyword
+    return None
 
 
 def _apply_aliases(columns: list[str], aliases: dict[str, str]) -> list[str]:

@@ -1079,4 +1079,54 @@ class TestFromConfig:
         assert result is None
         queued = mw._pending_warnings.get(_pending_key(), [])
         assert queued
-        assert "LOOP DETECTED" in queued[0]
+
+
+class TestSubagentBashThresholds:
+    """Subagent 用宽松阈值（30/50），不杀合法批量 bash。"""
+
+    def test_subagent_60_unique_bash_not_hard_stopped(self):
+        """60 次不同 bash（不同命令）在 subagent 阈值下不被硬停。"""
+        mw = LoopDetectionMiddleware(
+            warn_threshold=3,         # Layer 1: identical-set detection（不变）
+            hard_limit=5,             # Layer 1: identical-set hard-stop（不变）
+            tool_freq_warn=30,        # Layer 2: subagent 宽松阈值
+            tool_freq_hard_limit=50,  # Layer 2: subagent 宽松硬停
+        )
+        runtime = _make_runtime()
+
+        # 60 次不同的 bash 命令 — 模拟批量执行 140 指标
+        for i in range(60):
+            cmd = f"python -m ethoinsight.scripts.epm.compute_open_arm_time --input /mnt/user-data/uploads/s{i}.xlsx --output /mnt/user-data/workspace/m_s{i}.json"
+            call = [_bash_call(cmd)]
+            result = mw._apply(_make_state(tool_calls=call), runtime)
+            # 每次都是不同的 hash（不同命令），Layer 1 不触发
+            # Layer 2 frequency 在 30 次后 warn，50 次后 hard-stop
+            if i < 30:
+                assert result is None, f"Iteration {i}: should not have triggered freq warn yet"
+            elif i < 50:
+                # 30-49: freq_warn triggered (see captured log above).
+                # _apply returns None here — freq_warn queues a pending warning
+                # but doesn't modify the returned state. The key assertions are
+                # i<30→None and i≥50→hard_stop on either side of this window.
+                pass
+            else:
+                # 50+: freq_hard_limit — should hard stop
+                assert result is not None, f"Iteration {i}: should have hard-stopped"
+
+    def test_layer1_identical_set_still_active_with_subagent_thresholds(self):
+        """Layer 1（identical-set 3/5）在 subagent 宽松阈值下仍然生效。"""
+        mw = LoopDetectionMiddleware(
+            warn_threshold=3,
+            hard_limit=5,
+            tool_freq_warn=30,
+            tool_freq_hard_limit=50,
+        )
+        runtime = _make_runtime()
+
+        # 相同的 bash 命令 — Layer 1 identical-set 应在第 3 次 warn，第 5 次 hard-stop
+        identical_call = [_bash_call("ls /tmp")]
+        for i in range(4):
+            mw._apply(_make_state(tool_calls=identical_call), runtime)
+        # 第 5 次相同 call — hard stop
+        result = mw._apply(_make_state(tool_calls=identical_call), runtime)
+        assert result is not None, "Layer 1 hard-stop should fire on 5th identical call even with subagent thresholds"

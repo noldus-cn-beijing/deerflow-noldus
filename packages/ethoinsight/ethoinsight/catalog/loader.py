@@ -37,6 +37,7 @@ from ethoinsight.catalog.schema import (
     ParadigmParameters,
     SharedParameters,
     StatisticsEntry,
+    ZoneConceptParam,
 )
 
 
@@ -150,6 +151,31 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
             wrap_list=wrap_list,
         )
 
+    # Parse zone_concept_params — paradigm-level concept→param mapping
+    zone_concept_params: dict[str, ZoneConceptParam] = {}
+    for concept_key, mapping in raw.get("zone_concept_params", {}).items():
+        if not isinstance(mapping, dict):
+            raise CatalogError(
+                f"{source}: zone_concept_params.{concept_key}: must be a dict, "
+                f"got {type(mapping).__name__}"
+            )
+        param = mapping.get("param", "")
+        if not isinstance(param, str) or not param:
+            raise CatalogError(
+                f"{source}: zone_concept_params.{concept_key}.param: "
+                f"must be a non-empty string"
+            )
+        wrap_list = mapping.get("wrap_list", False)
+        if not isinstance(wrap_list, bool):
+            raise CatalogError(
+                f"{source}: zone_concept_params.{concept_key}.wrap_list: "
+                f"must be bool, got {type(wrap_list).__name__}"
+            )
+        zone_concept_params[concept_key] = ZoneConceptParam(
+            param=param,
+            wrap_list=wrap_list,
+        )
+
     return Catalog(
         paradigm=paradigm,
         ev19_templates=ev19_templates,
@@ -159,6 +185,7 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
         statistics_default=statistics_default,
         paradigm_parameters=ParadigmParameters(parameters=paradigm_params_block),
         anonymous_zone_override=anonymous_zone_override,
+        zone_concept_params=zone_concept_params,
     )
 
 
