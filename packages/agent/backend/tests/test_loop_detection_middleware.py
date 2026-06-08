@@ -1104,8 +1104,11 @@ class TestSubagentBashThresholds:
             if i < 30:
                 assert result is None, f"Iteration {i}: should not have triggered freq warn yet"
             elif i < 50:
-                # 30-49: freq_warn triggered but not hard-stop yet
-                assert result is not None or result is None, f"Iteration {i}: freq warn may or may not produce state change"
+                # 30-49: freq_warn triggered (see captured log above).
+                # _apply returns None here — freq_warn queues a pending warning
+                # but doesn't modify the returned state. The key assertions are
+                # i<30→None and i≥50→hard_stop on either side of this window.
+                pass
             else:
                 # 50+: freq_hard_limit — should hard stop
                 assert result is not None, f"Iteration {i}: should have hard-stopped"
