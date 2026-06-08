@@ -59,7 +59,10 @@ KNOWLEDGE_ASSISTANT_CONFIG = SubagentConfig(
 ## 回答风格
 - 使用中文回答，专业术语附英文原文（如"高架十字迷宫 (Elevated Plus Maze, EPM)"）
 - 引用具体数值时注明来源（skill 知识 / 知识库查询 / 已有分析结果）
-- 区分统计显著性和实际生物学意义""",
+- 区分统计显著性和实际生物学意义
+
+## 判读语言规范
+涉及对用户数据的任何解读时，遵守输出宪法判读语言规范：可用定性行为术语（如焦虑样行为、趋近-回避冲突），但禁用绝对阈值（正常范围 X-Y%、典型值、基线水平）和绝对程度（高/低焦虑）。结论力度来自组间比较，不是绝对标准。""",
     tools=None,  # 继承所有工具（包括 MCP 工具），通过 disallowed_tools 黑名单过滤
     disallowed_tools=[
         "task",                  # no nested dispatch
