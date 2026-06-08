@@ -351,18 +351,19 @@ def _build_task_context(payload: dict[str, Any]) -> dict[str, Any]:
     return tc
 
 
-def _seal_handoff(
+def _seal_handoff_to_workspace(
     model_cls: type,
     filename: str,
     payload: dict[str, Any],
-    runtime: Runtime,
+    workspace: Path,
 ) -> str:
-    """共享 helper: Pydantic 校验 → atomic write → 写 manifest → 返回 OK。
+    """Pure-function variant of _seal_handoff: Pydantic validate → atomic write → manifest.
 
-    所有失败路径都返回 ValueError（LangChain 会自动转 error ToolMessage 给 LLM）。
+    Takes an explicit workspace ``Path`` instead of resolving it from ``Runtime``.
+    Used by harness-level auto-seal where no Runtime is available (Spec C).
+
+    Same contract as _seal_handoff: all failure paths raise ValueError.
     """
-    workspace = _resolve_workspace(runtime)
-
     # 1. 注入 analysis_config_id (subagent 不用手动传)
     payload.setdefault("analysis_config_id", _read_analysis_config_id(workspace))
 
@@ -386,11 +387,28 @@ def _seal_handoff(
     tmp_path.write_bytes(json_bytes)
     os.rename(tmp_path, final_path)  # POSIX atomic
 
+    # 3.5. chmod 0o644（Spec1 教训：文件权限 — downstream 工具需可读）
+    os.chmod(final_path, 0o644)
+
     # 4. 写 manifest
     sha256 = hashlib.sha256(json_bytes).hexdigest()
     _update_manifest(workspace, filename, sha256, payload["analysis_config_id"])
 
     return f"OK: sealed {filename} (sha256={sha256[:12]}...)"
+
+
+def _seal_handoff(
+    model_cls: type,
+    filename: str,
+    payload: dict[str, Any],
+    runtime: Runtime,
+) -> str:
+    """共享 helper: Pydantic 校验 → atomic write → 写 manifest → 返回 OK。
+
+    所有失败路径都返回 ValueError（LangChain 会自动转 error ToolMessage 给 LLM）。
+    """
+    workspace = _resolve_workspace(runtime)
+    return _seal_handoff_to_workspace(model_cls, filename, payload, workspace)
 
 
 # ============================================================================
