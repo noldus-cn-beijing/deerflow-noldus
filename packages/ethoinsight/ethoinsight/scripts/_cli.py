@@ -46,6 +46,64 @@ def emit_result(payload: dict[str, Any]) -> None:
 
 
 # ============================================================================
+# Virtual → real path resolution（补 JSON 内路径不经 bash 替换的缺口）
+# ============================================================================
+
+# 已知的沙箱虚拟路径前缀（稳定契约，见 sandbox/local/local_sandbox_provider.py
+# _USER_DATA_VIRTUAL_PREFIX / sandbox tools.py _build_path_env）。
+# 排序：从长到短（最长前缀优先匹配，/mnt/user-data/workspace 优先于 /mnt/user-data）。
+_KNOWN_SANDBOX_PREFIXES = [
+    "/mnt/user-data/workspace",
+    "/mnt/user-data/uploads",
+    "/mnt/user-data/outputs",
+    "/mnt/user-data",
+    "/mnt/shared",
+    "/mnt/skills",
+    "/mnt/acp-workspace",
+]
+
+
+def _sandbox_env_key_for_prefix(prefix: str) -> str:
+    """Compute the ``DEERFLOW_PATH_*`` env key for a given container_path prefix.
+
+    生成规则与 ``local_sandbox.py:338`` / ``tools.py:557`` 精确对称：
+        ``"DEERFLOW_PATH_" + container_path.strip("/").replace("/", "_").replace("-", "_").upper()``
+
+    因为是固定前缀（不含动态参数），生成是确定性的，无需反向有损还原。
+    """
+    return "DEERFLOW_PATH_" + prefix.strip("/").replace("/", "_").replace("-", "_").upper()
+
+
+def resolve_sandbox_path(path: str | Path) -> Path:
+    """把 ``/mnt/<x>/...`` 虚拟沙箱路径解析成真实路径。
+
+    设计依据：local sandbox 给脚本进程注入 ``DEERFLOW_PATH_*`` 环境变量
+    （见 sandbox/local/local_sandbox.py）。命令行参数里的 /mnt 路径由 bash
+    工具替换，但**从 JSON 内部读出的路径字符串**不经替换——本函数补这个解析。
+
+    - 输入是 /mnt/... 且能匹配到 DEERFLOW_PATH_* env → 返回真实路径。
+    - 输入已是真实路径（不以 /mnt 开头）→ 原样返回（Path）。
+    - 输入是 /mnt 但匹配不到 env（如非沙箱环境/直接跑测试）→ 原样返回
+      （fail-safe，行为与修复前一致，不引入新失败模式）。
+    """
+    p = str(path)
+    if not p.startswith("/mnt/"):
+        return Path(p)
+
+    # 最长前缀优先匹配
+    for prefix in _KNOWN_SANDBOX_PREFIXES:
+        if p.startswith(prefix + "/") or p == prefix:
+            env_key = _sandbox_env_key_for_prefix(prefix)
+            real_base = os.environ.get(env_key)
+            if real_base is not None:
+                suffix = p[len(prefix):].lstrip("/")
+                return Path(real_base) / suffix if suffix else Path(real_base)
+
+    # 匹配不到 → 原样（fail-safe：非沙箱环境/测试直接运行）
+    return Path(p)
+
+
+# ============================================================================
 # File I/O
 # ============================================================================
 
@@ -75,6 +133,10 @@ def read_inputs_json(path: str | Path) -> list[str]:
     """Read a JSON file containing a list of input file paths.
 
     Format: ``["/path/to/subject1.txt", "/path/to/subject2.txt", ...]``
+
+    Virtual sandbox paths (``/mnt/...``) are resolved to real host paths
+    via :func:`resolve_sandbox_path` so callers can ``Path().open()`` them
+    directly.  Already-real paths pass through unchanged.
     """
     p = Path(path)
     data = json.loads(p.read_text(encoding="utf-8"))
@@ -82,13 +144,17 @@ def read_inputs_json(path: str | Path) -> list[str]:
         raise ValueError(
             f"{path} must be a JSON array of file paths, got {type(data).__name__}"
         )
-    return [str(item) for item in data]
+    return [str(resolve_sandbox_path(item)) for item in data]
 
 
 def read_groups_json(path: str | Path) -> dict[str, list[str]]:
     """Read a JSON file containing the groups mapping.
 
-    Format: ``{"group_name": ["subject_name_1", "subject_name_2"], ...}``
+    Format: ``{"group_name": ["subject_path_1", "subject_path_2"], ...}``
+
+    Subject paths (inside the per-group lists) are resolved via
+    :func:`resolve_sandbox_path` — virtual ``/mnt/...`` paths become real
+    host paths; already-real paths pass through unchanged.
     """
     p = Path(path)
     data = json.loads(p.read_text(encoding="utf-8"))
@@ -96,7 +162,7 @@ def read_groups_json(path: str | Path) -> dict[str, list[str]]:
         raise ValueError(
             f"{path} must be a JSON object mapping group names to subject lists"
         )
-    return {k: list(v) for k, v in data.items()}
+    return {k: [str(resolve_sandbox_path(s)) for s in v] for k, v in data.items()}
 
 
 def resolve_per_subject_input(args: argparse.Namespace) -> str:

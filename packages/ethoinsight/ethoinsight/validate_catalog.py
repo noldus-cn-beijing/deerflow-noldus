@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from ethoinsight.catalog.loader import load_catalog
+from ethoinsight.scripts._cli import resolve_sandbox_path
 
 
 # ============================================================================
@@ -360,7 +361,7 @@ def validate_plan_results(plan: dict[str, Any]) -> list[dict[str, str]]:
             continue
 
         try:
-            data = json.loads(Path(output_path).read_text(encoding="utf-8"))
+            data = json.loads(resolve_sandbox_path(output_path).read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             # Missing/unreadable result file — completeness gap, surface it.
             violations.append({
