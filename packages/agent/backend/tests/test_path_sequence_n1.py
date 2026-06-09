@@ -1,8 +1,8 @@
-"""Tests for PathSequenceProvider — n=1 path awareness (data-analyst optional on single subject).
+"""Tests for PathSequenceProvider — n=1 path awareness.
 
-Red anchor: before fix, n=1 chart-maker dispatch without data-analyst handoff was denied.
-After fix: n=1 chart-maker/report-writer allowed without data-analyst handoff;
-n>=2 still requires data-analyst.
+chart-maker 的 prerequisite 只有 code-executor（不依赖 data-analyst），
+所以 n=1 和 n≥2 对于 chart-maker 的 guardrail 行为是一致的。
+_is_single_subject_run 保留供 lead prompt fast-path 判定和其他 guardrail 使用。
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def _write_ce_handoff(ws: Path, n: int, subjects: int) -> None:
 
 
 class TestSingleSubjectDetection:
-    """Unit tests for _is_single_subject_run helper."""
+    """Unit tests for _is_single_subject_run helper — retained for lead prompt / other guardrails."""
 
     def test_n1_detected(self, tmp_path):
         _write_ce_handoff(tmp_path, n=1, subjects=1)
@@ -84,7 +84,6 @@ class TestSingleSubjectDetection:
         assert _is_single_subject_run(str(tmp_path)) is False
 
     def test_missing_handoff_fails_open(self, tmp_path):
-        # No handoff → conservative (data-analyst still required)
         assert _is_single_subject_run(str(tmp_path)) is False
 
     def test_empty_handoff_fails_open(self, tmp_path):
@@ -113,72 +112,77 @@ class TestSingleSubjectDetection:
         assert _is_single_subject_run(str(tmp_path)) is False
 
 
-class TestN1ChartMakerAllowedWithoutDataAnalyst:
-    """Red anchor: before fix, n=1 chart-maker without data-analyst handoff was denied."""
+class TestChartMakerPrerequisites:
+    """chart-maker 的 prerequisite 只有 code-executor，不依赖 data-analyst。
+    无论 n=1 还是 n≥2，行为一致。
+    """
 
-    def test_n1_chartmaker_allowed(self, provider, reset_contextvars, tmp_path):
-        """n=1 chart-maker dispatch: data-analyst handoff missing → still allowed."""
+    def test_chart_maker_allowed_with_only_code_executor(self, provider, reset_contextvars, tmp_path):
+        """chart-maker with code-executor handoff → allowed (data-analyst NOT needed)."""
         _set_intent("E2E_FULL_ASKVIZ")
         _set_workspace(tmp_path)
-        # Only code-executor handoff exists (n=1), no data-analyst handoff
-        _write_ce_handoff(tmp_path, n=1, subjects=1)
-        req = _make_request("task", "chart-maker")
-        decision = provider.evaluate(req)
-        assert decision.allow is True, (
-            f"Expected allow for n=1 chart-maker, got deny: "
-            f"{decision.reasons[0].message if decision.reasons else 'no reason'}"
-        )
-
-    def test_n1_report_intent_allows_report_writer(self, provider, reset_contextvars, tmp_path):
-        """n=1 REPORT intent: report-writer has no predecessors → always allowed
-        (needs handoff_code_executor.json for plan precondition)."""
-        _set_intent("REPORT")
-        _set_workspace(tmp_path)
-        # plan precondition: report-writer needs handoff_code_executor.json
-        _write_ce_handoff(tmp_path, n=1, subjects=1)
-        req = _make_request("task", "report-writer")
-        decision = provider.evaluate(req)
-        assert decision.allow is True
-
-    def test_n2_chartmaker_still_requires_data_analyst(self, provider, reset_contextvars, tmp_path):
-        """n>=2: data-analyst is still required — no regression."""
-        _set_intent("E2E_FULL_ASKVIZ")
-        _set_workspace(tmp_path)
-        _write_ce_handoff(tmp_path, n=2, subjects=2)
-        req = _make_request("task", "chart-maker")
-        decision = provider.evaluate(req)
-        assert decision.allow is False, "n>=2 chart-maker without data-analyst should be denied"
-        msg = decision.reasons[0].message
-        assert "data-analyst" in msg
-
-    def test_n2_data_analyst_required_partial_handoffs(self, provider, reset_contextvars, tmp_path):
-        """n>=2 with code-executor handoff but no data-analyst → data-analyst is required
-        and chart-maker should be denied even with code-executor handoff.
-        """
-        _set_intent("E2E_FULL_ASKVIZ")
-        _set_workspace(tmp_path)
-        _write_ce_handoff(tmp_path, n=2, subjects=2)
         _create_handoff(tmp_path, "code_executor")
         req = _make_request("task", "chart-maker")
         decision = provider.evaluate(req)
-        assert decision.allow is False
-        assert "data-analyst" in decision.reasons[0].message
+        assert decision.allow is True, (
+            f"chart-maker should be allowed with only code-executor handoff; "
+            f"got deny: {decision.reasons[0].message if decision.reasons else 'no reason'}"
+        )
 
-    def test_n1_no_code_executor_handoff_still_denied(self, provider, reset_contextvars, tmp_path):
-        """n=1 without code-executor handoff: chart-maker still denied (plan precondition)."""
+    def test_chart_maker_n1_allowed(self, provider, reset_contextvars, tmp_path):
+        """n=1: chart-maker with code-executor handoff → allowed.
+        (Same as n≥2 — chart-maker never depends on data-analyst.)"""
         _set_intent("E2E_FULL_ASKVIZ")
         _set_workspace(tmp_path)
-        # No handoff_code_executor.json → plan precondition should deny
+        _write_ce_handoff(tmp_path, n=1, subjects=1)
+        req = _make_request("task", "chart-maker")
+        decision = provider.evaluate(req)
+        assert decision.allow is True
+
+    def test_chart_maker_n2_allowed_without_data_analyst(self, provider, reset_contextvars, tmp_path):
+        """n≥2: chart-maker with code-executor → still allowed without data-analyst.
+        (chart-maker only needs code-executor data, not data-analyst interpretation.)"""
+        _set_intent("E2E_FULL_ASKVIZ")
+        _set_workspace(tmp_path)
+        _write_ce_handoff(tmp_path, n=2, subjects=2)
+        req = _make_request("task", "chart-maker")
+        decision = provider.evaluate(req)
+        assert decision.allow is True, (
+            f"chart-maker should be allowed with code-executor handoff even when n≥2; "
+            f"data-analyst is NOT a prerequisite. "
+            f"Got deny: {decision.reasons[0].message if decision.reasons else 'no reason'}"
+        )
+
+    def test_chart_maker_without_code_executor_denied(self, provider, reset_contextvars, tmp_path):
+        """chart-maker without code-executor handoff → denied by plan precondition."""
+        _set_intent("E2E_FULL_ASKVIZ")
+        _set_workspace(tmp_path)
         req = _make_request("task", "chart-maker")
         decision = provider.evaluate(req)
         assert decision.allow is False
         assert "plan_precondition_failed" in decision.reasons[0].code
 
-    def test_n1_code_executor_still_allowed(self, provider, reset_contextvars, tmp_path):
-        """code-executor is still allowed as first dispatch regardless of n."""
+    def test_data_analyst_still_requires_code_executor(self, provider, reset_contextvars, tmp_path):
+        """data-analyst's prerequisite is code-executor — must still be enforced."""
         _set_intent("E2E_FULL")
         _set_workspace(tmp_path)
-        # plan precondition: code-executor needs plan_metrics.json
+        req = _make_request("task", "data-analyst")
+        decision = provider.evaluate(req)
+        assert decision.allow is False
+        assert "code-executor" in decision.reasons[0].message
+
+    def test_data_analyst_with_code_executor_allowed(self, provider, reset_contextvars, tmp_path):
+        """data-analyst with code-executor handoff → allowed."""
+        _set_intent("E2E_FULL")
+        _set_workspace(tmp_path)
+        _create_handoff(tmp_path, "code_executor")
+        req = _make_request("task", "data-analyst")
+        assert provider.evaluate(req).allow is True
+
+    def test_n1_code_executor_still_allowed(self, provider, reset_contextvars, tmp_path):
+        """code-executor is always allowed as first dispatch."""
+        _set_intent("E2E_FULL")
+        _set_workspace(tmp_path)
         (tmp_path / "plan_metrics.json").write_text('{"metrics": [1]}')
         req = _make_request("task", "code-executor")
         assert provider.evaluate(req).allow is True

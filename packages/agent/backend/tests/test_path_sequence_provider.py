@@ -118,26 +118,27 @@ class TestPathSequenceEnforcement:
         req = _make_request("task", "data-analyst")
         assert provider.evaluate(req).allow is True
 
-    def test_chart_maker_without_predecessors_denied(self, provider, reset_contextvars, tmp_path):
-        """Skipping to chart-maker without code-executor and data-analyst → denied."""
+    def test_chart_maker_with_only_code_executor_allowed(self, provider, reset_contextvars, tmp_path):
+        """chart-maker only needs code-executor (not data-analyst). Should be allowed with just code-executor handoff."""
         _set_intent("E2E_FULL")
         _set_workspace(tmp_path)
+        # plan precondition: chart-maker needs handoff_code_executor.json
+        _create_handoff(tmp_path, "code_executor")
+        req = _make_request("task", "chart-maker")
+        assert provider.evaluate(req).allow is True, (
+            "chart-maker should be allowed with only code-executor handoff; "
+            "data-analyst is NOT a prerequisite"
+        )
+
+    def test_chart_maker_without_code_executor_denied(self, provider, reset_contextvars, tmp_path):
+        """chart-maker without code-executor handoff → denied by plan precondition."""
+        _set_intent("E2E_FULL")
+        _set_workspace(tmp_path)
+        # No handoff_code_executor.json → plan precondition should deny
         req = _make_request("task", "chart-maker")
         decision = provider.evaluate(req)
         assert decision.allow is False
-        # Should mention both missing predecessors
-        msg = decision.reasons[0].message
-        assert "code-executor" in msg
-        assert "data-analyst" in msg
-
-    def test_chart_maker_with_all_predecessors_allowed(self, provider, reset_contextvars, tmp_path):
-        """After code-executor and data-analyst → chart-maker allowed."""
-        _set_intent("E2E_FULL")
-        _set_workspace(tmp_path)
-        _create_handoff(tmp_path, "code_executor")
-        _create_handoff(tmp_path, "data_analyst")
-        req = _make_request("task", "chart-maker")
-        assert provider.evaluate(req).allow is True
+        assert "plan_precondition_failed" in decision.reasons[0].code
 
     def test_chart_intent_allows_chart_maker_directly(self, provider, reset_contextvars, tmp_path):
         """CHART intent: chart-maker has no predecessors → allowed (needs handoff_code_executor.json)."""
@@ -169,20 +170,18 @@ class TestDenyMessageFormat:
     """Verify deny messages follow the '请改用 X 因为 Y 然后做 Z' structure."""
 
     def test_deny_contains_clear_instruction(self, provider, reset_contextvars, tmp_path):
-        """Deny message must contain intent name and missing predecessor."""
+        """Deny message must contain intent name and missing prerequisite.
+        data-analyst requires code-executor → denied without code-executor handoff."""
         _set_intent("E2E_FULL")
         _set_workspace(tmp_path)
-        # Provide handoff_code_executor.json so plan precondition passes;
-        # the test validates the sequence-check deny message.
-        (tmp_path / "handoff_code_executor.json").write_text('{"status": "ok"}')
-        req = _make_request("task", "chart-maker")
+        req = _make_request("task", "data-analyst")
         decision = provider.evaluate(req)
         assert decision.allow is False
         msg = decision.reasons[0].message
         assert "E2E_FULL" in msg
-        assert "chart-maker" in msg
+        assert "data-analyst" in msg
         assert "请先" in msg
-        # Must specify the immediate predecessor to call
+        # Must specify the missing prerequisite to call
         assert "task(" in msg
 
 
