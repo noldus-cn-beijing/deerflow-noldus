@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
@@ -26,6 +26,9 @@ from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
 from deerflow.subagents.handoff_schemas import ChartMakerHandoff, ReportWriterHandoff
 from deerflow.subagents.token_collector import SubagentTokenCollector
+
+if TYPE_CHECKING:
+    from deerflow.tools.builtins.tool_search import DeferredToolSetup
 
 logger = logging.getLogger(__name__)
 
@@ -744,7 +747,7 @@ class SubagentExecutor:
         )
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
-    def _build_middlewares(self) -> list[AgentMiddleware]:
+    def _build_middlewares(self, *, deferred_setup: "DeferredToolSetup | None" = None) -> list[AgentMiddleware]:
         """Build the subagent's middleware chain.
 
         Split out from ``_create_agent`` so callers can inspect the chain (e.g.,
@@ -754,7 +757,7 @@ class SubagentExecutor:
         from deerflow.agents.middlewares.tool_error_handling_middleware import build_subagent_runtime_middlewares
 
         # Reuse shared middleware composition with lead agent.
-        middlewares = build_subagent_runtime_middlewares(lazy_init=True)
+        middlewares = build_subagent_runtime_middlewares(lazy_init=True, deferred_setup=deferred_setup)
 
         # Attach HandoffIsolationProvider so subagent's read_file on
         # handoff_*.json files is gated by lead's {{handoff://}} authorization.
@@ -793,12 +796,15 @@ class SubagentExecutor:
 
         return middlewares
 
-    def _create_agent(self, tools: list[BaseTool] | None = None):
+    def _create_agent(self, tools: list[BaseTool] | None = None, *, deferred_setup: "DeferredToolSetup | None" = None):
         """Create the agent instance.
 
         Args:
             tools: Optional tool list to override ``self.tools`` (e.g., after
                 applying skill-allowed-tools filtering in ``_build_initial_state``).
+            deferred_setup: Deferred MCP tool names + catalog hash from
+                ``assemble_deferred_tools``; passed through to the subagent's
+                DeferredToolFilterMiddleware. ``None`` is a no-op.
 
         Side effect: caches the built middleware chain on ``self._last_middlewares``
         so ``_aexecute`` can size LangGraph's ``recursion_limit`` against the actual
@@ -809,7 +815,7 @@ class SubagentExecutor:
         # 按 subagent config 决定是否开 think：洞察型 subagent（data-analyst）开，执行型关
         model = create_chat_model(name=model_name, thinking_enabled=self.config.thinking_enabled)
 
-        middlewares = self._build_middlewares()
+        middlewares = self._build_middlewares(deferred_setup=deferred_setup)
         self._last_middlewares = middlewares
 
         # A-10: system_prompt is injected as a SystemMessage in the initial
@@ -826,7 +832,7 @@ class SubagentExecutor:
             state_schema=ThreadState,
         )
 
-    def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool]]:
+    def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool], Any]:
         """Build the initial state for agent execution.
 
         Combines the subagent's system_prompt with any skill content into a
@@ -837,10 +843,16 @@ class SubagentExecutor:
             task: The task description.
 
         Returns:
-            Tuple of (initial_state, filtered_tools) — filtered_tools mirrors
-            the upstream contract; locally we have no skill-allowed-tools
-            policy, so it always equals ``self.tools``.
+            Tuple of (initial_state, final_tools, deferred_setup) — final_tools
+            includes tool_search when MCP deferral applies; deferred_setup is
+            consumed by ``_create_agent`` so the agent build and the injected
+            ``<available-deferred-tools>`` section share one catalog/hash.
         """
+        # Lazy import: importing tool_search runs tools/builtins/__init__, which
+        # would re-enter this package during its own initialization (circular
+        # import). Same pattern as the lead agent.
+        from deerflow.tools.builtins.tool_search import assemble_deferred_tools, get_deferred_tools_prompt_section
+
         system_parts: list[str] = []
         if self.config.system_prompt:
             system_parts.append(self.config.system_prompt)
@@ -848,6 +860,16 @@ class SubagentExecutor:
             skill_sections = _load_skill_contents(self.config.skills)
             if skill_sections:
                 system_parts.append(skill_sections)
+
+        # Assemble deferred tools AFTER any skill-based tool filtering.
+        # The tool_search helper's catalog is built from the already-filtered
+        # tool list, so it can never surface a tool that was denied upstream.
+        from deerflow.config import get_app_config
+        enabled = get_app_config().tool_search.enabled
+        final_tools, deferred_setup = assemble_deferred_tools(self.tools, enabled=enabled)
+        deferred_section = get_deferred_tools_prompt_section(deferred_names=deferred_setup.deferred_names)
+        if deferred_section:
+            system_parts.append(deferred_section)
 
         messages: list[Any] = []
         if system_parts:
@@ -864,7 +886,7 @@ class SubagentExecutor:
         if self.thread_data is not None:
             state["thread_data"] = self.thread_data
 
-        return state, self.tools
+        return state, final_tools, deferred_setup
 
     async def _attempt_seal_resume(
         self,
@@ -987,8 +1009,8 @@ class SubagentExecutor:
 
         collector: SubagentTokenCollector | None = None
         try:
-            state, filtered_tools = self._build_initial_state(task)
-            agent = self._create_agent(filtered_tools)
+            state, final_tools, deferred_setup = self._build_initial_state(task)
+            agent = self._create_agent(final_tools, deferred_setup=deferred_setup)
             middlewares = getattr(self, "_last_middlewares", None)
 
             # Token collector for subagent LLM calls — records flow into
