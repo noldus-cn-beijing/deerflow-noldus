@@ -24,6 +24,7 @@ import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
 import { fetchThreadTokenUsage } from "./api";
+import { getStreamErrorMessage, isRunNotOnThisWorkerError } from "./stream-error";
 import { threadTokenUsageQueryKey } from "./token-usage";
 import type {
   AgentThread,
@@ -298,29 +299,6 @@ export function upsertThreadInSearchCache(
   );
 }
 
-function getStreamErrorMessage(error: unknown): string {
-  if (typeof error === "string" && error.trim()) {
-    return error;
-  }
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  if (typeof error === "object" && error !== null) {
-    const message = Reflect.get(error, "message");
-    if (typeof message === "string" && message.trim()) {
-      return message;
-    }
-    const nestedError = Reflect.get(error, "error");
-    if (nestedError instanceof Error && nestedError.message.trim()) {
-      return nestedError.message;
-    }
-    if (typeof nestedError === "string" && nestedError.trim()) {
-      return nestedError;
-    }
-  }
-  return "Request failed.";
-}
-
 export function useThreadStream({
   threadId,
   context,
@@ -527,7 +505,12 @@ export function useThreadStream({
     },
     onError(error) {
       setOptimisticMessages([]);
-      toast.error(getStreamErrorMessage(error));
+      if (isRunNotOnThisWorkerError(error)) {
+        // Cross-worker re-join: content already shown via fetchStateHistory.
+        // Don't alarm the user with a red toast.
+      } else {
+        toast.error(getStreamErrorMessage(error));
+      }
       pendingUsageBaselineMessageIdsRef.current = new Set(
         messagesRef.current
           .map(messageIdentity)
