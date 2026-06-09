@@ -1,4 +1,5 @@
 import asyncio
+import os
 import posixpath
 import re
 import shlex
@@ -80,6 +81,16 @@ _MAX_GLOB_MAX_RESULTS = 1000
 _DEFAULT_GREP_MAX_RESULTS = 100
 _MAX_GREP_MAX_RESULTS = 500
 _DEFAULT_WRITE_FILE_ERROR_MAX_CHARS = 2000
+
+# Maximum bytes accepted in a single non-append write_file call (issue #3189).
+# Oversized single-shot writes correlate with LLM streaming chunk-gap timeouts
+# because the tool-call JSON payload (which the model must emit as one
+# continuous stream) grows past the safe window. 80 KB ≈ 20K tokens, a
+# comfortable headroom under the factory-default 240s stream_chunk_timeout.
+# Deployments can override via env var DEERFLOW_WRITE_FILE_MAX_BYTES; set to
+# 0 (or negative) to disable the guard entirely.
+_WRITE_FILE_CONTENT_MAX_BYTES = 80 * 1024
+_WRITE_FILE_MAX_BYTES_ENV = "DEERFLOW_WRITE_FILE_MAX_BYTES"
 
 
 def _get_skills_container_path() -> str:
@@ -1745,6 +1756,23 @@ class _WriteFileArgs(BaseModel):
     )
 
 
+def _effective_write_file_max_bytes() -> int:
+    """Return the active size cap for non-append write_file calls.
+
+    Reads ``DEERFLOW_WRITE_FILE_MAX_BYTES`` at call time (not import time)
+    so tests and runtime tweaks take effect without restart. Falls back to
+    the default on missing/malformed values. A non-positive value disables
+    the guard.
+    """
+    raw = os.environ.get(_WRITE_FILE_MAX_BYTES_ENV)
+    if raw is None:
+        return _WRITE_FILE_CONTENT_MAX_BYTES
+    try:
+        return int(raw)
+    except ValueError:
+        return _WRITE_FILE_CONTENT_MAX_BYTES
+
+
 @tool("write_file", args_schema=_WriteFileArgs)
 def write_file_tool(
     runtime: Runtime,
@@ -1754,6 +1782,22 @@ def write_file_tool(
     append: bool = False,
 ) -> str:
     """Write text content to a file (optionally appending)."""
+    # Issue #3189: oversized single-shot writes correlate with LLM streaming
+    # chunk-gap timeouts. Guard non-append writes at 80 KB before the
+    # character-level check so the error message is actionable.
+    if not append:
+        max_bytes = _effective_write_file_max_bytes()
+        if max_bytes > 0:
+            content_bytes = len(content.encode("utf-8"))
+            if content_bytes > max_bytes:
+                return (
+                    f"Error: write_file content ({content_bytes} bytes) exceeds the "
+                    f"{max_bytes}-byte single-call limit. Split the content into smaller "
+                    "pieces: either (a) write the first section now, then use `str_replace` "
+                    "for further edits, or (b) call write_file again with append=True "
+                    "carrying the next section. See SIZE POLICY in the tool docstring "
+                    "or issue #3189 for the rationale."
+                )
     if len(content) > WRITE_FILE_MAX_CONTENT_CHARS:
         return (
             f"Error: Content exceeds {WRITE_FILE_MAX_CONTENT_CHARS} chars "

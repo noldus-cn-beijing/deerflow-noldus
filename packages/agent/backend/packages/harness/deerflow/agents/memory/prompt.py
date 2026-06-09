@@ -1,8 +1,13 @@
 """Prompt templates for memory update and injection."""
 
+from __future__ import annotations
+
+import logging
 import math
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import tiktoken
@@ -124,30 +129,9 @@ Important Rules:
 - For history sections, integrate new information chronologically into appropriate time period
 - Preserve technical accuracy - keep exact names of technologies, companies, projects
 - Focus on information useful for future interactions and personalization
-- IMPORTANT — DO NOT record session-level state in memory. Memory crosses
-  threads; the following kinds of information are EPHEMERAL to the current
-  conversation and MUST NOT be written into any memory field (workContext,
-  personalContext, topOfMind, recentMonths, earlierContext, longTermBackground,
-  or facts):
-  * File upload events — "user uploaded X.txt", "uploaded EPM trial data",
-    "已上传 Subject 1 的轨迹文件" etc. Files exist only inside one thread's
-    /mnt/user-data/uploads/. Recording them causes the next thread's agent
-    to hallucinate that those files are still available.
-  * Specific analysis runs — "已生成 6 张图表", "跑了 Mann-Whitney U 检验",
-    "保存了 report.md 到 /mnt/user-data/outputs/" etc. These are workspace
-    artifacts from one thread, not persistent user facts.
-  * Pending actions in the current thread — "等待上传更多数据", "等待用户
-    确认分组" etc. Wait-states only exist inside one conversation.
-  * Numeric findings from a single run — "Cohen's d=0.54", "Subject 3 偏离"
-    etc. These are analysis outputs, not user attributes.
-
-  CORRECT examples (DO record): "用户从事斑马鱼鱼群行为研究", "用户偏好
-  英文 markdown 输出格式", "用户使用 EthoVision XT 系统" — these are
-  durable user attributes that stay true across threads.
-
-  INCORRECT examples (DO NOT record): "已上传 EPM 数据，等待分组信息",
-  "刚完成 FST 分析，发现 Subject 3 异常" — these are session events
-  that will leak into and confuse future threads.
+- IMPORTANT: Do NOT record file upload events in memory. Uploaded files are
+  session-specific and ephemeral — they will not be accessible in future sessions.
+  Recording upload events causes confusion in subsequent conversations.
 
 Return ONLY valid JSON, no explanation or markdown."""
 
@@ -181,6 +165,39 @@ Rules:
 Return ONLY valid JSON."""
 
 
+# Module-level tiktoken encoding cache.  Populated lazily on first use;
+# subsequent calls are a dict lookup (no network I/O).  Pre-warming at
+# startup via :func:`warm_tiktoken_cache` avoids blocking a request on the
+# (potentially slow) first ``get_encoding`` call.
+_tiktoken_encoding_cache: dict[str, tiktoken.Encoding] = {}
+
+
+def _get_tiktoken_encoding(encoding_name: str = "cl100k_base") -> tiktoken.Encoding | None:
+    """Return a cached tiktoken encoding, or ``None`` on failure / unavailability.
+
+    On the very first call for a given *encoding_name*, tiktoken may need to
+    download the BPE data from ``openaipublic.blob.core.windows.net``.  In
+    network-restricted environments (e.g. deployments behind the GFW) this
+    download can block for tens of minutes before the OS TCP timeout kicks in.
+    The caller must therefore be prepared for this to block and should run it
+    off the event loop (e.g. via ``asyncio.to_thread``).
+    """
+    if not TIKTOKEN_AVAILABLE:
+        return None
+
+    cached = _tiktoken_encoding_cache.get(encoding_name)
+    if cached is not None:
+        return cached
+
+    try:
+        encoding = tiktoken.get_encoding(encoding_name)
+        _tiktoken_encoding_cache[encoding_name] = encoding
+        return encoding
+    except Exception:
+        logger.warning("Failed to load tiktoken encoding %r; falling back to char-based estimation", encoding_name, exc_info=True)
+        return None
+
+
 def _count_tokens(text: str, encoding_name: str = "cl100k_base") -> int:
     """Count tokens in text using tiktoken.
 
@@ -191,16 +208,28 @@ def _count_tokens(text: str, encoding_name: str = "cl100k_base") -> int:
     Returns:
         The number of tokens in the text.
     """
-    if not TIKTOKEN_AVAILABLE:
+    encoding = _get_tiktoken_encoding(encoding_name)
+    if encoding is None:
         # Fallback to character-based estimation if tiktoken is not available
+        # or the encoding failed to load.
         return len(text) // 4
 
     try:
-        encoding = tiktoken.get_encoding(encoding_name)
         return len(encoding.encode(text))
     except Exception:
         # Fallback to character-based estimation on error
         return len(text) // 4
+
+
+def warm_tiktoken_cache() -> bool:
+    """Pre-warm the tiktoken encoding cache.
+
+    Call at startup (off the event loop) so the first request never blocks
+    on the BPE download.  Returns ``True`` if the encoding was loaded
+    successfully (or was already cached), ``False`` if tiktoken is
+    unavailable or the download failed.
+    """
+    return _get_tiktoken_encoding("cl100k_base") is not None
 
 
 def _coerce_confidence(value: Any, default: float = 0.0) -> float:
@@ -222,17 +251,6 @@ def _coerce_confidence(value: Any, default: float = 0.0) -> float:
 def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2000) -> str:
     """Format memory data for injection into system prompt.
 
-    **2026-05-13 隔离更新**：仅注入"长期用户画像"层（workContext、
-    personalContext、facts），**砍掉 topOfMind 和 history.* 字段**。
-    topOfMind 和 recentMonths 在实际使用中频繁被 LLM 写入"上传了 X 文件"、
-    "刚才跑了 Y 分析"这类会话级状态，导致新 thread 的 lead 把它当成"当前
-    thread 事实"产生幻觉（典型 case：新 thread 无上传时 agent 编造已上传
-    文件名）。
-
-    被砍掉的字段在 memory.json 中仍然写入（兼容 updater 输出 schema），但
-    不再注入到 system prompt 中。session 级状态属于 thread 自己的对话历史
-    + workspace 文件，不应跨 thread 通过 memory 泄漏。
-
     Args:
         memory_data: The memory data dictionary.
         max_tokens: Maximum tokens to use (counted via tiktoken for accuracy).
@@ -245,8 +263,7 @@ def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2
 
     sections = []
 
-    # Format user context — 只注入长期画像（workContext / personalContext），
-    # 不注入 topOfMind（典型会话级污染源，新 thread 不该看到）
+    # Format user context
     user_data = memory_data.get("user", {})
     if user_data:
         user_sections = []
@@ -259,14 +276,32 @@ def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2
         if personal_ctx.get("summary"):
             user_sections.append(f"Personal: {personal_ctx['summary']}")
 
-        # NOTE: topOfMind intentionally NOT injected — see docstring.
+        top_of_mind = user_data.get("topOfMind", {})
+        if top_of_mind.get("summary"):
+            user_sections.append(f"Current Focus: {top_of_mind['summary']}")
 
         if user_sections:
             sections.append("User Context:\n" + "\n".join(f"- {s}" for s in user_sections))
 
-    # NOTE: history.* (recentMonths / earlierContext / longTermBackground)
-    # intentionally NOT injected — 同上原因。如果未来需要"长期项目背景"，
-    # 在 facts 里用 category=context 表达。
+    # Format history
+    history_data = memory_data.get("history", {})
+    if history_data:
+        history_sections = []
+
+        recent = history_data.get("recentMonths", {})
+        if recent.get("summary"):
+            history_sections.append(f"Recent: {recent['summary']}")
+
+        earlier = history_data.get("earlierContext", {})
+        if earlier.get("summary"):
+            history_sections.append(f"Earlier: {earlier['summary']}")
+
+        background = history_data.get("longTermBackground", {})
+        if background.get("summary"):
+            history_sections.append(f"Background: {background['summary']}")
+
+        if history_sections:
+            sections.append("History:\n" + "\n".join(f"- {s}" for s in history_sections))
 
     # Format facts (sorted by confidence; include as many as token budget allows)
     facts_data = memory_data.get("facts", [])
