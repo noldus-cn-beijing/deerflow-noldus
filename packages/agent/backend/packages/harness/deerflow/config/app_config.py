@@ -3,7 +3,7 @@ import os
 from collections.abc import Mapping
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 import yaml
 from dotenv import load_dotenv
@@ -145,6 +145,16 @@ class AppConfig(BaseModel):
         description=format_field_description(
             "stream_bridge",
             field_doc="Stream bridge connecting agent workers to SSE endpoints.",
+        ),
+    )
+    handoff_strict_mode: Literal["off", "warn", "fail_closed"] = Field(
+        default="warn",
+        description=(
+            "Handoff schema validation strictness. "
+            "'warn' (default) logs violations but returns dict; "
+            "'fail_closed' raises HandoffSchemaError; "
+            "'off' restores legacy behavior. "
+            "Override at runtime by creating /tmp/disable_strict_handoff (forces 'warn')."
         ),
     )
 

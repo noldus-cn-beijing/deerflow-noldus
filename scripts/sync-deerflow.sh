@@ -79,6 +79,11 @@ PROTECTED_FILES=(
     "tools/builtins/setup_agent_tool.py"
     # Guardrail middleware — Noldus 加了 name kwarg 解决 langchain unique-name 限制
     "guardrails/middleware.py"
+    # 6-09 教训（sync-21 review）：以下文件不在旧清单但有 Noldus 定制，被 full-follow 洗掉过，补入保护
+    # memory/prompt.py — 2026-05-13 topOfMind/history 隔离（_format_memory 砍会话级字段防文件幻觉）
+    "agents/memory/prompt.py"
+    # app_config.py — handoff_strict_mode 字段（experiment_context 依赖 + /tmp/disable_strict_handoff 开关）
+    "config/app_config.py"
 )
 
 # ---- 颜色 ----
