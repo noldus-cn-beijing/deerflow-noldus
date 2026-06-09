@@ -26,7 +26,6 @@ from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
 from deerflow.subagents.handoff_schemas import ChartMakerHandoff, ReportWriterHandoff
 from deerflow.subagents.token_collector import SubagentTokenCollector
-from deerflow.tools.builtins.seal_handoff_tools import _seal_handoff_to_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -307,6 +306,12 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
 
     try:
         import json
+
+        # 惰性 import：seal_handoff_tools 与本模块（经 subagents/__init__ →
+        # handoff_schemas）构成导入环，顶层 import 会在生产启动时触发
+        # "partially initialized module" ImportError，使 Gateway 起不来。
+        # 放函数体内推迟到运行时导入即可解环（CLAUDE.md 惰性 import 约定）。
+        from deerflow.tools.builtins.seal_handoff_tools import _seal_handoff_to_workspace
 
         ws = Path(workspace_path)
         handoff_filename = _AUTO_SEALABLE[subagent_name]

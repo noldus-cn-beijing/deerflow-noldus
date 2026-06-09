@@ -92,9 +92,11 @@ report-writer（结构化简单报告 + 文献引用）
 
 ```bash
 cd packages/agent
-make dev           # 启动所有服务（LangGraph + Gateway + Frontend + Nginx），访问 localhost:2026
+make dev           # 启动所有服务（Gateway-embedded 运行时 + Frontend + Nginx，3 进程），访问 localhost:2026
 make stop          # 停止所有服务
 ```
+
+> **运行时模式（2026-06 起跟随上游）**：根目录 `make dev`（经 `scripts/serve.sh --dev`）与生产 compose 默认走 **Gateway-embedded 模式** —— agent runtime 内嵌在 Gateway（`uvicorn app.gateway.app:app`），**没有独立的 LangGraph server 进程**。nginx 把公网 `/api/langgraph/*` 改写后转发给 Gateway 内嵌 runtime。Standard 模式（独立 `langgraph dev` on :2024）仍保留用于后端单独调试（见下「后端开发」的 `make dev`），但**不是默认部署形态**。
 
 ### 后端开发（backend 目录）
 
@@ -139,7 +141,7 @@ Noldus 独特改动包括(但不限于):
 - **错误处理增强**:`llm_error_handling_middleware.py` 的总超时上限 + 多种 timeout 关键字识别
 - **Skill 系统**:`skills/custom/` 下 5 个 ethoinsight 定制 skill 的注册和加载逻辑（`ethoinsight`、`ethoinsight-code`、`ethoinsight-charts`、`ethoinsight-planning`、**新增 `ethovision-paradigm-knowledge` — EV19 模板识别 + 学术范式映射的渐进披露知识库**）
 - **MCP / 工具截断**:`mcp/tools.py` 的 4096 字符截断
-- **Subagent executor 修复**:`subagents/executor.py` 的 `recursion_limit` 修复 + `max_turns` 硬限制
+- **Subagent executor 修复**:`subagents/executor.py` 的 `recursion_limit` 修复 + `max_turns` 硬限制 + seal-resume 失败后的确定性 auto-seal 兜底（`_attempt_auto_seal_from_artifacts`，2026-06-08）
 
 **正确做法**(取长补短):
 
@@ -178,6 +180,23 @@ from deerflow.config.run_events_config import ... # event store 配置
 from deerflow.skills.storage import ...           # Tier 4 重构的 skill storage
 ```
 
+#### ⚠️ harness 模块顶层 import 闭环风险（2026-06-08 实证）
+
+harness 模块图存在**已知导入环**（证据：`backend/tests/conftest.py` 为破 `task_tool → subagents` 环而在 `sys.modules` mock 了 `deerflow.subagents.executor`）。**任何在 `subagents/`、`tools/builtins/`、`agents/` 等核心模块顶层新增 `from deerflow...import` 都可能闭环**。一旦闭环：
+
+- 生产启动（uvicorn `import app.gateway` / langgraph `make_lead_agent`）抛 `ImportError: cannot import name ... partially initialized module`，**Gateway 起不来**，`make dev` 卡在 `Waiting for Gateway on port 8001`。
+- **但 pytest 全绿是假绿**——conftest 的 mock 把 executor 短路了，测试里那条环根本不触发。
+
+**铁律**：
+1. 改完 `subagents/executor.py`、`tools/builtins/*`、`agents/**` 等核心后，**除 `make test` 外必须裸导入两生产入口验证**（backend/ 下，无 conftest）：
+   ```bash
+   PYTHONPATH=. python -c "import app.gateway"
+   PYTHONPATH=. python -c "from deerflow.agents import make_lead_agent"
+   ```
+   两者 0 退出才算过。
+2. 新 helper 即使抽成纯函数，**import 它的那行别放模块顶层**——放函数体内**惰性 import**（同「所有 ethoinsight import 必须惰性放函数体」的处方）。
+3. 永久 guard 已就位：`tests/test_gateway_import_no_cycle.py`（subprocess 裸导入两入口、绕开 conftest mock）。CI 会抓这类回归。
+
 ## 开发规范
 
 ### Python
@@ -208,7 +227,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 - **触发**: 开发者在本地跑 `cd packages/agent && make deploy-tar`
 - **构建**: 本地 `docker compose build`（linux/amd64），导出两个镜像（frontend + backend）为 gzip tar
 - **传输**: rsync 镜像 tar + docker-compose.yaml + nginx.conf + skills + config 到 ECS `/opt/ethoinsight/`
-- **部署**: 远程 `docker load` + `docker compose up -d`（frontend / gateway / langgraph / nginx 四个服务）
+- **部署**: 远程 `docker load` + `docker compose up -d`（frontend / gateway / nginx **三个**服务 — agent runtime 内嵌在 gateway，**无独立 langgraph 容器**，跟随上游 Gateway 化；provisioner 仅 K8s 模式用，部署链跳过）
 - **反代**: ECS 上 1Panel + OpenResty，80/443 → 内部 127.0.0.1:2026
 - **配置文件**: `config.yaml` / `extensions_config.json` / `.env` 存在开发者本地 `~/ethoinsight-prod/`，不进 git，部署时 rsync 到 ECS
 - **SOP**: 见 [docs/sop/deploy-via-tar-sop.md](docs/sop/deploy-via-tar-sop.md)
@@ -253,6 +272,13 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 12. **复用 deerflow 现成功能优先于自造轮子** — 实施新 agent 行为时，先调研 deerflow harness 已有的中间件 / 工具 / provider 协议，能复用就复用，不要重新发明。已知现成可用的关键能力：`ask_clarification` + `ClarificationMiddleware`（反问中断）、`LoopDetectionMiddleware`（防 tool call 死循环，已默认启用）、`GuardrailMiddleware` + `GuardrailProvider` 协议（pre-tool-call 授权决策）、`ToolErrorHandlingMiddleware`（tool 抛错自动转 error ToolMessage）、Skill 渐进披露（agent 主动 read_file SKILL.md + references/）、`update_agent` / `setup_agent` 工具（custom agent 自我修改 SOUL.md，v0.1 后启用）、`Skill Evolution`（agent 自建/改 skill，v0.1 后启用）、`/api/threads/{id}/runs/{rid}/feedback` API（替代手写飞轮反馈通道）。**自写中间件之前先看 `packages/agent/backend/packages/harness/deerflow/agents/middlewares/` 和 `tools/builtins/` 目录有没有现成的**。
 13. **项目状态修正（2026-05-12）** — 本仓库已经吃下 Tier 4 体系（unified persistence、`@require_permission`、`get_effective_user_id`、`UserRow` 等），是**多用户**研究助手。CLAUDE.md 第 11 条之前提到的"v0.1 单用户故意不要 Tier 4"在 2026-05-07/08 Tier234 round1-3 合入后已过时——这些指导仍适用于评估上游 sync 风险，但**本仓库现状**是建立在 Tier 4 之上。
 14. **Skill 优化 → SFT 路线（2026-06-04 启动）** — 采用微软 SkillOpt 方法论：行为学专家产出 Golden Cases（eval benchmark）→ 改造 SkillOpt 代码（自定义 EnvAdapter）→ 跑优化循环产出 best_skill.md → 用优化后的 skill 驱动 agent 生成高质量 SFT 轨迹 → 微调 Qwen3-30B。详见 [docs/plans/2026-06-04-skillopt-skill-optimization-plan.md](docs/plans/2026-06-04-skillopt-skill-optimization-plan.md)。**当前阻塞项：行为学专家 Golden Cases 待产出。**
+15. **Subagent handoff 鲁棒性 + n=1 路由 + 判读语言对齐（2026-06-08 一批合入 dev）** — EPM dogfood 多轮诊断后的一组正交修复，全部已在 dev：
+    - **seal 黑洞 harness 兜底**：subagent 完成产出（report.md / plot_*.png）却漏调 seal 工具时，harness 用已有产出**确定性 auto-seal** 构造 handoff，不再判 FAILED 白等重派。**仅 report-writer / chart-maker**（核心字段可从文件机械推导）；code-executor / data-analyst 的认知产物**永不 auto-seal**。实现见 `subagents/executor.py:_attempt_auto_seal_from_artifacts` + `seal_handoff_tools.py:_seal_handoff_to_workspace`（纯函数变体）。
+    - **n=1 单样本路径**：每组 n<2 时 lead fast-path 跳过 data-analyst（无统计基础），但**用户主动要洞察仍派 data-analyst 走 partial 描述性路径**；`path_sequence` guardrail 感知 n=1（单 subject 时 data-analyst 非必需）；四个 handoff schema 的 `status` 补齐 `partial` 三态对齐。
+    - **初次数据判读归 data-analyst**：knowledge-assistant 场景 A 收窄为"只解释**已有** data-analyst 结论"，不从零产完整判读（它不受输出宪法约束会产违禁词）；lead 按 workspace 有无 `handoff_data_analyst.json` 区分路由。
+    - **判读语言宪法术语松绑**：松绑定性行为术语（焦虑样行为/趋近-回避），**保留**绝对阈值（正常范围 X-Y%）+ 绝对程度（高/低焦虑）禁令（守第 9 条铁律）。SSOT 在 `skills/custom/ethoinsight/references/output-constitution.md`。
+    - **路径/展示一致性**：`validate_catalog` 用 `resolve_sandbox_path`（`scripts/_cli.py`，按 `DEERFLOW_PATH_*` env 解析）读 plan 内 `/mnt` 虚拟路径，修 `result_file_unreadable` 误报；`present_files` 工具拒绝磁盘上不存在的文件，防 LLM 幻影文件名（如 `epm_bar_{metric}.png`）污染 artifacts 致前端 404。
+    - **⚠️ 教训**：seal auto-seal 抽的 helper 当初在 `executor.py` **顶层** import `seal_handoff_tools` 闭成导入环，生产启动（uvicorn `app.gateway.app`）崩 `partially initialized module`、`make dev` 卡 Waiting for Gateway；测试因 `conftest.py` mock 了 executor 而假绿没抓到。已改惰性 import + 加 `tests/test_gateway_import_no_cycle.py`（subprocess 裸导入两生产入口）。见下「同步核心规则」末尾。
 
 ## 快速上手
 
