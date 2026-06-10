@@ -345,6 +345,10 @@ ask_clarification(
 ```
 **用户回答后,必须立即调 `set_viz_choice(choice='yes' | 'no')` 落盘 gate3**,然后再决定派 chart-maker (yes) 或跳到 ask(report?) (no)。否则后续 task(chart-maker) 会被 IntentPostStepAskGateProvider 拦截。`set_viz_choice` 需要在 workspace 中 experiment-context.json 已经创建后调用（即 Gate 1 已完成）。
 
+**重要**: 如果用户没有明确选择 A/B 选项，而是提出新需求（如"帮我解读一下""这些数据代表了什么"），
+不要自动 set_viz_choice=yes。只响应用户的新需求（派 data-analyst），
+可视化的选择留到下一次反问。不要把"解读数据"理解为"同意出图"。
+
 歧义剩余偏 E2E_FULL_ASKVIZ(让用户选,代价小)。详见 `ethoinsight-lead-interaction/references/intent-decision-tree.md`。
 
 ### 详细交互手册 + 反问 / 失败 / 正例反例
@@ -992,7 +996,9 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
    - 流水线: code → **跳过 data** → lead 出描述性摘要 → ask(viz?) → ask(report?)
    - **fast-path 自动跳过 data-analyst 仅适用于自动流水线。若用户随后主动要求数据洞察/判读，
      仍派遣 data-analyst（走 partial 描述性路径），不派 knowledge-assistant 从零判读。
-     判断信号：workspace 尚无 handoff_data_analyst.json + 用户要"判读/洞察/解读这批数据" → data-analyst**
+     判断信号：workspace 尚无 handoff_data_analyst.json + 用户要"判读/洞察/解读这批数据" → data-analyst。
+     **用户要求解读时，只派 data-analyst，不派 chart-maker（用户没有要图）。
+     不要将"解读/洞察"理解为"同意出图"或"也画出图来"。**
    若每组 n ≥ 2: 按 step 7 走正常完整流水线
 7. 按 SubagentConfig.input_contract 派遣 subagent
 
@@ -1008,7 +1014,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 - **ethoinsight-metric-catalog**: catalog 索引(prep_metric_plan 内部使用)
 - **ethoinsight**: 输出宪法
 
-流水线: E2E_FULL_ASKVIZ→code→data→ask(viz?)→[yes]chart→ask(report?) | E2E_FULL→code→data→chart→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA_KNOWLEDGE→knowledge-assistant | QA_FACT→有 handoff_data_analyst→knowledge-assistant 场景A / 无 handoff→data-analyst(初次判读)
+流水线: E2E_FULL_ASKVIZ→code→data→ask(viz?)→[yes]chart→ask(report?) | E2E_FULL→code→data+chart(并行,chart 不依赖 data)→ask(report?) | E2E_MIN→code→ask(four-choice) | CHART→chart-maker | REPORT→report-writer | QA_KNOWLEDGE→knowledge-assistant | QA_FACT→有 handoff_data_analyst→knowledge-assistant 场景A / 无 handoff→data-analyst(初次判读)
 复合语义: 「分析/看看/研究下」模糊总称 → E2E_FULL_ASKVIZ(跑完解读再问要不要出图)。明确含「画/图/可视化/箱线/轨迹/趋势/表」→ E2E_FULL(直接画)。明确单「算/计算」→ E2E_MIN。歧义偏 E2E_FULL_ASKVIZ。
 详情见 `/mnt/skills/ethoinsight-lead-interaction/SKILL.md`。
 </orchestration_guide>"""

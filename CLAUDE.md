@@ -9,7 +9,8 @@
 - **当前状态**：端到端流水线可用，v0.1 已支持 6 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze/TST）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）。**用户自定义分析区列的 HITL 列语义对齐 Sprint 1 已合 dev**（真实 OFT 数据中 `中心区`/`边缘区` 等用户命名列经反问对齐后可正确算指标；结构聚合 Sprint 2 等行为学专家，见 [milestone](docs/milestone/column-semantics-alignment.md)）
 - **愿景**：从"数据分析工具"演进为"全生命周期行为学研究助手"（实验指导 → 数据分析 → 追问 → 知识问答 → 跨范式证据链）
 - **关键里程碑**：2026 年 9 月 v0.1 可用版本
-- **路线图**：见 [docs/roadmap.md](docs/roadmap.md)
+- **路线图 / 全局进展**：见 [docs/milestone/README.md](docs/milestone/README.md)（**milestone 索引即本项目的 roadmap** — 每个 feature track 的当前状态、阻塞、最新 handoff 都在这里；不存在独立的 `roadmap.md`）
+- **当前 v0.1 推进的真实阻塞**：两条路都卡在**行为学同事的范式方法论待产出**（不是工程卡点）——① **结构聚合**（自定义分区粒度按范式聚合，[Issue #98](https://github.com/noldus-cn-beijing/noldus-insight/issues/98)，需逐范式确认聚合语义）② **Golden Cases**（微调 benchmark + 回归种子，[Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90)）。详见 [docs/milestone/blocked-on-expert-methodology.md](docs/milestone/blocked-on-expert-methodology.md)。harness/基础设施层均无此阻塞，可独立推进。
 
 ## 仓库结构
 
@@ -34,13 +35,11 @@ noldus-insight/
 │       │   └── templates/        # 范式模板
 │       └── tests/
 ├── docs/
-│   ├── roadmap.md          # 12 个月产品路线图
-│   ├── prd.md              # 产品需求文档
+│   ├── milestone/          # 里程碑索引（**即本项目的 roadmap / 全局进展地图**，README.md 是入口）
 │   ├── architecture-diagram.md  # 架构图（上层价值 + 下层技术）
 │   ├── plans/              # 设计文档
 │   ├── specs/              # 技术规格
 │   ├── handoffs/           # 会话交接文档（按月份分目录：2026-04/ 2026-05/ …）
-│   ├── milestone/          # 里程碑总结
 │   ├── problems/           # 问题记录
 │   ├── sop/                # 操作手册
 │   └── EthoInsight-技术文档/
@@ -285,15 +284,15 @@ harness 模块图存在**已知导入环**（证据：`backend/tests/conftest.py
 新开会话建议的读取顺序：
 
 1. 本文档 — 了解全貌
-2. [docs/roadmap.md](docs/roadmap.md) — 了解 12 个月规划和 v0.1 里程碑
-3. [docs/milestone/README.md](docs/milestone/README.md) — 项目地图，每个 feature 当前状态一目了然（2 分钟）
+2. [docs/milestone/README.md](docs/milestone/README.md) — **项目地图 / roadmap（即全局进展）**，每个 feature 当前状态 + 阻塞一目了然（2 分钟）
+3. [docs/milestone/blocked-on-expert-methodology.md](docs/milestone/blocked-on-expert-methodology.md) — 当前等行为学同事方法论的两条阻塞（结构聚合 + golden case）的精确待办
 4. 具体 feature 的 milestone — 深入了解某个 track 的全貌（5 分钟）
 5. `docs/handoffs/` 下具体 handoff — 最细粒度的操作细节（按需）
 
 ## 相关文档
 
-- [docs/roadmap.md](docs/roadmap.md) — 产品路线图
-- [docs/prd.md](docs/prd.md) — 产品需求文档
+- [docs/milestone/README.md](docs/milestone/README.md) — **里程碑索引 = 项目 roadmap / 全局进展地图**（无独立 roadmap.md）
+- [docs/milestone/blocked-on-expert-methodology.md](docs/milestone/blocked-on-expert-methodology.md) — 等同事方法论的阻塞清单（结构聚合 Issue #98 + golden case Issue #90）
 - [docs/architecture-diagram.md](docs/architecture-diagram.md) — 架构图
 - [docs/plans/2026-04-29-ev19-template-paradigm-design.md](docs/plans/2026-04-29-ev19-template-paradigm-design.md) — EV19 模板范式重定位设计（产品级）
 - [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) — **EV19 模板识别地基设计（工程级，2026-05-08）**

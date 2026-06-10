@@ -25,11 +25,15 @@ class Step:
                 ask → ask key ("viz" / "report" / "four_choice" / "clarify").
         condition: Optional condition string for conditional dispatch (e.g. "viz==yes").
                    None means unconditional.
+        prerequisites: Explicit subagent prerequisites for dispatch steps (prompt-side
+                       hyphenated names). Only these handoff files are checked — NOT all
+                       preceding dispatch steps. Empty tuple = no subagent prerequisites.
     """
 
     kind: StepKind
     target: str
     condition: str | None = None
+    prerequisites: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -39,17 +43,20 @@ class Step:
 # ask_clarification 反问用户。
 # ---------------------------------------------------------------------------
 PATHS: dict[str, list[Step]] = {
+    # chart-maker 的 prerequisite 只有 code-executor（不依赖 data-analyst）。
+    # chart-maker 只需要 handoff_code_executor.json 中的数据，不需要 data-analyst 的判读。
+    # 用户可能只想出图不想做解读，不能把 data-analyst 硬编码为 chart-maker 的前置条件。
     "E2E_FULL_ASKVIZ": [
         Step("dispatch", "code-executor"),
-        Step("dispatch", "data-analyst"),
+        Step("dispatch", "data-analyst", prerequisites=("code-executor",)),
         Step("ask", "viz"),
-        Step("dispatch", "chart-maker", condition="viz==yes"),
+        Step("dispatch", "chart-maker", condition="viz==yes", prerequisites=("code-executor",)),
         Step("ask", "report"),
     ],
     "E2E_FULL": [
         Step("dispatch", "code-executor"),
-        Step("dispatch", "data-analyst"),
-        Step("dispatch", "chart-maker"),
+        Step("dispatch", "data-analyst", prerequisites=("code-executor",)),
+        Step("dispatch", "chart-maker", prerequisites=("code-executor",)),
         Step("ask", "report"),
     ],
     "E2E_MIN": [
