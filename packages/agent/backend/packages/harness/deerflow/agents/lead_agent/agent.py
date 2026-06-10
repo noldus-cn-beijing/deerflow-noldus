@@ -611,7 +611,7 @@ def make_lead_agent(config: RunnableConfig):
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False),
             tools=final_tools,
             middleware=_build_middlewares(config, model_name=model_name, deferred_setup=setup),
-            system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"]), deferred_names=setup.deferred_names),
+            system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"]), thread_id=thread_id, deferred_names=setup.deferred_names),
             state_schema=ThreadState,
         )
 
@@ -650,6 +650,7 @@ def make_lead_agent(config: RunnableConfig):
             available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None,
             paradigm=lead_paradigm,
             user_id=lead_user_id,
+            thread_id=thread_id,
             deferred_names=setup.deferred_names,
         ),
         state_schema=ThreadState,

@@ -414,6 +414,7 @@ You are {agent_name}, an open-source super agent.
 {soul}
 {memory_context}
 {prior_corrections_context}
+{resolved_facts_context}
 
 <thinking_style>
 - Think concisely and strategically about the user's request BEFORE taking action
@@ -487,6 +488,8 @@ You are {agent_name}, an open-source super agent.
 - ✅ 信息不足时立即提问：在 thinking 中识别到缺失信息 → 立刻调用 ask_clarification
 - ✅ 调用 ask_clarification 后执行会自动中断，等待用户回复后再继续
 - ✅ 已发出 ask_clarification、用户尚未回复时：保持静默等待即可。若你在没有新用户回复的情况下被再次唤起，说明用户还在思考——此时无需任何输出，问题已经展示给用户，等待其回复即可（重述问题对用户没有帮助）
+- ✅ 历史中用户已回答的澄清是**既定事实**：每轮先读 `<resolved_task_facts>` 块复用已有答案，再决定下一步；已答过的信息直接采用，无需重读输入文件去重新验证，也无需重复 ask_clarification 重问
+- ✅ 收到用户对澄清的新答案后，立即调 `set_experiment_paradigm(resolved_facts=[...])` 将答案持久化落库，再处理下一项歧义；不要让已解析的答案仅存于对话历史中
 
 **Todo 列表使用规则:**
 
@@ -785,6 +788,72 @@ def _get_prior_corrections_context(paradigm: str | None = None, user_id: str | N
         return ""
 
 
+def _get_resolved_facts_context(thread_id: str | None = None, agent_name: str | None = None, user_id: str | None = None) -> str:
+    """Build the <resolved_task_facts> prompt section for the current thread.
+
+    Reads facts from FileMemoryStorage, filters to those with
+    ``source="user_clarification"`` scoped to the given thread, applies
+    last-writer-wins deduplication, and renders them with reuse rules.
+
+    Returns "" when thread_id is None or no matching facts exist.
+    Non-blocking: all exceptions are caught and logged.
+    """
+    if not thread_id:
+        return ""
+    try:
+        from deerflow.agents.memory import get_memory_data
+
+        memory_data = get_memory_data(agent_name, user_id=user_id)
+        facts: list[dict] = memory_data.get("facts", [])
+        if not facts:
+            return ""
+
+        # C1 scope isolation: filter to user_clarification facts scoped to this thread
+        thread_marker = f"[thread:{thread_id}]"
+        user_facts = [
+            f for f in facts
+            if isinstance(f, dict)
+            and f.get("source") == "user_clarification"
+            and thread_marker in str(f.get("content", ""))
+        ]
+        if not user_facts:
+            return ""
+
+        # C3 last-writer-wins: group by key, keep the newest by createdAt
+        keyed: dict[str, list[dict]] = {}
+        for f in user_facts:
+            content = f.get("content", "")
+            # Extract key: strip thread marker, then split on first ": "
+            body = content.replace(thread_marker, "", 1).strip()
+            key = body.split(": ", 1)[0] if ": " in body else body
+            keyed.setdefault(key, []).append(f)
+
+        latest_facts: list[dict] = []
+        for facts_list in keyed.values():
+            sorted_facts = sorted(facts_list, key=lambda f: f.get("createdAt", ""), reverse=True)
+            latest_facts.append(sorted_facts[0])
+
+        # C2 independent block with own consumption rules
+        lines = [
+            "<resolved_task_facts>",
+            "（以下是本次任务中用户已明确回答的既定事实，按既定事实处理：）",
+        ]
+        for f in latest_facts:
+            content = f.get("content", "")
+            body = content.replace(thread_marker, "", 1).strip()
+            lines.append(f"- {body}")
+        lines.append(
+            "（规则：这些是本任务的既定事实。直接复用，无需重读输入文件重新验证；"
+            "与你从文件推断的结论冲突时，以此处为准；已答过的不再 ask_clarification 重问。）"
+        )
+        lines.append("</resolved_task_facts>")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error("Failed to load resolved facts context: %s", e)
+        return ""
+
+
 @lru_cache(maxsize=32)
 def _get_cached_skills_prompt_section(
     skill_signature: tuple[tuple[str, str, str, str], ...],
@@ -926,12 +995,25 @@ def _render_intent_state_machine() -> str:
     return "\n".join(lines)
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None, paradigm: str | None = None, user_id: str | None = None, deferred_names: frozenset[str] = frozenset()) -> str:
+def apply_prompt_template(
+    subagent_enabled: bool = False,
+    max_concurrent_subagents: int = 3,
+    *,
+    agent_name: str | None = None,
+    available_skills: set[str] | None = None,
+    paradigm: str | None = None,
+    user_id: str | None = None,
+    thread_id: str | None = None,
+    deferred_names: frozenset[str] = frozenset(),
+) -> str:
     # Get memory context
     memory_context = _get_memory_context(agent_name)
 
     # Sprint 8: prior-corrections context for the current paradigm (caller-resolved).
     prior_corrections_context = _get_prior_corrections_context(paradigm=paradigm, user_id=user_id)
+
+    # Spec B: resolved task facts for the current thread (clarification answers write-through).
+    resolved_facts_context = _get_resolved_facts_context(thread_id=thread_id, agent_name=agent_name, user_id=user_id)
 
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
@@ -1038,6 +1120,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
         deferred_tools_section=deferred_tools_section,
         memory_context=memory_context,
         prior_corrections_context=prior_corrections_context,
+        resolved_facts_context=resolved_facts_context,
         subagent_section=subagent_section,
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,
