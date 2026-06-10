@@ -219,8 +219,43 @@ def test_clarification_answer_write_through_dual_landing():
 
 
 # ---------------------------------------------------------------------------
-# B1: apply_prompt_template injection
+# §4 / runtime: thread_id extraction must read the FLAT runtime.context shape
+# (regression guard — a nested configurable.thread_id read returns None in
+# production and silently disables the memory projection)
 # ---------------------------------------------------------------------------
+
+def test_thread_id_from_runtime_reads_flat_context_key():
+    """thread_id is read from the FLAT runtime.context['thread_id'], matching
+    memory_middleware / thread_data_middleware / loop_detection_middleware etc.
+
+    Feeds a REALISTIC runtime.context shape (the gap that let the original
+    bug ship: tests fed a controlled thread_id but never exercised the real
+    extraction path)."""
+    from deerflow.agents.middlewares.experiment_context import _thread_id_from_runtime
+
+    # (a) flat context dict → extracts correctly
+    runtime_flat = MagicMock()
+    runtime_flat.context = {"thread_id": THREAD_ID, "user_id": "u1"}
+    assert _thread_id_from_runtime(runtime_flat) == THREAD_ID
+
+    # (b) WRONG nested shape (RunnableConfig 'configurable') must NOT be the
+    #     path we read — ToolRuntime.context is flat. If someone regresses the
+    #     helper back to ctx.get("configurable",{}).get("thread_id"), this
+    #     realistic flat-context input would return None and this asserts fail.
+    runtime_nested_only = MagicMock()
+    runtime_nested_only.context = {"configurable": {"thread_id": THREAD_ID}}
+    assert _thread_id_from_runtime(runtime_nested_only) is None, (
+        "thread_id must come from the flat context key, not nested configurable"
+    )
+
+    # (c) robustness: None runtime, None/non-dict context
+    assert _thread_id_from_runtime(None) is None
+    runtime_no_ctx = MagicMock()
+    runtime_no_ctx.context = None
+    assert _thread_id_from_runtime(runtime_no_ctx) is None
+    runtime_missing = MagicMock()
+    runtime_missing.context = {"user_id": "u1"}  # no thread_id key
+    assert _thread_id_from_runtime(runtime_missing) is None
 
 def test_apply_prompt_template_injects_resolved_facts():
     """B1: System prompt contains <resolved_task_facts> when facts exist,
@@ -380,14 +415,26 @@ def test_write_user_clarification_fact_structure():
 # ---------------------------------------------------------------------------
 
 def test_thread_id_from_runtime():
-    """Extracts thread_id from ToolRuntime context."""
+    """Extracts thread_id from the FLAT ToolRuntime.context['thread_id'].
+
+    NOTE: ToolRuntime.context is a flat dict — thread_id is at the top level,
+    NOT nested under 'configurable' (that nesting belongs to RunnableConfig).
+    Reading the nested path returns None in production and silently disables
+    the memory projection. This test guards the correct flat-key behavior;
+    see also test_thread_id_from_runtime_reads_flat_context_key above.
+    """
     from deerflow.agents.middlewares.experiment_context import _thread_id_from_runtime
 
     assert _thread_id_from_runtime(None) is None
 
     mock_runtime = MagicMock()
-    mock_runtime.context = {"configurable": {"thread_id": "my-thread-123"}}
+    mock_runtime.context = {"thread_id": "my-thread-123"}
     assert _thread_id_from_runtime(mock_runtime) == "my-thread-123"
 
-    mock_runtime.context = {"configurable": {}}
+    # Nested configurable shape is NOT the runtime.context path → None.
+    mock_runtime.context = {"configurable": {"thread_id": "my-thread-123"}}
+    assert _thread_id_from_runtime(mock_runtime) is None
+
+    # No thread_id key at all → None.
+    mock_runtime.context = {"user_id": "u1"}
     assert _thread_id_from_runtime(mock_runtime) is None

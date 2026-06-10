@@ -12,10 +12,10 @@ TWO PATH DOMAINS:
 Robustness: file-not-found returns None (never raises).
 """
 
+import enum
 import hashlib
 import json
 import logging
-import enum
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -287,13 +287,21 @@ def _write_user_clarification_fact_to_memory(
 
 
 def _thread_id_from_runtime(runtime: ToolRuntime | None) -> str | None:
-    """Extract thread_id from the tool runtime's RunnableConfig."""
+    """Extract thread_id from the tool runtime's context.
+
+    ``ToolRuntime.context`` is a FLAT dict with ``thread_id`` at the top level
+    (the same shape read by memory_middleware / thread_data_middleware /
+    loop_detection_middleware / archiving_summarization etc.). The nested
+    ``configurable.thread_id`` form belongs to the RunnableConfig, NOT to
+    ``runtime.context`` — reading it there returns None in production and
+    silently disables the memory projection. Use the flat key.
+    """
     if runtime is None:
         return None
     try:
         ctx = runtime.context
-        if ctx is not None:
-            return ctx.get("configurable", {}).get("thread_id")
+        if isinstance(ctx, dict):
+            return ctx.get("thread_id")
     except Exception:
         pass
     return None
