@@ -138,17 +138,48 @@ _AUTO_SEALABLE: dict[str, str] = {
 5. **裸导入验证**（§3 A2 红线③）。
 6. 已知 5 个基线红（deferred_tool_registry ×2 + inspect_gate/paradigm async ×2 + chart_maker_config ×1）非本改动引入，别归因自己。
 7. dogfood OFT 真实数据复现原故障 → 确认 auto-seal 触发且 status 正确 / A1 修复后触发率趋零。
+8. **§6.1 依据核实（写进实施记录）**：确认 data-analyst 加固实验时其 SystemMessage 确实加载了矛盾 skill 文本——成立则 §6 顺序坐实；不成立则按 §6.1 末条翻转、转录兜底同批提上。
+9. **§6.3 触发判据存档**：A1 dogfood 通过后，若 data-analyst 在**指令一致条件下**仍漏调封存复发一次 → 机械启动转录兜底 follow-up spec（不开会、不设次数门槛）。
 
 ---
 
-## 6. 保留给 reviewer 的边界判断（已答，记录依据）
+## 6. 边界判断：data-analyst 不接 auto-seal（已答，Fable 二轮确认）
 
-**data-analyst 是否也接 auto-seal？** — **不接，保持 prompt-only。理由（Fable 判据 + 本项目证据）**：
-- 它的产出是判读结论 / 参数审计 finding，文件里**没有现成值可重建**——机械兜底会产"看似成功实则空洞"的 handoff。
-- Fable 提的第三条路"从 transcript 转录封存"（起全新上下文、单一职责、只把 worker 最终叙述转录成封存调用、引用不到的必填字段标 partial）**理论上优于 prompt-only**，但：
-  - 它引入一个新的"转录 subagent"机制，**超出本 spec 的"复用现成 infra、不自造"收口**；
-  - 当前 data-analyst 已有 step 2.8 加固 + n=1 partial 路径，先验证 A1（skill SSOT 修复）对 code-executor 的效果，**data-analyst 的转录兜底留作独立 follow-up spec**（若 dogfood 显示 data-analyst 仍系统性漏封存再启动）。
-- **若未来实施 data-analyst 兜底**：needs_review / partial 标记**必须落在 lead 实读的 `gate_signals` 位置承重**（我们拓扑 lead 不读 handoff 正文），gate 当"不许静默喂下游报告"处理——空心绿比诚实 FAILED 更糟。
+**结论**：**不接，保持 prompt-only；转录兜底留作 follow-up，触发判据已定死（见 §6.3）。**
+
+### 6.1 主依据（承重）：根因尚未隔离，决定性实验还没跑过
+
+> ⚠️ 这是"暂不做"的**主依据**。"只复用不自造"是过程纪律、是**附带**收口——如果证据真已证明 prompt 不可救，纪律不该挡必要机制（大不了单开一批）。真正让"暂不做"成立的是下面这条根因隔离论证。
+
+"data-analyst 加固到顶仍漏调封存"这条决定性证据，是**在矛盾指令仍在其 SystemMessage 里的条件下**采集的（过时 skill `SKILL.md:30` write_file 旧流 + system_prompt seal 工具，合进同一 SystemMessage 是**两个 worker 共享的污染源**）。该实验测的是"更多正确指令能否压过矛盾指令"——答案是不能（符合 LLM 指令遵循的一般认知：矛盾不会被平均掉，歧义被模型不可预测地消解）。**它没测"指令一致时模型是否会正常封存"——干净条件下的决定性实验还没跑过。** 同批上转录兜底 = 基于一份尚不存在的证据行动。
+
+**显式依据栏（实施者必须核实，别让它隐含）**：
+- ☑ 已核实：data-analyst 加固实验进行时，其 SystemMessage 确实加载了那条 / 同类"写好叙述=完成"的 skill/模板文本（`SKILL.md:30` + `output-contract.md:22`，与 code-executor 共享 ethoinsight-code skill）。
+- **若此核实成立** → "prompt 不可能痊愈"降级为"prompt 叠加在矛盾之上不可能痊愈"，先后顺序是唯一正确顺序。
+- **若发现它其实没加载那条 skill、加固是在干净指令下做的仍失败** → 结论翻转，转录兜底立刻提上来（同批）。
+
+### 6.2 三条独立支撑顺序的论据
+1. **本系统故障史在喊"先隔离"**：data-analyst seal 卡死已有≥2 个互不相同真根因——6-08 那次被报告误判为"忘记调工具/叙述黑洞"，**真相是 schema 缺 partial 三态、Pydantic 拒了一次诚实封存调用**（`feedback_dataanalyst_reportwriter_handoff_status_missing_partial`，gateway.log trace=acdfb7e5）。**seal 故障表象高度同质、根因高度异质**；根因未隔离时叠加新机制 = 给下次误判铺路。
+2. **故障可见性不对称**：现状失败是**响的**（无 handoff / 框架报错 / FAILED）；仓促的转录兜底失败是**哑的**（幻觉 handoff 看起来像成功）。用一轮 dogfood（一次响亮 FAILED + 重派）换"不引入哑故障通道"，交易明显划算。
+3. **顺序改善转录兜底的未来输入质量**：拔掉矛盾指令后若 worker 仍漏封存，它落在叙述里的内容会更贴近 seal schema 形状（上下文只剩描述正确 schema 的指令）→ 转录步骤输入更干净。**先修 skill 再上转录 = 依赖排序，不只是风险排序。**
+
+### 6.3 follow-up 触发判据（现在定死，不留到 dogfood 后再议）
+> **拔除矛盾指令（A1）并 dogfood 通过一次之后，任何一次"指令一致条件下的封存漏调"复发，即启动转录兜底 spec——不设次数门槛、不重新开会。** 理由：决定性实验是二值的，干净条件下复发一次就证明"一致指令仍不充分"，等第二次无信息增量。判据先定死，到时决策机械执行。
+
+### 6.4 转录兜底设计约束 stub（写 stub ≠ 建机制，不破坏本 spec 收口）
+若 §6.3 触发，转录兜底（起全新上下文、单一职责子代理，只把 worker 最终叙述转录成封存调用）的**首要可预测失败模式 = 转录幻觉**（schema 必填字段 + "产出合法输出"指令 = 编造压力）。三形态：①**压扁犹豫**（含糊叙述→确定结论字段）；②**把推演当结论**（探索性分支→挑一支封存）；③**把半截当完整**（worker 中途死掉，残缺叙述→形状完整 handoff；与 A2 完整性判据同问题但更难，无 `m_*.json` 清单可对账，顶多拿 `gate_signals` 期望集做部分对账）。
+
+**核心设计约束 = 把"信任转录器"改造成"验证转录器"**：
+- **C-α 引用锚定 + 确定性后验**：转录器为每个填入字段附一段叙述原文逐字引用；harness 做**子串校验**（引用非 transcript 子串即拒该字段，确定性、不信任任何 LLM）；引用不到锚点的必填字段一律置空。同时缓解全部三形态。
+- **C-β status 由 harness 推导、不许转录器断言**：转录器只填内容字段；`completed/partial` 由框架按"字段完整度 vs 期望集"计算——**与 A2"plan 对账才标 completed"同一条设计语言，两个兜底共用**。
+- **C-γ 默认偏置向缺省**：指令不对称写死"存疑则不填"，让 partial 成阻力最小路径、编造成阻力最大路径。
+
+**`sealed_by=transcription_fallback` 承重三层（缺一不可）**：
+- **路由层**：落进 orchestrator 实读的信号位（我们拓扑 = `gate_signals`）——不在实读位置的标记等于不存在（lead 不读 handoff 正文的实证教训换个出口）。
+- **gate 层**：任何基于 handoff 完整性自动放行的 gate，对 transcription_fallback **一律不自动放行**——HITL 确认后报告才出，或报告带可见标注出。**落点天然在 Sprint S7 假设暴露面板**（转录来源本质是一条"该结论封存由框架代办"的假设，同板展示，不新造 UI）。
+- **遥测层**：触发率可观测、写进验收项（同 `feedback_fallback_trigger_rate_must_be_observable_acceptance_criterion`）。
+
+**一句话收口标准**：一份转录产出的 handoff，在它的内容影响任何决策（机器的 gate 路由、人的报告阅读）的**每一个点**上，都必须**无法被误认为 worker 自封的**。达到 = 诚实代笔；达不到 = 把响亮 FAILED 换成无声幻觉，**比不修更糟**。
 
 ---
 
