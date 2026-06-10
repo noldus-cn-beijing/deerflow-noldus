@@ -24,7 +24,7 @@ from langchain_core.runnables import RunnableConfig
 from deerflow.agents.thread_state import SandboxState, ThreadDataState, ThreadState
 from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
-from deerflow.subagents.handoff_schemas import ChartMakerHandoff, ReportWriterHandoff
+from deerflow.subagents.handoff_schemas import ChartMakerHandoff, CodeExecutorHandoff, ReportWriterHandoff
 from deerflow.subagents.token_collector import SubagentTokenCollector
 
 if TYPE_CHECKING:
@@ -267,30 +267,40 @@ def _validate_handoff_emitted(
 
 
 # ---------------------------------------------------------------------------
-# Spec C: seal-resume 失败后的确定性 auto-seal 兜底。
+# Spec C → Spec A: seal-resume 失败后的确定性 auto-seal 兜底。
 #
-# 当 subagent 完成了实质产出（写了 report.md / plot_*.png）但漏调 seal 工具时，
-# harness 用已有产出确定性构造 handoff，不再依赖 LLM "记得调工具"。
+# 当 subagent 完成了实质产出但漏调 seal 工具时，harness 用已有产出确定性构造
+# handoff，不再依赖 LLM "记得调工具"。
 #
-# 仅限 handoff 核心字段可从产出文件机械推导的 subagent。
-# code-executor（指标数值）/ data-analyst（判读结论）的 handoff 是认知产物，
-# 不能从文件重建 → 永不 auto-seal（维持 FAILED）。
+# report-writer / chart-maker: 核心字段从 outputs/ 下的文件机械推导（Spec C）。
+# code-executor: metrics_summary 从 m_*.json + plan_metrics.json + groups.json
+#   机械重建 + 完整性对账（Spec A, 推翻"认知产物不能重建"假设）。
+# data-analyst: 判读结论无文件来源，永不 auto-seal（维持 FAILED）。
 # ---------------------------------------------------------------------------
 
-# Spec C: subagent → handoff filename 映射（仅 report-writer / chart-maker）。
-# 这两个 subagent 的 handoff 核心字段可从 outputs/ 下的文件确定性推导。
+# Spec C+A: subagent → handoff filename 映射。
+# report-writer / chart-maker: 核心字段从 outputs/ 下文件确定性推导（Spec C）。
+# code-executor: metrics_summary 从 m_*.json + plan_metrics.json 机械重建（Spec A）。
+# data-analyst: 判读结论无文件来源，永不在此列表。
 _AUTO_SEALABLE: dict[str, str] = {
     "report-writer": "handoff_report_writer.json",
     "chart-maker": "handoff_chart_maker.json",
+    "code-executor": "handoff_code_executor.json",
 }
 
 
 def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | None) -> bool:
     """seal-resume 失败后的确定性兜底。返回 True=已 auto-seal，False=无法兜底（维持 FAILED）。
 
-    仅对 report-writer / chart-maker 生效——其 handoff 核心字段（report_path、
-    sections_written / chart_files）可从 outputs/ 下的文件确定性推导。
-    code-executor / data-analyst 的 handoff 是认知产物，永不 auto-seal。
+    report-writer / chart-maker: handoff 核心字段（report_path / chart_files）
+    可从 outputs/ 下的文件确定性推导（Spec C）。
+
+    code-executor: metrics_summary 从 m_*.json + plan_metrics.json + groups.json
+    机械重建，并以 plan 期望集对账磁盘产出做完整性判据（Spec A）：
+    - 期望 = 实际 → status=completed
+    - 有缺失 → status=partial，缺失项列 errors
+
+    data-analyst: 判读结论无文件来源，永不 auto-seal。
 
     ROBUSTNESS (Spec C §2.4): 绝不抛异常。调用点在 executor try/except 内，
     任何异常 → 返回 False → 外层走 FAILED。
@@ -385,6 +395,166 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
             }
             _seal_handoff_to_workspace(
                 ChartMakerHandoff, handoff_filename, payload, ws,
+            )
+            return True
+
+        elif subagent_name == "code-executor":
+            # Spec A: 从 m_*.json + plan_metrics.json + groups.json 机械重建 handoff。
+            # 核心假设（已核实）：plan 阶段就构造好了期望输出绝对路径，
+            # 结果文件按命名约定落盘（m_<id>.json / m_<id>_s<idx>.json），
+            # 值就在命名 JSON 里 → 可重建。
+            plan_path = ws / "plan_metrics.json"
+            if not plan_path.exists():
+                return False
+
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            except Exception:
+                return False
+
+            plan_metrics = plan.get("metrics", [])
+            if not plan_metrics:
+                return False
+
+            # 枚举 plan 期望集（expected output filenames）
+            expected: set[str] = set()
+            metric_id_to_entry: dict[str, dict] = {}
+            for m in plan_metrics:
+                output = m.get("output", "")
+                if output:
+                    fname = Path(output).name
+                    expected.add(fname)
+                    metric_id_to_entry[fname] = m
+
+            if not expected:
+                return False  # plan 里没有 output → 无法对账
+
+            # glob 实际 m_*.json
+            actual: set[str] = set()
+            for f in ws.glob("m_*.json"):
+                actual.add(f.name)
+
+            # 完整性判据（Spec A 承重）
+            missing = expected - actual
+            status = "completed" if not missing else "partial"
+
+            # 读 groups.json
+            groups: dict[str, str] = {}
+            groups_path = ws / "groups.json"
+            if groups_path.exists():
+                try:
+                    groups = json.loads(groups_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            # 从 plan 取 inputs.raw_files 做 subject_index → subject_file 映射
+            raw_files: list[str] = []
+            plan_inputs = plan.get("inputs", {})
+            if isinstance(plan_inputs, dict):
+                raw_files = plan_inputs.get("raw_files", []) or []
+
+            # 读每个存在的 m_*.json，重建 metrics_summary + per_subject
+            metrics_summary: dict[str, dict[str, dict]] = {}
+            per_subject: dict[str, dict[str, Any]] = {}
+            output_files_metrics: list[str] = []
+            data_quality_warnings: list[dict] = []
+            errors: list[str] = []
+
+            for fname in sorted(actual):
+                fpath = ws / fname
+                try:
+                    mdata = json.loads(fpath.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+
+                metric_name = mdata.get("metric", "")
+                value = mdata.get("value")
+                params = mdata.get("parameters_used", {}) or {}
+
+                entry = metric_id_to_entry.get(fname, {})
+                subject_index = entry.get("subject_index", 0)
+                subject_file = raw_files[subject_index] if subject_index < len(raw_files) else f"subject_{subject_index}"
+                subject_name = Path(subject_file).stem
+                group_name = groups.get(subject_file, groups.get(Path(subject_file).name, "unknown"))
+
+                # per_subject
+                if subject_name not in per_subject:
+                    per_subject[subject_name] = {}
+                per_subject[subject_name][metric_name] = value
+
+                # metrics_summary (group → metric → MetricStat)
+                if group_name not in metrics_summary:
+                    metrics_summary[group_name] = {}
+                if metric_name not in metrics_summary[group_name]:
+                    metrics_summary[group_name][metric_name] = {
+                        "mean": value,
+                        "std": None,
+                        "n": 1,
+                        "parameters_used": params,
+                    }
+                else:
+                    # 同 group 同 metric 多 subject → 简单聚合
+                    existing = metrics_summary[group_name][metric_name]
+                    existing["n"] = (existing.get("n") or 0) + 1
+
+                output_files_metrics.append(f"/mnt/user-data/workspace/{fname}")
+
+            # 缺失项列 errors（Spec A 完整性判据）
+            if missing:
+                for mf in sorted(missing):
+                    entry = metric_id_to_entry.get(mf, {})
+                    mid = entry.get("id", mf)
+                    si = entry.get("subject_index", "?")
+                    errors.append(
+                        f"harness auto-seal: 期望产出 {mf} (metric_id={mid}, "
+                        f"subject_index={si}) 未在 workspace 中找到"
+                    )
+                data_quality_warnings.append({
+                    "severity": "critical",
+                    "code": "METHOD.AUTO_SEAL_INCOMPLETE",
+                    "metric": "all",
+                    "message": (
+                        f"harness auto-seal: {len(missing)}/{len(expected)} 期望产物缺失，"
+                        f"handoff 标为 partial"
+                    ),
+                    "evidence": {"missing_count": len(missing), "expected_count": len(expected)},
+                    "blocks_downstream": True,
+                })
+
+            # 读 paradigm / ev19_template
+            paradigm = plan.get("paradigm", "")
+            ev19_template = plan.get("ev19_template")
+
+            payload = {
+                "status": status,
+                "summary": (
+                    f"harness auto-seal：机械重建，{len(actual)}/{len(expected)} 指标产出，"
+                    f"status={status}"
+                ),
+                "paradigm": paradigm,
+                "ev19_template": ev19_template,
+                "metrics_summary": metrics_summary,
+                "per_subject": per_subject,
+                "inputs": {
+                    "raw_files": raw_files,
+                    "groups": groups,
+                },
+                "output_files": {"metrics": output_files_metrics},
+                "data_quality_warnings": data_quality_warnings,
+                "errors": errors,
+                "confidence": None,
+                "gate_signals": None,
+                "sealed_by": "framework_rebuild",
+            }
+            _seal_handoff_to_workspace(
+                CodeExecutorHandoff, handoff_filename, payload, ws,
+            )
+
+            # 结构化日志：触发率可观测（Spec A 验收项 V1）
+            logger.warning(
+                "[auto_seal] code-executor sealed_by=framework_rebuild "
+                "status=%s actual=%d expected=%d missing=%d",
+                status, len(actual), len(expected), len(missing),
             )
             return True
 
@@ -914,7 +1084,7 @@ class SubagentExecutor:
         # 不要解释"之类反向激活词（CLAUDE.md §6 deepseek 正面提示原则）。
         resume_prompt = (
             f"你上面的分析已经完成。现在请调用 {seal_tool} 工具，"
-            f"把你刚才得出的结论（key_findings / 各结构化字段）填入工具参数并落库。"
+            f"把你刚才得出的各结构化字段填入工具参数并落库。"
             f"这是完成本次任务的最后一步——调用该工具后任务即完成。"
         )
         try:

@@ -239,11 +239,418 @@ class TestAutoSealChartMaker:
 
 
 # ===================================================================
-# Test: scope — data-analyst / code-executor NEVER auto-sealed
+# Test: code-executor auto-seal (Spec A)
 # ===================================================================
 
+class TestAutoSealCodeExecutorCompleted:
+    """code-executor 有完整 plan + 全部 m_*.json → auto-seal completed。"""
+
+    def test_full_reconstruction_auto_seals_completed(self, tmp_path: Path):
+        """3 指标 × 2 subject = 6 期望，全在 → status=completed, sealed_by=framework_rebuild。"""
+        mod = _get_real_executor()
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+
+        # 写 plan_metrics.json（模拟 lead 已经生成好的施工单）
+        plan = {
+            "paradigm": "epm",
+            "ev19_template": "epm_v1",
+            "inputs": {
+                "raw_files": [
+                    "/mnt/user-data/uploads/subject1.xlsx",
+                    "/mnt/user-data/uploads/subject2.xlsx",
+                ],
+                "groups_file": "/mnt/user-data/workspace/groups.json",
+            },
+            "metrics": [
+                {
+                    "id": "open_arm_time_ratio",
+                    "script": "ethoinsight.scripts.epm.compute_open_arm_time_ratio",
+                    "output": "/mnt/user-data/workspace/m_open_arm_time_ratio_s0.json",
+                    "subject_index": 0,
+                    "display_name_zh": "开臂时间比",
+                },
+                {
+                    "id": "open_arm_time_ratio",
+                    "script": "ethoinsight.scripts.epm.compute_open_arm_time_ratio",
+                    "output": "/mnt/user-data/workspace/m_open_arm_time_ratio_s1.json",
+                    "subject_index": 1,
+                    "display_name_zh": "开臂时间比",
+                },
+                {
+                    "id": "open_arm_entry_ratio",
+                    "script": "ethoinsight.scripts.epm.compute_open_arm_entry_ratio",
+                    "output": "/mnt/user-data/workspace/m_open_arm_entry_ratio_s0.json",
+                    "subject_index": 0,
+                    "display_name_zh": "开臂进入比",
+                },
+                {
+                    "id": "open_arm_entry_ratio",
+                    "script": "ethoinsight.scripts.epm.compute_open_arm_entry_ratio",
+                    "output": "/mnt/user-data/workspace/m_open_arm_entry_ratio_s1.json",
+                    "subject_index": 1,
+                    "display_name_zh": "开臂进入比",
+                },
+                {
+                    "id": "total_distance",
+                    "script": "ethoinsight.scripts.epm.compute_total_distance",
+                    "output": "/mnt/user-data/workspace/m_total_distance_s0.json",
+                    "subject_index": 0,
+                    "display_name_zh": "总路程",
+                },
+                {
+                    "id": "total_distance",
+                    "script": "ethoinsight.scripts.epm.compute_total_distance",
+                    "output": "/mnt/user-data/workspace/m_total_distance_s1.json",
+                    "subject_index": 1,
+                    "display_name_zh": "总路程",
+                },
+            ],
+        }
+        (ws_path / "plan_metrics.json").write_text(json.dumps(plan), encoding="utf-8")
+
+        # 写 groups.json
+        groups = {
+            "/mnt/user-data/uploads/subject1.xlsx": "Control",
+            "/mnt/user-data/uploads/subject2.xlsx": "Treatment",
+        }
+        (ws_path / "groups.json").write_text(json.dumps(groups), encoding="utf-8")
+
+        # 写所有 6 个 m_*.json
+        metric_files = {
+            "m_open_arm_time_ratio_s0.json": {"metric": "open_arm_time_ratio", "value": 0.35, "parameters_used": {}},
+            "m_open_arm_time_ratio_s1.json": {"metric": "open_arm_time_ratio", "value": 0.42, "parameters_used": {}},
+            "m_open_arm_entry_ratio_s0.json": {"metric": "open_arm_entry_ratio", "value": 0.40, "parameters_used": {}},
+            "m_open_arm_entry_ratio_s1.json": {"metric": "open_arm_entry_ratio", "value": 0.38, "parameters_used": {}},
+            "m_total_distance_s0.json": {"metric": "total_distance", "value": 1500.0, "parameters_used": {}},
+            "m_total_distance_s1.json": {"metric": "total_distance", "value": 1200.0, "parameters_used": {}},
+        }
+        for fname, data in metric_files.items():
+            (ws_path / fname).write_text(json.dumps(data), encoding="utf-8")
+
+        # experiment-context.json（_seal 需要 analysis_config_id）
+        (ws_path / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "test-config-epm"}),
+            encoding="utf-8",
+        )
+
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is True
+
+        h = ws_path / "handoff_code_executor.json"
+        assert h.exists()
+        data = json.loads(h.read_text(encoding="utf-8"))
+
+        # 状态
+        assert data["status"] == "completed"
+        assert data["sealed_by"] == "framework_rebuild"
+        assert data["paradigm"] == "epm"
+        assert data["ev19_template"] == "epm_v1"
+        assert "auto-seal" in data["summary"]
+        assert "6/6" in data["summary"]
+
+        # metrics_summary（规范字段名）
+        assert "metrics_summary" in data
+        ms = data["metrics_summary"]
+        assert "Control" in ms
+        assert "Treatment" in ms
+        assert "open_arm_time_ratio" in ms["Control"]
+        assert ms["Control"]["open_arm_time_ratio"]["mean"] == 0.35
+        assert ms["Treatment"]["open_arm_time_ratio"]["mean"] == 0.42
+
+        # per_subject
+        assert "per_subject" in data
+        ps = data["per_subject"]
+        assert "subject1" in ps
+        assert "subject2" in ps
+        assert ps["subject1"]["open_arm_time_ratio"] == 0.35
+        assert ps["subject2"]["total_distance"] == 1200.0
+
+        # errors 为空（全量产出）
+        assert data["errors"] == []
+
+        # inputs 透传
+        assert data["inputs"]["raw_files"] == plan["inputs"]["raw_files"]
+        assert data["inputs"]["groups"] == groups
+
+        # 文件权限 644
+        assert stat.S_IMODE(os.stat(h).st_mode) == 0o644
+
+        # 集成断言：能过 _validate_handoff_emitted（含内容非空检查，走 metrics_summary）
+        validation_error = mod._validate_handoff_emitted("code-executor", str(ws_path))
+        assert validation_error is None, f"auto-sealed code-executor handoff should validate, got: {validation_error}"
+
+    def test_empty_plan_metrics_does_not_auto_seal(self, tmp_path: Path):
+        """plan_metrics.json 存在但 metrics 数组为空 → 不兜底。"""
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+        (ws_path / "plan_metrics.json").write_text(
+            json.dumps({"paradigm": "epm", "metrics": []}),
+            encoding="utf-8",
+        )
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is False
+
+    def test_no_expected_outputs_in_plan_does_not_auto_seal(self, tmp_path: Path):
+        """plan 的 metrics 条目都没有 output 字段 → 无法枚举期望集 → 不兜底。"""
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+        (ws_path / "plan_metrics.json").write_text(
+            json.dumps({
+                "paradigm": "epm",
+                "metrics": [{"id": "x", "script": "y", "subject_index": 0}],
+            }),
+            encoding="utf-8",
+        )
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is False
+
+
+class TestAutoSealCodeExecutorPartial:
+    """完整性判据：有缺失 m_*.json → status=partial。"""
+
+    def test_missing_one_metric_marks_partial(self, tmp_path: Path):
+        """6 期望，5 实际 → status=partial，errors 含缺失项。"""
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+
+        plan = {
+            "paradigm": "oft",
+            "inputs": {
+                "raw_files": ["/mnt/user-data/uploads/s1.xlsx", "/mnt/user-data/uploads/s2.xlsx"],
+            },
+            "metrics": [
+                {"id": "center_distance", "script": "...", "output": "/mnt/user-data/workspace/m_center_distance_s0.json", "subject_index": 0},
+                {"id": "center_distance", "script": "...", "output": "/mnt/user-data/workspace/m_center_distance_s1.json", "subject_index": 1},
+                {"id": "distance_ratio", "script": "...", "output": "/mnt/user-data/workspace/m_distance_ratio_s0.json", "subject_index": 0},
+                {"id": "distance_ratio", "script": "...", "output": "/mnt/user-data/workspace/m_distance_ratio_s1.json", "subject_index": 1},
+                {"id": "total_distance", "script": "...", "output": "/mnt/user-data/workspace/m_total_distance_s0.json", "subject_index": 0},
+                {"id": "total_distance", "script": "...", "output": "/mnt/user-data/workspace/m_total_distance_s1.json", "subject_index": 1},
+            ],
+        }
+        (ws_path / "plan_metrics.json").write_text(json.dumps(plan), encoding="utf-8")
+        (ws_path / "groups.json").write_text(
+            json.dumps({"/mnt/user-data/uploads/s1.xlsx": "A", "/mnt/user-data/uploads/s2.xlsx": "B"}),
+            encoding="utf-8",
+        )
+        (ws_path / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "test"}),
+            encoding="utf-8",
+        )
+
+        # 只写 5 个（缺 m_total_distance_s1.json）
+        for fname in [
+            "m_center_distance_s0.json", "m_center_distance_s1.json",
+            "m_distance_ratio_s0.json", "m_distance_ratio_s1.json",
+            "m_total_distance_s0.json",
+        ]:
+            (ws_path / fname).write_text(
+                json.dumps({"metric": fname.replace(".json", ""), "value": 100.0}),
+                encoding="utf-8",
+            )
+
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is True
+
+        h = ws_path / "handoff_code_executor.json"
+        data = json.loads(h.read_text(encoding="utf-8"))
+
+        # 完整性判据核心断言
+        assert data["status"] == "partial", (
+            f"Expected partial but got {data['status']}: missing file should prevent completed"
+        )
+        assert "5/6" in data["summary"]
+
+        # errors 含缺失项
+        assert len(data["errors"]) >= 1
+        missing_errors = [e for e in data["errors"] if "total_distance_s1" in e]
+        assert len(missing_errors) >= 1, f"errors should mention missing file, got: {data['errors']}"
+
+        # data_quality_warnings 含 AUTO_SEAL_INCOMPLETE
+        assert len(data["data_quality_warnings"]) >= 1
+        incomplete_warnings = [
+            w for w in data["data_quality_warnings"]
+            if w.get("code") == "METHOD.AUTO_SEAL_INCOMPLETE"
+        ]
+        assert len(incomplete_warnings) == 1
+        assert incomplete_warnings[0]["severity"] == "critical"
+        assert incomplete_warnings[0]["blocks_downstream"] is True
+
+    def test_missing_does_not_block_other_reconstruction(self, tmp_path: Path):
+        """即使有缺失，存在的 m_*.json 仍被正确重建进 metrics_summary。"""
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+
+        plan = {
+            "paradigm": "oft",
+            "inputs": {"raw_files": ["/mnt/user-data/uploads/s1.xlsx"]},
+            "metrics": [
+                {"id": "center_distance", "script": "...", "output": "/mnt/user-data/workspace/m_center_distance_s0.json", "subject_index": 0},
+                {"id": "distance_ratio", "script": "...", "output": "/mnt/user-data/workspace/m_distance_ratio_s0.json", "subject_index": 0},
+            ],
+        }
+        (ws_path / "plan_metrics.json").write_text(json.dumps(plan), encoding="utf-8")
+        (ws_path / "groups.json").write_text(
+            json.dumps({"/mnt/user-data/uploads/s1.xlsx": "Control"}),
+            encoding="utf-8",
+        )
+        (ws_path / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "test"}),
+            encoding="utf-8",
+        )
+
+        # 只写 1 个（缺 m_distance_ratio_s0.json）
+        (ws_path / "m_center_distance_s0.json").write_text(
+            json.dumps({"metric": "center_distance", "value": 42.5, "parameters_used": {"center_zone": "in_zone"}}),
+            encoding="utf-8",
+        )
+
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is True
+
+        data = json.loads((ws_path / "handoff_code_executor.json").read_text(encoding="utf-8"))
+        assert data["status"] == "partial"
+        # 存在的指标仍被重建
+        assert "center_distance" in data["metrics_summary"].get("Control", {})
+        assert data["metrics_summary"]["Control"]["center_distance"]["mean"] == 42.5
+        assert data["metrics_summary"]["Control"]["center_distance"]["parameters_used"] == {"center_zone": "in_zone"}
+
+
+class TestAutoSealCodeExecutorFieldNameCanonical:
+    """Spec A.2.4: 重建产出使用规范字段名 metrics_summary，绕开字段三分裂故障类。"""
+
+    def test_reconstructed_handoff_uses_canonical_metrics_summary(self, tmp_path: Path):
+        """auto-seal 产出的 handoff 使用 metrics_summary（规范名），过内容校验。"""
+        mod = _get_real_executor()
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+
+        plan = {
+            "paradigm": "fst",
+            "inputs": {"raw_files": ["/mnt/user-data/uploads/s1.xlsx"]},
+            "metrics": [
+                {"id": "immobility_time", "script": "...", "output": "/mnt/user-data/workspace/m_immobility_time_s0.json", "subject_index": 0},
+            ],
+        }
+        (ws_path / "plan_metrics.json").write_text(json.dumps(plan), encoding="utf-8")
+        (ws_path / "groups.json").write_text(
+            json.dumps({"/mnt/user-data/uploads/s1.xlsx": "Treatment"}),
+            encoding="utf-8",
+        )
+        (ws_path / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "test"}),
+            encoding="utf-8",
+        )
+        (ws_path / "m_immobility_time_s0.json").write_text(
+            json.dumps({"metric": "immobility_time", "value": 120.0, "parameters_used": {"velocity_threshold": 30}}),
+            encoding="utf-8",
+        )
+
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is True
+
+        data = json.loads((ws_path / "handoff_code_executor.json").read_text(encoding="utf-8"))
+
+        # 规范字段名（非 metrics / metrics_results）
+        assert "metrics_summary" in data, "auto-seal MUST use canonical field name 'metrics_summary'"
+        assert data["metrics_summary"] != {}, "metrics_summary should be non-empty"
+
+        # 过 _check_code_executor_content（规范字段非空校验）
+        check_result = mod._check_code_executor_content(data)
+        assert check_result is None, f"canonical field should pass content check, got: {check_result}"
+
+        # 集成：过完整 _validate_handoff_emitted
+        validation_error = mod._validate_handoff_emitted("code-executor", str(ws_path))
+        assert validation_error is None, f"should validate, got: {validation_error}"
+
+    def test_historical_metrics_field_not_present_in_reconstructed(self, tmp_path: Path):
+        """重建产物不含 metrics / metrics_results 历史字段（只含规范 metrics_summary）。"""
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+
+        plan = {
+            "paradigm": "fst",
+            "inputs": {"raw_files": ["/mnt/user-data/uploads/s1.xlsx"]},
+            "metrics": [
+                {"id": "immobility_time", "script": "...", "output": "/mnt/user-data/workspace/m_immobility_time_s0.json", "subject_index": 0},
+            ],
+        }
+        (ws_path / "plan_metrics.json").write_text(json.dumps(plan), encoding="utf-8")
+        (ws_path / "groups.json").write_text(
+            json.dumps({"/mnt/user-data/uploads/s1.xlsx": "Treatment"}),
+            encoding="utf-8",
+        )
+        (ws_path / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "test"}),
+            encoding="utf-8",
+        )
+        (ws_path / "m_immobility_time_s0.json").write_text(
+            json.dumps({"metric": "immobility_time", "value": 120.0}),
+            encoding="utf-8",
+        )
+
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is True
+
+        data = json.loads((ws_path / "handoff_code_executor.json").read_text(encoding="utf-8"))
+        # 不含历史字段
+        assert "metrics" not in data, "reconstructed handoff should NOT contain legacy 'metrics' field"
+        assert "metrics_results" not in data, "reconstructed handoff should NOT contain legacy 'metrics_results' field"
+
+
+class TestAutoSealCodeExecutorSealedBy:
+    """sealed_by 来源标记：auto-seal 产物必须标 framework_rebuild。"""
+
+    def test_sealed_by_is_framework_rebuild(self, tmp_path: Path):
+        """auto-seal 产出的 handoff 标记 sealed_by=framework_rebuild。"""
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+
+        plan = {
+            "paradigm": "epm",
+            "inputs": {"raw_files": ["/mnt/user-data/uploads/s1.xlsx"]},
+            "metrics": [
+                {"id": "oat", "script": "...", "output": "/mnt/user-data/workspace/m_oat_s0.json", "subject_index": 0},
+            ],
+        }
+        (ws_path / "plan_metrics.json").write_text(json.dumps(plan), encoding="utf-8")
+        (ws_path / "groups.json").write_text(
+            json.dumps({"/mnt/user-data/uploads/s1.xlsx": "Control"}),
+            encoding="utf-8",
+        )
+        (ws_path / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "test"}),
+            encoding="utf-8",
+        )
+        (ws_path / "m_oat_s0.json").write_text(
+            json.dumps({"metric": "oat", "value": 0.35}),
+            encoding="utf-8",
+        )
+
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is True
+
+        data = json.loads((ws_path / "handoff_code_executor.json").read_text(encoding="utf-8"))
+        assert data.get("sealed_by") == "framework_rebuild", (
+            f"auto-sealed handoff MUST have sealed_by='framework_rebuild', got {data.get('sealed_by')}"
+        )
+
+    def test_sealed_by_defaults_to_model_in_schema(self, tmp_path: Path):
+        """验证 schema 默认值为 'model'（正常 seal 路径的产物）。"""
+        # 直接构造一个正常 seal 的 handoff（不经过 auto-seal）
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+
+        h = CodeExecutorHandoff(
+            status="completed",
+            summary="test",
+            paradigm="epm",
+            analysis_config_id="test123",
+            metrics_summary={"Control": {"oat": {"mean": 0.35, "std": None, "n": 1}}},
+        )
+        assert h.sealed_by == "model", "default sealed_by should be 'model'"
+
 class TestAutoSealScope:
-    """认知产物 subagent（data-analyst / code-executor）永不 auto-seal。"""
+    """data-analyst 永不 auto-seal（判读是认知产物）。code-executor 在无 plan 时也不 auto-seal。"""
 
     def test_data_analyst_never_auto_sealed(self, tmp_path: Path):
         """data-analyst 即便有报告文件也绝不 auto-seal（判读是认知产物）。"""
@@ -252,9 +659,14 @@ class TestAutoSealScope:
         ok = _auto_seal("data-analyst", ws)
         assert ok is False
 
-    def test_code_executor_never_auto_sealed(self, tmp_path: Path):
-        """code-executor 绝不 auto-seal（指标数值是认知产物）。"""
+    def test_code_executor_without_plan_does_not_auto_seal(self, tmp_path: Path):
+        """code-executor 无 plan_metrics.json → 不兜底（无法对账）。"""
         ws, _out = _mk_thread(tmp_path)
+        # 有 m_*.json 但无 plan → 无法枚举期望集 → 不兜底
+        (Path(ws) / "m_test.json").write_text(
+            json.dumps({"metric": "test", "value": 1.0}),
+            encoding="utf-8",
+        )
         ok = _auto_seal("code-executor", ws)
         assert ok is False
 
@@ -330,14 +742,14 @@ class TestAutoSealRobustness:
 # ===================================================================
 
 class TestAutoSealableMap:
-    """验证 _AUTO_SEALABLE 只包含 report-writer 和 chart-maker，不含认知产物 subagent。"""
+    """验证 _AUTO_SEALABLE 包含 report-writer、chart-maker、code-executor（Spec A），不含 data-analyst。"""
 
-    def test_auto_sealable_only_contains_mechanical_subagents(self):
+    def test_auto_sealable_contains_mechanical_and_code_executor(self):
         mod = _get_real_executor()
         sealable = mod._AUTO_SEALABLE
         assert "report-writer" in sealable
         assert "chart-maker" in sealable
-        assert "code-executor" not in sealable, "code-executor handoff is cognitive product"
+        assert "code-executor" in sealable, "Spec A: code-executor is now auto-sealable (metrics from m_*.json)"
         assert "data-analyst" not in sealable, "data-analyst handoff is cognitive product"
         assert "general-purpose" not in sealable
-        assert len(sealable) == 2  # 只有两个，防止意外扩大
+        assert len(sealable) == 3  # report-writer + chart-maker + code-executor

@@ -26,9 +26,8 @@ code-executor 的工作流程：
    ```
    python -m <plan.statistics.script> --inputs ... --groups ... --output ...
    ```
-4. **聚合**：把所有 metrics[].output 的 JSON + statistics 输出（如有）合并构造 handoff JSON
-5. **write handoff**：`write_file ${workspace_path}/handoff_code_executor.json`
-6. **输出 `[gate_signals]` 块**给 lead
+4. **聚合**：把所有 metrics[].output 的 JSON + statistics 输出（如有）合并构造 handoff 数据结构
+5. **封存 handoff**：调 system_prompt 指定的 `seal_code_executor_handoff` 工具，将聚合好的数据落库为 `${workspace_path}/handoff_code_executor.json`。**本 skill 不描述 handoff 文件写法**——封存字段结构以 system_prompt + 工具 schema 为权威（SSOT 原则），工具返回 OK 即任务完成。
 
 ### 重要约束
 
@@ -48,11 +47,9 @@ code-executor 的工作流程：
 
 ## 最终消息约定（必读）
 
-每个脚本 stdout 末尾打印 `[result] {...}` 行。你收集所有脚本的 [result] 行 + 聚合构造 handoff JSON 后，在最终消息中输出 `[gate_signals]` 块。
+每个脚本 stdout 末尾打印 `[result] {...}` 行。你收集所有脚本的 [result] 行 + 聚合构造 handoff 数据结构后，调 `seal_code_executor_handoff` 工具落库。**只有 seal 工具返回 OK 才算任务完成。**
 
-输出格式见 `templates/output-contract.md` 的 `[gate_signals]` 段。
-
-`[gate_signals]` 块的 data_quality 等字段由你根据 handoff JSON 实际内容计算（不再靠胶水脚本自动生成），确保 lead 不读 handoff 也能做数据质量决策。
+封存完成后，在最终消息中输出 `[gate_signals]` 块（中间产物，用于 lead 快速决策，非完成信号）。
 
 ## 并行执行规则（E2E 加速）
 
