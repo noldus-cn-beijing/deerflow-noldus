@@ -267,13 +267,20 @@ def _filter_lead_tools(tools: list, excluded: frozenset[str]) -> list:
     return [t for t in tools if t.name not in excluded]
 
 
-def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None, *, deferred_setup=None):
-    """Build middleware chain based on runtime configuration.
+def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None, *, deferred_setup=None):
+    """Build the lead-agent middleware chain based on runtime configuration.
+
+    Public entry point for the lead agent's full middleware composition. Used by
+    ``make_lead_agent`` and by the embedded ``DeerFlowClient`` (a lead-agent variant
+    that needs the identical chain).
 
     Args:
         config: Runtime configuration containing configurable options like is_plan_mode.
+        model_name: Resolved runtime model name; gates vision-only middleware.
         agent_name: If provided, MemoryMiddleware will use per-agent memory storage.
         custom_middlewares: Optional list of custom middlewares to inject into the chain.
+        deferred_setup: Optional deferred-MCP-tool setup that attaches
+            ``DeferredToolFilterMiddleware`` when ``tool_search`` is enabled.
 
     Returns:
         List of middleware instances.
@@ -610,7 +617,7 @@ def make_lead_agent(config: RunnableConfig):
         return create_agent(
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False),
             tools=final_tools,
-            middleware=_build_middlewares(config, model_name=model_name, deferred_setup=setup),
+            middleware=build_middlewares(config, model_name=model_name, deferred_setup=setup),
             system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"]), thread_id=thread_id, deferred_names=setup.deferred_names),
             state_schema=ThreadState,
         )
@@ -642,7 +649,7 @@ def make_lead_agent(config: RunnableConfig):
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, attach_tracing=False),
         tools=final_tools,
-        middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name, deferred_setup=setup),
+        middleware=build_middlewares(config, model_name=model_name, agent_name=agent_name, deferred_setup=setup),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,

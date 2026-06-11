@@ -704,7 +704,11 @@ def _get_memory_context(agent_name: str | None = None) -> str:
         current_user = get_current_user()
         user_id = current_user.id if current_user is not None else None
         memory_data = get_memory_data(agent_name, user_id=user_id)
-        memory_content = format_memory_for_injection(memory_data, max_tokens=config.max_injection_tokens)
+        memory_content = format_memory_for_injection(
+            memory_data,
+            max_tokens=config.max_injection_tokens,
+            use_tiktoken=(config.token_counting == "tiktoken"),
+        )
 
         if not memory_content.strip():
             return ""
