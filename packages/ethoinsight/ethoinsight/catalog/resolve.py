@@ -491,21 +491,60 @@ def resolve_charts(
 # ============================================================================
 
 
+def _flatten_requires_columns(requires_columns) -> list[str]:
+    """Flatten CNF requires_columns into a list of str (groups dissolved).
+
+    Consumers that only care about "which patterns were mentioned"
+    (zone concept derivation, inspect column collection, zone detection
+    has_zone_pattern check) call this to avoid AttributeError/TypeError
+    on nested list items.
+
+    None / [] → []; pure str list → shallow copy (order preserved);
+    nested items → inlined.
+    """
+    out: list[str] = []
+    for item in requires_columns or []:
+        if isinstance(item, list):
+            out.extend(item)
+        else:
+            out.append(item)
+    return out
+
+
 def _missing_columns(
-    patterns: list[str],
+    patterns: list[str | list[str]],
     available: list[str],
     column_aliases: dict[str, str] | None = None,
-) -> list[str]:
-    """对 requires_columns 中的每个 glob pattern，检查是否 ≥1 列匹配；返回未匹配的 pattern 集。
+) -> list[str | list[str]]:
+    """Check each entry in requires_columns against available columns.
 
-    若 column_aliases 提供，对不在 requires glob 中的物理列名，
-    先查 aliases 映射后的概念名（catalog column concept）再匹配。
+    Each entry may be a str (single glob pattern) or a list[str] (OR-group:
+    any sub-pattern match satisfies the group).  The returned list preserves
+    the original shape: str for unmatched single patterns, list for unmatched
+    OR-groups.
+
+    If column_aliases is provided, physical column names not matching a
+    requires glob are looked up via aliases (concept name matching).
     """
-    missing: list[str] = []
+    missing: list[str | list[str]] = []
     for pat in patterns:
+        if isinstance(pat, list):
+            # OR-group: any sub-pattern satisfied → group satisfied
+            group_ok = False
+            for sub in pat:
+                if any(fnmatch.fnmatchcase(col, sub) for col in available):
+                    group_ok = True
+                    break
+                if column_aliases and _any_concept_matches_pattern(available, column_aliases, sub):
+                    group_ok = True
+                    break
+            if group_ok:
+                continue
+            missing.append(pat)  # whole group into missing
+            continue
+        # Original str path — byte-identical to pre-CNF behaviour
         if any(fnmatch.fnmatchcase(col, pat) for col in available):
             continue
-        # 物理列名不在 requires glob 中 → 查 aliases
         if column_aliases:
             if _any_concept_matches_pattern(available, column_aliases, pat):
                 continue
@@ -596,7 +635,7 @@ def _build_zone_aliases_overrides(
             zone_patterns: set[str] = set()
             entries = list(cat.default_metrics) + list(cat.optional_metrics) + list(cat.charts)
             for entry in entries:
-                for pat in getattr(entry, "requires_columns", []) or []:
+                for pat in _flatten_requires_columns(getattr(entry, "requires_columns", [])):
                     if pat.startswith("in_zone") and "*" in pat:
                         zone_patterns.add(pat)
             # 为 azo.target_param 推导一个 concept keyword
@@ -613,7 +652,7 @@ def _build_zone_aliases_overrides(
     zone_patterns: set[str] = set()
     entries = list(cat.default_metrics) + list(cat.optional_metrics) + list(cat.charts)
     for entry in entries:
-        for pat in getattr(entry, "requires_columns", []) or []:
+        for pat in _flatten_requires_columns(getattr(entry, "requires_columns", [])):
             if pat.startswith("in_zone") and "*" in pat:
                 zone_patterns.add(pat)
 
@@ -738,7 +777,7 @@ def _apply_aliases(columns: list[str], aliases: dict[str, str]) -> list[str]:
 
 
 def _detect_anonymous_zone(
-    missing_patterns: list[str],
+    missing_patterns: list[str | list[str]],
     available_columns: list[str],
     overrides: dict[str, str],
     anonymous_zone_override: AnonymousZoneOverride | None = None,
@@ -751,10 +790,12 @@ def _detect_anonymous_zone(
         True         — zone pattern detected but override resolves it (proceed)
         None         — not a zone pattern, or bare in_zone doesn't exist
     """
+    # Flatten to guard against list items in missing (CNF OR-groups)
+    flat_missing = _flatten_requires_columns(missing_patterns)
     # Check if any missing pattern is an in_zone variant (has suffix beyond "in_zone")
     has_zone_pattern = any(
         pat.startswith("in_zone") and len(pat) > len("in_zone")
-        for pat in missing_patterns
+        for pat in flat_missing
     )
     if not has_zone_pattern:
         return None

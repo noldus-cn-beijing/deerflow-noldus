@@ -263,6 +263,23 @@ def _parse_metric_list(raw: dict, key: str, source: Path) -> list[MetricEntry]:
     return result
 
 
+def _is_cnf_requires_columns(value: object) -> bool:
+    """Returns True if value is a valid CNF requires_columns: list of non-empty str,
+    or non-empty list-of-(non-empty str)."""
+    if not isinstance(value, list):
+        return False
+    for item in value:
+        if isinstance(item, str):
+            if not item:
+                return False
+        elif isinstance(item, list):
+            if not item or not all(isinstance(s, str) and s for s in item):
+                return False
+        else:
+            return False
+    return True
+
+
 def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
     def req(field: str, expected_type: type | tuple) -> Any:
         if field not in item:
@@ -282,10 +299,10 @@ def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
             f"{source} {where}: missing 'requires_columns' (use empty list if none)"
         )
     requires_columns = item["requires_columns"]
-    if not isinstance(requires_columns, list) or not all(
-        isinstance(c, str) for c in requires_columns
-    ):
-        raise CatalogError(f"{source} {where}: 'requires_columns' must be list[str]")
+    if not _is_cnf_requires_columns(requires_columns):
+        raise CatalogError(
+            f"{source} {where}: 'requires_columns' must be list of str or list-of-str groups"
+        )
 
     output_unit = req("output_unit", str)
     display_name_zh = req("display_name_zh", str)
@@ -351,9 +368,9 @@ def _parse_chart_list(raw: dict, source: Path) -> list[ChartEntry]:
             )
         needs_groups = bool(it.get("needs_groups", False))
         requires_columns = it.get("requires_columns", []) or []
-        if not isinstance(requires_columns, list) or not all(isinstance(c, str) for c in requires_columns):
+        if not _is_cnf_requires_columns(requires_columns):
             raise CatalogError(
-                f"{source}: charts[{i}] 'requires_columns' must be list[str] if present"
+                f"{source}: charts[{i}] 'requires_columns' must be list of str or list-of-str groups if present"
             )
         out.append(
             ChartEntry(
@@ -455,9 +472,9 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
             )
         needs_groups = bool(it.get("needs_groups", False))
         requires_columns = it.get("requires_columns", []) or []
-        if not isinstance(requires_columns, list) or not all(isinstance(c, str) for c in requires_columns):
+        if not _is_cnf_requires_columns(requires_columns):
             raise CatalogError(
-                f"{source}: {key}[{i}] 'requires_columns' must be list[str] if present"
+                f"{source}: {key}[{i}] 'requires_columns' must be list of str or list-of-str groups if present"
             )
         out.append(
             ChartEntry(

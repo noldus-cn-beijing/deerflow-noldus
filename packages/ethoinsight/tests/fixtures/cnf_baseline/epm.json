@@ -1,0 +1,157 @@
+{
+  "ev19_template": null,
+  "inputs": {
+    "columns_file": null,
+    "groups_file": null,
+    "raw_files": [
+      "/tmp/stub.csv"
+    ]
+  },
+  "metrics": [
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_open_arm_time_ratio.json",
+        "--parameters-json",
+        "{\"open_arm_zones\": \"\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "开放臂时间比例",
+      "id": "open_arm_time_ratio",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在开放臂中停留时间占总时长的比例，用于评估焦虑样回避行为",
+      "output": "/tmp/m_open_arm_time_ratio.json",
+      "output_unit": "ratio",
+      "parameters_in_use": {
+        "open_arm_zones": ""
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.epm.compute_open_arm_time_ratio",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "比例"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_open_arm_time.json",
+        "--parameters-json",
+        "{\"open_arm_zones\": \"\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "开放臂时间",
+      "id": "open_arm_time",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在开放臂内的累计停留时间",
+      "output": "/tmp/m_open_arm_time.json",
+      "output_unit": "seconds",
+      "parameters_in_use": {
+        "open_arm_zones": ""
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.epm.compute_open_arm_time",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "秒"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_open_arm_entry_count.json",
+        "--parameters-json",
+        "{\"open_arm_zones\": \"\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "开放臂进入次数",
+      "id": "open_arm_entry_count",
+      "input": "/tmp/stub.csv",
+      "one_liner": "进入开放臂的累计次数",
+      "output": "/tmp/m_open_arm_entry_count.json",
+      "output_unit": "count",
+      "parameters_in_use": {
+        "open_arm_zones": ""
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.epm.compute_open_arm_entry_count",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "次"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_open_arm_entry_ratio.json",
+        "--parameters-json",
+        "{\"closed_arm_zones\": \"\", \"open_arm_zones\": \"\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "开放臂进入比例",
+      "id": "open_arm_entry_ratio",
+      "input": "/tmp/stub.csv",
+      "one_liner": "进入开放臂次数占总进入次数的比例",
+      "output": "/tmp/m_open_arm_entry_ratio.json",
+      "output_unit": "ratio",
+      "parameters_in_use": {
+        "closed_arm_zones": "",
+        "open_arm_zones": ""
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.epm.compute_open_arm_entry_ratio",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "比例"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_total_entry_count.json",
+        "--parameters-json",
+        "{\"closed_arm_zones\": \"\", \"open_arm_zones\": \"\"}"
+      ],
+      "direction_for_anxiety": null,
+      "display_name_zh": "总进入次数",
+      "id": "total_entry_count",
+      "input": "/tmp/stub.csv",
+      "one_liner": "进入所有臂的累计次数，反映动物的整体探索活动量",
+      "output": "/tmp/m_total_entry_count.json",
+      "output_unit": "count",
+      "parameters_in_use": {
+        "closed_arm_zones": "",
+        "open_arm_zones": ""
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.epm.compute_total_entry_count",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "次"
+    }
+  ],
+  "notes": [
+    "Data columns: 7; metrics planned: 5; skipped: 0"
+  ],
+  "paradigm": "epm",
+  "schema_version": "1.1",
+  "skipped": [],
+  "statistics": {
+    "id": "groupwise_compare",
+    "input": "/tmp/handoff_code_executor.json",
+    "output": "/tmp/stats.json",
+    "script": "ethoinsight.scripts.epm.run_groupwise_stats",
+    "skip_reason": "condition 'n_per_group >= 2 and n_groups >= 2' not met (n_per_group=None, n_groups=None)"
+  }
+}

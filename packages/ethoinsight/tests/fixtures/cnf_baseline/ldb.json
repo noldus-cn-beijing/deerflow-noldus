@@ -1,0 +1,103 @@
+{
+  "ev19_template": null,
+  "inputs": {
+    "columns_file": null,
+    "groups_file": null,
+    "raw_files": [
+      "/tmp/stub.csv"
+    ]
+  },
+  "metrics": [
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_light_time_ratio.json",
+        "--parameters-json",
+        "{\"light_zone\": \"in_zone_light\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "亮室时间比例",
+      "id": "light_time_ratio",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在亮室停留时间占总时长的比例，LDB 焦虑样回避评估的核心指标",
+      "output": "/tmp/m_light_time_ratio.json",
+      "output_unit": "ratio",
+      "parameters_in_use": {
+        "light_zone": "in_zone_light"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.ldb.compute_light_time_ratio",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "比例"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_transition_count.json",
+        "--parameters-json",
+        "{\"light_zone\": \"in_zone_light\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "跨室次数",
+      "id": "transition_count",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在亮室与暗室之间穿梭的累计次数",
+      "output": "/tmp/m_transition_count.json",
+      "output_unit": "count",
+      "parameters_in_use": {
+        "light_zone": "in_zone_light"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.ldb.compute_transition_count",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "次"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_light_latency.json",
+        "--parameters-json",
+        "{\"light_zone\": \"in_zone_light\"}"
+      ],
+      "direction_for_anxiety": "higher_is_anxious",
+      "display_name_zh": "首次进入亮室潜伏期",
+      "id": "light_latency",
+      "input": "/tmp/stub.csv",
+      "one_liner": "从测试开始到首次进入亮室的时间",
+      "output": "/tmp/m_light_latency.json",
+      "output_unit": "seconds",
+      "parameters_in_use": {
+        "light_zone": "in_zone_light"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.ldb.compute_light_latency",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "秒"
+    }
+  ],
+  "notes": [
+    "Data columns: 7; metrics planned: 3; skipped: 0"
+  ],
+  "paradigm": "ldb",
+  "schema_version": "1.1",
+  "skipped": [],
+  "statistics": {
+    "id": "groupwise_compare",
+    "input": "/tmp/handoff_code_executor.json",
+    "output": "/tmp/stats.json",
+    "script": "ethoinsight.scripts.ldb.run_groupwise_stats",
+    "skip_reason": "condition 'n_per_group >= 2 and n_groups >= 2' not met (n_per_group=None, n_groups=None)"
+  }
+}
