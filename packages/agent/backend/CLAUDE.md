@@ -17,6 +17,8 @@ DeerFlow is a LangGraph-based AI super agent system with a full-stack architectu
 - **Standard mode** (`make dev`): LangGraph Server handles agent execution as a separate process. 4 processes total.
 - **Gateway mode** (`make dev-pro`, experimental): Agent runtime embedded in Gateway via `RunManager` + `run_agent()` + `StreamBridge` (`packages/harness/deerflow/runtime/`). Service manages its own concurrency via async tasks. 3 processes total, no LangGraph Server.
 
+> **⚠️ noldus-insight fork note (2026-06)**: This fork's **deployed default is Gateway-embedded mode**, not Standard. The repo-root `make dev` (via `packages/agent/scripts/serve.sh --dev`) and the production `docker-compose.yaml` both run Gateway-embedded — 3 processes (Gateway+runtime / Frontend / Nginx), **no standalone LangGraph container**. nginx rewrites public `/api/langgraph/*` onto the Gateway. The `make dev` / `make gateway` targets described in *this backend doc* are the **backend-dir** targets (Standard `langgraph dev` on :2024 for isolated backend debugging) — still valid, but not the deployment topology. `deploy-via-tar.sh` ships only `deer-flow-frontend` + `deer-flow-gateway` images.
+
 **Project Structure**:
 ```
 deer-flow/
@@ -434,6 +436,7 @@ Both can be modified at runtime via Gateway API endpoints or `DeerFlowClient` me
 - Tests must pass before a feature is considered complete
 - For lightweight config/utility modules, prefer pure unit tests with no external dependencies
 - If a module causes circular import issues in tests, add a `sys.modules` mock in `tests/conftest.py` (see existing example for `deerflow.subagents.executor`)
+- **⚠️ The conftest `executor` mock hides circular imports from pytest.** Because `deerflow.subagents.executor` is mocked in `sys.modules`, a top-level `from deerflow...import` that closes an import cycle through executor will **pass every test while crashing real startup** (uvicorn `import app.gateway` → `ImportError: partially initialized module`). This shipped once (2026-06-08 Spec C) and hung `make dev` at "Waiting for Gateway". **After touching `subagents/`, `tools/builtins/`, or `agents/` core, also run the bare production-import check** (no conftest): `PYTHONPATH=. python -c "import app.gateway"` and `PYTHONPATH=. python -c "from deerflow.agents import make_lead_agent"`. Prefer **lazy (in-function) imports** for helpers that would otherwise close a cycle. The regression guard `tests/test_gateway_import_no_cycle.py` spawns clean subprocesses to import both entrypoints — keep it green.
 
 ```bash
 # Run all tests

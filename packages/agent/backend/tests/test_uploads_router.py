@@ -55,7 +55,7 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
 
     assert result.success is True
     assert len(result.files) == 1
-    assert result.files[0]["filename"] == "notes.txt"
+    assert result.files[0].filename == "notes.txt"
     assert (thread_uploads_dir / "notes.txt").read_bytes() == b"hello uploads"
 
     sandbox.update_file.assert_not_called()
@@ -104,7 +104,7 @@ def test_upload_files_does_not_auto_convert_documents_by_default(tmp_path):
 
     assert result.success is True
     assert len(result.files) == 1
-    assert result.files[0]["filename"] == "report.pdf"
+    assert result.files[0].filename == "report.pdf"
     assert "markdown_file" not in result.files[0]
     convert_mock.assert_not_called()
     assert not (thread_uploads_dir / "report.md").exists()
@@ -138,8 +138,8 @@ def test_upload_files_syncs_non_local_sandbox_and_marks_markdown_file(tmp_path):
     assert result.success is True
     assert len(result.files) == 1
     file_info = result.files[0]
-    assert file_info["filename"] == "report.pdf"
-    assert file_info["markdown_file"] == "report.md"
+    assert file_info.filename == "report.pdf"
+    assert file_info.markdown_file == "report.md"
 
     assert (thread_uploads_dir / "report.pdf").read_bytes() == b"pdf-bytes"
     assert (thread_uploads_dir / "report.md").read_text(encoding="utf-8") == "converted"
@@ -423,7 +423,7 @@ def test_upload_files_rejects_dotdot_and_dot_filenames(tmp_path):
         result = asyncio.run(call_unwrapped(uploads.upload_files, "thread-local", request=MagicMock(), files=[file], config=SimpleNamespace()))
         assert result.success is True
         assert len(result.files) == 1
-        assert result.files[0]["filename"] == "passwd"
+        assert result.files[0].filename == "passwd"
 
     # Only the safely normalised file should exist
     assert [f.name for f in thread_uploads_dir.iterdir()] == ["passwd"]
@@ -523,7 +523,7 @@ def test_upload_files_overwrites_existing_regular_file(tmp_path):
         result = asyncio.run(uploads.upload_files("thread-local", files=[file]))
 
     assert result.success is True
-    assert [file_info["filename"] for file_info in result.files] == ["notes.txt"]
+    assert [file_info.filename for file_info in result.files] == ["notes.txt"]
     assert existing_file.read_bytes() == b"new upload"
     assert existing_file.stat().st_nlink == 1
 

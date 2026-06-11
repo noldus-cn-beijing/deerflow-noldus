@@ -71,6 +71,30 @@ class Ev19TemplateGuardrailProvider:
 
             workspace = self._resolve_workspace()
             if workspace is not None:
+                # ── Ambiguous template check: identify_ev19_template returned 2-3 candidates ──
+                # Guardrail enforces that the user must explicitly pick one — the agent
+                # cannot silently default to "recommended" without user confirmation.
+                tc = self._read_template_candidates(workspace)
+                if tc and tc.get("status") == "ambiguous":
+                    chosen = args.get("ev19_template")
+                    candidate_ids = [c["template_id"] for c in tc.get("candidates", [])]
+                    if chosen and chosen in candidate_ids and not args.get("user_confirmed_template"):
+                        return GuardrailDecision(
+                            allow=False,
+                            reasons=[
+                                GuardrailReason(
+                                    code="ethoinsight.template_not_confirmed",
+                                    message=(
+                                        f"identify_ev19_template 返回了 {len(candidate_ids)} 个候选模板"
+                                        f"（{', '.join(candidate_ids)}），"
+                                        f"你必须先让用户明确选择其中一个，不能默认选推荐项。"
+                                        f"用户明确选择后，传 user_confirmed_template=True 重新调用。"
+                                    ),
+                                )
+                            ],
+                            policy_id="ev19-template-guardrail",
+                        )
+
                 ctx = self._read_context(workspace)
                 if ctx and ctx.get("ev19_template"):
                     if not args.get("confirm_template_change"):
@@ -108,6 +132,8 @@ class Ev19TemplateGuardrailProvider:
             return GuardrailDecision(allow=True, reasons=[GuardrailReason(code="oap.allowed")])
 
         ctx = self._read_context(workspace)
+
+        # Check 1: ev19_template must be set
         if ctx is None or not ctx.get("ev19_template"):
             return GuardrailDecision(
                 allow=False,
@@ -123,6 +149,42 @@ class Ev19TemplateGuardrailProvider:
                 ],
                 policy_id="ev19-template-guardrail",
             )
+
+        # Check 2 (Sprint 1): column_semantics.open_questions must be empty.
+        #
+        # Layering note: this guardrail catches the case where the lead WROTE
+        # column_semantics but left entries unconfirmed. The case where the lead
+        # NEVER wrote column_semantics despite unrecognised columns is caught
+        # deterministically upstream: prep_metric_plan → resolve raises
+        # columns_missing (no plan_metrics.json is written → code-executor has
+        # nothing to run). So custom columns cannot silently slip through even
+        # without this check; this check additionally stops a half-finished
+        # alignment from proceeding.
+        cs = ctx.get("column_semantics")
+        if isinstance(cs, dict):
+            columns = cs.get("columns", {})
+            if isinstance(columns, dict):
+                unconfirmed = [
+                    col_key
+                    for col_key, entry in columns.items()
+                    if isinstance(entry, dict) and not entry.get("confirmed")
+                ]
+                if unconfirmed:
+                    return GuardrailDecision(
+                        allow=False,
+                        reasons=[
+                            GuardrailReason(
+                                code="ethoinsight.column_semantics_unconfirmed",
+                                message=(
+                                    f"自定义分析区列尚未确认：{unconfirmed}。"
+                                    f"请先通过 ask_clarification 与用户对齐列语义，"
+                                    f"然后调用 set_experiment_paradigm(column_semantics={{...}}) 落盘。"
+                                    f"参考 skill：ethoinsight-column-confirmation。"
+                                ),
+                            )
+                        ],
+                        policy_id="ev19-template-guardrail",
+                    )
 
         return GuardrailDecision(allow=True, reasons=[GuardrailReason(code="oap.allowed")])
 
@@ -141,6 +203,16 @@ class Ev19TemplateGuardrailProvider:
             return json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Failed to read experiment-context.json: %s", e)
+            return None
+
+    def _read_template_candidates(self, workspace: str) -> dict | None:
+        """Read identify_ev19_template result if it was written as ambiguous."""
+        path = Path(workspace) / "template_candidates.json"
+        try:
+            if not path.exists():
+                return None
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
             return None
 
 

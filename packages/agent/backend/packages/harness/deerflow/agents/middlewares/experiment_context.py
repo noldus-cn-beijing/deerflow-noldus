@@ -12,10 +12,10 @@ TWO PATH DOMAINS:
 Robustness: file-not-found returns None (never raises).
 """
 
+import enum
 import hashlib
 import json
 import logging
-import enum
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -193,6 +193,152 @@ def is_quality_acknowledged(workspace_dir: str) -> bool:
     return "gate2_quality_acknowledged" in gate_completed
 
 
+def _normalize_column_semantics(cs: dict) -> dict:
+    """Normalize raw column_semantics dict — add confirmed_at if missing."""
+    if "confirmed_at" not in cs:
+        cs = {**cs, "confirmed_at": datetime.now(UTC).isoformat()}
+    return cs
+
+
+def _derive_column_aliases(cs: dict) -> dict[str, str]:
+    """D8/D11: derive column_aliases from column_semantics.columns.
+
+    For each confirmed entry with a non-None resolves_to that is not "__ignore__":
+      → map BOTH the re-normalized raw_name AND the raw_name itself to resolves_to.
+
+    CRITICAL: the alias source key is computed by re-running normalize_column_name()
+    on raw_name — NOT by trusting the LLM-supplied ``normalized`` field. The real
+    pipeline feeds resolve already-normalized columns (parse_header → normalize_columns),
+    and e.g. normalize_column_name("中心区") == "中心区" (Chinese passes through slugify),
+    NOT "center". If we trusted a wrong LLM ``normalized`` value the alias key would not
+    match the actual column and the remap would silently miss → metric drops.
+
+    Mapping both the normalized form and the raw_name makes the alias fire whether resolve
+    receives raw or normalized column names.
+
+    This is a deterministic pure function computed at write-time (no resolve-time
+    recomputation — preserves analysis_config_id input timing determinism).
+    """
+    from ethoinsight.utils import normalize_column_name
+
+    aliases: dict[str, str] = {}
+    columns = cs.get("columns", {})
+    if not isinstance(columns, dict):
+        return aliases
+    for col_key, entry in columns.items():
+        if not isinstance(entry, dict):
+            continue
+        if not entry.get("confirmed"):
+            continue
+        resolves_to = entry.get("resolves_to")
+        if resolves_to is None or resolves_to == "__ignore__":
+            continue
+        # Source of truth for the raw name: explicit raw_name, else the dict key.
+        raw_name = entry.get("raw_name", col_key)
+        # Re-normalize deterministically — do NOT trust the LLM-supplied "normalized".
+        aliases[normalize_column_name(raw_name)] = resolves_to
+        # Belt-and-suspenders: also map the raw name verbatim.
+        aliases[raw_name] = resolves_to
+    return aliases
+
+
+def _write_user_clarification_fact_to_memory(
+    key: str,
+    value: str,
+    thread_id: str,
+    agent_name: str | None = None,
+    user_id: str | None = None,
+) -> bool:
+    """Write a single user-clarification fact to the memory storage.
+
+    The fact is scoped to ``thread_id`` via a marker in the content so
+    ``_get_resolved_facts_context`` can filter by thread later (C1).
+
+    Returns True on success, False on failure (non-blocking).
+    """
+    import uuid
+
+    from deerflow.agents.memory import get_memory_data
+    from deerflow.agents.memory.storage import get_memory_storage
+
+    try:
+        storage = get_memory_storage()
+        memory_data = get_memory_data(agent_name, user_id=user_id)
+
+        fact = {
+            "id": uuid.uuid4().hex,
+            "content": f"[thread:{thread_id}] {key}: {value}",
+            "category": "user_clarification",
+            "confidence": 1.0,
+            "source": "user_clarification",
+            "createdAt": datetime.now(UTC).isoformat(),
+        }
+
+        facts: list = memory_data.get("facts", [])
+        facts.append(fact)
+        memory_data["facts"] = facts
+
+        storage.save(memory_data, agent_name, user_id=user_id)
+        logger.info("Wrote user_clarification fact: key=%r thread=%s", key, thread_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to write user_clarification fact key=%r: %s", key, e)
+        return False
+
+
+def _thread_id_from_runtime(runtime: ToolRuntime | None) -> str | None:
+    """Extract thread_id from the tool runtime's context.
+
+    ``ToolRuntime.context`` is a FLAT dict with ``thread_id`` at the top level
+    (the same shape read by memory_middleware / thread_data_middleware /
+    loop_detection_middleware / archiving_summarization etc.). The nested
+    ``configurable.thread_id`` form belongs to the RunnableConfig, NOT to
+    ``runtime.context`` — reading it there returns None in production and
+    silently disables the memory projection. Use the flat key.
+    """
+    if runtime is None:
+        return None
+    try:
+        ctx = runtime.context
+        if isinstance(ctx, dict):
+            return ctx.get("thread_id")
+    except Exception:
+        pass
+    return None
+
+
+def _apply_resolved_facts(data: dict, resolved_facts: list[dict]) -> None:
+    """Merge resolved_facts into the data dict under the ``resolved`` key (SSOT §4 authority)."""
+    resolved: dict = data.get("resolved", {})
+    if not isinstance(resolved, dict):
+        resolved = {}
+    for item in resolved_facts:
+        key = item.get("key")
+        value = item.get("value")
+        if key and value is not None:
+            resolved[key] = value
+    data["resolved"] = resolved
+
+
+def _persist_resolved_facts_to_memory(resolved_facts: list[dict], thread_id: str | None) -> None:
+    """Write resolved facts to memory storage as user_clarification facts (non-blocking).
+
+    Each fact is scoped to ``thread_id``. Failures are logged, never raised.
+    """
+    if not thread_id:
+        logger.warning("No thread_id available; skipping memory projection for resolved_facts")
+        return
+    for item in resolved_facts:
+        key = item.get("key")
+        value = item.get("value")
+        if key and value is not None:
+            _write_user_clarification_fact_to_memory(
+                key=str(key),
+                value=str(value),
+                thread_id=thread_id,
+            )
+
+
 @tool("set_experiment_paradigm", parse_docstring=True)
 def set_experiment_paradigm_tool(
     paradigm: str | None = None,
@@ -201,7 +347,11 @@ def set_experiment_paradigm_tool(
     subject: str | None = None,
     ev19_template: str | None = None,
     acknowledge_quality: bool = False,
+    column_semantics: dict | None = None,
+    confirm_template_change: bool = False,
+    user_confirmed_template: bool = False,
     parameter_overrides: dict[str, float | int | str] | None = None,
+    resolved_facts: list[dict] | None = None,
     workspace_dir: str = "/mnt/user-data/workspace/",
     runtime: ToolRuntime[ContextT, ThreadState] = None,
 ) -> str:
@@ -216,6 +366,23 @@ def set_experiment_paradigm_tool(
          set_experiment_paradigm(acknowledge_quality=True)
          → reads existing experiment-context.json, appends "gate2_quality_acknowledged"
            to gate_completed (preserving all other fields). Requires Gate 1 already done.
+      3) Column semantics alignment (Sprint 1):
+         set_experiment_paradigm(column_semantics={...})
+         → writes column_semantics + derived column_aliases into experiment-context.json.
+           Can be combined with Gate 1 or called separately. column_semantics schema:
+           {"columns": {"<raw column name verbatim>": {
+              "raw_name": "中心区",            # exact data column header (NOT translated)
+              "resolves_to": "center",         # CONCEPT KEYWORD (center/border/open_arms/...),
+                                               #   NOT a machine column name — the catalog layer
+                                               #   translates it to a matchable column. Use null
+                                               #   + "ignore": true for irrelevant columns.
+              "meaning_zh": "中心分析区",       # Chinese narrative meaning for report-writer
+              "confirmed": true}, ...}}
+      4) Resolved facts write-through (Spec B):
+         set_experiment_paradigm(resolved_facts=[dict(key="groups", value="Trial1=control, ..."), ...])
+         → writes to experiment-context.json "resolved" key (authoritative) AND
+           projects each fact to memory storage as user_clarification fact (LLM injection).
+           Can be combined with Gate 1 or called standalone (requires existing context).
 
     Args:
         paradigm: English paradigm name key. Required for Gate 1 mode.
@@ -226,6 +393,15 @@ def set_experiment_paradigm_tool(
         acknowledge_quality: Set True to acknowledge data quality warnings (Gate 2 mode).
                              When True, all paradigm fields may be omitted — the existing
                              experiment-context.json is read and only gate_completed is updated.
+        column_semantics: Column semantics dict (Sprint 1). Written as-is; column_aliases
+                          is derived from it as a deterministic projection.
+        confirm_template_change: Set True to confirm intentional change of ev19_template
+                                 when it was already set. Required to prevent accidental
+                                 mid-analysis template switching. Default False.
+        user_confirmed_template: Set True when identify_ev19_template returned ambiguous
+                                 (2-3 candidates) and the user has explicitly chosen one.
+                                 Required to prevent the agent from silently defaulting
+                                 to "recommended" without user confirmation. Default False.
         parameter_overrides: User-confirmed parameter overrides. Examples:
             ``immobility_threshold=0.5`` or ``anonymous_zone_is=in_zone``.
             The unified key ``anonymous_zone_is`` works across all three zone
@@ -233,6 +409,12 @@ def set_experiment_paradigm_tool(
             the paradigm-specific parameter (center_zone / open_zones / light_zone).
                              Stored in experiment-context.json; used to compute analysis_config_id.
                              Pass None or {} when no overrides are needed (defaults apply).
+        resolved_facts: Resolved clarification answers to persist (Spec B). Each item
+                        is a dict with keys ``key`` and ``value`` (both str).
+                        Written to experiment-context.json ``resolved`` field
+                        (authoritative) AND projected to memory facts
+                        (source=user_clarification) for LLM injection. Thread-scoped.
+                        Requires existing experiment-context.json. Default None.
         workspace_dir: Workspace directory. Default: "/mnt/user-data/workspace/".
 
     Returns:
@@ -266,10 +448,49 @@ def set_experiment_paradigm_tool(
         if "gate2_quality_acknowledged" not in gate_completed:
             gate_completed.append("gate2_quality_acknowledged")
         data = {**existing, "gate_completed": gate_completed, "gate2_acknowledged_at": datetime.now(UTC).isoformat()}
+
+        # Spec B: resolved_facts write-through (can combine with Gate 2)
+        if resolved_facts:
+            _apply_resolved_facts(data, resolved_facts)
+
         path = Path(actual_workspace) / "experiment-context.json"
         with path.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-        return json.dumps({"status": "ok", "path": str(path), "gate_completed": gate_completed}, ensure_ascii=False)
+
+        # Write memory projection (non-blocking)
+        if resolved_facts:
+            _persist_resolved_facts_to_memory(resolved_facts, _thread_id_from_runtime(runtime))
+
+        response_data: dict = {"status": "ok", "path": str(path), "gate_completed": gate_completed}
+        if resolved_facts:
+            response_data["resolved_facts_saved"] = len(resolved_facts)
+        return json.dumps(response_data, ensure_ascii=False)
+
+    # --- Standalone resolved_facts path (Spec B: no Gate 1/2 params) ---
+    if resolved_facts:
+        if existing is None:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "No experiment-context.json found. Call set_experiment_paradigm with paradigm fields first.",
+                },
+                ensure_ascii=False,
+            )
+
+        data = dict(existing)
+        _apply_resolved_facts(data, resolved_facts)
+
+        path = Path(actual_workspace) / "experiment-context.json"
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+
+        # Write memory projection (non-blocking)
+        _persist_resolved_facts_to_memory(resolved_facts, _thread_id_from_runtime(runtime))
+
+        return json.dumps(
+            {"status": "ok", "path": str(path), "resolved_facts_saved": len(resolved_facts)},
+            ensure_ascii=False,
+        )
 
     # --- Gate 1: paradigm confirmation ---
     from ethoinsight.ev19_facts import is_paradigm_template_compatible, is_valid_ev19_template, suggest_nearby_templates
@@ -320,10 +541,28 @@ def set_experiment_paradigm_tool(
         "parameter_overrides": overrides,
         "analysis_config_id": config_id,
     }
+
+    # Sprint 1: column semantics alignment — write column_semantics + derive
+    # column_aliases as a deterministic, write-time projection (D8/D11).
+    if column_semantics is not None and isinstance(column_semantics, dict):
+        cs = _normalize_column_semantics(column_semantics)
+        data["column_semantics"] = cs
+        aliases = _derive_column_aliases(cs)
+        if aliases:
+            data["column_aliases"] = aliases
+
+    # Spec B: resolved_facts write-through (can combine with Gate 1)
+    if resolved_facts:
+        _apply_resolved_facts(data, resolved_facts)
+
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+
+    # Write memory projection (non-blocking)
+    if resolved_facts:
+        _persist_resolved_facts_to_memory(resolved_facts, _thread_id_from_runtime(runtime))
 
     response: dict = {
         "status": "ok",
@@ -334,6 +573,8 @@ def set_experiment_paradigm_tool(
     }
     if warning is not None:
         response["warning"] = warning
+    if resolved_facts:
+        response["resolved_facts_saved"] = len(resolved_facts)
     return json.dumps(response, ensure_ascii=False)
 
 

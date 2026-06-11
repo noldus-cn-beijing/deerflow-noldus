@@ -19,7 +19,9 @@
 
 ## 脚本 stdout 最终输出契约
 
-`handoff_code_executor.json` 写盘后，**脚本 stdout 必须按以下格式输出 `[gate_signals]` 块**：
+**完成信号**：只有调 `seal_code_executor_handoff` 工具并返回 OK 才算任务完成。`[gate_signals]` 块是中间产物（供 lead 快速决策），不是完成信号。
+
+handoff 落库后，在最终消息中输出 `[gate_signals]` 块：
 
 ```
 OK: handoff written to <path>

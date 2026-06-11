@@ -81,6 +81,28 @@ class TestDetectEthovision:
     def test_directory_returns_false(self, tmp_path):
         assert parse.detect_ethovision(str(tmp_path)) is False
 
+    def test_english_locale_trajectory_file(self, tmp_path):
+        """TXT with 'Number of header lines:' (English locale) → True."""
+        import codecs
+
+        f = tmp_path / "english_locale.txt"
+        content = "Number of header lines: 39\r\n"
+        with open(str(f), "wb") as fh:
+            fh.write(codecs.BOM_UTF16_LE)
+            fh.write(content.encode("utf-16-le"))
+        assert parse.detect_ethovision(str(f)) is True
+
+    def test_chinese_locale_trajectory_file(self, tmp_path):
+        """TXT with '标题行数：' (Chinese locale) → True (regression)."""
+        import codecs
+
+        f = tmp_path / "chinese_locale.txt"
+        content = "标题行数：39\r\n"
+        with open(str(f), "wb") as fh:
+            fh.write(codecs.BOM_UTF16_LE)
+            fh.write(content.encode("utf-16-le"))
+        assert parse.detect_ethovision(str(f)) is True
+
 
 # ============================================================================
 # parse_header
@@ -445,6 +467,48 @@ class TestDetectEthovisionXlsx:
         path = _require_xlsx_file()
         assert detect_ethovision(path) is True
 
+    def test_detect_xlsx_english_locale_marker(self, tmp_path):
+        """A1 = 'Number of header lines:' (English locale) → True."""
+        from ethoinsight.parse._core import detect_ethovision
+
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.cell(1, 1, "Number of header lines:")
+        ws.cell(1, 2, 39)
+        path = tmp_path / "english_locale.xlsx"
+        wb.save(str(path))
+        assert detect_ethovision(str(path)) is True
+
+    def test_detect_xlsx_chinese_locale_marker(self, tmp_path):
+        """A1 = '标题行数：' (Chinese locale) → True (regression)."""
+        from ethoinsight.parse._core import detect_ethovision
+
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.cell(1, 1, "标题行数：")
+        ws.cell(1, 2, 39)
+        path = tmp_path / "chinese_locale.xlsx"
+        wb.save(str(path))
+        assert detect_ethovision(str(path)) is True
+
+    def test_detect_xlsx_no_marker(self, tmp_path):
+        """A1 is something else → False."""
+        from ethoinsight.parse._core import detect_ethovision
+
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.cell(1, 1, "Sales Report")
+        ws.cell(1, 2, 42)
+        path = tmp_path / "not_ethovision.xlsx"
+        wb.save(str(path))
+        assert detect_ethovision(str(path)) is False
+
     def test_detect_txt_regression(self):
         from ethoinsight.parse._core import detect_ethovision
 
@@ -543,3 +607,96 @@ class TestXlsxErrorHandling:
         path = _require_xlsx_file()
         with pytest.raises(Exception):
             parse_header(f"{path}::NonExistentSheet")
+
+
+# ============================================================================
+# Golden parse fixtures — real-world EthoVision export variants
+# ============================================================================
+
+REAL_DATA_BASE = Path(os.environ.get("ETHOINSIGHT_REAL_BASE", "/home/wangqiuyang/DemoData/real_data"))
+
+
+def _find_real_files(paradigm_dir: str) -> list[Path]:
+    """Return .xlsx files in a real-data paradigm subdirectory, or empty list."""
+    d = REAL_DATA_BASE / paradigm_dir
+    if not d.is_dir():
+        return []
+    return sorted(f for f in d.glob("*.xlsx") if not f.name.startswith("~$"))
+
+
+class TestRealDataNormalization:
+    """Golden fixtures: real-world EthoVision exports must normalize to canonical names.
+
+    Each test verifies that parse_header on real-world data produces column names
+    that match the catalog & compute layer expectations.  If a directory doesn't
+    exist locally the test is skipped (these are integration aids, not CI infra).
+    """
+
+    def test_epm_real_data_has_in_zone_columns(self):
+        """Real EPM data: zone-prefix columns (开放臂/封闭臂) → in_zone_*."""
+        files = _find_real_files("原始数据-高架十字迷宫实验")
+        if not files:
+            pytest.skip("real EPM data not found")
+        for f in files[:2]:
+            result = parse.parse_header(str(f))
+            cols = result["columns"]
+            in_zone = [c for c in cols if c.startswith("in_zone_")]
+            assert len(in_zone) >= 2, (
+                f"{f.name}: expected ≥2 in_zone_* columns, got {in_zone}. "
+                f"All columns: {cols}"
+            )
+            # Must contain both open_arms and closed_arms variants
+            joined = " ".join(in_zone)
+            assert "open" in joined, f"{f.name}: missing open arm zone column in {in_zone}"
+            assert "closed" in joined, f"{f.name}: missing closed arm zone column in {in_zone}"
+
+    def test_tst_real_data_has_mobility_state_columns(self):
+        """Real TST data: 活动状态(狂躁/静止) → mobility_state_highly_mobile / _immobile."""
+        files = _find_real_files("原始数据-悬尾实验")
+        if not files:
+            pytest.skip("real TST data not found")
+        for f in files[:2]:
+            result = parse.parse_header(str(f))
+            cols = result["columns"]
+            mobility = [c for c in cols if "mobility_state" in c]
+            assert len(mobility) >= 1, (
+                f"{f.name}: expected ≥1 mobility_state* column, got {mobility}. "
+                f"All columns: {cols}"
+            )
+
+    def test_fst_real_data_has_mobility_column(self):
+        """Real FST data: single 活动状态 column → mobility_state."""
+        fst_file = REAL_DATA_BASE / "原始数据-强迫游泳实验sample demo-试验     1.xlsx"
+        if not fst_file.exists():
+            pytest.skip("real FST data not found")
+        result = parse.parse_header(str(fst_file))
+        cols = result["columns"]
+        assert "mobility_state" in cols, (
+            f"Expected mobility_state in columns, got: {cols}"
+        )
+
+    def test_ezm_real_data_normalizes_zone_columns(self):
+        """Real EZM (O迷宫) data: English columns already have in_closed / in_open."""
+        files = _find_real_files("o迷宫")
+        if not files:
+            pytest.skip("real EZM data not found")
+        f = files[0]
+        result = parse.parse_header(str(f))
+        cols = result["columns"]
+        assert "in_closed" in cols, f"{f.name}: expected in_closed column, got {cols}"
+        assert "in_open" in cols, f"{f.name}: expected in_open column, got {cols}"
+
+    def test_real_data_does_not_regress_demo_data(self):
+        """Demo data patterns (分析区中/In zone/Mobility) must still work."""
+        demo_dir = Path(os.environ.get("ETHOINSIGHT_DEMO_BASE", DEMO_BASE))
+        epm_demo = demo_dir / "高架十字迷宫_小鼠_三点"
+        if not epm_demo.is_dir():
+            pytest.skip("demo EPM data not found")
+        xlsx_files = sorted(f for f in epm_demo.glob("*.xlsx") if not f.name.startswith("~$"))
+        if not xlsx_files:
+            pytest.skip("no demo EPM xlsx files")
+        result = parse.parse_header(str(xlsx_files[0]))
+        cols = result["columns"]
+        assert any("in_zone" in c and "open" in c for c in cols), (
+            f"Demo EPM should still have in_zone_open_arms_* column. Got: {cols}"
+        )

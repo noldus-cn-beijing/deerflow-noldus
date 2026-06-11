@@ -147,6 +147,85 @@ _BAD_IMG_PATH_RE = re.compile(
     r"\((?:/mnt/user-data/outputs/|outputs/)([^)]+\.(?:png|jpg|jpeg|svg|gif|webp))\)"
 )
 
+# Regex matching {{img:<basename>}} placeholders in report.md.
+# Layer 1 of the chart image placeholder resolution system: LLM writes
+#   ![Figure 1]({{img:plot_trajectory_s0.png}})
+# and seal_report_writer_handoff resolves it to the canonical virtual path
+# from handoff_chart_maker.json.chart_files.
+_IMG_PLACEHOLDER_RE = re.compile(r"\{\{img:([^}]+)\}\}")
+
+
+def _load_chart_files_map(workspace: Path) -> dict[str, str]:
+    """Return {basename: full_virtual_path_lstrip_slash} from handoff_chart_maker.json.
+
+    Returns empty dict when file absent, unparseable, or chart_files empty.
+    The value has its leading '/' stripped — artifacts API requires no leading slash.
+    """
+    chart_handoff = workspace / "handoff_chart_maker.json"
+    if not chart_handoff.exists():
+        return {}
+    try:
+        data = json.loads(chart_handoff.read_text(encoding="utf-8"))
+        chart_files = data.get("chart_files", [])
+        if not isinstance(chart_files, list):
+            return {}
+        result: dict[str, str] = {}
+        for f in chart_files:
+            if isinstance(f, str):
+                result[Path(f).name] = f.lstrip("/")
+        return result
+    except Exception:
+        return {}
+
+
+def _resolve_report_image_placeholders(
+    report_host_path: Path,
+    workspace: Path,
+) -> None:
+    """Resolve {{img:<basename>}} placeholders in report.md.
+
+    Reads handoff_chart_maker.json from workspace, builds a {basename: full_path}
+    mapping, then replaces every {{img:<basename>}} placeholder in the report
+    with the canonical virtual path.
+
+    Unmatched basenames → replaced with visible error stub listing available files.
+    Missing/empty chart_files → no-op (placeholders survive for human diagnosis).
+    """
+    if not report_host_path.is_file():
+        return
+
+    chart_files_map = _load_chart_files_map(workspace)
+
+    try:
+        original = report_host_path.read_text(encoding="utf-8")
+
+        def _replace(match: re.Match[str]) -> str:
+            basename = match.group(1).strip()
+            if not chart_files_map:
+                return match.group(0)          # 无映射时保留原样
+            if basename in chart_files_map:
+                return chart_files_map[basename]
+            # 不匹配 → 可见错误文本
+            available = ", ".join(
+                sorted(chart_files_map.keys())[:5]
+            )
+            suffix = f"；可用: {available}" if available else ""
+            return f"[图表 '{basename}' 未找到{suffix}]"
+
+        resolved = _IMG_PLACEHOLDER_RE.sub(_replace, original)
+
+        if resolved != original:
+            report_host_path.write_text(resolved, encoding="utf-8")
+            logger.info(
+                "seal_report_writer_handoff: resolved image placeholders in %s",
+                report_host_path,
+            )
+    except Exception:
+        logger.warning(
+            "seal_report_writer_handoff: image placeholder resolution skipped",
+            exc_info=True,
+        )
+
 
 def _normalize_report_image_paths(report_host_path: Path) -> None:
     """Rewrite image paths in report.md so they use the canonical virtual prefix.
@@ -272,18 +351,19 @@ def _build_task_context(payload: dict[str, Any]) -> dict[str, Any]:
     return tc
 
 
-def _seal_handoff(
+def _seal_handoff_to_workspace(
     model_cls: type,
     filename: str,
     payload: dict[str, Any],
-    runtime: Runtime,
+    workspace: Path,
 ) -> str:
-    """共享 helper: Pydantic 校验 → atomic write → 写 manifest → 返回 OK。
+    """Pure-function variant of _seal_handoff: Pydantic validate → atomic write → manifest.
 
-    所有失败路径都返回 ValueError（LangChain 会自动转 error ToolMessage 给 LLM）。
+    Takes an explicit workspace ``Path`` instead of resolving it from ``Runtime``.
+    Used by harness-level auto-seal where no Runtime is available (Spec C).
+
+    Same contract as _seal_handoff: all failure paths raise ValueError.
     """
-    workspace = _resolve_workspace(runtime)
-
     # 1. 注入 analysis_config_id (subagent 不用手动传)
     payload.setdefault("analysis_config_id", _read_analysis_config_id(workspace))
 
@@ -307,11 +387,28 @@ def _seal_handoff(
     tmp_path.write_bytes(json_bytes)
     os.rename(tmp_path, final_path)  # POSIX atomic
 
+    # 3.5. chmod 0o644（Spec1 教训：文件权限 — downstream 工具需可读）
+    os.chmod(final_path, 0o644)
+
     # 4. 写 manifest
     sha256 = hashlib.sha256(json_bytes).hexdigest()
     _update_manifest(workspace, filename, sha256, payload["analysis_config_id"])
 
     return f"OK: sealed {filename} (sha256={sha256[:12]}...)"
+
+
+def _seal_handoff(
+    model_cls: type,
+    filename: str,
+    payload: dict[str, Any],
+    runtime: Runtime,
+) -> str:
+    """共享 helper: Pydantic 校验 → atomic write → 写 manifest → 返回 OK。
+
+    所有失败路径都返回 ValueError（LangChain 会自动转 error ToolMessage 给 LLM）。
+    """
+    workspace = _resolve_workspace(runtime)
+    return _seal_handoff_to_workspace(model_cls, filename, payload, workspace)
 
 
 # ============================================================================
@@ -481,6 +578,18 @@ def seal_report_writer_handoff(
         "gate_signals": gate_signals,
     }
 
+    # 0. 解析 {{img:...}} 占位符（chart image placeholder system）
+    # Layer 1: resolves LLM-written placeholders to canonical virtual paths
+    # from handoff_chart_maker.json.chart_files before the Layer 2
+    # _normalize_report_image_paths prefix fix.
+    try:
+        _ws = _resolve_workspace(runtime)
+        _report_host = _ws.parent / "outputs" / Path(report_path).name
+        _resolve_report_image_placeholders(_report_host, _ws)
+    except Exception as _e:
+        logger.warning("seal_report_writer_handoff: image placeholder resolution failed: %s", _e)
+
+    # 1. 规范化图片路径前缀（现有逻辑，保留）
     # Normalise image paths in the report file before sealing: the artifacts API
     # requires ``mnt/user-data/outputs/file.png`` (no leading slash), but LLMs
     # often write ``outputs/file.png`` or ``/mnt/user-data/outputs/file.png``,

@@ -462,3 +462,24 @@ def test_all_catalog_scripts_are_importable(paradigm):
             pytest.fail(f"Catalog references non-importable script '{dotted}': {e}")
         assert hasattr(mod, "main"), f"Script {dotted} has no main() entry"
         assert callable(mod.main), f"Script {dotted}.main is not callable"
+
+
+# ============================================================================
+# Stage 2: Catalog 向后兼容 — resolved_zone_concepts default_factory
+# ============================================================================
+
+
+def test_catalog_construct_without_resolved_zone_concepts_field():
+    """手工 Catalog(...) 不传 resolved_zone_concepts 仍能构造（验 default_factory）。"""
+    from ethoinsight.catalog.schema import Catalog
+
+    cat = Catalog(
+        paradigm="test",
+        ev19_templates=["Test Template"],
+        default_metrics=[],
+        optional_metrics=[],
+        charts=[],
+        statistics_default=None,
+    )
+    assert cat.resolved_zone_concepts == {}
+    assert isinstance(cat.resolved_zone_concepts, dict)

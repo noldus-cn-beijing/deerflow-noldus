@@ -9,7 +9,7 @@
 # - 6-02 sync (全量跟随 f9b70713→74e3e80c, 34 commit): 仍未 squash, 故 git log origin/dev..deerflow/main
 #   会虚高到 ~2192 (假象); 真实 delta 用 git log <last_sync_commit>..deerflow/main = 34
 
-last_sync_commit: 74e3e80c
-last_sync_date: 2026-06-02
-last_sync_commits_count: 34
-last_sync_prs: "#?? (全量跟随 34 commit + 善后修复, 待填实际 PR 号)"
+last_sync_commit: f92a26d5
+last_sync_date: 2026-06-09
+last_sync_commits_count: 21
+last_sync_prs: "待填实际 PR 号 (21 commit 全量 sync: 33 非受保护全量接受 + 9 受保护 surgical merge)"

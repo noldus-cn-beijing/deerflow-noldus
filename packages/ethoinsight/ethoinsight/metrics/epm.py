@@ -51,8 +51,13 @@ def _get_open_zone_cols(df: pd.DataFrame) -> list[str]:
     return _prefer_center_suffix(all_cols)
 
 
-def _get_closed_zone_cols(df: pd.DataFrame) -> list[str]:
+def _get_closed_zone_cols(
+    df: pd.DataFrame,
+    closed_arm_zones: list[str] | None = None,
+) -> list[str]:
     """Return closed-arm zone columns, preferring center-point suffix."""
+    if closed_arm_zones:
+        return [c for c in closed_arm_zones if c in df.columns]
     all_cols = [c for c in df.columns if re.search(r"in_zone.*closed.?arm", c, re.I)]
     return _prefer_center_suffix(all_cols)
 
@@ -115,10 +120,15 @@ def compute_open_arm_entry_count(
 def compute_open_arm_entry_ratio(
     df: pd.DataFrame,
     open_arm_zones: list[str] | None = None,
+    closed_arm_zones: list[str] | None = None,
 ) -> float | None:
     """Ratio of open arm entries to total arm entries."""
     open_count = compute_open_arm_entry_count(df, open_arm_zones)
-    total_count = compute_total_entry_count(df)
+    total_count = compute_total_entry_count(
+        df,
+        open_arm_zones=open_arm_zones,
+        closed_arm_zones=closed_arm_zones,
+    )
     if open_count is None or total_count is None or total_count == 0:
         return None
     return open_count / total_count
@@ -152,6 +162,8 @@ def compute_open_arm_time(
 
 def compute_total_entry_count(
     df: pd.DataFrame,
+    open_arm_zones: list[str] | None = None,
+    closed_arm_zones: list[str] | None = None,
     min_duration_frames: int = 0,
 ) -> int | None:
     """Total entries into all arm zones (open + closed, excluding center).
@@ -160,8 +172,14 @@ def compute_total_entry_count(
     (each group combines its columns with OR to avoid overcounting),
     then sums across groups.
     """
-    open_cols = _get_open_zone_cols(df)
-    closed_cols = _get_closed_zone_cols(df)
+    if open_arm_zones:
+        open_cols = [c for c in open_arm_zones if c in df.columns]
+    else:
+        open_cols = _get_open_zone_cols(df)
+    if closed_arm_zones:
+        closed_cols = [c for c in closed_arm_zones if c in df.columns]
+    else:
+        closed_cols = _get_closed_zone_cols(df)
     if not open_cols and not closed_cols:
         return None
     open_entries = _count_zone_entries(df, open_cols, min_duration_frames=min_duration_frames) or 0

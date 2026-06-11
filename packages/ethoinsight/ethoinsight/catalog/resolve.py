@@ -22,6 +22,7 @@ from typing import Any
 
 from ethoinsight.catalog.loader import CatalogError, CommonCatalog, load_catalog, load_common_catalog
 from ethoinsight.catalog.schema import (
+    Catalog,
     AnonymousZoneOverride,
     ChartEntry,
     MetricEntry,
@@ -38,6 +39,9 @@ from ethoinsight.catalog.schema import (
 )
 
 SCHEMA_VERSION = "1.1"
+
+# Sentinel for "no alias matched" — distinct from a None alias value (which means ignore).
+_UNSET = object()
 
 
 class ResolveError(Exception):
@@ -71,6 +75,7 @@ def resolve(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    column_aliases: dict[str, str] | None = None,
     overrides: dict[str, float | int | str] | None = None,
     common_catalog: CommonCatalog | None = None,
 ) -> Plan:
@@ -96,6 +101,7 @@ def resolve(
         columns_file=columns_file,
         ev19_template=ev19_template,
         virtual_workspace_dir=virtual_workspace_dir,
+        column_aliases=column_aliases,
         overrides=overrides,
         common_catalog=common_catalog,
     )
@@ -127,6 +133,7 @@ def resolve_metrics(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    column_aliases: dict[str, str] | None = None,
     overrides: dict[str, float | int | str] | None = None,  # === Sprint 2b ===
     common_catalog: CommonCatalog | None = None,  # === Sprint 2b ===
 ) -> PlanMetrics:
@@ -135,6 +142,9 @@ def resolve_metrics(
     workspace_dir: 真实物理路径（用于脚本实际执行时的 input 引用等）。
     virtual_workspace_dir: plan.json output 字段使用的虚拟路径（面向 downstream subagent）。
                            未提供时兜底使用 workspace_dir（兼容旧调用方）。
+    column_aliases: {原始列 or normalized: catalog 概念} — Sprint 1 通用列别名表。
+                    在 columns 入口单点重映射后喂给所有下游消费入口。
+                    含 alias → None/__ignore__ 的列从 columns 移除。
 
     Sprint 2b 新增:
         overrides: 用户参数覆盖。key=参数名,value=覆盖值。
@@ -179,6 +189,20 @@ def resolve_metrics(
     plan_metrics: list[PlanMetric] = []
     skipped: list[PlanSkipped] = []
 
+    # Sprint 1 column-semantics: only remove __ignore__ columns.
+    # Physical column names are preserved in the columns list — column_aliases
+    # is consulted on-the-fly by _missing_columns and _build_zone_aliases_overrides
+    # instead of rewriting columns upfront.
+    if column_aliases:
+        columns = _apply_aliases(columns, column_aliases)
+
+    # Inject zone param overrides from column_aliases before computing parameters_in_use.
+    # This ensures center_zone / open_zones / light_zone get PHYSICAL column names,
+    # not catalog concept names (e.g. "center" not "in_zone_center").
+    zone_aliases_overrides = _build_zone_aliases_overrides(column_aliases, cat, overrides)
+    if zone_aliases_overrides:
+        overrides = {**overrides, **zone_aliases_overrides}
+
     # Step 1: process default_metrics
     for m in cat.default_metrics:
         if m.id in exclude_set:
@@ -190,7 +214,7 @@ def resolve_metrics(
                 )
             )
             continue
-        missing = _missing_columns(m.requires_columns, columns)
+        missing = _missing_columns(m.requires_columns, columns, column_aliases)
         if missing:
             # Check for anonymous zone: missing pattern like in_zone_* but bare in_zone exists.
             # _detect_anonymous_zone returns:
@@ -246,7 +270,7 @@ def resolve_metrics(
         if inc_id in {m.id for m in cat.default_metrics}:
             continue
         m = next(m for m in cat.optional_metrics if m.id == inc_id)
-        missing = _missing_columns(m.requires_columns, columns)
+        missing = _missing_columns(m.requires_columns, columns, column_aliases)
         if missing:
             skipped.append(
                 PlanSkipped(
@@ -339,6 +363,7 @@ def resolve_charts(
     columns_file: str | None = None,
     ev19_template: str | None = None,
     virtual_workspace_dir: str | None = None,
+    column_aliases: dict[str, str] | None = None,
 ) -> PlanCharts:
     """生成 PlanCharts dataclass。失败抛 ResolveError。
 
@@ -375,10 +400,16 @@ def resolve_charts(
     # Apply user_intent filter — keep entries whose id matches the intent keyword(s).
     candidate_charts = _filter_charts_by_user_intent(cat.charts, user_intent)
 
+    # Sprint 1 column-semantics: only remove __ignore__ columns.
+    # Physical column names are preserved; column_aliases is consulted on-the-fly
+    # by _missing_columns instead of rewriting columns upfront.
+    if column_aliases:
+        columns = _apply_aliases(columns, column_aliases)
+
     charts: list[PlanChart] = []
     skipped: list[PlanSkipped] = []
     for ch in candidate_charts:
-        missing = _missing_columns(ch.requires_columns, columns)
+        missing = _missing_columns(ch.requires_columns, columns, column_aliases)
         if missing:
             skipped.append(
                 PlanSkipped(
@@ -407,7 +438,7 @@ def resolve_charts(
         # Fallback also respects user_intent so "轨迹图" prefers trajectory over heatmap.
         candidate_fallback = _filter_charts_by_user_intent(common.common_charts, user_intent)
         for ch in candidate_fallback:
-            missing = _missing_columns(ch.requires_columns, columns)
+            missing = _missing_columns(ch.requires_columns, columns, column_aliases)
             if missing:
                 skipped.append(
                     PlanSkipped(
@@ -460,17 +491,275 @@ def resolve_charts(
 # ============================================================================
 
 
-def _missing_columns(patterns: list[str], available: list[str]) -> list[str]:
-    """对 requires_columns 中的每个 glob pattern，检查是否 ≥1 列匹配；返回未匹配的 pattern 集。"""
-    missing: list[str] = []
+def _flatten_requires_columns(requires_columns) -> list[str]:
+    """Flatten CNF requires_columns into a list of str (groups dissolved).
+
+    Consumers that only care about "which patterns were mentioned"
+    (zone concept derivation, inspect column collection, zone detection
+    has_zone_pattern check) call this to avoid AttributeError/TypeError
+    on nested list items.
+
+    None / [] → []; pure str list → shallow copy (order preserved);
+    nested items → inlined.
+    """
+    out: list[str] = []
+    for item in requires_columns or []:
+        if isinstance(item, list):
+            out.extend(item)
+        else:
+            out.append(item)
+    return out
+
+
+def _missing_columns(
+    patterns: list[str | list[str]],
+    available: list[str],
+    column_aliases: dict[str, str] | None = None,
+) -> list[str | list[str]]:
+    """Check each entry in requires_columns against available columns.
+
+    Each entry may be a str (single glob pattern) or a list[str] (OR-group:
+    any sub-pattern match satisfies the group).  The returned list preserves
+    the original shape: str for unmatched single patterns, list for unmatched
+    OR-groups.
+
+    If column_aliases is provided, physical column names not matching a
+    requires glob are looked up via aliases (concept name matching).
+    """
+    missing: list[str | list[str]] = []
     for pat in patterns:
-        if not any(fnmatch.fnmatchcase(col, pat) for col in available):
-            missing.append(pat)
+        if isinstance(pat, list):
+            # OR-group: any sub-pattern satisfied → group satisfied
+            group_ok = False
+            for sub in pat:
+                if any(fnmatch.fnmatchcase(col, sub) for col in available):
+                    group_ok = True
+                    break
+                if column_aliases and _any_concept_matches_pattern(available, column_aliases, sub):
+                    group_ok = True
+                    break
+            if group_ok:
+                continue
+            missing.append(pat)  # whole group into missing
+            continue
+        # Original str path — byte-identical to pre-CNF behaviour
+        if any(fnmatch.fnmatchcase(col, pat) for col in available):
+            continue
+        if column_aliases:
+            if _any_concept_matches_pattern(available, column_aliases, pat):
+                continue
+        missing.append(pat)
     return missing
 
 
+def _any_concept_matches_pattern(
+    available: list[str],
+    column_aliases: dict[str, str],
+    pat: str,
+) -> bool:
+    """任一 available 列的 alias 映射到匹配 pattern 的概念名。"""
+    from ethoinsight.utils import normalize_column_name
+
+    # Build normalized-key view for robust matching (same as _apply_aliases).
+    norm_aliases: dict[str, str] = {}
+    for k, v in column_aliases.items():
+        norm_aliases.setdefault(normalize_column_name(k), v)
+
+    for col in available:
+        concept = column_aliases.get(col, _UNSET)
+        if concept is _UNSET:
+            concept = norm_aliases.get(normalize_column_name(col), _UNSET)
+        if concept is _UNSET or concept in (None, "__ignore__"):
+            continue
+        if _concept_matches_pattern(concept, pat):
+            return True
+    return False
+
+
+def _concept_matches_pattern(concept: str, pat: str) -> bool:
+    """判断 catalog 概念名或概念关键词是否满足 requires_columns glob pattern。
+
+    支持三种匹配层级：
+    1. fnmatch 直接命中：concept="in_zone_center_point", pat="in_zone_center_*"
+    2. 完整概念名：concept="in_zone_center", pat="in_zone_center_*"（semantic root of pattern）
+    3. 概念关键词：concept="center", pat="in_zone_center_*"（LLM writes keywords like "center"）
+    """
+    if fnmatch.fnmatchcase(concept, pat):
+        return True
+    # pattern 去掉 wildcard 后缀 → 概念名的前缀
+    pattern_base = pat.rstrip("*")
+    if concept.startswith(pattern_base):
+        return True
+    # pat="in_zone_center_*" → base="in_zone_center"
+    if concept == pattern_base.rstrip("_"):
+        return True
+    # 概念关键词匹配：extract keyword from pattern → compare with alias concept
+    # "in_zone_center_*" → keyword "center"; "in_zone_open*" → keyword "open"
+    if pat.startswith("in_zone") and "*" in pat:
+        keyword = pat[len("in_zone_"):].rstrip("*").rstrip("_")
+        if keyword and concept == keyword:
+            return True
+    return False
+
+
+def _build_zone_aliases_overrides(
+    column_aliases: dict[str, str] | None,
+    cat: Catalog,
+    existing_overrides: dict[str, float | int | str],
+) -> dict[str, float | int | str | list[str]]:
+    """从 column_aliases 提取 zone param overrides（多 concept 路由）。
+
+    1. 从 zone_concept_params + anonymous_zone_override 收集 (concept → param, wrap_list) 映射
+    2. 从 catalog entries 收集 zone_patterns（in_zone* requires_columns）
+    3. 对 column_aliases 中匹配 zone_patterns 的物理列 → 按 concept 分组
+    4. 每个 concept → 查映射得 (param, wrap_list) → 注入 overrides
+    5. existing_overrides 含同名 target_param → 该 param 不覆盖（显式优先）
+    """
+    if not column_aliases:
+        return {}
+
+    # ── Step 1: 从 catalog 统一内部模型构建 (concept_keyword → param, wrap_list) 映射 ──
+    concept_param_map: dict[str, tuple[str, bool]] = {}
+    for concept_key, rc in cat.resolved_zone_concepts.items():
+        if rc.binding is None:
+            continue  # 无注入绑定的概念（如 Stage 3 OFT border）不进 param 路由 —— 语义本身
+        concept_param_map[concept_key] = (rc.binding.param, rc.binding.wrap_list)
+
+    azo = cat.anonymous_zone_override  # 仍保留：Step 3 物理列路由分支引用 azo
+
+    if not concept_param_map:
+        return {}
+
+    # ── Step 2: 收集 zone_patterns ──
+    zone_patterns: set[str] = set()
+    entries = list(cat.default_metrics) + list(cat.optional_metrics) + list(cat.charts)
+    for entry in entries:
+        for pat in _flatten_requires_columns(getattr(entry, "requires_columns", [])):
+            if pat.startswith("in_zone") and "*" in pat:
+                zone_patterns.add(pat)
+
+    if not zone_patterns:
+        return {}
+
+    # ── Step 3: 匹配物理列 → concept → 按 concept 分组 ──
+    concept_cols: dict[str, list[str]] = {}
+    for physical_col, concept in column_aliases.items():
+        if concept in (None, "__ignore__"):
+            continue
+        # 尝试匹配 concept 到 zone pattern
+        matched_concept: str | None = None
+        # 先检查 concept 是否直接是 concept_param_map 的 key
+        if concept in concept_param_map:
+            matched_concept = concept
+        else:
+            # 检查 concept 是否匹配某个 zone_pattern
+            for pat in zone_patterns:
+                if _concept_matches_pattern(concept, pat):
+                    # 从 pattern 提取 keyword 并检查是否在 concept_param_map 中
+                    keyword = _extract_concept_keyword(pat)
+                    if keyword and keyword in concept_param_map:
+                        matched_concept = keyword
+                        break
+                    # Fallback: 直接用 concept 名作为 keyword
+                    if concept in concept_param_map:
+                        matched_concept = concept
+                        break
+            # 额外检查：concept 匹配 zone pattern 但 keyword 不在 map →
+            # 用 azo 的 target_param（如果有）
+            if matched_concept is None and azo is not None:
+                for pat in zone_patterns:
+                    if _concept_matches_pattern(concept, pat):
+                        matched_concept = _derive_concept_from_zone_patterns(
+                            zone_patterns, azo.target_param
+                        )
+                        if matched_concept and matched_concept in concept_param_map:
+                            break
+                        matched_concept = None
+
+        if matched_concept is not None:
+            concept_cols.setdefault(matched_concept, []).append(physical_col)
+
+    if not concept_cols:
+        return {}
+
+    # ── Step 4 & 5: 按概念→参数映射注入 overrides，显式覆盖优先 ──
+    overrides: dict[str, float | int | str | list[str]] = {}
+    for concept_key, cols in concept_cols.items():
+        mapping = concept_param_map.get(concept_key)
+        if mapping is None:
+            continue
+        param_name, wrap_list = mapping
+        # 显式覆盖优先：anonymous_zone_is 或同名 target_param 已在 existing_overrides 中
+        if param_name in existing_overrides:
+            continue
+        if azo is not None and azo.target_param == param_name and "anonymous_zone_is" in existing_overrides:
+            continue
+        # 类型仅由 wrap_list 决定
+        overrides[param_name] = cols if wrap_list else cols[0]
+
+    return overrides
+
+
+def _extract_concept_keyword(pat: str) -> str | None:
+    """从 zone pattern 提取概念关键词。"""
+    if not pat.startswith("in_zone") or "*" not in pat:
+        return None
+    keyword = pat[len("in_zone_"):].rstrip("*").rstrip("_")
+    return keyword if keyword else None
+
+
+def _derive_concept_from_zone_patterns(
+    zone_patterns: set[str],
+    target_param: str,
+) -> str | None:
+    """从 zone_patterns 和 target_param 反向推导 concept keyword。
+
+    例如：target_param="center_zone" + pattern "in_zone_center_*" → "center"
+    """
+    # Remove _zone / _zones suffix from target_param to guess concept keyword
+    candidate = target_param.replace("_zones", "").replace("_zone", "")
+    for pat in zone_patterns:
+        keyword = _extract_concept_keyword(pat)
+        if keyword and keyword in candidate:
+            return keyword
+    return None
+
+
+def _apply_aliases(columns: list[str], aliases: dict[str, str]) -> list[str]:
+    """移除用户标记为忽略的列。不再改写列为概念名（概念名保留在 column_aliases 中供下游查询）。
+
+    Columns whose alias value is None or "__ignore__" are removed
+    (user confirmed the column is irrelevant — D4).
+
+    Returns a new list; the input is not mutated.
+    """
+    from ethoinsight.utils import normalize_column_name
+
+    ignore_values = {None, "__ignore__"}
+
+    # Build a normalized-key view of the alias dict for robust matching.
+    norm_aliases: dict[str, str] = {}
+    for k, v in aliases.items():
+        norm_aliases.setdefault(normalize_column_name(k), v)
+
+    result: list[str] = []
+    for col in columns:
+        # Match by verbatim key first, then by normalized key.
+        if col in aliases:
+            target = aliases[col]
+        else:
+            target = norm_aliases.get(normalize_column_name(col), _UNSET)
+        if target is _UNSET:
+            result.append(col)
+            continue
+        if target in ignore_values:
+            continue
+        result.append(col)
+    return result
+
+
 def _detect_anonymous_zone(
-    missing_patterns: list[str],
+    missing_patterns: list[str | list[str]],
     available_columns: list[str],
     overrides: dict[str, str],
     anonymous_zone_override: AnonymousZoneOverride | None = None,
@@ -483,10 +772,12 @@ def _detect_anonymous_zone(
         True         — zone pattern detected but override resolves it (proceed)
         None         — not a zone pattern, or bare in_zone doesn't exist
     """
+    # Flatten to guard against list items in missing (CNF OR-groups)
+    flat_missing = _flatten_requires_columns(missing_patterns)
     # Check if any missing pattern is an in_zone variant (has suffix beyond "in_zone")
     has_zone_pattern = any(
         pat.startswith("in_zone") and len(pat) > len("in_zone")
-        for pat in missing_patterns
+        for pat in flat_missing
     )
     if not has_zone_pattern:
         return None

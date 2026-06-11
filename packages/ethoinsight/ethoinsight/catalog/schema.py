@@ -62,7 +62,7 @@ class ParadigmParameters:
 class MetricEntry:
     id: str
     script: str
-    requires_columns: list[str]
+    requires_columns: list[str | list[str]]
     output_unit: str
     display_name_zh: str
     unit_zh: str
@@ -86,7 +86,7 @@ class ChartEntry:
     output_mode: str = "per_subject"   # 1.2: "per_subject" expands to N PlanCharts (one inputs.json per file);
                                          # "aggregate" collapses to 1 PlanChart with all files in one inputs.json
     needs_groups: bool = False          # 1.2: aggregate plots that compare across groups need a groups.json arg
-    requires_columns: list[str] = field(default_factory=list)
+    requires_columns: list[str | list[str]] = field(default_factory=list)
     # 1.3: fnmatch glob 列名模式（如 "velocity"、"mobility_state*"、"in_zone*open*"）。
     # 任一 pattern 在 columns.json 中无列匹配则该 chart 被 resolve_charts 跳过并写入 skipped。
     # 默认 [] 表示"不依赖具体列"——兼容旧 yaml，但所有 audit 过的 catalog 都应显式声明。
@@ -116,6 +116,50 @@ class AnonymousZoneOverride:
 
 
 @dataclass(frozen=True)
+class ZoneConceptParam:
+    """范式级 zone 概念 → compute 参数映射。
+
+    EPM 的 open_arms/closed_arms → open_arm_zones/closed_arm_zones
+    参数注入通过此映射实现，不依赖 convention 推导。
+    """
+
+    param: str
+    wrap_list: bool = False
+
+
+@dataclass(frozen=True)
+class ParamBinding:
+    """概念的运行时注入绑定（param 与 wrap_list 同生共死）。"""
+
+    param: str
+    wrap_list: bool = False
+
+
+@dataclass(frozen=True)
+class ResolvedZoneConcept:
+    """统一内部 concept 模型（加载期规范化产物）。
+
+    模型本体语义 = 「对齐目标 + 可选的注入绑定」，**不是「注入参数表」**：
+    每个可注入概念必须可对齐，但不是每个可对齐概念必须可注入
+    （Fable 2026-06-11 决策门 1）。
+
+    binding=None 表示「可被 HITL 对齐/认领（消解歧义），但无运行时注入点」——
+    Stage 3 的 OFT border 即此态（脚本靠 regex 自动识别 + 三级降级，不吃注入）。
+    用 ParamBinding | None **整体可空**（非裸 param: str | None），让非法状态
+    （param=None 但 wrap_list 有值）不可表达。
+
+    来源三态（仅记录，不影响消费）：
+      - "zone_concept_params": 直接来自 cat.zone_concept_params（EPM）
+      - "anonymous_zone_override": 由 _derive_concept_from_zone_patterns 规范化（OFT/LDB/ZM）
+      - "explicit_concept": Stage 3 catalog 显式声明的补集概念（border/dark/closed）
+    """
+
+    concept: str
+    binding: ParamBinding | None = None
+    source: str = "zone_concept_params"
+
+
+@dataclass(frozen=True)
 class Catalog:
     paradigm: str
     ev19_templates: list[str]
@@ -127,6 +171,8 @@ class Catalog:
         default_factory=ParadigmParameters
     )
     anonymous_zone_override: AnonymousZoneOverride | None = None
+    zone_concept_params: dict[str, ZoneConceptParam] = field(default_factory=dict)
+    resolved_zone_concepts: dict[str, ResolvedZoneConcept] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

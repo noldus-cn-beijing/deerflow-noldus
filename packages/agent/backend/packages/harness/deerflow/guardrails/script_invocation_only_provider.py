@@ -38,7 +38,7 @@ from deerflow.guardrails.provider import (
 # Allowed `python -m ethoinsight.*` invocations at the start of the command.
 # Supports leading whitespace and any args after the module name.
 #
-# Three shapes are whitelisted (white-list stays small + stable):
+# Four shapes are whitelisted (white-list stays small + stable):
 #   1. ethoinsight.scripts.<paradigm>.<script>  — per-metric compute / plot scripts
 #   2. ethoinsight.catalog.resolve              — chart-maker self-runs `--mode charts`
 #      to produce plan_charts.json (execution-conventions.md §CLI 例外; chart-maker
@@ -46,12 +46,30 @@ from deerflow.guardrails.provider import (
 #      so only the charts path reaches this guardrail via chart-maker bash.
 #   3. ethoinsight.parse.dump_headers           — produces columns.json, which
 #      catalog.resolve consumes via its REQUIRED --columns-file arg.
-# Whitelisting resolve/dump_headers is safe: both only read inputs + write JSON into
+    #   4. ethoinsight.validate_catalog             — catalog-driven metric range
+    #      validation (L-B layer). Reads plan + result files from workspace,
+    #      prints VALIDATION_ERROR lines to stdout. No side effects, no network.
+# Whitelisting resolve/dump_headers/validate_catalog is safe: both only read inputs + write JSON into
 # the workspace; they execute no arbitrary code. Path safety for their args is the
 # same as for scripts (the plotting scripts themselves still re-validate paths).
 _ALLOWED_PYTHON_PATTERN = re.compile(
-    r"^\s*python\s+-m\s+ethoinsight\.(scripts\.\w+\.\w+|catalog\.resolve|parse\.dump_headers)(\s|$)"
+    r"^\s*python\s+-m\s+ethoinsight\.(scripts\.\w+\.\w+|catalog\.resolve|parse\.dump_headers|validate_catalog)(\s|$)"
 )
+
+# Allow parallel script execution via bash -c wrapper.
+# Matches: bash -c "python -m ethoinsight.scripts.epm.compute_... --input ... & ... wait"
+# Also allows optional cd prefix: cd /mnt/user-data/workspace && bash -c "..."
+# The inner content between quotes is validated separately (see _validate_parallel_bash).
+_PARALLEL_BASH_PATTERN = re.compile(
+    r"^\s*(?:cd\s+\S+\s*&&\s*)?bash\s+-c\s+([\"'])(.+?)\1\s*$",
+    re.DOTALL,
+)
+
+# Inside a bash -c block: allowed tokens between script invocations.
+# Each script call is python -m ethoinsight.scripts.* ... optionally followed by & or ;
+# The last line must be wait or echo.
+# Split on &, ;, and newlines (wait and echo are typically on their own lines).
+_PARALLEL_INNER_SPLITTER = re.compile(r"\s*[&;\n]\s*")
 
 # Match read-only file-operation commands at start of command (no path validation needed).
 _READ_ONLY_FILE_OPS = re.compile(
@@ -73,7 +91,9 @@ _DENY_MESSAGE = (
     "  1. 调脚本：python -m ethoinsight.scripts.<paradigm>.<name> --input ... --output ...\n"
     "  2. chart-maker 专用：python -m ethoinsight.parse.dump_headers --input ... --output columns.json\n"
     "     与 python -m ethoinsight.catalog.resolve --mode charts ... --output plan_charts.json\n"
-    "  3. 文件操作：mkdir / cp / mv / ls / cat / grep / head / tail\n"
+    "  3. code-executor 专用：python -m ethoinsight.validate_catalog --plan plan_metrics.json\n"
+    "     （catalog-driven 指标范围验证，所有 compute 脚本跑完后执行）\n"
+    "  4. 文件操作：mkdir / cp / mv / ls / cat / grep / head / tail\n"
     "请改用以上形式之一。可用脚本清单见 by-paradigm/<范式>.md。"
 )
 
@@ -157,6 +177,40 @@ def _is_path_safe(target: str) -> bool:
     return True
 
 
+def _validate_parallel_bash_content(inner: str) -> bool:
+    """Validate the content inside a bash -c "..." block for parallel execution.
+
+    Each "line" (split by ``&`` or ``;``) must be either:
+    - A ``python -m ethoinsight.scripts.*`` invocation (with args)
+    - ``wait``
+    - ``echo ...`` (status message)
+    - Empty/whitespace-only
+
+    Shell metacharacters (``|``, ``>``, ``<``, ``$()``, backticks) are
+    rejected because parallel script execution never needs them, and they
+    are common injection vectors.
+    """
+    # Reject shell metacharacters that are never needed for parallel script exec
+    _DANGEROUS_META = re.compile(r"[|><`$]")
+    if _DANGEROUS_META.search(inner):
+        return False
+
+    segments = _PARALLEL_INNER_SPLITTER.split(inner.strip())
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+        # Allow wait and echo as control/status commands
+        if seg == "wait":
+            continue
+        if seg.startswith("echo "):
+            continue
+        # Each non-empty segment must be a valid script invocation
+        if not _ALLOWED_PYTHON_PATTERN.match(seg):
+            return False
+    return True
+
+
 class ScriptInvocationOnlyProvider:
     """Whitelist bash commands for code-executor + chart-maker + block write_file for handoff JSONs."""
 
@@ -195,6 +249,28 @@ class ScriptInvocationOnlyProvider:
         # Allow python -m ethoinsight.scripts.* invocations.
         if _ALLOWED_PYTHON_PATTERN.match(cmd):
             return GuardrailDecision(allow=True)
+
+        # Allow parallel script execution via bash -c wrapper.
+        # e.g. bash -c "python -m ethoinsight.scripts.epm.compute_... & ... wait"
+        m = _PARALLEL_BASH_PATTERN.match(cmd)
+        if m:
+            inner = m.group(2)
+            if _validate_parallel_bash_content(inner):
+                return GuardrailDecision(allow=True)
+            return GuardrailDecision(
+                allow=False,
+                reasons=[
+                    GuardrailReason(
+                        code="script_invocation_only.parallel_bash_invalid_content",
+                        message=(
+                            "bash -c 内仅允许 python -m ethoinsight.scripts.* 调用"
+                            "（用 & 或 ; 分隔，最后以 wait 或 echo 结尾）。"
+                            "不允许其他命令。"
+                        ),
+                    )
+                ],
+                policy_id="script_invocation_only",
+            )
 
         # Allow file operations; write ops get additional path validation.
         if _ALLOWED_FILE_OPS.match(cmd):

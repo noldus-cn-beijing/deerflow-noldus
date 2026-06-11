@@ -205,9 +205,9 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
         tool_freq_warn: Number of calls to the same tool *type* (regardless
             of arguments) before injecting a frequency warning. Catches
             cross-file read loops that hash-based detection misses.
-            Default: 30.
+            Default: 3.
         tool_freq_hard_limit: Number of calls to the same tool type before
-            forcing a stop. Default: 50.
+            forcing a stop. Default: 5.
         tool_freq_overrides: Per-tool overrides for frequency thresholds,
             keyed by tool name. Each value is a ``(warn, hard_limit)`` tuple
             that replaces ``tool_freq_warn`` / ``tool_freq_hard_limit`` for

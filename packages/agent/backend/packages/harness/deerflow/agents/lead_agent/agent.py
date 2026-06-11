@@ -267,7 +267,7 @@ def _filter_lead_tools(tools: list, excluded: frozenset[str]) -> list:
     return [t for t in tools if t.name not in excluded]
 
 
-def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None):
+def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None, *, deferred_setup=None):
     """Build middleware chain based on runtime configuration.
 
     Args:
@@ -318,11 +318,13 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     if model_config is not None and model_config.supports_vision:
         middlewares.append(ViewImageMiddleware())
 
-    # Add DeferredToolFilterMiddleware to hide deferred tool schemas from model binding
-    if app_config.tool_search.enabled:
+    # Hide deferred tool schemas from model binding until tool_search promotes them.
+    # The deferred set + catalog hash come from the build-time setup (assembled
+    # after tool-policy filtering); promotion is read from graph state.
+    if deferred_setup is not None and deferred_setup.deferred_names:
         from deerflow.agents.middlewares.deferred_tool_filter_middleware import DeferredToolFilterMiddleware
 
-        middlewares.append(DeferredToolFilterMiddleware())
+        middlewares.append(DeferredToolFilterMiddleware(deferred_setup.deferred_names, deferred_setup.catalog_hash))
 
     # Add SubagentLimitMiddleware to truncate excess parallel task calls
     subagent_enabled = config.get("configurable", {}).get("subagent_enabled", True)
@@ -602,11 +604,14 @@ def make_lead_agent(config: RunnableConfig):
 
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
+        raw_tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent]
+        from deerflow.tools.builtins.tool_search import assemble_deferred_tools
+        final_tools, setup = assemble_deferred_tools(raw_tools, enabled=app_config.tool_search.enabled)
         return create_agent(
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False),
-            tools=get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent],
-            middleware=_build_middlewares(config, model_name=model_name),
-            system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"])),
+            tools=final_tools,
+            middleware=_build_middlewares(config, model_name=model_name, deferred_setup=setup),
+            system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"]), thread_id=thread_id, deferred_names=setup.deferred_names),
             state_schema=ThreadState,
         )
 
@@ -631,12 +636,22 @@ def make_lead_agent(config: RunnableConfig):
         sorted(_LEAD_EXCLUDED_TOOLS),
     )
 
+    from deerflow.tools.builtins.tool_search import assemble_deferred_tools
+    final_tools, setup = assemble_deferred_tools(filtered_lead_tools, enabled=app_config.tool_search.enabled)
+
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, attach_tracing=False),
-        tools=filtered_lead_tools,
-        middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
+        tools=final_tools,
+        middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name, deferred_setup=setup),
         system_prompt=apply_prompt_template(
-            subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None, paradigm=lead_paradigm, user_id=lead_user_id
+            subagent_enabled=subagent_enabled,
+            max_concurrent_subagents=max_concurrent_subagents,
+            agent_name=agent_name,
+            available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None,
+            paradigm=lead_paradigm,
+            user_id=lead_user_id,
+            thread_id=thread_id,
+            deferred_names=setup.deferred_names,
         ),
         state_schema=ThreadState,
     )

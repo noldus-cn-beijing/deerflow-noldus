@@ -1,0 +1,7 @@
+{
+  "epm_dual_concept": "{\"closed_arm_zones\": [\"CA1\"], \"open_arm_zones\": [\"OA1\"]}",
+  "epm_existing_override": "{\"closed_arm_zones\": [\"CA1\"]}",
+  "ldb_scalar": "{\"light_zone\": \"明区\"}",
+  "oft_scalar": "{\"center_zone\": \"中心区\"}",
+  "zm_list": "{\"open_zones\": [\"开放区A\", \"开放区B\"]}"
+}

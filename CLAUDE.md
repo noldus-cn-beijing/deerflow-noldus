@@ -6,10 +6,11 @@
 
 **EthoInsight** — 面向行为学研究员的 AI 分析助手。研究员上传 EthoVision XT 导出的轨迹数据，Agent 自动完成统计分析、专业解读、APA 格式报告生成。
 
-- **当前状态**：端到端流水线可用，v0.1 已支持 6 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze/TST）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）
+- **当前状态**：端到端流水线可用，v0.1 已支持 6 个哺乳动物焦虑/抑郁范式（EPM/OFT/LDB/FST/Zero Maze/TST）；其余范式（鱼类如 shoaling/aquatic_open_field/cross_maze_fish/3d_swimming、学习记忆类如 MWM/Barnes/Y/T maze、社会/新物体、PhenoTyper 居家、昆虫旷场等）**暂未支持** — 关键词识别后 agent 会明示用户「v0.1 未实现」并反问。**EV19 模板识别地基设计已完成、实施计划已就绪**（详见 [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) 和配套 plan）。**用户自定义分析区列的 HITL 列语义对齐 Sprint 1 已合 dev**（真实 OFT 数据中 `中心区`/`边缘区` 等用户命名列经反问对齐后可正确算指标；结构聚合 Sprint 2 等行为学专家，见 [milestone](docs/milestone/column-semantics-alignment.md)）
 - **愿景**：从"数据分析工具"演进为"全生命周期行为学研究助手"（实验指导 → 数据分析 → 追问 → 知识问答 → 跨范式证据链）
 - **关键里程碑**：2026 年 9 月 v0.1 可用版本
-- **路线图**：见 [docs/roadmap.md](docs/roadmap.md)
+- **路线图 / 全局进展**：见 [docs/milestone/README.md](docs/milestone/README.md)（**milestone 索引即本项目的 roadmap** — 每个 feature track 的当前状态、阻塞、最新 handoff 都在这里；不存在独立的 `roadmap.md`）
+- **当前 v0.1 推进的真实阻塞**：两条路都卡在**行为学同事的范式方法论待产出**（不是工程卡点）——① **结构聚合**（自定义分区粒度按范式聚合，[Issue #98](https://github.com/noldus-cn-beijing/noldus-insight/issues/98)，需逐范式确认聚合语义）② **Golden Cases**（微调 benchmark + 回归种子，[Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90)）。详见 [docs/milestone/blocked-on-expert-methodology.md](docs/milestone/blocked-on-expert-methodology.md)。harness/基础设施层均无此阻塞，可独立推进。
 
 ## 仓库结构
 
@@ -34,13 +35,11 @@ noldus-insight/
 │       │   └── templates/        # 范式模板
 │       └── tests/
 ├── docs/
-│   ├── roadmap.md          # 12 个月产品路线图
-│   ├── prd.md              # 产品需求文档
+│   ├── milestone/          # 里程碑索引（**即本项目的 roadmap / 全局进展地图**，README.md 是入口）
 │   ├── architecture-diagram.md  # 架构图（上层价值 + 下层技术）
 │   ├── plans/              # 设计文档
 │   ├── specs/              # 技术规格
 │   ├── handoffs/           # 会话交接文档（按月份分目录：2026-04/ 2026-05/ …）
-│   ├── milestone/          # 里程碑总结
 │   ├── problems/           # 问题记录
 │   ├── sop/                # 操作手册
 │   └── EthoInsight-技术文档/
@@ -69,7 +68,8 @@ report-writer（结构化简单报告 + 文献引用）
 
 1. **自动统计决策树**（`ethoinsight/statistics.py`）— Shapiro-Wilk 正态性检验 → 自动选择参数/非参数检验
 2. **领域知识驱动解读**（Skills + `ethoinsight/assess.py`）— 表型推断、混杂因素排查、效应量判断
-3. **质量审核关卡**（data-analyst）— 统计方法适配性检查、异常检测
+3. **质量审核关卡**（data-analyst + 两层指标验证）— 统计方法适配性检查、异常检测
+   - **两层指标验证（catalog-driven，2026-06-06 落地）**：L-A（`ethoinsight/validate.py`）进程内 `emit_result` 只查 NaN/Inf（name-agnostic 安全网，拿不到 paradigm）；L-B（`ethoinsight/validate_catalog.py`）在 code-executor 层调 `python -m ethoinsight.validate_catalog --plan`，按 catalog `output_unit` 做范围校验（ratio→[0,1]/count→≥0整数/物理单位→≥0），**按 subject 逐条验证**、**直接用 plan 自带的 output_unit**。两层都把 `VALIDATION_ERROR` 行汇入 data_quality_warnings（`code=METRIC_VALIDATION`）供 data-analyst fast-fail。详见 [docs/design/2026-06-06-data-processing-methodology-design.md](docs/design/2026-06-06-data-processing-methodology-design.md)。
 
 ### 知识注入三层
 
@@ -91,9 +91,11 @@ report-writer（结构化简单报告 + 文献引用）
 
 ```bash
 cd packages/agent
-make dev           # 启动所有服务（LangGraph + Gateway + Frontend + Nginx），访问 localhost:2026
+make dev           # 启动所有服务（Gateway-embedded 运行时 + Frontend + Nginx，3 进程），访问 localhost:2026
 make stop          # 停止所有服务
 ```
+
+> **运行时模式（2026-06 起跟随上游）**：根目录 `make dev`（经 `scripts/serve.sh --dev`）与生产 compose 默认走 **Gateway-embedded 模式** —— agent runtime 内嵌在 Gateway（`uvicorn app.gateway.app:app`），**没有独立的 LangGraph server 进程**。nginx 把公网 `/api/langgraph/*` 改写后转发给 Gateway 内嵌 runtime。Standard 模式（独立 `langgraph dev` on :2024）仍保留用于后端单独调试（见下「后端开发」的 `make dev`），但**不是默认部署形态**。
 
 ### 后端开发（backend 目录）
 
@@ -138,7 +140,7 @@ Noldus 独特改动包括(但不限于):
 - **错误处理增强**:`llm_error_handling_middleware.py` 的总超时上限 + 多种 timeout 关键字识别
 - **Skill 系统**:`skills/custom/` 下 5 个 ethoinsight 定制 skill 的注册和加载逻辑（`ethoinsight`、`ethoinsight-code`、`ethoinsight-charts`、`ethoinsight-planning`、**新增 `ethovision-paradigm-knowledge` — EV19 模板识别 + 学术范式映射的渐进披露知识库**）
 - **MCP / 工具截断**:`mcp/tools.py` 的 4096 字符截断
-- **Subagent executor 修复**:`subagents/executor.py` 的 `recursion_limit` 修复 + `max_turns` 硬限制
+- **Subagent executor 修复**:`subagents/executor.py` 的 `recursion_limit` 修复 + `max_turns` 硬限制 + seal-resume 失败后的确定性 auto-seal 兜底（`_attempt_auto_seal_from_artifacts`，2026-06-08）
 
 **正确做法**(取长补短):
 
@@ -177,6 +179,23 @@ from deerflow.config.run_events_config import ... # event store 配置
 from deerflow.skills.storage import ...           # Tier 4 重构的 skill storage
 ```
 
+#### ⚠️ harness 模块顶层 import 闭环风险（2026-06-08 实证）
+
+harness 模块图存在**已知导入环**（证据：`backend/tests/conftest.py` 为破 `task_tool → subagents` 环而在 `sys.modules` mock 了 `deerflow.subagents.executor`）。**任何在 `subagents/`、`tools/builtins/`、`agents/` 等核心模块顶层新增 `from deerflow...import` 都可能闭环**。一旦闭环：
+
+- 生产启动（uvicorn `import app.gateway` / langgraph `make_lead_agent`）抛 `ImportError: cannot import name ... partially initialized module`，**Gateway 起不来**，`make dev` 卡在 `Waiting for Gateway on port 8001`。
+- **但 pytest 全绿是假绿**——conftest 的 mock 把 executor 短路了，测试里那条环根本不触发。
+
+**铁律**：
+1. 改完 `subagents/executor.py`、`tools/builtins/*`、`agents/**` 等核心后，**除 `make test` 外必须裸导入两生产入口验证**（backend/ 下，无 conftest）：
+   ```bash
+   PYTHONPATH=. python -c "import app.gateway"
+   PYTHONPATH=. python -c "from deerflow.agents import make_lead_agent"
+   ```
+   两者 0 退出才算过。
+2. 新 helper 即使抽成纯函数，**import 它的那行别放模块顶层**——放函数体内**惰性 import**（同「所有 ethoinsight import 必须惰性放函数体」的处方）。
+3. 永久 guard 已就位：`tests/test_gateway_import_no_cycle.py`（subprocess 裸导入两入口、绕开 conftest mock）。CI 会抓这类回归。
+
 ## 开发规范
 
 ### Python
@@ -207,7 +226,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 - **触发**: 开发者在本地跑 `cd packages/agent && make deploy-tar`
 - **构建**: 本地 `docker compose build`（linux/amd64），导出两个镜像（frontend + backend）为 gzip tar
 - **传输**: rsync 镜像 tar + docker-compose.yaml + nginx.conf + skills + config 到 ECS `/opt/ethoinsight/`
-- **部署**: 远程 `docker load` + `docker compose up -d`（frontend / gateway / langgraph / nginx 四个服务）
+- **部署**: 远程 `docker load` + `docker compose up -d`（frontend / gateway / nginx **三个**服务 — agent runtime 内嵌在 gateway，**无独立 langgraph 容器**，跟随上游 Gateway 化；provisioner 仅 K8s 模式用，部署链跳过）
 - **反代**: ECS 上 1Panel + OpenResty，80/443 → 内部 127.0.0.1:2026
 - **配置文件**: `config.yaml` / `extensions_config.json` / `.env` 存在开发者本地 `~/ethoinsight-prod/`，不进 git，部署时 rsync 到 ECS
 - **SOP**: 见 [docs/sop/deploy-via-tar-sop.md](docs/sop/deploy-via-tar-sop.md)
@@ -226,7 +245,7 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 
 ## 重要注意事项
 
-1. **skills/custom/ 是项目定制 skill 的目录** — `ethoinsight`、`ethoinsight-code`、`ethoinsight-charts`、`ethoinsight-planning`、`ethovision-paradigm-knowledge`（实施完成后）共 5 个定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）
+1. **skills/custom/ 是项目定制 skill 的目录** — ethoinsight 系列定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）。**权威清单以 `packages/agent/skills/custom/` 目录 + `extensions_config.json` 的 `skills` 段为准**（不在此处手工枚举以免漂移）。当前含 `ethoinsight` / `ethoinsight-code` / `ethoinsight-charts` / `ethoinsight-chart-maker` / `ethoinsight-grouping` / `ethoinsight-metric-catalog` / `ethoinsight-lead-interaction` / `ethovision-paradigm-knowledge` / **`ethoinsight-column-confirmation`（新增 — EV19 自定义分析区列的 HITL 列语义对齐，见 [milestone](docs/milestone/column-semantics-alignment.md)）** 等。新增 skill 须三件一起：① 建文件 ② extensions_config 注册 ③ lead prompt 加触发/read 指引。
 2. **noldus-kb 当前禁用** — `extensions_config.json` 里 `"enabled": false`，等 `180.184.84.124:7001` 恢复后再启用。禁用状态不要提交为 true
 3. **受保护文件修改后同步要小心** — `scripts/sync-deerflow.sh` 会把它们标为"需人工判断"
 4. **v0.1 是 9 月硬指标** — Phase 0（当前阶段）要完成 EPM + OFT 范式 + 鲁棒性验证 + 基础设施修复
@@ -252,21 +271,28 @@ from deerflow.skills.storage import ...           # Tier 4 重构的 skill stora
 12. **复用 deerflow 现成功能优先于自造轮子** — 实施新 agent 行为时，先调研 deerflow harness 已有的中间件 / 工具 / provider 协议，能复用就复用，不要重新发明。已知现成可用的关键能力：`ask_clarification` + `ClarificationMiddleware`（反问中断）、`LoopDetectionMiddleware`（防 tool call 死循环，已默认启用）、`GuardrailMiddleware` + `GuardrailProvider` 协议（pre-tool-call 授权决策）、`ToolErrorHandlingMiddleware`（tool 抛错自动转 error ToolMessage）、Skill 渐进披露（agent 主动 read_file SKILL.md + references/）、`update_agent` / `setup_agent` 工具（custom agent 自我修改 SOUL.md，v0.1 后启用）、`Skill Evolution`（agent 自建/改 skill，v0.1 后启用）、`/api/threads/{id}/runs/{rid}/feedback` API（替代手写飞轮反馈通道）。**自写中间件之前先看 `packages/agent/backend/packages/harness/deerflow/agents/middlewares/` 和 `tools/builtins/` 目录有没有现成的**。
 13. **项目状态修正（2026-05-12）** — 本仓库已经吃下 Tier 4 体系（unified persistence、`@require_permission`、`get_effective_user_id`、`UserRow` 等），是**多用户**研究助手。CLAUDE.md 第 11 条之前提到的"v0.1 单用户故意不要 Tier 4"在 2026-05-07/08 Tier234 round1-3 合入后已过时——这些指导仍适用于评估上游 sync 风险，但**本仓库现状**是建立在 Tier 4 之上。
 14. **Skill 优化 → SFT 路线（2026-06-04 启动）** — 采用微软 SkillOpt 方法论：行为学专家产出 Golden Cases（eval benchmark）→ 改造 SkillOpt 代码（自定义 EnvAdapter）→ 跑优化循环产出 best_skill.md → 用优化后的 skill 驱动 agent 生成高质量 SFT 轨迹 → 微调 Qwen3-30B。详见 [docs/plans/2026-06-04-skillopt-skill-optimization-plan.md](docs/plans/2026-06-04-skillopt-skill-optimization-plan.md)。**当前阻塞项：行为学专家 Golden Cases 待产出。**
+15. **Subagent handoff 鲁棒性 + n=1 路由 + 判读语言对齐（2026-06-08 一批合入 dev）** — EPM dogfood 多轮诊断后的一组正交修复，全部已在 dev：
+    - **seal 黑洞 harness 兜底**：subagent 完成产出（report.md / plot_*.png）却漏调 seal 工具时，harness 用已有产出**确定性 auto-seal** 构造 handoff，不再判 FAILED 白等重派。**仅 report-writer / chart-maker**（核心字段可从文件机械推导）；code-executor / data-analyst 的认知产物**永不 auto-seal**。实现见 `subagents/executor.py:_attempt_auto_seal_from_artifacts` + `seal_handoff_tools.py:_seal_handoff_to_workspace`（纯函数变体）。
+    - **n=1 单样本路径**：每组 n<2 时 lead fast-path 跳过 data-analyst（无统计基础），但**用户主动要洞察仍派 data-analyst 走 partial 描述性路径**；`path_sequence` guardrail 感知 n=1（单 subject 时 data-analyst 非必需）；四个 handoff schema 的 `status` 补齐 `partial` 三态对齐。
+    - **初次数据判读归 data-analyst**：knowledge-assistant 场景 A 收窄为"只解释**已有** data-analyst 结论"，不从零产完整判读（它不受输出宪法约束会产违禁词）；lead 按 workspace 有无 `handoff_data_analyst.json` 区分路由。
+    - **判读语言宪法术语松绑**：松绑定性行为术语（焦虑样行为/趋近-回避），**保留**绝对阈值（正常范围 X-Y%）+ 绝对程度（高/低焦虑）禁令（守第 9 条铁律）。SSOT 在 `skills/custom/ethoinsight/references/output-constitution.md`。
+    - **路径/展示一致性**：`validate_catalog` 用 `resolve_sandbox_path`（`scripts/_cli.py`，按 `DEERFLOW_PATH_*` env 解析）读 plan 内 `/mnt` 虚拟路径，修 `result_file_unreadable` 误报；`present_files` 工具拒绝磁盘上不存在的文件，防 LLM 幻影文件名（如 `epm_bar_{metric}.png`）污染 artifacts 致前端 404。
+    - **⚠️ 教训**：seal auto-seal 抽的 helper 当初在 `executor.py` **顶层** import `seal_handoff_tools` 闭成导入环，生产启动（uvicorn `app.gateway.app`）崩 `partially initialized module`、`make dev` 卡 Waiting for Gateway；测试因 `conftest.py` mock 了 executor 而假绿没抓到。已改惰性 import + 加 `tests/test_gateway_import_no_cycle.py`（subprocess 裸导入两生产入口）。见下「同步核心规则」末尾。
 
 ## 快速上手
 
 新开会话建议的读取顺序：
 
 1. 本文档 — 了解全貌
-2. [docs/roadmap.md](docs/roadmap.md) — 了解 12 个月规划和 v0.1 里程碑
-3. [docs/milestone/README.md](docs/milestone/README.md) — 项目地图，每个 feature 当前状态一目了然（2 分钟）
+2. [docs/milestone/README.md](docs/milestone/README.md) — **项目地图 / roadmap（即全局进展）**，每个 feature 当前状态 + 阻塞一目了然（2 分钟）
+3. [docs/milestone/blocked-on-expert-methodology.md](docs/milestone/blocked-on-expert-methodology.md) — 当前等行为学同事方法论的两条阻塞（结构聚合 + golden case）的精确待办
 4. 具体 feature 的 milestone — 深入了解某个 track 的全貌（5 分钟）
 5. `docs/handoffs/` 下具体 handoff — 最细粒度的操作细节（按需）
 
 ## 相关文档
 
-- [docs/roadmap.md](docs/roadmap.md) — 产品路线图
-- [docs/prd.md](docs/prd.md) — 产品需求文档
+- [docs/milestone/README.md](docs/milestone/README.md) — **里程碑索引 = 项目 roadmap / 全局进展地图**（无独立 roadmap.md）
+- [docs/milestone/blocked-on-expert-methodology.md](docs/milestone/blocked-on-expert-methodology.md) — 等同事方法论的阻塞清单（结构聚合 Issue #98 + golden case Issue #90）
 - [docs/architecture-diagram.md](docs/architecture-diagram.md) — 架构图
 - [docs/plans/2026-04-29-ev19-template-paradigm-design.md](docs/plans/2026-04-29-ev19-template-paradigm-design.md) — EV19 模板范式重定位设计（产品级）
 - [docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md](docs/superpowers/specs/2026-05-08-ev19-template-skill-foundation-design.md) — **EV19 模板识别地基设计（工程级，2026-05-08）**

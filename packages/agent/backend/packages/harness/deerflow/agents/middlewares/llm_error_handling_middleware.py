@@ -68,6 +68,37 @@ _AUTH_PATTERNS = (
     "未授权",
 )
 
+# Per-exception retry budget overrides.
+#
+# Some transient errors are retriable in principle but expensive to retry at
+# the default budget. StreamChunkTimeoutError in particular fires after the
+# upstream provider has already stalled for `stream_chunk_timeout` seconds
+# (typically 120-240s); a full 3-attempt loop can therefore stack 6-12 minutes
+# of dead air before surfacing the failure to the user. We keep exactly one
+# retry (cheap reconnect that catches genuine transient TCP blips) and then
+# fail fast — the same buffered payload is overwhelmingly likely to fail
+# again at the upstream provider for the same reason.
+#
+# Keys are exception class *names* (not classes) so we don't introduce
+# import-time coupling on optional dependencies like langchain-openai. The
+# value is the absolute max attempt count, NOT additional retries — so a
+# value of 2 means "1 first attempt + 1 retry".
+_RETRY_BUDGET_OVERRIDES: dict[str, int] = {
+    "StreamChunkTimeoutError": 2,
+}
+
+# Exception class names that indicate the upstream stream-chunk watchdog
+# fired because the model stalled mid-flight. These deserve a more specific
+# user-facing message than the generic "temporarily unavailable" copy,
+# because the typical root cause is a long tool-call serialization stalling
+# the upstream stream — and the most actionable advice we can give the user
+# is "ask for a shorter / split output" rather than "wait and retry".
+_STREAM_DROP_EXCEPTIONS: frozenset[str] = frozenset(
+    {
+        "StreamChunkTimeoutError",
+    }
+)
+
 
 class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
     """Retry transient LLM errors and surface graceful assistant messages."""
@@ -154,6 +185,18 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
                         self.circuit_recovery_timeout_sec,
                     )
 
+    def _max_attempts_for(self, exc: BaseException) -> int:
+        """Return the effective max attempt count for this exception.
+
+        Falls back to `self.retry_max_attempts` unless the exception class name
+        appears in the per-exception override table.
+        """
+        override = _RETRY_BUDGET_OVERRIDES.get(type(exc).__name__)
+        if override is None:
+            return self.retry_max_attempts
+
+        return min(override, self.retry_max_attempts)
+
     def _classify_error(self, exc: BaseException) -> tuple[bool, str]:
         detail = _extract_error_detail(exc)
         lowered = detail.lower()
@@ -172,8 +215,9 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
             "InternalServerError",
             "ReadTimeout",
             "ConnectTimeout",
-            "ReadError",
-            "RemoteProtocolError",
+            "ReadError",  # httpx.ReadError: connection dropped mid-stream
+            "RemoteProtocolError",  # httpx: server closed connection unexpectedly
+            "StreamChunkTimeoutError",  # langchain-openai: chunk gap exceeded stream_chunk_timeout
         }:
             return True, "transient"
         if status_code in _RETRIABLE_STATUS_CODES:
@@ -282,12 +326,13 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
             except Exception as exc:
                 retriable, reason = self._classify_error(exc)
                 elapsed = time.monotonic() - start_time
-                if retriable and attempt < self.retry_max_attempts and elapsed < self.retry_total_timeout_s:
+                max_attempts = self._max_attempts_for(exc)
+                if retriable and attempt < max_attempts and elapsed < self.retry_total_timeout_s:
                     wait_ms = self._build_retry_delay_ms(attempt, exc)
                     logger.warning(
                         "Transient LLM error on attempt %d/%d; retrying in %dms: %s",
                         attempt,
-                        self.retry_max_attempts,
+                        max_attempts,
                         wait_ms,
                         _extract_error_detail(exc),
                     )
@@ -308,6 +353,21 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
                         attempt,
                         _extract_error_detail(exc),
                         exc_info=exc,
+                    )
+                # Stream-drop failures (chunk-gap timeout, peer-closed connection,
+                # raw read error) almost always point at a single oversized
+                # tool-call payload — the model spent so long serializing JSON
+                # arguments that the upstream provider buffered and the stream
+                # gap exceeded `stream_chunk_timeout`. Surfacing this distinct
+                # cause lets the user split or shorten their next request.
+                if type(exc).__name__ in _STREAM_DROP_EXCEPTIONS:
+                    return AIMessage(
+                        content=(
+                            "The model's streaming response was interrupted before it could "
+                            "finish. This usually happens when a single response or tool call "
+                            "is very large — please ask the assistant to split the work into "
+                            "smaller steps, or shorten the requested output, and try again."
+                        )
                     )
                 if retriable:
                     self._record_failure()
@@ -343,12 +403,13 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
             except Exception as exc:
                 retriable, reason = self._classify_error(exc)
                 elapsed = time.monotonic() - start_time
-                if retriable and attempt < self.retry_max_attempts and elapsed < self.retry_total_timeout_s:
+                max_attempts = self._max_attempts_for(exc)
+                if retriable and attempt < max_attempts and elapsed < self.retry_total_timeout_s:
                     wait_ms = self._build_retry_delay_ms(attempt, exc)
                     logger.warning(
                         "Transient LLM error on attempt %d/%d; retrying in %dms: %s",
                         attempt,
-                        self.retry_max_attempts,
+                        max_attempts,
                         wait_ms,
                         _extract_error_detail(exc),
                     )
@@ -369,6 +430,21 @@ class LLMErrorHandlingMiddleware(AgentMiddleware[AgentState]):
                         attempt,
                         _extract_error_detail(exc),
                         exc_info=exc,
+                    )
+                # Stream-drop failures (chunk-gap timeout, peer-closed connection,
+                # raw read error) almost always point at a single oversized
+                # tool-call payload — the model spent so long serializing JSON
+                # arguments that the upstream provider buffered and the stream
+                # gap exceeded `stream_chunk_timeout`. Surfacing this distinct
+                # cause lets the user split or shorten their next request.
+                if type(exc).__name__ in _STREAM_DROP_EXCEPTIONS:
+                    return AIMessage(
+                        content=(
+                            "The model's streaming response was interrupted before it could "
+                            "finish. This usually happens when a single response or tool call "
+                            "is very large — please ask the assistant to split the work into "
+                            "smaller steps, or shorten the requested output, and try again."
+                        )
                     )
                 if retriable:
                     self._record_failure()

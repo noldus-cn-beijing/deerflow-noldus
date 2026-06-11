@@ -39,6 +39,9 @@
     }
   },
   "skills": {
+    "ethoinsight": {
+      "enabled": true
+    },
     "ethoinsight-metric-catalog": {
       "enabled": true
     },
@@ -46,6 +49,21 @@
       "enabled": true
     },
     "ethoinsight-grouping": {
+      "enabled": true
+    },
+    "ethoinsight-column-confirmation": {
+      "enabled": true
+    },
+    "ethoinsight-lead-interaction": {
+      "enabled": true
+    },
+    "ethoinsight-code": {
+      "enabled": true
+    },
+    "ethoinsight-charts": {
+      "enabled": true
+    },
+    "ethoinsight-chart-maker": {
       "enabled": true
     }
   }

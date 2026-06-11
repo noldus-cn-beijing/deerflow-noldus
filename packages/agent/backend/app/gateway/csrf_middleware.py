@@ -206,18 +206,47 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         # For auth endpoints that set up session, also set CSRF cookie
         if _is_auth and request.method == "POST":
-            # Generate a new CSRF token for the session
-            csrf_token = generate_csrf_token()
-            is_https = is_secure_request(request)
-            response.set_cookie(
-                key=CSRF_COOKIE_NAME,
-                value=csrf_token,
-                httponly=False,  # Must be JS-readable for Double Submit Cookie pattern
-                secure=is_https,
-                samesite="strict",
-            )
+            # Generate a new CSRF token for the session, aligned to access_token lifetime
+            _set_csrf_cookie(response, request)
+        elif request.method == "GET":
+            # Replenish missing CSRF cookie so browser-restart survivors
+            # (access_token still valid, csrf_token session-cookie gone) can
+            # make state-changing requests without a 403.
+            cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+            if not cookie_token:
+                _set_csrf_cookie(response, request)
 
         return response
+
+
+def _set_csrf_cookie(response: Response, request: Request) -> None:
+    """Set a fresh csrf_token cookie aligned with the access_token cookie lifecycle.
+
+    The csrf_token must share access_token's lifetime and SameSite policy
+    (``routers/auth.py:_set_session_cookie``). Otherwise the csrf cookie expires
+    as a session cookie while access_token persists — the browser stays "logged
+    in" but the frontend ``readCsrfCookie()`` reads ``null`` and POSTs ship no
+    ``X-CSRF-Token`` header, yielding a 403. The cookie stays JS-readable
+    (non-httponly) per the Double Submit Cookie pattern.
+
+    - https: ``max_age = token_expiry_days * 24 * 3600`` (persistent), ``Secure``
+    - http : ``max_age = None`` (session cookie), no ``Secure`` — matches
+      access_token's ``max_age=... if is_https else None`` so dev/prod don't diverge.
+    - SameSite ``lax`` — same as access_token; ``strict`` withholds the cookie on
+      cross-page navigation into the app, a second 403 trigger.
+    """
+    # Lazy import: keep the auth config dependency out of module import time.
+    from app.gateway.auth.config import get_auth_config
+
+    is_https = is_secure_request(request)
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=generate_csrf_token(),
+        httponly=False,  # Must be JS-readable for Double Submit Cookie pattern
+        secure=is_https,
+        samesite="lax",
+        max_age=get_auth_config().token_expiry_days * 24 * 3600 if is_https else None,
+    )
 
 
 def get_csrf_token(request: Request) -> str | None:

@@ -7,7 +7,7 @@ import {
   LightbulbIcon,
   XCircleIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type Components, Streamdown } from "streamdown";
 
 import {
@@ -49,8 +49,16 @@ export function SubtaskCard({
   messageRunIds?: Map<string, string>;
 }) {
   const { t } = useI18n();
-  const [collapsed, setCollapsed] = useState(true);
   const task = useSubtask(taskId)!;
+  // 2A: subagent 运行中默认展开卡片，让用户看到 timeline（含 reasoning step）。
+  // 用户手动折叠后不再跟随 status 变化，尊重用户操作。
+  const cardToggledByUser = useRef(false);
+  const [collapsed, setCollapsed] = useState(task.status !== "in_progress");
+  useEffect(() => {
+    if (task.status === "in_progress" && !cardToggledByUser.current) {
+      setCollapsed(false);
+    }
+  }, [task.status]);
   const icon = useMemo(() => {
     if (task.status === "completed") {
       return <CheckCircleIcon className="size-3" />;
@@ -75,7 +83,10 @@ export function SubtaskCard({
           <Button
             className="w-full items-start justify-start text-left"
             variant="ghost"
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={() => {
+              cardToggledByUser.current = true;
+              setCollapsed(!collapsed);
+            }}
           >
             <div className="flex w-full items-center justify-between">
               <ChainOfThoughtStep

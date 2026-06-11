@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
@@ -24,7 +24,11 @@ from langchain_core.runnables import RunnableConfig
 from deerflow.agents.thread_state import SandboxState, ThreadDataState, ThreadState
 from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
+from deerflow.subagents.handoff_schemas import ChartMakerHandoff, CodeExecutorHandoff, ReportWriterHandoff
 from deerflow.subagents.token_collector import SubagentTokenCollector
+
+if TYPE_CHECKING:
+    from deerflow.tools.builtins.tool_search import DeferredToolSetup
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +264,309 @@ def _validate_handoff_emitted(
         f"REQUIRED by downstream subagents. Lead should re-dispatch this task "
         f"with an explicit reminder to invoke the seal tool at the end."
     )
+
+
+# ---------------------------------------------------------------------------
+# Spec C → Spec A: seal-resume 失败后的确定性 auto-seal 兜底。
+#
+# 当 subagent 完成了实质产出但漏调 seal 工具时，harness 用已有产出确定性构造
+# handoff，不再依赖 LLM "记得调工具"。
+#
+# report-writer / chart-maker: 核心字段从 outputs/ 下的文件机械推导（Spec C）。
+# code-executor: metrics_summary 从 m_*.json + plan_metrics.json + groups.json
+#   机械重建 + 完整性对账（Spec A, 推翻"认知产物不能重建"假设）。
+# data-analyst: 判读结论无文件来源，永不 auto-seal（维持 FAILED）。
+# ---------------------------------------------------------------------------
+
+# Spec C+A: subagent → handoff filename 映射。
+# report-writer / chart-maker: 核心字段从 outputs/ 下文件确定性推导（Spec C）。
+# code-executor: metrics_summary 从 m_*.json + plan_metrics.json 机械重建（Spec A）。
+# data-analyst: 判读结论无文件来源，永不在此列表。
+_AUTO_SEALABLE: dict[str, str] = {
+    "report-writer": "handoff_report_writer.json",
+    "chart-maker": "handoff_chart_maker.json",
+    "code-executor": "handoff_code_executor.json",
+}
+
+
+def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | None) -> bool:
+    """seal-resume 失败后的确定性兜底。返回 True=已 auto-seal，False=无法兜底（维持 FAILED）。
+
+    report-writer / chart-maker: handoff 核心字段（report_path / chart_files）
+    可从 outputs/ 下的文件确定性推导（Spec C）。
+
+    code-executor: metrics_summary 从 m_*.json + plan_metrics.json + groups.json
+    机械重建，并以 plan 期望集对账磁盘产出做完整性判据（Spec A）：
+    - 期望 = 实际 → status=completed
+    - 有缺失 → status=partial，缺失项列 errors
+
+    data-analyst: 判读结论无文件来源，永不 auto-seal。
+
+    ROBUSTNESS (Spec C §2.4): 绝不抛异常。调用点在 executor try/except 内，
+    任何异常 → 返回 False → 外层走 FAILED。
+
+    Args:
+        subagent_name: SubagentConfig.name, e.g. "report-writer".
+        workspace_path: Host-side workspace dir from thread_data["workspace_path"].
+            None when ThreadDataMiddleware didn't set it.
+
+    Returns:
+        True  -> handoff 已确定性构造并写入 workspace。
+        False -> subagent 不在白名单 / 无产出文件 / workspace 不可用 / 异常。
+    """
+    if subagent_name not in _AUTO_SEALABLE or not workspace_path:
+        return False
+
+    try:
+        import json
+
+        # 惰性 import：seal_handoff_tools 与本模块（经 subagents/__init__ →
+        # handoff_schemas）构成导入环，顶层 import 会在生产启动时触发
+        # "partially initialized module" ImportError，使 Gateway 起不来。
+        # 放函数体内推迟到运行时导入即可解环（CLAUDE.md 惰性 import 约定）。
+        from deerflow.tools.builtins.seal_handoff_tools import _seal_handoff_to_workspace
+
+        ws = Path(workspace_path)
+        handoff_filename = _AUTO_SEALABLE[subagent_name]
+        handoff_path = ws / handoff_filename
+
+        # 保险：已有非空 handoff 文件 → 不覆盖（不该到这，防御性）
+        if handoff_path.exists() and handoff_path.stat().st_size > 0:
+            return False
+
+        # outputs 目录：thread 的 user-data/outputs（workspace 是 user-data/workspace，同级）
+        outputs = ws.parent / "outputs"
+
+        if subagent_name == "report-writer":
+            report = outputs / "report.md"
+            if not report.exists() or report.stat().st_size == 0:
+                return False  # 没产出 → 不兜底
+
+            # 确定性构造：report_path + 从 markdown 标题解析 sections_written
+            text = report.read_text(encoding="utf-8")
+            sections = [
+                ln.lstrip("#").strip()
+                for ln in text.splitlines()
+                if ln.strip().startswith("#")
+            ]
+            payload = {
+                "status": "completed",
+                "report_path": "/mnt/user-data/outputs/report.md",
+                "sections_written": sections or ["（harness auto-seal：未能解析标题）"],
+                "errors": [
+                    "harness auto-seal: report-writer 完成报告产出但未调用 "
+                    "seal_report_writer_handoff 工具；handoff 由 harness 依据 "
+                    "outputs/report.md 确定性构造"
+                ],
+                "gate_signals": None,
+            }
+            _seal_handoff_to_workspace(
+                ReportWriterHandoff, handoff_filename, payload, ws,
+            )
+            return True
+
+        elif subagent_name == "chart-maker":
+            if not outputs.exists():
+                return False
+            charts = sorted(p.name for p in outputs.glob("plot_*.png"))
+            if not charts:
+                return False
+
+            # 虚拟路径前缀（ChartMakerHandoff schema 校验要求 /mnt/user-data/outputs/ 前缀）
+            chart_paths = [f"/mnt/user-data/outputs/{c}" for c in charts]
+
+            # 尝试从 code_executor handoff 读 paradigm（chart-maker schema paradigm 必填）
+            paradigm = ""
+            ce_path = ws / "handoff_code_executor.json"
+            if ce_path.exists():
+                try:
+                    ce = json.loads(ce_path.read_text(encoding="utf-8"))
+                    paradigm = ce.get("paradigm", "")
+                except Exception:
+                    pass
+
+            payload = {
+                "status": "completed",
+                "paradigm": paradigm,
+                "summary": "harness auto-seal：图表已生成但 subagent 未调用 seal_chart_maker_handoff 工具",
+                "chart_files": chart_paths,
+                "failed_charts": [],
+                "gate_signals": None,
+            }
+            _seal_handoff_to_workspace(
+                ChartMakerHandoff, handoff_filename, payload, ws,
+            )
+            return True
+
+        elif subagent_name == "code-executor":
+            # Spec A: 从 m_*.json + plan_metrics.json + groups.json 机械重建 handoff。
+            # 核心假设（已核实）：plan 阶段就构造好了期望输出绝对路径，
+            # 结果文件按命名约定落盘（m_<id>.json / m_<id>_s<idx>.json），
+            # 值就在命名 JSON 里 → 可重建。
+            plan_path = ws / "plan_metrics.json"
+            if not plan_path.exists():
+                return False
+
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            except Exception:
+                return False
+
+            plan_metrics = plan.get("metrics", [])
+            if not plan_metrics:
+                return False
+
+            # 枚举 plan 期望集（expected output filenames）
+            expected: set[str] = set()
+            metric_id_to_entry: dict[str, dict] = {}
+            for m in plan_metrics:
+                output = m.get("output", "")
+                if output:
+                    fname = Path(output).name
+                    expected.add(fname)
+                    metric_id_to_entry[fname] = m
+
+            if not expected:
+                return False  # plan 里没有 output → 无法对账
+
+            # glob 实际 m_*.json
+            actual: set[str] = set()
+            for f in ws.glob("m_*.json"):
+                actual.add(f.name)
+
+            # 完整性判据（Spec A 承重）
+            missing = expected - actual
+            status = "completed" if not missing else "partial"
+
+            # 读 groups.json
+            groups: dict[str, str] = {}
+            groups_path = ws / "groups.json"
+            if groups_path.exists():
+                try:
+                    groups = json.loads(groups_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            # 从 plan 取 inputs.raw_files 做 subject_index → subject_file 映射
+            raw_files: list[str] = []
+            plan_inputs = plan.get("inputs", {})
+            if isinstance(plan_inputs, dict):
+                raw_files = plan_inputs.get("raw_files", []) or []
+
+            # 读每个存在的 m_*.json，重建 metrics_summary + per_subject
+            metrics_summary: dict[str, dict[str, dict]] = {}
+            per_subject: dict[str, dict[str, Any]] = {}
+            output_files_metrics: list[str] = []
+            data_quality_warnings: list[dict] = []
+            errors: list[str] = []
+
+            for fname in sorted(actual):
+                fpath = ws / fname
+                try:
+                    mdata = json.loads(fpath.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+
+                metric_name = mdata.get("metric", "")
+                value = mdata.get("value")
+                params = mdata.get("parameters_used", {}) or {}
+
+                entry = metric_id_to_entry.get(fname, {})
+                subject_index = entry.get("subject_index", 0)
+                subject_file = raw_files[subject_index] if subject_index < len(raw_files) else f"subject_{subject_index}"
+                subject_name = Path(subject_file).stem
+                group_name = groups.get(subject_file, groups.get(Path(subject_file).name, "unknown"))
+
+                # per_subject
+                if subject_name not in per_subject:
+                    per_subject[subject_name] = {}
+                per_subject[subject_name][metric_name] = value
+
+                # metrics_summary (group → metric → MetricStat)
+                if group_name not in metrics_summary:
+                    metrics_summary[group_name] = {}
+                if metric_name not in metrics_summary[group_name]:
+                    metrics_summary[group_name][metric_name] = {
+                        "mean": value,
+                        "std": None,
+                        "n": 1,
+                        "parameters_used": params,
+                    }
+                else:
+                    # 同 group 同 metric 多 subject → 简单聚合
+                    existing = metrics_summary[group_name][metric_name]
+                    existing["n"] = (existing.get("n") or 0) + 1
+
+                output_files_metrics.append(f"/mnt/user-data/workspace/{fname}")
+
+            # 缺失项列 errors（Spec A 完整性判据）
+            if missing:
+                for mf in sorted(missing):
+                    entry = metric_id_to_entry.get(mf, {})
+                    mid = entry.get("id", mf)
+                    si = entry.get("subject_index", "?")
+                    errors.append(
+                        f"harness auto-seal: 期望产出 {mf} (metric_id={mid}, "
+                        f"subject_index={si}) 未在 workspace 中找到"
+                    )
+                data_quality_warnings.append({
+                    "severity": "critical",
+                    "code": "METHOD.AUTO_SEAL_INCOMPLETE",
+                    "metric": "all",
+                    "message": (
+                        f"harness auto-seal: {len(missing)}/{len(expected)} 期望产物缺失，"
+                        f"handoff 标为 partial"
+                    ),
+                    "evidence": {"missing_count": len(missing), "expected_count": len(expected)},
+                    "blocks_downstream": True,
+                })
+
+            # 读 paradigm / ev19_template
+            paradigm = plan.get("paradigm", "")
+            ev19_template = plan.get("ev19_template")
+
+            payload = {
+                "status": status,
+                "summary": (
+                    f"harness auto-seal：机械重建，{len(actual)}/{len(expected)} 指标产出，"
+                    f"status={status}"
+                ),
+                "paradigm": paradigm,
+                "ev19_template": ev19_template,
+                "metrics_summary": metrics_summary,
+                "per_subject": per_subject,
+                "inputs": {
+                    "raw_files": raw_files,
+                    "groups": groups,
+                },
+                "output_files": {"metrics": output_files_metrics},
+                "data_quality_warnings": data_quality_warnings,
+                "errors": errors,
+                "confidence": None,
+                "gate_signals": None,
+                "sealed_by": "framework_rebuild",
+            }
+            _seal_handoff_to_workspace(
+                CodeExecutorHandoff, handoff_filename, payload, ws,
+            )
+
+            # 结构化日志：触发率可观测（Spec A 验收项 V1）
+            logger.warning(
+                "[auto_seal] code-executor sealed_by=framework_rebuild "
+                "status=%s actual=%d expected=%d missing=%d",
+                status, len(actual), len(expected), len(missing),
+            )
+            return True
+
+        else:
+            return False
+
+    except Exception:
+        logger.exception(
+            "[auto_seal] Subagent %s: auto-seal failed; falling back to FAILED",
+            subagent_name,
+        )
+        return False
 
 
 class SubagentStatus(Enum):
@@ -610,7 +917,7 @@ class SubagentExecutor:
         )
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
-    def _build_middlewares(self) -> list[AgentMiddleware]:
+    def _build_middlewares(self, *, deferred_setup: "DeferredToolSetup | None" = None) -> list[AgentMiddleware]:
         """Build the subagent's middleware chain.
 
         Split out from ``_create_agent`` so callers can inspect the chain (e.g.,
@@ -620,7 +927,7 @@ class SubagentExecutor:
         from deerflow.agents.middlewares.tool_error_handling_middleware import build_subagent_runtime_middlewares
 
         # Reuse shared middleware composition with lead agent.
-        middlewares = build_subagent_runtime_middlewares(lazy_init=True)
+        middlewares = build_subagent_runtime_middlewares(lazy_init=True, deferred_setup=deferred_setup)
 
         # Attach HandoffIsolationProvider so subagent's read_file on
         # handoff_*.json files is gated by lead's {{handoff://}} authorization.
@@ -648,14 +955,26 @@ class SubagentExecutor:
             passport=f"subagent:{self.config.name}",
         ))
 
+        # Loop detection per subagent run — fresh instance each call
+        # avoids thread_id-based history pollution with lead agent.
+        from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
+
+        middlewares.append(LoopDetectionMiddleware(
+            tool_freq_warn=30,
+            tool_freq_hard_limit=50,
+        ))
+
         return middlewares
 
-    def _create_agent(self, tools: list[BaseTool] | None = None):
+    def _create_agent(self, tools: list[BaseTool] | None = None, *, deferred_setup: "DeferredToolSetup | None" = None):
         """Create the agent instance.
 
         Args:
             tools: Optional tool list to override ``self.tools`` (e.g., after
                 applying skill-allowed-tools filtering in ``_build_initial_state``).
+            deferred_setup: Deferred MCP tool names + catalog hash from
+                ``assemble_deferred_tools``; passed through to the subagent's
+                DeferredToolFilterMiddleware. ``None`` is a no-op.
 
         Side effect: caches the built middleware chain on ``self._last_middlewares``
         so ``_aexecute`` can size LangGraph's ``recursion_limit`` against the actual
@@ -666,7 +985,7 @@ class SubagentExecutor:
         # 按 subagent config 决定是否开 think：洞察型 subagent（data-analyst）开，执行型关
         model = create_chat_model(name=model_name, thinking_enabled=self.config.thinking_enabled)
 
-        middlewares = self._build_middlewares()
+        middlewares = self._build_middlewares(deferred_setup=deferred_setup)
         self._last_middlewares = middlewares
 
         # A-10: system_prompt is injected as a SystemMessage in the initial
@@ -683,7 +1002,7 @@ class SubagentExecutor:
             state_schema=ThreadState,
         )
 
-    def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool]]:
+    def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool], Any]:
         """Build the initial state for agent execution.
 
         Combines the subagent's system_prompt with any skill content into a
@@ -694,10 +1013,16 @@ class SubagentExecutor:
             task: The task description.
 
         Returns:
-            Tuple of (initial_state, filtered_tools) — filtered_tools mirrors
-            the upstream contract; locally we have no skill-allowed-tools
-            policy, so it always equals ``self.tools``.
+            Tuple of (initial_state, final_tools, deferred_setup) — final_tools
+            includes tool_search when MCP deferral applies; deferred_setup is
+            consumed by ``_create_agent`` so the agent build and the injected
+            ``<available-deferred-tools>`` section share one catalog/hash.
         """
+        # Lazy import: importing tool_search runs tools/builtins/__init__, which
+        # would re-enter this package during its own initialization (circular
+        # import). Same pattern as the lead agent.
+        from deerflow.tools.builtins.tool_search import assemble_deferred_tools, get_deferred_tools_prompt_section
+
         system_parts: list[str] = []
         if self.config.system_prompt:
             system_parts.append(self.config.system_prompt)
@@ -705,6 +1030,16 @@ class SubagentExecutor:
             skill_sections = _load_skill_contents(self.config.skills)
             if skill_sections:
                 system_parts.append(skill_sections)
+
+        # Assemble deferred tools AFTER any skill-based tool filtering.
+        # The tool_search helper's catalog is built from the already-filtered
+        # tool list, so it can never surface a tool that was denied upstream.
+        from deerflow.config import get_app_config
+        enabled = get_app_config().tool_search.enabled
+        final_tools, deferred_setup = assemble_deferred_tools(self.tools, enabled=enabled)
+        deferred_section = get_deferred_tools_prompt_section(deferred_names=deferred_setup.deferred_names)
+        if deferred_section:
+            system_parts.append(deferred_section)
 
         messages: list[Any] = []
         if system_parts:
@@ -721,7 +1056,7 @@ class SubagentExecutor:
         if self.thread_data is not None:
             state["thread_data"] = self.thread_data
 
-        return state, self.tools
+        return state, final_tools, deferred_setup
 
     async def _attempt_seal_resume(
         self,
@@ -749,7 +1084,7 @@ class SubagentExecutor:
         # 不要解释"之类反向激活词（CLAUDE.md §6 deepseek 正面提示原则）。
         resume_prompt = (
             f"你上面的分析已经完成。现在请调用 {seal_tool} 工具，"
-            f"把你刚才得出的结论（key_findings / 各结构化字段）填入工具参数并落库。"
+            f"把你刚才得出的各结构化字段填入工具参数并落库。"
             f"这是完成本次任务的最后一步——调用该工具后任务即完成。"
         )
         try:
@@ -844,8 +1179,8 @@ class SubagentExecutor:
 
         collector: SubagentTokenCollector | None = None
         try:
-            state, filtered_tools = self._build_initial_state(task)
-            agent = self._create_agent(filtered_tools)
+            state, final_tools, deferred_setup = self._build_initial_state(task)
+            agent = self._create_agent(final_tools, deferred_setup=deferred_setup)
             middlewares = getattr(self, "_last_middlewares", None)
 
             # Token collector for subagent LLM calls — records flow into
@@ -1046,14 +1381,26 @@ class SubagentExecutor:
                     result.token_usage_records = collector.snapshot_records()
 
             if _handoff_error is not None:
-                logger.warning(
-                    "[trace=%s] Subagent %s terminated without emitting handoff "
-                    "(seal-resume did not recover): %s",
-                    self.trace_id,
-                    self.config.name,
-                    _handoff_error,
+                # Spec C: seal-resume 仍失败 → 在判 FAILED 前，尝试确定性 auto-seal。
+                # 仅对"handoff 核心字段可从产出文件机械推导"的 subagent（report-writer/
+                # chart-maker）生效；code-executor/data-analyst 的认知产物无法重建，跳过。
+                _auto_sealed = _attempt_auto_seal_from_artifacts(
+                    self.config.name, _workspace,
                 )
-                result.try_set_terminal(SubagentStatus.FAILED, error=_handoff_error)
+                if _auto_sealed:
+                    logger.warning(
+                        "[trace=%s] Subagent %s: seal-resume failed but artifacts "
+                        "exist; harness auto-sealed handoff deterministically.",
+                        self.trace_id, self.config.name,
+                    )
+                    result.try_set_terminal(SubagentStatus.COMPLETED)
+                else:
+                    logger.warning(
+                        "[trace=%s] Subagent %s terminated without emitting handoff "
+                        "(seal-resume did not recover, no artifacts to auto-seal): %s",
+                        self.trace_id, self.config.name, _handoff_error,
+                    )
+                    result.try_set_terminal(SubagentStatus.FAILED, error=_handoff_error)
             else:
                 result.try_set_terminal(SubagentStatus.COMPLETED)
 

@@ -7,6 +7,7 @@ and "分析区中(...)".
 
 from __future__ import annotations
 
+import fnmatch
 import re
 
 # ============================================================================
@@ -94,6 +95,8 @@ def _slugify(text: str) -> str:
         "开放臂": "open_arms",
         "封闭臂": "closed_arms",
         "闭合臂": "closed_arms",
+        "中央区": "center",
+        "中心区": "center",
         "轮替": "alternation",
         "最大轮替次数": "max_alternation",
         "直接再次逗留次数": "direct_revisit",
@@ -112,6 +115,9 @@ def _slugify(text: str) -> str:
         "活跃": "mobile",
         "静止": "immobile",
         "到墙壁距离": "distance_to_wall",
+        # EthoVision 中文版 mobility/activity state 列名
+        "活动状态": "mobility_state",
+        "活动": "activity",
     }
     for cn, en in subs.items():
         text = text.replace(cn, en)
@@ -125,6 +131,23 @@ def _slugify(text: str) -> str:
     return text.lower()
 
 
+# Zone identifiers that appear as direct column prefixes when the user
+# defined zones in EthoVision but didn't check "In zone" in export settings.
+# "开放臂(开放臂1 / 中心点)" → "in_zone_open_arms_open_arms1_center"
+_ZONE_PREFIX_TOKENS: set[str] = {
+    "开放臂", "封闭臂", "闭合臂", "中央区",
+    "Open arms", "Closed arms", "Center",
+}
+
+
+def _is_zone_prefix_column(name: str) -> bool:
+    """Check if `name` starts with a known zone identifier followed by `(`."""
+    for prefix in _ZONE_PREFIX_TOKENS:
+        if name.startswith(prefix + "("):
+            return True
+    return False
+
+
 def normalize_column_name(raw_name: str) -> str:
     """Normalize a raw EthoVision column name to English snake_case.
 
@@ -132,7 +155,8 @@ def normalize_column_name(raw_name: str) -> str:
     1. Strip quotes and whitespace
     2. Try exact match in COLUMN_MAP
     3. Try dynamic pattern matching
-    4. Fall back to slugify
+    4. Try zone-prefix detection (e.g. "开放臂(开放臂1 / 中心点)")
+    5. Fall back to slugify
     """
     name = raw_name.strip().strip('"').strip()
     if not name:
@@ -150,6 +174,14 @@ def normalize_column_name(raw_name: str) -> str:
                 suffix = _slugify(m.group(1))
                 return f"{prefix}_{suffix}"
             return prefix
+
+    # Zone-prefix detection: e.g. "开放臂(开放臂1 / 中心点)" → "in_zone_open_arms_open_arms1_center"
+    if _is_zone_prefix_column(name):
+        # Split at first '(': zone_prefix = "开放臂", detail = "开放臂1 / 中心点)"
+        idx = name.index("(")
+        zone_part = name[:idx]
+        detail = name[idx:]  # includes the parentheses
+        return f"in_zone_{_slugify(zone_part)}_{_slugify(detail)}"
 
     # Fallback: slugify the whole name
     return _slugify(name)
@@ -197,6 +229,102 @@ PARADIGM_KEYWORDS: dict[str, list[str]] = {
     "fear_conditioning": ["fear conditioning", "恐惧条件"],
     "t_maze": ["t maze", "t迷宫"],
 }
+
+
+# ============================================================================
+# Column confidence assessment — L1 固定列（normalize 后）
+# ============================================================================
+
+# L1 fixed columns: always recognised regardless of paradigm.
+# These are the seven core EthoVision columns + common movement/morphology
+# columns that COLUMN_MAP already covers. Used by assess_column_confidence
+# only for rule (c) — NOT a second column catalog.
+_FIXED_COLUMNS: frozenset[str] = frozenset(
+    {
+        "trial_time",
+        "recording_time",
+        "x_center",
+        "y_center",
+        "x_nose",
+        "y_nose",
+        "x_tail",
+        "y_tail",
+        "distance_moved",
+        "velocity",
+        "heading",
+        "body_area",
+        "area_change",
+        "elongation",
+        "result_1",
+        "result_2",
+        "train",
+    }
+)
+
+
+def assess_column_confidence(
+    raw_columns: list[str],
+    required_patterns: list[str] | None = None,
+) -> dict:
+    """Assess whether the system recognises each raw column name.
+
+    Used by inspect_uploaded_file to decide which columns trigger HITL
+    column-semantics alignment. The function is a pure, deterministic
+    computation — no LLM involvement (D 触发闸门客观可算).
+
+    Args:
+        raw_columns: Raw column names from the uploaded file.
+        required_patterns: Catalog ``requires_columns`` patterns (fnmatch
+            globs), deduplicated across all metrics. Used for rule (b).
+            When empty/None, only rules (a) and (c) apply — unrecognized
+            columns are conservatively NOT reported (avoids false positives
+            on standard data).
+
+    Returns:
+        {
+          "recognized":   [{"raw": str, "normalized": str}, ...],
+          "unrecognized": [{"raw": str, "normalized": str}, ...],
+        }
+
+    Recognition rules (satisfying any ONE is sufficient):
+      (a) raw in COLUMN_MAP (exact match)
+      (b) normalize_column_name(raw) matches a required_pattern (fnmatch glob)
+      (c) normalize result is in _FIXED_COLUMNS
+      Otherwise → unrecognized.
+    """
+    recognized: list[dict[str, str]] = []
+    unrecognized: list[dict[str, str]] = []
+
+    patterns = required_patterns or []
+
+    for raw in raw_columns:
+        entry = {"raw": raw, "normalized": normalize_column_name(raw)}
+        norm = entry["normalized"]
+
+        # Rule (a): exact hit in COLUMN_MAP
+        if raw in COLUMN_MAP:
+            recognized.append(entry)
+            continue
+
+        # Rule (b): normalized name matches a catalog requires_columns glob
+        # NOTE: `patterns` must be a flat list[str] (not raw CNF requires_columns
+        # with list items).  The sole production caller (_extract_required_patterns
+        # in inspect_uploaded_file_tool.py) flattens via _flatten_requires_columns
+        # before passing patterns here.  New callers that feed raw CNF directly
+        # will hit TypeError (unhashable list in fnmatch lru_cache).
+        if patterns:
+            if any(fnmatch.fnmatchcase(norm, pat) for pat in patterns):
+                recognized.append(entry)
+                continue
+
+        # Rule (c): normalized name is a known L1 fixed column
+        if norm in _FIXED_COLUMNS:
+            recognized.append(entry)
+            continue
+
+        unrecognized.append(entry)
+
+    return {"recognized": recognized, "unrecognized": unrecognized}
 
 
 def detect_paradigm(experiment_name: str) -> str | None:

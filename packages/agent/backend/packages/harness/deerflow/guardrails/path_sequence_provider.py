@@ -1,4 +1,4 @@
-"""PathSequenceProvider — 校验 task() 派遣顺序是否符合 path_registry.PATHS + plan 就绪前置条件。
+"""PathSequenceProvider — 校验 task() 派遣的显式前置条件是否满足。
 
 堵诊断「洞 1」：跳过 data-analyst 直接 task(chart-maker) 无人拦。
 堵诊断「洞 2」：无 plan_metrics.json / handoff_code_executor.json 就派遣 subagent。
@@ -11,18 +11,21 @@
    - 缺失 → deny，含明确指令
 3. 从 messages 提取 latest [intent]
 4. 查 PATHS[intent]，找出本次 task(subagent_type=X) 中 X 的位置
-5. 校验 X 之前的所有 dispatch step 对应的 handoff 都已落盘
-6. 若有前序 dispatch step 的 handoff 缺失 → deny，含明确指令
+5. 校验 X 声明的 Step.prerequisites 中的 handoff 都已落盘
+   （显式前置条件，非"所有前序 dispatch"——chart-maker 只需 code-executor，
+   不需要 data-analyst）
+6. 有显式前置条件缺失 → deny，含明确指令
 7. Fail-open：workspace/context 不可用时 allow
 
 与 TaskHandoffAuthorizationProvider 的区别（必须说清）：
 - 后者校验"prompt 里有没有写 {{handoff://X}} 占位符"（依赖声明）
-- PathSequenceProvider 校验"路径中 X 的前序 dispatch 是否真完成了"（顺序事实）
+- PathSequenceProvider 校验"路径中 X 声明的前置 subagent 是否真完成了"（显式依赖）
 - 两者正交
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -126,6 +129,48 @@ def _check_plan_precondition(
     return None
 
 
+def _is_single_subject_run(workspace: str) -> bool:
+    """n<2 判定：读 handoff_code_executor.json，任一组最大 n < 2 → True。
+
+    数据源理由：groups.json/plan_metrics.json 在本场景为空/无 n 字段；
+    handoff_code_executor.json 在 chart-maker/report-writer 被拦时一定已存在
+    （它是这两者的 plan precondition），且含可靠的 per_subject + metrics_summary.n。
+    Fails open（返回 False = 不放宽）当文件缺失/解析失败/无 n 信号——
+    即拿不准时维持保守行为，不误放行。
+
+    注意：此函数不再被 path_sequence 的显式 prerequisite 检查直接调用
+    （chart-maker 的 prerequisite 只有 code-executor，不依赖 data-analyst），
+    但保留供 lead prompt fast-path 判定、其他 guardrail、及未来 n=1 感知场景使用。
+    """
+    try:
+        p = Path(workspace) / "handoff_code_executor.json"
+        if not p.exists() or p.stat().st_size == 0:
+            return False
+        data = json.loads(p.read_text(encoding="utf-8"))
+        # 优先 per_subject 长度
+        per_subject = data.get("per_subject") or {}
+        if isinstance(per_subject, dict) and len(per_subject) >= 2:
+            return False
+        # 再看 metrics_summary 各组 n 的最大值
+        ms = data.get("metrics_summary") or {}
+        max_n = 0
+        for _group, metrics in ms.items():
+            if not isinstance(metrics, dict):
+                continue
+            for _metric, stats in metrics.items():
+                if isinstance(stats, dict) and isinstance(stats.get("n"), int):
+                    max_n = max(max_n, stats["n"])
+        # per_subject 给了 1，或 metrics 给了 max_n<2 → 单 subject
+        if len(per_subject) == 1 or (max_n == 1):
+            return True
+        # per_subject 空 + 无 n 信号 → 拿不准，fail open
+        if not per_subject and max_n == 0:
+            return False
+        return max_n < 2
+    except Exception:
+        return False
+
+
 class PathSequenceProvider:
     """Block task(X) when preceding dispatch steps in the path haven't completed.
 
@@ -184,17 +229,17 @@ class PathSequenceProvider:
         if not workspace:
             return GuardrailDecision(allow=True)
 
-        # Verify all preceding dispatch steps have completed (handoff file exists)
+        # Verify explicit prerequisites (not "all preceding dispatch steps").
+        # Each dispatch step declares which subagents it depends on via
+        # Step.prerequisites. chart-maker only needs code-executor, not data-analyst.
         missing: list[str] = []
-        for i in range(target_idx):
-            step = steps[i]
-            if step.kind != "dispatch":
-                continue
-            # Check if the handoff file exists for this subagent
-            handoff_name = to_handoff_name(step.target)
-            handoff_path = Path(workspace) / f"handoff_{handoff_name}.json"
-            if not handoff_path.exists():
-                missing.append(step.target)
+        step_prereqs = steps[target_idx].prerequisites
+        if step_prereqs:
+            for prereq_name in step_prereqs:
+                handoff_name = to_handoff_name(prereq_name)
+                handoff_path = Path(workspace) / f"handoff_{handoff_name}.json"
+                if not handoff_path.exists():
+                    missing.append(prereq_name)
 
         if not missing:
             return GuardrailDecision(allow=True)

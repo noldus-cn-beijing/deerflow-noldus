@@ -44,6 +44,15 @@ export default function ChatPage() {
     setMounted(true);
   }, []);
 
+  // Reset welcome dismissal when navigating to a new thread so the
+  // Welcome component is shown (Next.js reuses the same component
+  // instance across [thread_id] route changes, so state survives).
+  useEffect(() => {
+    if (isNewThread) {
+      setWelcomeDismissed(false);
+    }
+  }, [isNewThread]);
+
   const { showNotification } = useNotification();
 
   const { thread: streamThread, sendMessage, isUploading, mergedMessageRunIds: messageRunIds } = useThreadStream({

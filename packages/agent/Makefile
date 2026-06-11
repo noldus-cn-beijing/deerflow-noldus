@@ -1,6 +1,6 @@
 # DeerFlow - Unified Development Environment
 
-.PHONY: help config config-upgrade check install dev dev-daemon start start-daemon stop up down clean docker-init docker-start docker-stop docker-logs docker-logs-frontend docker-logs-gateway deploy-tar
+.PHONY: help config config-upgrade check install dev dev-daemon start start-daemon stop up down clean docker-init docker-start docker-stop docker-logs docker-logs-frontend docker-logs-gateway deploy-tar gen-references
 
 BASH ?= bash
 
@@ -31,6 +31,7 @@ help:
 	@echo "  make down            - Stop and remove production Docker containers"
 	@echo "  make deploy-tar      - Build locally, ship image tar to remote (no registry)"
 	@echo "                         requires DEPLOY_HOST/DEPLOY_PATH/DEPLOY_CONFIG/DEPLOY_EXTENSIONS"
+	@echo "  make gen-references   - Regenerate concept menus and other derived docs from catalog"
 	@echo ""
 	@echo "Docker Development Commands:"
 	@echo "  make docker-init     - Pull the sandbox image"
@@ -192,3 +193,19 @@ down:
 # See scripts/deploy-via-tar.sh for the full env reference.
 deploy-tar:
 	@./scripts/deploy-via-tar.sh
+
+# ==========================================
+# Code Generation
+# ==========================================
+
+# Regenerate derived documentation from catalog (concept menus, etc.).
+# Run after changing catalog YAML; CI staleness check verifies this was done.
+gen-references:
+	@echo "Regenerating concept menus from catalog..."
+	@cd backend && .venv/bin/python -m ethoinsight.catalog.concept_menu --style skill \
+		> ../skills/custom/ethoinsight-column-confirmation/references/zone-concepts.generated.md && \
+		.venv/bin/python -m ethoinsight.catalog.concept_menu --style answer-mapping \
+		> ../skills/custom/ethoinsight-column-confirmation/references/zone-concepts-mapping.generated.md && \
+		echo "  zone-concepts.generated.md ✓" && \
+		echo "  zone-concepts-mapping.generated.md ✓"
+	@echo "✓ References regenerated"

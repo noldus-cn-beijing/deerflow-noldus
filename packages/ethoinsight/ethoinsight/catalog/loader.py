@@ -33,10 +33,13 @@ from ethoinsight.catalog.schema import (
     ChartEntry,
     CommonCatalog,
     MetricEntry,
+    ParamBinding,
     ParamSpec,
     ParadigmParameters,
+    ResolvedZoneConcept,
     SharedParameters,
     StatisticsEntry,
+    ZoneConceptParam,
 )
 
 
@@ -150,6 +153,88 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
             wrap_list=wrap_list,
         )
 
+    # Parse zone_concept_params — paradigm-level concept→param mapping
+    zone_concept_params: dict[str, ZoneConceptParam] = {}
+    for concept_key, mapping in raw.get("zone_concept_params", {}).items():
+        if not isinstance(mapping, dict):
+            raise CatalogError(
+                f"{source}: zone_concept_params.{concept_key}: must be a dict, "
+                f"got {type(mapping).__name__}"
+            )
+        param = mapping.get("param", "")
+        if not isinstance(param, str) or not param:
+            raise CatalogError(
+                f"{source}: zone_concept_params.{concept_key}.param: "
+                f"must be a non-empty string"
+            )
+        wrap_list = mapping.get("wrap_list", False)
+        if not isinstance(wrap_list, bool):
+            raise CatalogError(
+                f"{source}: zone_concept_params.{concept_key}.wrap_list: "
+                f"must be bool, got {type(wrap_list).__name__}"
+            )
+        zone_concept_params[concept_key] = ZoneConceptParam(
+            param=param,
+            wrap_list=wrap_list,
+        )
+
+    # 规范化：把 zone_concept_params + anonymous_zone_override(关注点1) 合进统一内部模型。
+    # 与 resolve._build_zone_aliases_overrides Step 1(1a+1b) 逻辑等价，提前到加载期。
+    # 惰性 + 按函数名 import：__init__.py 用同名函数遮蔽了 resolve 子模块（见 spec §2.5），
+    # 且 resolve.py 顶层 import 本 loader——顶层/取模块两种写法都会炸，只此写法可靠。
+    from ethoinsight.catalog.resolve import _derive_concept_from_zone_patterns
+
+    resolved_zone_concepts: dict[str, ResolvedZoneConcept] = {}
+    # 1a: zone_concept_params 每条直接纳入（这些概念都有注入绑定）
+    for concept_key, zcp in zone_concept_params.items():
+        resolved_zone_concepts[concept_key] = ResolvedZoneConcept(
+            concept=concept_key,
+            binding=ParamBinding(param=zcp.param, wrap_list=zcp.wrap_list),
+            source="zone_concept_params",
+        )
+    # 1b: anonymous_zone_override —— target_param 未被 1a 占用时，derive concept 并纳入
+    if anonymous_zone_override is not None:
+        occupied = {
+            rc.binding.param for rc in resolved_zone_concepts.values() if rc.binding is not None
+        }
+        if anonymous_zone_override.target_param not in occupied:
+            zone_patterns: set[str] = set()
+            entries = list(default_metrics) + list(optional_metrics) + list(charts)
+            for entry in entries:
+                # Flatten CNF requires_columns (Stage 1): an item may be a str or a
+                # list[str] OR-group. Inlined flatten so this loop is robust whether or
+                # not Stage 1 has merged (Stage 2 branch has no _flatten_requires_columns).
+                for item in getattr(entry, "requires_columns", []) or []:
+                    sub_patterns = item if isinstance(item, list) else [item]
+                    for pat in sub_patterns:
+                        if pat.startswith("in_zone") and "*" in pat:
+                            zone_patterns.add(pat)
+            azo_concept = _derive_concept_from_zone_patterns(
+                zone_patterns, anonymous_zone_override.target_param
+            )
+            if azo_concept and azo_concept not in resolved_zone_concepts:
+                resolved_zone_concepts[azo_concept] = ResolvedZoneConcept(
+                    concept=azo_concept,
+                    binding=ParamBinding(
+                        param=anonymous_zone_override.target_param,
+                        wrap_list=anonymous_zone_override.wrap_list,
+                    ),
+                    source="anonymous_zone_override",
+                )
+
+    # Stage 3: OFT border — 可对齐但无注入点的概念（Fable 决策门 1 闭合结论）。
+    # border 存在、可被 HITL 认领、但无运行时注入点（oft.py 靠 regex 自动识别 +
+    # 1−center 反推 + 几何三级降级，没有独立的 border_zone compute 参数）。
+    # binding=None 表示此态，Stage 2 resolve 注入循环的 `if rc.binding is None: continue`
+    # 使其不污染任何现有注入输出。
+    if paradigm == "oft":
+        if "border" not in resolved_zone_concepts:
+            resolved_zone_concepts["border"] = ResolvedZoneConcept(
+                concept="border",
+                binding=None,
+                source="explicit_concept",
+            )
+
     return Catalog(
         paradigm=paradigm,
         ev19_templates=ev19_templates,
@@ -159,6 +244,8 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
         statistics_default=statistics_default,
         paradigm_parameters=ParadigmParameters(parameters=paradigm_params_block),
         anonymous_zone_override=anonymous_zone_override,
+        zone_concept_params=zone_concept_params,
+        resolved_zone_concepts=resolved_zone_concepts,
     )
 
 
@@ -236,6 +323,23 @@ def _parse_metric_list(raw: dict, key: str, source: Path) -> list[MetricEntry]:
     return result
 
 
+def _is_cnf_requires_columns(value: object) -> bool:
+    """Returns True if value is a valid CNF requires_columns: list of non-empty str,
+    or non-empty list-of-(non-empty str)."""
+    if not isinstance(value, list):
+        return False
+    for item in value:
+        if isinstance(item, str):
+            if not item:
+                return False
+        elif isinstance(item, list):
+            if not item or not all(isinstance(s, str) and s for s in item):
+                return False
+        else:
+            return False
+    return True
+
+
 def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
     def req(field: str, expected_type: type | tuple) -> Any:
         if field not in item:
@@ -255,10 +359,10 @@ def _parse_metric_entry(item: dict, where: str, source: Path) -> MetricEntry:
             f"{source} {where}: missing 'requires_columns' (use empty list if none)"
         )
     requires_columns = item["requires_columns"]
-    if not isinstance(requires_columns, list) or not all(
-        isinstance(c, str) for c in requires_columns
-    ):
-        raise CatalogError(f"{source} {where}: 'requires_columns' must be list[str]")
+    if not _is_cnf_requires_columns(requires_columns):
+        raise CatalogError(
+            f"{source} {where}: 'requires_columns' must be list of str or list-of-str groups"
+        )
 
     output_unit = req("output_unit", str)
     display_name_zh = req("display_name_zh", str)
@@ -324,9 +428,9 @@ def _parse_chart_list(raw: dict, source: Path) -> list[ChartEntry]:
             )
         needs_groups = bool(it.get("needs_groups", False))
         requires_columns = it.get("requires_columns", []) or []
-        if not isinstance(requires_columns, list) or not all(isinstance(c, str) for c in requires_columns):
+        if not _is_cnf_requires_columns(requires_columns):
             raise CatalogError(
-                f"{source}: charts[{i}] 'requires_columns' must be list[str] if present"
+                f"{source}: charts[{i}] 'requires_columns' must be list of str or list-of-str groups if present"
             )
         out.append(
             ChartEntry(
@@ -428,9 +532,9 @@ def _parse_chart_list_under_key(raw: dict, key: str, source: Path) -> list[Chart
             )
         needs_groups = bool(it.get("needs_groups", False))
         requires_columns = it.get("requires_columns", []) or []
-        if not isinstance(requires_columns, list) or not all(isinstance(c, str) for c in requires_columns):
+        if not _is_cnf_requires_columns(requires_columns):
             raise CatalogError(
-                f"{source}: {key}[{i}] 'requires_columns' must be list[str] if present"
+                f"{source}: {key}[{i}] 'requires_columns' must be list of str or list-of-str groups if present"
             )
         out.append(
             ChartEntry(

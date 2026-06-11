@@ -1,0 +1,155 @@
+{
+  "ev19_template": null,
+  "inputs": {
+    "columns_file": null,
+    "groups_file": null,
+    "raw_files": [
+      "/tmp/stub.csv"
+    ]
+  },
+  "metrics": [
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_center_time_ratio.json",
+        "--parameters-json",
+        "{\"center_zone\": \"in_zone_center\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "中心区时间比例",
+      "id": "center_time_ratio",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在中心区停留时间占总时长的比例，center 越低焦虑样回避越明显",
+      "output": "/tmp/m_center_time_ratio.json",
+      "output_unit": "ratio",
+      "parameters_in_use": {
+        "center_zone": "in_zone_center"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.oft.compute_center_time_ratio",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "比例"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_center_distance_ratio.json",
+        "--parameters-json",
+        "{\"center_zone\": \"in_zone_center\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "中心区移动距离比例",
+      "id": "center_distance_ratio",
+      "input": "/tmp/stub.csv",
+      "one_liner": "中心区移动距离占总移动距离的比例",
+      "output": "/tmp/m_center_distance_ratio.json",
+      "output_unit": "ratio",
+      "parameters_in_use": {
+        "center_zone": "in_zone_center"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.oft.compute_center_distance_ratio",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "比例"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_center_entry_count.json",
+        "--parameters-json",
+        "{\"center_zone\": \"in_zone_center\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "中心区进入次数",
+      "id": "center_entry_count",
+      "input": "/tmp/stub.csv",
+      "one_liner": "进入中心区的累计次数",
+      "output": "/tmp/m_center_entry_count.json",
+      "output_unit": "count",
+      "parameters_in_use": {
+        "center_zone": "in_zone_center"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.oft.compute_center_entry_count",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "次"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_center_time.json",
+        "--parameters-json",
+        "{\"center_zone\": \"in_zone_center\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "中心区时间",
+      "id": "center_time",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在中心区内的累计停留时间",
+      "output": "/tmp/m_center_time.json",
+      "output_unit": "seconds",
+      "parameters_in_use": {
+        "center_zone": "in_zone_center"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.oft.compute_center_time",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "秒"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_center_distance.json",
+        "--parameters-json",
+        "{\"center_zone\": \"in_zone_center\"}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "中心区移动距离",
+      "id": "center_distance",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在中心区内的累计移动距离",
+      "output": "/tmp/m_center_distance.json",
+      "output_unit": "cm",
+      "parameters_in_use": {
+        "center_zone": "in_zone_center"
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.oft.compute_center_distance",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "cm"
+    }
+  ],
+  "notes": [
+    "Data columns: 7; metrics planned: 5; skipped: 0"
+  ],
+  "paradigm": "oft",
+  "schema_version": "1.1",
+  "skipped": [],
+  "statistics": {
+    "id": "groupwise_compare",
+    "input": "/tmp/handoff_code_executor.json",
+    "output": "/tmp/stats.json",
+    "script": "ethoinsight.scripts.oft.run_groupwise_stats",
+    "skip_reason": "condition 'n_per_group >= 2 and n_groups >= 2' not met (n_per_group=None, n_groups=None)"
+  }
+}

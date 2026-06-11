@@ -519,3 +519,51 @@ class TestSealResumePrompt:
             assert expected_tool in last_msg.content, (
                 f"Subagent '{name}': expected '{expected_tool}' in prompt, got: {last_msg.content}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Spec A §4 test #5: seal-resume prompt does NOT contain key_findings for
+# code-executor (A3 — generic wording, no subagent-specific field names).
+# ---------------------------------------------------------------------------
+class TestSealResumePromptNoKeyFindings:
+    """Spec A3: 补轮 prompt 不含 key_findings 等 subagent 专有名词。"""
+
+    def test_resume_prompt_does_not_mention_key_findings(self):
+        """_attempt_seal_resume 的 resume_prompt 不含 key_findings 专有名词。"""
+        mod = _get_real_executor()
+
+        executor = _make_executor(mod, name="code-executor")
+        result = _make_result(mod)
+
+        from langchain_core.messages import AIMessage, HumanMessage
+        ai_msg = AIMessage(content="Work done")
+        final_state = {"messages": [HumanMessage(content="task"), ai_msg]}
+
+        captured_messages = []
+        agent = MagicMock()
+        async def mock_capture(state, *args, **kwargs):
+            captured_messages.extend(state.get("messages", []))
+            yield {"messages": [ai_msg]}
+
+        agent.astream = mock_capture
+
+        async def _run():
+            return await executor._attempt_seal_resume(
+                agent, final_state, MagicMock(), MagicMock(), result, MagicMock(),
+            )
+
+        _run_async(_run())
+
+        last_msg = captured_messages[-1]
+        content = last_msg.content
+        assert "key_findings" not in content, (
+            f"Spec A3: resume prompt for code-executor must not mention "
+            f"'key_findings' (DataAnalyst-specific field), got: {content}"
+        )
+        assert "各结构化字段" in content, (
+            f"Spec A3: resume prompt should use generic wording "
+            f"'各结构化字段', got: {content}"
+        )
+        assert "seal_code_executor_handoff" in content, (
+            f"Expected seal tool name in prompt, got: {content}"
+        )

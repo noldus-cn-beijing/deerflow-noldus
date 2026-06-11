@@ -261,6 +261,9 @@ ssh eth-ecs "echo 'YOUR_SECRET' > /opt/ethoinsight/deer-flow-home/.better-auth-s
 ### Q: 想换公网入口端口 (默认 2026)
 远程 `/opt/ethoinsight/docker/docker-compose.yaml` 的 `nginx.ports` 可改, 或在 ssh 时设 `export PORT=8080`。不过推荐保持 2026, 让 1Panel 反代处理公网端口 (80/443)。
 
+### Q: GATEWAY_WORKERS 应该设多少？
+默认 **1**（单 worker、所有 run 同进程内存、切 thread 重连无 409）。调大（如 `GATEWAY_WORKERS=4`）需先有共享 StreamBridge（Redis 版，上游标 Phase 2 未实现），否则切 thread 再切回会触发 HTTP 409（前端已优雅降级不弹错误 toast，但正在跑的 run 的实时增量看不到）。详见他 spec：`docs/superpowers/specs/2026-06-09-gateway-multiworker-stream-409-fix-spec.md`。
+
 ---
 
 ## 7. 不再使用 ACR / GitHub Actions

@@ -46,6 +46,105 @@ _GROUPING_METADATA_KEYS = (
 _DATA_PREVIEW_N_ROWS = 5
 
 
+def _extract_required_patterns(paradigm: str) -> list[str]:
+    """Extract deduplicated requires_columns patterns from a paradigm's catalog.
+
+    Used by the Sprint 1 column-assessment to decide which custom columns are
+    recognised (match a catalog glob) vs need HITL alignment.
+
+    Returns a flat list[str] (CNF OR-groups are dissolved via _flatten_requires_columns).
+    Callers that pass the result to assess_column_confidence / fnmatch utilities
+    rely on this flattening — feeding raw CNF requires_columns (with list items)
+    into those consumers would raise TypeError (unhashable list).
+    """
+    from ethoinsight.catalog.loader import load_catalog
+    from ethoinsight.catalog.resolve import _flatten_requires_columns
+
+    patterns: set[str] = set()
+    try:
+        cat = load_catalog(paradigm)
+    except Exception:
+        return []
+    for m in list(cat.default_metrics) + list(cat.optional_metrics):
+        patterns.update(_flatten_requires_columns(m.requires_columns))
+    for ch in cat.charts:
+        patterns.update(_flatten_requires_columns(getattr(ch, "requires_columns", [])))
+    return sorted(patterns)
+
+
+def _compute_evidence(raw_column: str, values: list, column_index: int) -> dict[str, Any]:
+    """Per-column objective evidence for an unrecognized column (no guessing).
+
+    Binary (0/1) zone-like columns get an occupancy proportion; numeric columns
+    get min/max/mean. This is shown to the user so THEY decide the column's
+    meaning — the agent never asserts identity from the column name.
+    """
+    import numpy as np
+
+    evidence: dict[str, Any] = {"column_index": column_index}
+    finite = [v for v in values if v is not None]
+    if not finite:
+        evidence["type"] = "empty_or_all_nan"
+        return evidence
+    try:
+        nums = np.array([float(v) for v in finite], dtype=float)
+        nums = nums[np.isfinite(nums)]
+    except (TypeError, ValueError):
+        evidence["type"] = "non_numeric"
+        return evidence
+    if nums.size == 0:
+        evidence["type"] = "empty_or_all_nan"
+        return evidence
+    uniq = set(np.unique(nums).tolist())
+    if uniq <= {0.0, 1.0}:
+        ones = int((nums == 1.0).sum())
+        total = int(nums.size)
+        evidence["type"] = "binary_zone"
+        evidence["proportion_ones"] = round(ones / total, 4) if total > 0 else 0.0
+        evidence["total_rows"] = total
+    else:
+        evidence["type"] = "continuous_or_distance"
+        evidence["min"] = round(float(np.min(nums)), 4)
+        evidence["max"] = round(float(np.max(nums)), 4)
+        evidence["mean"] = round(float(np.mean(nums)), 4)
+    return evidence
+
+
+def _attach_column_assessment(result: dict[str, Any], paradigm: str | None) -> dict[str, Any]:
+    """Layer Sprint 1 column_assessment + open_questions onto an inspect result.
+
+    Uses result["columns"] (already present in dev's txt/csv/single-sheet xlsx
+    paths) + result["data_preview"] (for per-column evidence). No-op when there
+    are no top-level columns (e.g. multi-sheet xlsx — assessment is per-sheet
+    territory left to Sprint 2).
+    """
+    from ethoinsight.utils import assess_column_confidence
+
+    raw_columns = result.get("columns") or []
+    if not raw_columns:
+        return result
+
+    required_patterns = _extract_required_patterns(paradigm) if paradigm else []
+    assessment = assess_column_confidence(raw_columns, required_patterns)
+
+    # Attach per-column evidence to unrecognized entries from data_preview.
+    preview = result.get("data_preview") or {}
+    preview_cols = preview.get("columns") or []
+    preview_rows = preview.get("rows") or []
+    for entry in assessment.get("unrecognized", []):
+        raw = entry["raw"]
+        if raw in preview_cols:
+            idx = preview_cols.index(raw)
+            col_values = [row[idx] for row in preview_rows if idx < len(row)]
+            entry["evidence"] = _compute_evidence(raw, col_values, idx)
+        else:
+            entry["evidence"] = {"type": "column_not_in_preview"}
+
+    result["column_assessment"] = assessment
+    result["open_questions"] = [e["raw"] for e in assessment.get("unrecognized", [])]
+    return result
+
+
 def _compute_anonymous_zone_evidence(df: "pandas.DataFrame") -> dict[str, Any] | None:
     """Compute occupancy ratio evidence for bare in_zone column.
 
@@ -73,14 +172,21 @@ def _compute_anonymous_zone_evidence(df: "pandas.DataFrame") -> dict[str, Any] |
 def inspect_uploaded_file_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
     uploaded_file: str,
+    paradigm: str | None = None,
 ) -> dict[str, Any]:
     """探查单个上传文件的结构与 EV19 元数据,无需 bash。
 
     Lead 在准备 prep_metric_plan 之前调本 tool, 多数情况下可以直接从
     EV19 头部的 Treatment / Dose / Animal ID 字段推断分组, 无需反问用户。
 
+    当传入 paradigm 时, 额外对每列做识别评估 (Sprint 1 列语义对齐): 返回
+    column_assessment (recognized / unrecognized + 每个未识别列的取值证据) 和
+    open_questions (未被系统识别的自定义分析区列名)。open_questions 非空时,
+    lead 应走 ethoinsight-column-confirmation skill 与用户对齐列语义。
+
     Args:
       uploaded_file: 虚拟路径,如 "/mnt/user-data/uploads/foo.xlsx" 或 "/mnt/user-data/uploads/foo.txt"。多文件场景需要分别调用本 tool 探查每个文件。不要传 sheet 后缀(双冒号 sheet_name 形式)，本 tool 会自动列出所有 sheet。
+      paradigm: 可选范式 key (如 "open_field")。提供时用 catalog requires_columns 做列识别评估更准; 不提供则只按 COLUMN_MAP / L1 固定列判定。
 
     Returns:
       status="ok" 时:
@@ -148,11 +254,11 @@ def inspect_uploaded_file_tool(
     # 3. 根据扩展名分派
     ext = Path(real_path).suffix.lower()
     if ext in (".xlsx", ".xls"):
-        return _inspect_excel(uploaded_file, real_path)
+        result = _inspect_excel(uploaded_file, real_path)
     elif ext == ".csv":
-        return _inspect_csv(uploaded_file, real_path)
+        result = _inspect_csv(uploaded_file, real_path)
     elif ext == ".txt":
-        return _inspect_txt(uploaded_file, real_path)
+        result = _inspect_txt(uploaded_file, real_path)
     else:
         return {
             "status": "error",
@@ -162,6 +268,11 @@ def inspect_uploaded_file_tool(
                 f"Supported: .xlsx / .xls / .csv / .txt"
             ),
         }
+
+    # 4. Sprint 1 列语义对齐: layer column_assessment + open_questions onto the result.
+    if isinstance(result, dict) and result.get("status") == "ok":
+        result = _attach_column_assessment(result, paradigm)
+    return result
 
 
 def _extract_grouping_fields(raw_metadata: dict[str, str]) -> dict[str, str]:

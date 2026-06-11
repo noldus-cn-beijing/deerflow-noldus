@@ -459,6 +459,14 @@ class CodeExecutorHandoff(BaseModel):
         default=None,
         description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
+    sealed_by: Literal["model", "framework_rebuild"] = Field(
+        default="model",
+        description=(
+            "Handoff 来源标记。model = subagent 自行调 seal 工具封存（正常路径）；"
+            "framework_rebuild = harness 在 auto-seal 兜底中从 m_*.json 机械重建。"
+            "用于触发率可观测 + 回归探针（Spec A V1/V2 验收项）。"
+        ),
+    )
 
 
 class FailedChart(BaseModel):
@@ -549,7 +557,7 @@ class DataAnalystHandoff(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "partial", "failed"]
     key_findings: list[str] = Field(
         default_factory=list,
         description="1-5 bullet findings surfaced to the user.",
@@ -606,7 +614,7 @@ class ReportWriterHandoff(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "partial", "failed"]
     report_path: str
     sections_written: list[str] = Field(
         default_factory=list,
