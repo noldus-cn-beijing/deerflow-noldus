@@ -10,6 +10,7 @@ from deerflow.runtime.user_context import DEFAULT_USER_ID
 
 INTERNAL_AUTH_HEADER_NAME = "X-DeerFlow-Internal-Token"
 INTERNAL_AUTH_ENV_VAR = "DEER_FLOW_INTERNAL_AUTH_TOKEN"
+INTERNAL_SYSTEM_ROLE = "internal"
 
 
 def _load_internal_auth_token() -> str:
