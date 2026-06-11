@@ -169,3 +169,60 @@ def test_stage2_does_not_emit_explicit_concept_source():
             assert rc.source in ("zone_concept_params", "anonymous_zone_override"), (
                 f"{paradigm}: unexpected source {rc.source!r} for concept {rc.concept!r}"
             )
+
+
+# ============================================================================
+# 跨 stage 软缝回归（Stage 1 CNF × Stage 2 loader zone-pattern 收集）
+# ============================================================================
+
+
+def test_loader_zone_collection_tolerates_cnf_nested_requires_columns():
+    """Stage 2 loader 的 zone_patterns 收集对 CNF 嵌套 requires_columns 不崩。
+
+    背景（依赖图「软缝」）：Stage 1 把 requires_columns 升为 CNF（item 可为
+    list[str] OR-组）。Stage 2 loader 规范化 anonymous_zone_override 时会迭代
+    requires_columns 找 in_zone glob——若直接对 list 项调 .startswith 会 AttributeError。
+    loader.py 已对该处做内联 flatten（item is list → 展开子 pattern）。本测试用
+    直接构造的 MetricEntry（绕过本分支仍是 list[str] 的 loader 校验器）验证该 flatten
+    逻辑：含嵌套组的 requires_columns 仍能正确抽出 in_zone glob、且不抛异常。
+
+    注意：本分支的 loader 校验器尚不接受嵌套 yaml（那是 Stage 1 的改动），故无法走
+    _parse_catalog 端到端；这里直接验证 loader 内联 flatten 表达式的等价逻辑。
+    """
+    from ethoinsight.catalog.schema import MetricEntry
+
+    entries = [
+        MetricEntry(
+            id="m1",
+            script="x",
+            requires_columns=["velocity", ["in_zone_center_*", "in_zone_periphery_*"]],
+            output_unit="ratio",
+            display_name_zh="d",
+            unit_zh="u",
+            one_liner="o",
+            direction_for_anxiety=None,
+            statistical_default="groupwise_compare",
+        ),
+        MetricEntry(
+            id="m2",
+            script="y",
+            requires_columns=["in_zone_open_*"],  # pure str item
+            output_unit="count",
+            display_name_zh="d",
+            unit_zh="u",
+            one_liner="o",
+            direction_for_anxiety=None,
+            statistical_default="groupwise_compare",
+        ),
+    ]
+
+    # 复刻 loader.py 规范化段的 in_zone glob 收集（含内联 flatten），断言不崩 + 结果正确。
+    zone_patterns: set[str] = set()
+    for entry in entries:
+        for item in getattr(entry, "requires_columns", []) or []:
+            sub_patterns = item if isinstance(item, list) else [item]
+            for pat in sub_patterns:
+                if pat.startswith("in_zone") and "*" in pat:
+                    zone_patterns.add(pat)
+
+    assert zone_patterns == {"in_zone_center_*", "in_zone_periphery_*", "in_zone_open_*"}

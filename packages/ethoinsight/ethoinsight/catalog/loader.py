@@ -201,9 +201,14 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
             zone_patterns: set[str] = set()
             entries = list(default_metrics) + list(optional_metrics) + list(charts)
             for entry in entries:
-                for pat in getattr(entry, "requires_columns", []) or []:
-                    if pat.startswith("in_zone") and "*" in pat:
-                        zone_patterns.add(pat)
+                # Flatten CNF requires_columns (Stage 1): an item may be a str or a
+                # list[str] OR-group. Inlined flatten so this loop is robust whether or
+                # not Stage 1 has merged (Stage 2 branch has no _flatten_requires_columns).
+                for item in getattr(entry, "requires_columns", []) or []:
+                    sub_patterns = item if isinstance(item, list) else [item]
+                    for pat in sub_patterns:
+                        if pat.startswith("in_zone") and "*" in pat:
+                            zone_patterns.add(pat)
             azo_concept = _derive_concept_from_zone_patterns(
                 zone_patterns, anonymous_zone_override.target_param
             )
