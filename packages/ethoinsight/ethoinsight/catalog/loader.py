@@ -33,8 +33,10 @@ from ethoinsight.catalog.schema import (
     ChartEntry,
     CommonCatalog,
     MetricEntry,
+    ParamBinding,
     ParamSpec,
     ParadigmParameters,
+    ResolvedZoneConcept,
     SharedParameters,
     StatisticsEntry,
     ZoneConceptParam,
@@ -176,6 +178,45 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
             wrap_list=wrap_list,
         )
 
+    # 规范化：把 zone_concept_params + anonymous_zone_override(关注点1) 合进统一内部模型。
+    # 与 resolve._build_zone_aliases_overrides Step 1(1a+1b) 逻辑等价，提前到加载期。
+    # 惰性 + 按函数名 import：__init__.py 用同名函数遮蔽了 resolve 子模块（见 spec §2.5），
+    # 且 resolve.py 顶层 import 本 loader——顶层/取模块两种写法都会炸，只此写法可靠。
+    from ethoinsight.catalog.resolve import _derive_concept_from_zone_patterns
+
+    resolved_zone_concepts: dict[str, ResolvedZoneConcept] = {}
+    # 1a: zone_concept_params 每条直接纳入（这些概念都有注入绑定）
+    for concept_key, zcp in zone_concept_params.items():
+        resolved_zone_concepts[concept_key] = ResolvedZoneConcept(
+            concept=concept_key,
+            binding=ParamBinding(param=zcp.param, wrap_list=zcp.wrap_list),
+            source="zone_concept_params",
+        )
+    # 1b: anonymous_zone_override —— target_param 未被 1a 占用时，derive concept 并纳入
+    if anonymous_zone_override is not None:
+        occupied = {
+            rc.binding.param for rc in resolved_zone_concepts.values() if rc.binding is not None
+        }
+        if anonymous_zone_override.target_param not in occupied:
+            zone_patterns: set[str] = set()
+            entries = list(default_metrics) + list(optional_metrics) + list(charts)
+            for entry in entries:
+                for pat in getattr(entry, "requires_columns", []) or []:
+                    if pat.startswith("in_zone") and "*" in pat:
+                        zone_patterns.add(pat)
+            azo_concept = _derive_concept_from_zone_patterns(
+                zone_patterns, anonymous_zone_override.target_param
+            )
+            if azo_concept and azo_concept not in resolved_zone_concepts:
+                resolved_zone_concepts[azo_concept] = ResolvedZoneConcept(
+                    concept=azo_concept,
+                    binding=ParamBinding(
+                        param=anonymous_zone_override.target_param,
+                        wrap_list=anonymous_zone_override.wrap_list,
+                    ),
+                    source="anonymous_zone_override",
+                )
+
     return Catalog(
         paradigm=paradigm,
         ev19_templates=ev19_templates,
@@ -186,6 +227,7 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
         paradigm_parameters=ParadigmParameters(parameters=paradigm_params_block),
         anonymous_zone_override=anonymous_zone_override,
         zone_concept_params=zone_concept_params,
+        resolved_zone_concepts=resolved_zone_concepts,
     )
 
 

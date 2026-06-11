@@ -579,32 +579,14 @@ def _build_zone_aliases_overrides(
     if not column_aliases:
         return {}
 
-    # ── Step 1: 构建 (concept_keyword → param_name, wrap_list) 映射 ──
+    # ── Step 1: 从 catalog 统一内部模型构建 (concept_keyword → param, wrap_list) 映射 ──
     concept_param_map: dict[str, tuple[str, bool]] = {}
+    for concept_key, rc in cat.resolved_zone_concepts.items():
+        if rc.binding is None:
+            continue  # 无注入绑定的概念（如 Stage 3 OFT border）不进 param 路由 —— 语义本身
+        concept_param_map[concept_key] = (rc.binding.param, rc.binding.wrap_list)
 
-    # 1a: zone_concept_params 中的每条直接加入
-    for concept_key, zcp in cat.zone_concept_params.items():
-        concept_param_map[concept_key] = (zcp.param, zcp.wrap_list)
-
-    # 1b: anonymous_zone_override fallback — 其 target_param 未被 zone_concept_params
-    #     中任何条目覆盖时，从 catalog requires_columns 推导 concept keyword
-    azo = cat.anonymous_zone_override
-    if azo is not None:
-        occupied_params = {p for p, _ in concept_param_map.values()}
-        if azo.target_param not in occupied_params:
-            # 从 catalog entries 收集 zone_patterns 用于推导 concept keyword
-            zone_patterns: set[str] = set()
-            entries = list(cat.default_metrics) + list(cat.optional_metrics) + list(cat.charts)
-            for entry in entries:
-                for pat in getattr(entry, "requires_columns", []) or []:
-                    if pat.startswith("in_zone") and "*" in pat:
-                        zone_patterns.add(pat)
-            # 为 azo.target_param 推导一个 concept keyword
-            azo_concept = _derive_concept_from_zone_patterns(
-                zone_patterns, azo.target_param
-            )
-            if azo_concept and azo_concept not in concept_param_map:
-                concept_param_map[azo_concept] = (azo.target_param, azo.wrap_list)
+    azo = cat.anonymous_zone_override  # 仍保留：Step 3 物理列路由分支引用 azo
 
     if not concept_param_map:
         return {}

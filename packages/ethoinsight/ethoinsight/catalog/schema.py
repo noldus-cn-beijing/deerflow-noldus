@@ -128,6 +128,38 @@ class ZoneConceptParam:
 
 
 @dataclass(frozen=True)
+class ParamBinding:
+    """概念的运行时注入绑定（param 与 wrap_list 同生共死）。"""
+
+    param: str
+    wrap_list: bool = False
+
+
+@dataclass(frozen=True)
+class ResolvedZoneConcept:
+    """统一内部 concept 模型（加载期规范化产物）。
+
+    模型本体语义 = 「对齐目标 + 可选的注入绑定」，**不是「注入参数表」**：
+    每个可注入概念必须可对齐，但不是每个可对齐概念必须可注入
+    （Fable 2026-06-11 决策门 1）。
+
+    binding=None 表示「可被 HITL 对齐/认领（消解歧义），但无运行时注入点」——
+    Stage 3 的 OFT border 即此态（脚本靠 regex 自动识别 + 三级降级，不吃注入）。
+    用 ParamBinding | None **整体可空**（非裸 param: str | None），让非法状态
+    （param=None 但 wrap_list 有值）不可表达。
+
+    来源三态（仅记录，不影响消费）：
+      - "zone_concept_params": 直接来自 cat.zone_concept_params（EPM）
+      - "anonymous_zone_override": 由 _derive_concept_from_zone_patterns 规范化（OFT/LDB/ZM）
+      - "explicit_concept": Stage 3 catalog 显式声明的补集概念（border/dark/closed）
+    """
+
+    concept: str
+    binding: ParamBinding | None = None
+    source: str = "zone_concept_params"
+
+
+@dataclass(frozen=True)
 class Catalog:
     paradigm: str
     ev19_templates: list[str]
@@ -140,6 +172,7 @@ class Catalog:
     )
     anonymous_zone_override: AnonymousZoneOverride | None = None
     zone_concept_params: dict[str, ZoneConceptParam] = field(default_factory=dict)
+    resolved_zone_concepts: dict[str, ResolvedZoneConcept] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
