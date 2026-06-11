@@ -1,4 +1,137 @@
 {
-  "error": "resolve() missing 2 required positional arguments: 'raw_files' and 'workspace_dir'",
-  "code": null
+  "ev19_template": null,
+  "inputs": {
+    "columns_file": null,
+    "groups_file": null,
+    "raw_files": [
+      "/tmp/stub.csv"
+    ]
+  },
+  "metrics": [
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_open_zone_time_ratio.json",
+        "--parameters-json",
+        "{\"open_zones\": [\"in_zone_open\"]}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "开放区时间比例",
+      "id": "open_zone_time_ratio",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在开放区停留时间占总时长的比例",
+      "output": "/tmp/m_open_zone_time_ratio.json",
+      "output_unit": "ratio",
+      "parameters_in_use": {
+        "open_zones": [
+          "in_zone_open"
+        ]
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.zero_maze.compute_open_zone_time_ratio",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "比例"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_open_zone_time.json",
+        "--parameters-json",
+        "{\"open_zones\": [\"in_zone_open\"]}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "开放区时间",
+      "id": "open_zone_time",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在开放区的累计停留时间",
+      "output": "/tmp/m_open_zone_time.json",
+      "output_unit": "seconds",
+      "parameters_in_use": {
+        "open_zones": [
+          "in_zone_open"
+        ]
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.zero_maze.compute_open_zone_time",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "秒"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_open_zone_distance.json",
+        "--parameters-json",
+        "{\"open_zones\": [\"in_zone_open\"]}"
+      ],
+      "direction_for_anxiety": "lower_is_anxious",
+      "display_name_zh": "开放区移动距离",
+      "id": "open_zone_distance",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在开放区的累计移动距离",
+      "output": "/tmp/m_open_zone_distance.json",
+      "output_unit": "cm",
+      "parameters_in_use": {
+        "open_zones": [
+          "in_zone_open"
+        ]
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.zero_maze.compute_open_zone_distance",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "cm"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_hesitation_count.json",
+        "--parameters-json",
+        "{\"open_zones\": [\"in_zone_open\"]}"
+      ],
+      "direction_for_anxiety": "higher_is_anxious",
+      "display_name_zh": "犹豫次数",
+      "id": "hesitation_count",
+      "input": "/tmp/stub.csv",
+      "one_liner": "接近边界但未跨入开放区的犹豫行为次数",
+      "output": "/tmp/m_hesitation_count.json",
+      "output_unit": "count",
+      "parameters_in_use": {
+        "open_zones": [
+          "in_zone_open"
+        ]
+      },
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.zero_maze.compute_hesitation_count",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "次"
+    }
+  ],
+  "notes": [
+    "Data columns: 7; metrics planned: 4; skipped: 0"
+  ],
+  "paradigm": "zero_maze",
+  "schema_version": "1.1",
+  "skipped": [],
+  "statistics": {
+    "id": "groupwise_compare",
+    "input": "/tmp/handoff_code_executor.json",
+    "output": "/tmp/stats.json",
+    "script": "ethoinsight.scripts.zero_maze.run_groupwise_stats",
+    "skip_reason": "condition 'n_per_group >= 2 and n_groups >= 2' not met (n_per_group=None, n_groups=None)"
+  }
 }

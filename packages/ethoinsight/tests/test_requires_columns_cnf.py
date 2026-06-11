@@ -172,34 +172,76 @@ def test_missing_columns_or_group_via_alias():
 # ============================================================================
 
 
+def _resolve_snapshot(paradigm: str, columns: list[str]) -> dict:
+    """Run the real resolve_metrics path and return a deterministic dict snapshot.
+
+    - Uses the CORRECT signature: resolve_metrics(paradigm, columns, raw_files, workspace_dir).
+    - Strips the volatile ``generated_at`` field (timestamp) for byte-stable comparison.
+    - Captures a genuine domain ResolveError structurally (NOT a signature TypeError —
+      a wrong call must fail loudly, never be swallowed into the baseline).
+    """
+    from ethoinsight.catalog.resolve import (
+        ResolveError,
+        plan_metrics_to_dict,
+        resolve_metrics,
+    )
+
+    try:
+        pm = resolve_metrics(paradigm, columns, raw_files=["/tmp/stub.csv"], workspace_dir="/tmp")
+    except ResolveError as e:
+        return {"resolve_error": str(e), "code": getattr(e, "code", None)}
+    d = plan_metrics_to_dict(pm)
+    d.pop("generated_at", None)
+    return d
+
+
+# Per-paradigm column sets covering each paradigm's requires_columns globs so the
+# real resolve path produces a meaningful plan (exercises _missing_columns happy path).
+# These MUST match the sets used to generate fixtures/cnf_baseline/*.json (on dev, pre-CNF).
+_BASELINE_COLUMNS: dict[str, list[str]] = {
+    "epm": ["in_zone_open_arms_1", "in_zone_closed_arms_1", "x_center", "y_center", "velocity", "distance_moved", "trial_time"],
+    "oft": ["in_zone_center_1", "in_zone", "x_center", "y_center", "velocity", "distance_moved", "trial_time"],
+    "ldb": ["in_zone_light", "in_zone_dark", "in_zone", "x_center", "y_center", "velocity", "trial_time"],
+    "zero_maze": ["in_zone_open_1", "in_zone", "x_center", "y_center", "velocity", "distance_moved", "trial_time"],
+    "fst": ["mobility_state_immobile", "velocity", "activity_intensity", "trial_time"],
+    "tst": ["mobility_state_immobile", "velocity", "activity_intensity", "trial_time"],
+}
+
+
 def test_pure_list_of_str_resolve_unchanged():
-    """All 6 paradigms resolve identically to pre-CNF baseline."""
-    from ethoinsight.catalog.loader import load_catalog
-    from ethoinsight.catalog.resolve import resolve, plan_to_dict
+    """All 6 paradigms (pure list[str] catalogs) resolve byte-identically to the
+    pre-CNF baseline. This is the executable proof of Fable's "无损" criterion:
+    the CNF change must not alter the str-only resolve path.
 
+    Baselines in fixtures/cnf_baseline/*.json were generated on dev (pre-CNF) via
+    the same _resolve_snapshot helper — see the test-fix handoff. They contain real
+    PlanMetrics dicts (with generated_at stripped), NOT a TypeError error-string.
+    """
     baseline_dir = Path(__file__).parent / "fixtures" / "cnf_baseline"
-    available = ["in_zone", "in_zone_center_periphery", "velocity", "distance",
-                 "mobility_state_high", "mobility_state_low"]
 
-    for paradigm in ["epm", "oft", "ldb", "zero_maze", "fst", "tst"]:
+    for paradigm, columns in _BASELINE_COLUMNS.items():
         baseline_path = baseline_dir / f"{paradigm}.json"
         assert baseline_path.exists(), f"Baseline fixture missing: {baseline_path}"
 
-        cat = load_catalog(paradigm)
-        try:
-            plan = resolve(cat, available)
-            result = plan_to_dict(plan)
-        except Exception as e:
-            result = {"error": str(e), "code": getattr(e, "code", None)}
+        result = _resolve_snapshot(paradigm, columns)
 
-        with open(baseline_path) as f:
+        # Guard against the previous hollow-green failure mode: a baseline that is
+        # just a signature TypeError string. A real baseline has a 'metrics' key
+        # (success) or a 'resolve_error' (genuine domain error), never a bare 'error'.
+        assert "error" not in result or "resolve_error" in result, (
+            f"{paradigm}: _resolve_snapshot produced a non-domain error (likely a wrong "
+            f"call signature) — refusing to compare a hollow baseline: {result}"
+        )
+
+        with open(baseline_path, encoding="utf-8") as f:
             baseline = json.load(f)
 
         assert result == baseline, (
-            f"Resolve output changed for {paradigm}!\n"
+            f"Resolve output changed for {paradigm} (CNF broke the pure-str path)!\n"
             f"New: {json.dumps(result, default=str, ensure_ascii=False)}\n"
             f"Baseline: {json.dumps(baseline, default=str, ensure_ascii=False)}"
         )
+
 
 
 @pytest.mark.parametrize(

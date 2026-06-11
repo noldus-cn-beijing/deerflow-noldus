@@ -1,4 +1,91 @@
 {
-  "error": "resolve() missing 2 required positional arguments: 'raw_files' and 'workspace_dir'",
-  "code": null
+  "ev19_template": null,
+  "inputs": {
+    "columns_file": null,
+    "groups_file": null,
+    "raw_files": [
+      "/tmp/stub.csv"
+    ]
+  },
+  "metrics": [
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_immobility_time.json"
+      ],
+      "direction_for_anxiety": null,
+      "display_name_zh": "不动时间",
+      "id": "immobility_time",
+      "input": "/tmp/stub.csv",
+      "one_liner": "动物在测试期间累计不动的时间，FST 抑郁样行为的核心指标",
+      "output": "/tmp/m_immobility_time.json",
+      "output_unit": "seconds",
+      "parameters_in_use": {},
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.fst.compute_immobility_time",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "秒"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_immobility_latency.json"
+      ],
+      "direction_for_anxiety": null,
+      "display_name_zh": "首次不动潜伏期",
+      "id": "immobility_latency",
+      "input": "/tmp/stub.csv",
+      "one_liner": "从测试开始到首次出现不动的时间",
+      "output": "/tmp/m_immobility_latency.json",
+      "output_unit": "seconds",
+      "parameters_in_use": {},
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.fst.compute_immobility_latency",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "秒"
+    },
+    {
+      "args": [
+        "--input",
+        "/tmp/stub.csv",
+        "--output",
+        "/tmp/m_immobility_bout_count.json"
+      ],
+      "direction_for_anxiety": null,
+      "display_name_zh": "不动次数",
+      "id": "immobility_bout_count",
+      "input": "/tmp/stub.csv",
+      "one_liner": "测试期间不动行为发生的累计次数（run-length encoding）",
+      "output": "/tmp/m_immobility_bout_count.json",
+      "output_unit": "count",
+      "parameters_in_use": {},
+      "reason": "paradigm.default",
+      "required": true,
+      "script": "ethoinsight.scripts.fst.compute_immobility_bout_count",
+      "statistical_default": "groupwise_compare",
+      "subject_index": 0,
+      "unit_zh": "次"
+    }
+  ],
+  "notes": [
+    "Data columns: 4; metrics planned: 3; skipped: 0"
+  ],
+  "paradigm": "fst",
+  "schema_version": "1.1",
+  "skipped": [],
+  "statistics": {
+    "id": "groupwise_compare",
+    "input": "/tmp/handoff_code_executor.json",
+    "output": "/tmp/stats.json",
+    "script": "ethoinsight.scripts.fst.run_groupwise_stats",
+    "skip_reason": "condition 'n_per_group >= 2 and n_groups >= 2' not met (n_per_group=None, n_groups=None)"
+  }
 }
