@@ -222,6 +222,19 @@ def _parse_catalog(raw: dict[str, Any], source: Path) -> Catalog:
                     source="anonymous_zone_override",
                 )
 
+    # Stage 3: OFT border — 可对齐但无注入点的概念（Fable 决策门 1 闭合结论）。
+    # border 存在、可被 HITL 认领、但无运行时注入点（oft.py 靠 regex 自动识别 +
+    # 1−center 反推 + 几何三级降级，没有独立的 border_zone compute 参数）。
+    # binding=None 表示此态，Stage 2 resolve 注入循环的 `if rc.binding is None: continue`
+    # 使其不污染任何现有注入输出。
+    if paradigm == "oft":
+        if "border" not in resolved_zone_concepts:
+            resolved_zone_concepts["border"] = ResolvedZoneConcept(
+                concept="border",
+                binding=None,
+                source="explicit_concept",
+            )
+
     return Catalog(
         paradigm=paradigm,
         ev19_templates=ev19_templates,

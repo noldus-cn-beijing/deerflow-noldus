@@ -6,6 +6,11 @@ anonymous_zone_override:
   target_param: light_zone
   wrap_list: false
 
+zone_concept_params:
+  dark:
+    param: dark_zone
+    wrap_list: false
+
 default_metrics:
   - id: light_time_ratio
     script: ethoinsight.scripts.ldb.compute_light_time_ratio

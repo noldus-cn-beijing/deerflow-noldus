@@ -7,6 +7,11 @@ anonymous_zone_override:
   target_param: open_zones
   wrap_list: true
 
+zone_concept_params:
+  closed:
+    param: closed_zones
+    wrap_list: true
+
 default_metrics:
   - id: open_zone_time_ratio
     script: ethoinsight.scripts.zero_maze.compute_open_zone_time_ratio
