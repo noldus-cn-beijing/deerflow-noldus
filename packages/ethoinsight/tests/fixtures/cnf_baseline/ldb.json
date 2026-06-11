@@ -1,0 +1,4 @@
+{
+  "error": "resolve() missing 2 required positional arguments: 'raw_files' and 'workspace_dir'",
+  "code": null
+}

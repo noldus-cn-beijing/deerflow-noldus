@@ -307,6 +307,11 @@ def assess_column_confidence(
             continue
 
         # Rule (b): normalized name matches a catalog requires_columns glob
+        # NOTE: `patterns` must be a flat list[str] (not raw CNF requires_columns
+        # with list items).  The sole production caller (_extract_required_patterns
+        # in inspect_uploaded_file_tool.py) flattens via _flatten_requires_columns
+        # before passing patterns here.  New callers that feed raw CNF directly
+        # will hit TypeError (unhashable list in fnmatch lru_cache).
         if patterns:
             if any(fnmatch.fnmatchcase(norm, pat) for pat in patterns):
                 recognized.append(entry)

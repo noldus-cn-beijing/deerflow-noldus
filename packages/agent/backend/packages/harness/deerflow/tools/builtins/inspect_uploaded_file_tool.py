@@ -51,8 +51,14 @@ def _extract_required_patterns(paradigm: str) -> list[str]:
 
     Used by the Sprint 1 column-assessment to decide which custom columns are
     recognised (match a catalog glob) vs need HITL alignment.
+
+    Returns a flat list[str] (CNF OR-groups are dissolved via _flatten_requires_columns).
+    Callers that pass the result to assess_column_confidence / fnmatch utilities
+    rely on this flattening — feeding raw CNF requires_columns (with list items)
+    into those consumers would raise TypeError (unhashable list).
     """
     from ethoinsight.catalog.loader import load_catalog
+    from ethoinsight.catalog.resolve import _flatten_requires_columns
 
     patterns: set[str] = set()
     try:
@@ -60,9 +66,9 @@ def _extract_required_patterns(paradigm: str) -> list[str]:
     except Exception:
         return []
     for m in list(cat.default_metrics) + list(cat.optional_metrics):
-        patterns.update(m.requires_columns)
+        patterns.update(_flatten_requires_columns(m.requires_columns))
     for ch in cat.charts:
-        patterns.update(getattr(ch, "requires_columns", []) or [])
+        patterns.update(_flatten_requires_columns(getattr(ch, "requires_columns", [])))
     return sorted(patterns)
 
 
