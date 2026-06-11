@@ -21,13 +21,9 @@ inspect_uploaded_file 报告有**未被系统识别的自定义分析区列**时
 
 先读 `identify_ev19_template` 结果中的 `paradigm_key`，按范式查 catalog 的合法分析区概念：
 
-- EPM: `open_arms` / `closed_arms` / `center`
-- OFT: `center` / `border` / `corner`
-- LDB: `light` / `dark`
-- Zero Maze: `open` / `closed`
-- FST: 无自定义分析区
+各范式合法分析区概念见 `references/zone-concepts.generated.md`——该菜单由 catalog 自动生成、与 SSOT 同源，按此对齐。
 
-> 具体的合法概念以 catalog YAML 的 `requires_columns` glob 为权威，上面只是速查。
+> 概念关键词的权威来源是 catalog YAML 的 `requires_columns`，`zone-concepts.generated.md` 是其机械投影。
 
 ### 2. 预填 + 反诘（D15）
 

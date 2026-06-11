@@ -8,15 +8,9 @@
 把每个待确认的用户列，对齐到该范式的一个**分析区概念关键词**（或判为忽略）。
 概念关键词就是范式分析的区类型，**不带任何机器前缀/后缀**：
 
-| paradigm | 分析区概念关键词 |
-|----------|----------------|
-| open_field | `center` / `border` / `corner` |
-| epm | `open_arms` / `closed_arms` / `center` |
-| light_dark_box | `light` / `dark` |
-| zero_maze | `open` / `closed` |
-| forced_swim | （无自定义分析区） |
+各范式合法分析区概念关键词见 `zone-concepts-mapping.generated.md`——该表由 catalog 自动生成、与 SSOT 同源。
 
-> 概念关键词的权威来源是 catalog YAML 的 `requires_columns`；上表是速查。
+> 概念关键词的权威来源是 catalog YAML 的 `requires_columns`；`zone-concepts-mapping.generated.md` 是其机械投影。
 > 你只需填概念关键词（如 `center`），系统自动把它翻译成数据能匹配的列名——
 > 你**不需要**、也**不应该**填 `in_zone_center_point` 这种机器列名。
 
