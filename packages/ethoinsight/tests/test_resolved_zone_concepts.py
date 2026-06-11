@@ -46,13 +46,14 @@ def test_epm_resolved_from_zone_concept_params():
 # ============================================================================
 
 
-def test_oft_resolved_from_override():
-    """OFT 的 resolved_zone_concepts 应通过 derive 从 anonymous_zone_override 规范化。"""
+def test_oft_resolved_concepts():
+    """OFT 的 resolved_zone_concepts 应包含 center（override）+ border（explicit_concept, binding=None）。"""
     cat = load_catalog("open_field")
     rcs = cat.resolved_zone_concepts
 
-    assert len(rcs) == 1, f"OFT should have exactly 1 resolved concept, got {len(rcs)}: {list(rcs.keys())}"
+    assert len(rcs) == 2, f"OFT should have exactly 2 resolved concepts, got {len(rcs)}: {list(rcs.keys())}"
 
+    # center — from anonymous_zone_override
     assert "center" in rcs
     center_rc = rcs["center"]
     assert center_rc.concept == "center"
@@ -61,19 +62,27 @@ def test_oft_resolved_from_override():
     assert center_rc.binding.wrap_list is False
     assert center_rc.source == "anonymous_zone_override"
 
+    # border — explicit_concept, binding=None (Stage 3)
+    assert "border" in rcs
+    border_rc = rcs["border"]
+    assert border_rc.concept == "border"
+    assert border_rc.binding is None
+    assert border_rc.source == "explicit_concept"
+
 
 # ============================================================================
 # LDB: anonymous_zone_override 来源
 # ============================================================================
 
 
-def test_ldb_resolved_from_override():
-    """LDB 的 resolved_zone_concepts 应通过 derive 从 anonymous_zone_override 规范化。"""
+def test_ldb_resolved_concepts():
+    """LDB 的 resolved_zone_concepts 应包含 light（override）+ dark（zone_concept_params）。"""
     cat = load_catalog("light_dark_box")
     rcs = cat.resolved_zone_concepts
 
-    assert len(rcs) == 1, f"LDB should have exactly 1 resolved concept, got {len(rcs)}: {list(rcs.keys())}"
+    assert len(rcs) == 2, f"LDB should have exactly 2 resolved concepts, got {len(rcs)}: {list(rcs.keys())}"
 
+    # light — from anonymous_zone_override
     assert "light" in rcs
     light_rc = rcs["light"]
     assert light_rc.concept == "light"
@@ -82,19 +91,29 @@ def test_ldb_resolved_from_override():
     assert light_rc.binding.wrap_list is False
     assert light_rc.source == "anonymous_zone_override"
 
+    # dark — from zone_concept_params (Stage 3)
+    assert "dark" in rcs
+    dark_rc = rcs["dark"]
+    assert dark_rc.concept == "dark"
+    assert dark_rc.binding is not None
+    assert dark_rc.binding.param == "dark_zone"
+    assert dark_rc.binding.wrap_list is False
+    assert dark_rc.source == "zone_concept_params"
+
 
 # ============================================================================
 # ZM: anonymous_zone_override 来源
 # ============================================================================
 
 
-def test_zm_resolved_from_override():
-    """ZM 的 resolved_zone_concepts 应通过 derive 从 anonymous_zone_override 规范化。"""
+def test_zm_resolved_concepts():
+    """ZM 的 resolved_zone_concepts 应包含 open（override）+ closed（zone_concept_params）。"""
     cat = load_catalog("zero_maze")
     rcs = cat.resolved_zone_concepts
 
-    assert len(rcs) == 1, f"ZM should have exactly 1 resolved concept, got {len(rcs)}: {list(rcs.keys())}"
+    assert len(rcs) == 2, f"ZM should have exactly 2 resolved concepts, got {len(rcs)}: {list(rcs.keys())}"
 
+    # open — from anonymous_zone_override
     assert "open" in rcs
     open_rc = rcs["open"]
     assert open_rc.concept == "open"
@@ -102,6 +121,15 @@ def test_zm_resolved_from_override():
     assert open_rc.binding.param == "open_zones"
     assert open_rc.binding.wrap_list is True
     assert open_rc.source == "anonymous_zone_override"
+
+    # closed — from zone_concept_params (Stage 3)
+    assert "closed" in rcs
+    closed_rc = rcs["closed"]
+    assert closed_rc.concept == "closed"
+    assert closed_rc.binding is not None
+    assert closed_rc.binding.param == "closed_zones"
+    assert closed_rc.binding.wrap_list is True
+    assert closed_rc.source == "zone_concept_params"
 
 
 # ============================================================================
@@ -161,11 +189,21 @@ def test_resolved_default_empty_for_no_zone_paradigm():
 # ============================================================================
 
 
-def test_stage2_does_not_emit_explicit_concept_source():
-    """Stage 2 只产出 zone_concept_params 和 anonymous_zone_override 两种来源。"""
+def test_stage2_does_not_emit_explicit_concept_source_unless_stage3():
+    """Stage 2 只产出 zone_concept_params 和 anonymous_zone_override 两种来源。
+
+    Stage 3 的 OFT border 使用 explicit_concept（binding=None），是这个规则的唯一例外。
+    """
     for paradigm in ("epm", "open_field", "light_dark_box", "zero_maze", "forced_swim", "tail_suspension"):
         cat = load_catalog(paradigm)
         for rc in cat.resolved_zone_concepts.values():
+            # Stage 3 OFT border 使用 explicit_concept 来源 — 这是有意为之
+            if paradigm == "open_field" and rc.concept == "border":
+                assert rc.source == "explicit_concept", (
+                    f"OFT border should have source=explicit_concept, got {rc.source!r}"
+                )
+                assert rc.binding is None, "OFT border should have binding=None"
+                continue
             assert rc.source in ("zone_concept_params", "anonymous_zone_override"), (
                 f"{paradigm}: unexpected source {rc.source!r} for concept {rc.concept!r}"
             )
