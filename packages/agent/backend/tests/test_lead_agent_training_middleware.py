@@ -1,9 +1,9 @@
 
 
 def test_lead_agent_includes_training_data_middleware():
-    from deerflow.agents.lead_agent.agent import _build_middlewares
+    from deerflow.agents.lead_agent.agent import build_middlewares
 
-    middlewares = _build_middlewares(
+    middlewares = build_middlewares(
         config={"configurable": {"subagent_enabled": False, "is_plan_mode": False}},
         model_name=None,
     )
@@ -19,9 +19,9 @@ def test_training_middleware_sits_after_memory():
     Rationale: both are after_agent observers; TrainingDataMiddleware should see
     the final message state alongside MemoryMiddleware, not before it.
     """
-    from deerflow.agents.lead_agent.agent import _build_middlewares
+    from deerflow.agents.lead_agent.agent import build_middlewares
 
-    middlewares = _build_middlewares(
+    middlewares = build_middlewares(
         config={"configurable": {"subagent_enabled": False, "is_plan_mode": False}},
         model_name=None,
     )
