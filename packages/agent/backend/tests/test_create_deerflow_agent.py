@@ -593,8 +593,13 @@ def test_extra_with_middleware_takeover_conflict():
 # 29. LoopDetectionMiddleware is always present
 # ---------------------------------------------------------------------------
 @patch("deerflow.agents.factory.create_agent")
-def test_loop_detection_always_present(mock_create_agent):
+@patch("deerflow.config.app_config.get_app_config")
+def test_loop_detection_always_present(mock_get_app_config, mock_create_agent):
     mock_create_agent.return_value = MagicMock()
+    from deerflow.config.loop_detection_config import LoopDetectionConfig
+
+    mock_get_app_config.return_value = MagicMock()
+    mock_get_app_config.return_value.loop_detection = LoopDetectionConfig()
     create_deerflow_agent(_make_mock_model(), features=RuntimeFeatures(sandbox=False))
 
     call_kwargs = mock_create_agent.call_args[1]
@@ -606,8 +611,13 @@ def test_loop_detection_always_present(mock_create_agent):
 # 30. LoopDetection before Clarification
 # ---------------------------------------------------------------------------
 @patch("deerflow.agents.factory.create_agent")
-def test_loop_detection_before_clarification(mock_create_agent):
+@patch("deerflow.config.app_config.get_app_config")
+def test_loop_detection_before_clarification(mock_get_app_config, mock_create_agent):
     mock_create_agent.return_value = MagicMock()
+    from deerflow.config.loop_detection_config import LoopDetectionConfig
+
+    mock_get_app_config.return_value = MagicMock()
+    mock_get_app_config.return_value.loop_detection = LoopDetectionConfig()
     create_deerflow_agent(_make_mock_model(), features=RuntimeFeatures(sandbox=False))
 
     call_kwargs = mock_create_agent.call_args[1]
