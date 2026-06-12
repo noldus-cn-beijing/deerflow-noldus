@@ -142,45 +142,42 @@ class TestLeadAgentLoopDetectionWiring:
 # 2. Factory path wiring test
 # ---------------------------------------------------------------------------
 
-class TestFactoryLoopDetectionWiring:
-    """Verify create_deerflow_agent uses app_config.loop_detection.
+class TestFactoryLoopDetectionContract:
+    """create_deerflow_agent 保持「无 YAML、纯 Python 参数」契约——不读 config.yaml。
 
-    create_deerflow_agent returns a CompiledStateGraph, not the raw middleware
-    chain. We verify the wiring by asserting that when get_app_config returns
-    our config, the lazy import inside _assemble_from_features resolves
-    correctly to produce a LoopDetectionMiddleware with config values (not defaults).
+    Review 修正（2026-06-12）：Spec S1 初版让 factory 也接 get_app_config()，但这
+    违背 create_deerflow_agent 的模块 docstring 契约（"accepts plain Python arguments
+    — no YAML files"），导致 30 个 test_create_deerflow_agent 在无 config.yaml 的测试
+    环境抛 FileNotFoundError。已 revert：factory 的 else 分支用 LoopDetectionConfig()
+    默认；要定制阈值的调用方通过 feat.loop_detection 传 AgentMiddleware 实例。
+    生产配置由 build_middlewares 路径（lead agent / DeerFlowClient）承载，见上面的
+    TestBuildMiddlewaresLoopDetectionWiring。
     """
 
-    def test_factory_lazy_import_produces_correct_middleware(self):
-        """Simulate the factory's lazy import: get_app_config().loop_detection
-        must produce LoopDetectionMiddleware with tool_freq_hard_limit=50,
-        not the hardcoded default of 5."""
-        cfg = _make_app_config_with_loop_detection()
+    def test_factory_default_branch_does_not_read_config_yaml(self):
+        """factory 的 else 分支必须用 LoopDetectionConfig() 默认，不调 get_app_config()。
 
-        # The factory's internal _assemble_from_features does:
-        #   from deerflow.config.app_config import get_app_config
-        #   LoopDetectionMiddleware.from_config(get_app_config().loop_detection)
-        # We reproduce exactly that pattern here to verify it produces the
-        # expected result with our config.
-        with patch(
-            "deerflow.config.app_config.get_app_config",
-            return_value=cfg,
-        ):
-            from deerflow.config.app_config import get_app_config
+        反向断言：若 factory 改回读 app_config，create_deerflow_agent 在无 config.yaml
+        环境会炸——本测试通过「无 config 环境下 factory 仍能构造」来守这条契约。
+        """
+        from unittest.mock import MagicMock
 
-            mw = LoopDetectionMiddleware.from_config(get_app_config().loop_detection)
+        from deerflow.agents.factory import create_deerflow_agent
+        from deerflow.agents.features import RuntimeFeatures
 
-        assert mw.tool_freq_hard_limit == 50, (
-            f"Factory lazy-import path: expected tool_freq_hard_limit=50 from config, "
-            f"got {mw.tool_freq_hard_limit}"
-        )
-        assert mw.tool_freq_warn == 30, (
-            f"Factory lazy-import path: expected tool_freq_warn=30 from config, "
-            f"got {mw.tool_freq_warn}"
-        )
-        # Also verify the override is loaded — this confirms the config was fully parsed
-        assert "inspect_uploaded_file" in mw._tool_freq_overrides
-        assert mw._tool_freq_overrides["inspect_uploaded_file"] == (50, 100)
+        # 关键：不 mock get_app_config。若 factory 误调它，无 config.yaml 的测试环境
+        # 会抛 FileNotFoundError，本测试随之失败——这正是我们要守的契约。
+        with patch("deerflow.agents.factory.create_agent", return_value=MagicMock()):
+            # 不抛异常即证明 factory 没去读 config.yaml。
+            create_deerflow_agent(MagicMock(), features=RuntimeFeatures(sandbox=False))
+
+    def test_factory_default_loop_detection_uses_hardcoded_defaults(self):
+        """无注入时 factory 产出的 LoopDetectionMiddleware 用 LoopDetectionConfig() 默认值。"""
+        from deerflow.config.loop_detection_config import LoopDetectionConfig
+
+        mw = LoopDetectionMiddleware.from_config(LoopDetectionConfig())
+        # 默认 config 的 tool_freq_hard_limit（不是 config.yaml 里的 50）
+        assert mw.tool_freq_hard_limit == LoopDetectionConfig().tool_freq_hard_limit
 
 
 # ---------------------------------------------------------------------------

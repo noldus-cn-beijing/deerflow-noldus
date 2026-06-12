@@ -278,9 +278,14 @@ def _assemble_from_features(
             chain.append(feat.loop_detection)
         else:
             from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
-            from deerflow.config.app_config import get_app_config
+            from deerflow.config.loop_detection_config import LoopDetectionConfig
 
-            chain.append(LoopDetectionMiddleware.from_config(get_app_config().loop_detection))
+            # create_deerflow_agent 的契约是「无 YAML、纯 Python 参数」（见模块 docstring）——
+            # 不读全局 config.yaml。要定制 loop_detection 阈值的调用方应通过
+            # feat.loop_detection 传入一个配好的 LoopDetectionMiddleware 实例（上面的分支）。
+            # lead agent / DeerFlowClient 走 build_middlewares（不经此工厂），那条路径已在
+            # agent.py 接 get_app_config().loop_detection，故生产配置由 build_middlewares 承载。
+            chain.append(LoopDetectionMiddleware.from_config(LoopDetectionConfig()))
 
     # --- [13] Clarification (always last among built-ins) ---
     chain.append(ClarificationMiddleware())
