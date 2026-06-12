@@ -442,6 +442,25 @@ def identify_ev19_template_tool(
     columns = header.get("columns", [])
     zone_info = _detect_zone_config(columns)
 
+    # Step 3.5: 遍历全部 uploaded_files 提取每个文件的分组字段（EV19 头自带 Treatment/Group/...）。
+    # 让 lead 一次拿到全部分组，无需逐个 inspect_uploaded_file 试探边界。
+    # 只读 header（parse_header ~0.09s/文件，calamine 已生效），不读 trajectory。
+    # 性能：28 文件 ≈2.6s，可接受。若未来文件数 >100 再考虑并行（TODO）。
+    from deerflow.tools.builtins._ev19_grouping import extract_grouping_fields
+
+    per_file_grouping: dict[str, dict[str, str]] = {}
+    for f in uploaded_files:
+        real_f = replace_virtual_path(f, thread_data)
+        if not Path(real_f).exists():
+            continue  # 缺文件不阻断模板识别；记空即可
+        try:
+            h = parse_header(real_f)
+            gf = extract_grouping_fields(h.get("raw_metadata", {}) or {})
+            if gf:
+                per_file_grouping[Path(f).name] = gf  # 用文件名做 key（lead 按文件名对照分组）
+        except Exception:
+            continue  # 单文件解析失败不阻断（防御性，同 inspect 风格）
+
     # Step 4: look up candidates from ev19_facts
     from ethoinsight.ev19_facts import EV19_TEMPLATE_PARADIGM_MAP
 
@@ -556,6 +575,7 @@ def identify_ev19_template_tool(
             "candidates": candidates,
             "evidence": evidence,
             "domain_summary": domain_summary,
+            "per_file_grouping": per_file_grouping,
         }
 
     # 2-3 candidates — need user clarification
@@ -573,4 +593,5 @@ def identify_ev19_template_tool(
         "candidates": candidates,
         "evidence": evidence,
         "clarification_question": _build_clarification_question(paradigm_key or "unknown", candidates, evidence),
+        "per_file_grouping": per_file_grouping,
     }
