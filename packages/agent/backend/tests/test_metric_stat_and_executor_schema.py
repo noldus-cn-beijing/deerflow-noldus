@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from deerflow.subagents.handoff_schemas import CodeExecutorHandoff, MetricStat
+from deerflow.subagents.handoff_schemas import CodeExecutorHandoff, MetricStat, ParameterAuditFinding
 
 
 class TestMetricStatParametersUsed:
@@ -26,6 +26,34 @@ class TestMetricStatParametersUsed:
     def test_extra_fields_still_allowed(self):
         m = MetricStat(mean=1.0, median=2.0, iqr=0.5)
         assert m.median == 2.0  # extra="allow"
+
+    def test_list_valued_zone_params(self):
+        """EPM/Zero Maze 多列 zone 聚合参数是 list[str]，必须合法（thread 38be2753 实证）。"""
+        m = MetricStat(mean=None, parameters_used={"open_arm_zones": ["open"], "closed_arm_zones": ["closed"]})
+        assert m.parameters_used["open_arm_zones"] == ["open"]
+        assert m.parameters_used["closed_arm_zones"] == ["closed"]
+
+    def test_scalar_params_still_work(self):
+        """放宽 union 不得破坏旧标量参数（smart-union 不坍缩 str↔list 回归）。"""
+        m = MetricStat(parameters_used={"velocity_threshold": 30.0, "unit": "mm/s", "n": 25})
+        assert m.parameters_used == {"velocity_threshold": 30.0, "unit": "mm/s", "n": 25}
+
+
+class TestParameterAuditFindingListUsedValue:
+    """A1b: ParameterAuditFinding.used_value 接受 list[str]（data_analyst.py:210 指示逐字拷贝 parameters_used 值）。"""
+
+    def test_list_used_value_accepted(self):
+        """used_value=["open"] 不抛 ValidationError。"""
+        finding = ParameterAuditFinding(
+            parameter="open_arm_zones",
+            metric="open_arm_time_ratio",
+            severity="warning",
+            used_value=["open"],
+            observed_distribution={"n_subjects": 10},
+            mismatch_kind="category_mismatch",
+            suggestion="建议确认分析区映射。",
+        )
+        assert finding.used_value == ["open"]
 
 
 class TestCodeExecutorHandoffNewFields:

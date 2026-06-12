@@ -15,6 +15,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# 单一 value-domain 声明：metric 参数的合法值形状。
+# 标量(旧 velocity_threshold=30.0)+ list[str](列语义对齐引入的多列 zone 聚合，如 open_arm_zones=['open'])。
+# 两个字段(MetricStat.parameters_used / ParameterAuditFinding.used_value)共用此别名，
+# 避免「同一 domain 两份声明独立漂移」——这正是本次 84-error seal 失败的 bug 类。
+ParamValue = float | int | str | list[str] | None
+
 # Virtual path contract: all subagent handoff JSON files must reference user-data
 # files via virtual paths (e.g. /mnt/user-data/uploads/x.txt), never host absolute
 # paths (e.g. /home/.../user-data/uploads/x.txt). Downstream consumers like
@@ -106,7 +112,7 @@ class MetricStat(BaseModel):
         default=None,
         description="Present when applicable=False; explains why.",
     )
-    parameters_used: dict[str, float | int | str | None] = Field(
+    parameters_used: dict[str, ParamValue] = Field(
         default_factory=dict,
         description=(
             "Actual parameters used to compute this metric, e.g. "
@@ -114,7 +120,10 @@ class MetricStat(BaseModel):
             "Populated by Sprint 2b execution pipeline. "
             "Sprint 0 only defines the field; defaults to empty dict. "
             "None is allowed for individual values when the param is not "
-            "applicable to this metric (e.g. pendulum params on EPM)."
+            "applicable to this metric (e.g. pendulum params on EPM). "
+            "list[str] values represent multi-column zone aggregation params "
+            "(e.g. open_arm_zones=['open'], closed_arm_zones=['closed']), "
+            "introduced by column-semantics alignment (Sprint 1)."
         ),
     )
 
@@ -236,8 +245,12 @@ class ParameterAuditFinding(BaseModel):
         description="Affected metric slug, e.g. 'immobility_time', 'total_entry_count'."
     )
     severity: Literal["critical", "warning", "info"]
-    used_value: float | int | str = Field(
-        description="Parameter value actually used in the run (from MetricStat.parameters_used)."
+    used_value: ParamValue = Field(
+        description=(
+            "Parameter value actually used in the run (from MetricStat.parameters_used). "
+            "Accepts float|int|str|list[str]|None; list[str] for multi-column zone "
+            "aggregation params (e.g. open_arm_zones=['open']), mirroring ParamValue."
+        ),
     )
     observed_distribution: dict[str, float | int] = Field(
         description=(
@@ -286,6 +299,10 @@ class ParameterAuditFinding(BaseModel):
 
         # 1. used_value=None → "" (schema requires float|int|str; degenerate
         #    scene prompt should fill real param value, this catches edge leaks)
+        # 注：used_value 类型(ParamValue)现含 None，但此处仍主动 None→"" 归一。
+        # 理由：下游 data-analyst 审计逻辑(prompt data_analyst.py:236 的 used_value>p90×3 数值比对)
+        # 在概念上不接受 None；prompt 已硬性要求"绝不填 None"(:210)。此归一是该硬约束的兜底，
+        # 是 documented 例外而非疏漏。删除它会改变一条未坏路径的行为(违"根因未隔离前别叠加")，本次不做。
         if values.get("used_value") is None:
             values["used_value"] = ""
 

@@ -649,6 +649,92 @@ class TestAutoSealCodeExecutorSealedBy:
         )
         assert h.sealed_by == "model", "default sealed_by should be 'model'"
 
+class TestAutoSealCodeExecutorListParams:
+    """Spec 2026-06-12 seal-list-zone-params: auto-seal 路径能重建含 list[str] 值的 parameters_used。
+
+    thread 38be2753 实证：EPM open_arm_zones=["open"] 经 auto-seal 进入 metrics_summary
+    时被 Pydantic 拒（标量 schema），84 个 ValidationError 致完整成功 run 误标 FAILED。
+    此测试在 A1 ParamValue 放宽前必须红，改动后绿。
+    """
+
+    def test_list_zone_params_survive_auto_seal_roundtrip(self, tmp_path: Path):
+        """m_*.json 含 parameters_used={"open_arm_zones":["open"]} → auto-seal 成功且值保全。"""
+        mod = _get_real_executor()
+        ws, _out = _mk_thread(tmp_path)
+        ws_path = Path(ws)
+
+        plan = {
+            "paradigm": "epm",
+            "inputs": {
+                "raw_files": [
+                    "/mnt/user-data/uploads/subject1.xlsx",
+                    "/mnt/user-data/uploads/subject2.xlsx",
+                ],
+            },
+            "metrics": [
+                {
+                    "id": "open_arm_entry_count",
+                    "script": "ethoinsight.scripts.epm.compute_open_arm_entry_count",
+                    "output": "/mnt/user-data/workspace/m_open_arm_entry_count_s0.json",
+                    "subject_index": 0,
+                },
+                {
+                    "id": "open_arm_entry_count",
+                    "script": "ethoinsight.scripts.epm.compute_open_arm_entry_count",
+                    "output": "/mnt/user-data/workspace/m_open_arm_entry_count_s1.json",
+                    "subject_index": 1,
+                },
+            ],
+        }
+        (ws_path / "plan_metrics.json").write_text(json.dumps(plan), encoding="utf-8")
+        (ws_path / "groups.json").write_text(
+            json.dumps({
+                "/mnt/user-data/uploads/subject1.xlsx": "Control",
+                "/mnt/user-data/uploads/subject2.xlsx": "Treatment",
+            }),
+            encoding="utf-8",
+        )
+        (ws_path / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "test-list-params"}),
+            encoding="utf-8",
+        )
+
+        # 写入含 list[str] parameters_used 的 m_*.json（模拟 EPM 真实产出）
+        (ws_path / "m_open_arm_entry_count_s0.json").write_text(
+            json.dumps({
+                "metric": "open_arm_entry_count",
+                "value": 15,
+                "parameters_used": {"open_arm_zones": ["open"], "closed_arm_zones": ["closed"]},
+            }),
+            encoding="utf-8",
+        )
+        (ws_path / "m_open_arm_entry_count_s1.json").write_text(
+            json.dumps({
+                "metric": "open_arm_entry_count",
+                "value": 12,
+                "parameters_used": {"open_arm_zones": ["open"], "closed_arm_zones": ["closed"]},
+            }),
+            encoding="utf-8",
+        )
+
+        ok = _auto_seal("code-executor", str(ws_path))
+        assert ok is True, f"auto-seal should succeed, but returned False"
+
+        h = ws_path / "handoff_code_executor.json"
+        assert h.exists()
+        data = json.loads(h.read_text(encoding="utf-8"))
+
+        # 核心断言：list[str] 值在 auto-seal 全程保全
+        ms = data["metrics_summary"]
+        control_entry = ms["Control"]["open_arm_entry_count"]
+        assert control_entry["parameters_used"]["open_arm_zones"] == ["open"], (
+            f"list[str] zone param must survive roundtrip, got: {control_entry['parameters_used']}"
+        )
+        assert control_entry["parameters_used"]["closed_arm_zones"] == ["closed"]
+        assert data["status"] == "completed"
+        assert data["sealed_by"] == "framework_rebuild"
+
+
 class TestAutoSealScope:
     """data-analyst 永不 auto-seal（判读是认知产物）。code-executor 在无 plan 时也不 auto-seal。"""
 
