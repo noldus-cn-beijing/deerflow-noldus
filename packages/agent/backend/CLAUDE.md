@@ -404,7 +404,7 @@ Both can be modified at runtime via Gateway API endpoints or `DeerFlowClient` me
   - `"values"` — full state snapshot (title, messages, artifacts)
   - `"messages-tuple"` — per-message update (AI text, tool calls, tool results)
   - `"end"` — stream finished
-- Agent created lazily via `create_agent()` + `_build_middlewares()`, same as `make_lead_agent`
+- Agent created lazily via `create_agent()` + `build_middlewares()`, same as `make_lead_agent`
 - Supports `checkpointer` parameter for state persistence across turns
 - `reset_agent()` forces agent recreation (e.g. after memory or skill changes)
 

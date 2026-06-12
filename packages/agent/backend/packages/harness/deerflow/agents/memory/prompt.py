@@ -131,30 +131,30 @@ Important Rules:
 - For history sections, integrate new information chronologically into appropriate time period
 - Preserve technical accuracy - keep exact names of technologies, companies, projects
 - Focus on information useful for future interactions and personalization
-- IMPORTANT: Do NOT record file upload events in memory. Uploaded files are
-  session-specific and ephemeral — they will not be accessible in future sessions.
-  Recording upload events causes confusion in subsequent conversations.
-  - Additionally, do NOT record session-level actions or findings as memory (facts
-    or facts):
-    * File upload events — "user uploaded X.txt", "uploaded EPM trial data",
-      "已上传 Subject 1 的轨迹文件" etc. Files exist only inside one thread's
-      /mnt/user-data/uploads/. Recording them causes the next thread's agent
-      to hallucinate that those files are still available.
-    * Specific analysis runs — "已生成 6 张图表", "跑了 Mann-Whitney U 检验",
-      "保存了 report.md 到 /mnt/user-data/outputs/" etc. These are workspace
-      artifacts from one thread, not persistent user facts.
-    * Pending actions in the current thread — "等待上传更多数据", "等待用户
-      确认分组" etc. Wait-states only exist inside one conversation.
-    * Numeric findings from a single run — "Cohen's d=0.54", "Subject 3 偏离"
-      etc. These are analysis outputs, not user attributes.
+- IMPORTANT — DO NOT record session-level state in memory. Memory crosses
+  threads; the following kinds of information are EPHEMERAL to the current
+  conversation and MUST NOT be written into any memory field (workContext,
+  personalContext, topOfMind, recentMonths, earlierContext, longTermBackground,
+  or facts):
+  * File upload events — "user uploaded X.txt", "uploaded EPM trial data",
+    "已上传 Subject 1 的轨迹文件" etc. Files exist only inside one thread's
+    /mnt/user-data/uploads/. Recording them causes the next thread's agent
+    to hallucinate that those files are still available.
+  * Specific analysis runs — "已生成 6 张图表", "跑了 Mann-Whitney U 检验",
+    "保存了 report.md 到 /mnt/user-data/outputs/" etc. These are workspace
+    artifacts from one thread, not persistent user facts.
+  * Pending actions in the current thread — "等待上传更多数据", "等待用户
+    确认分组" etc. Wait-states only exist inside one conversation.
+  * Numeric findings from a single run — "Cohen's d=0.54", "Subject 3 偏离"
+    etc. These are analysis outputs, not user attributes.
 
-    CORRECT examples (DO record): "用户从事斑马鱼鱼群行为研究", "用户偏好
-    英文 markdown 输出格式", "用户使用 EthoVision XT 系统" — these are
-    durable user attributes that stay true across threads.
+  CORRECT examples (DO record): "用户从事斑马鱼鱼群行为研究", "用户偏好
+  英文 markdown 输出格式", "用户使用 EthoVision XT 系统" — these are
+  durable user attributes that stay true across threads.
 
-    INCORRECT examples (DO NOT record): "已上传 EPM 数据，等待分组信息",
-    "刚完成 FST 分析，发现 Subject 3 异常" — these are session events
-    that will leak into and confuse future threads.
+  INCORRECT examples (DO NOT record): "已上传 EPM 数据，等待分组信息",
+  "刚完成 FST 分析，发现 Subject 3 异常" — these are session events
+  that will leak into and confuse future threads.
 
 Return ONLY valid JSON, no explanation or markdown."""
 

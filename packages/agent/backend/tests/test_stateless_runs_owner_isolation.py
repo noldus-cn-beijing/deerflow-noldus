@@ -78,6 +78,13 @@ def _client(user):
     """
     app = make_authed_test_app(user_factory=lambda: user)
     app.include_router(runs.router)
+    # start_run builds a RunContext via get_run_context(request), which reads
+    # the request-scoped app.state.config (NOT the global app_config singleton
+    # set by _stub_app_config). Without it, get_config raises 503 before the
+    # ownership check under test ever runs, making every case here a hollow
+    # red. Stamp the same minimal AppConfig on app.state so the request reaches
+    # the owner check.
+    app.state.config = AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}})
     app.state.thread_store = _make_thread_store()
     app.state.stream_bridge = MagicMock()
     app.state.checkpointer = MagicMock()
