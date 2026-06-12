@@ -17,8 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from deerflow.tools.builtins.identify_ev19_template_tool import (
     identify_ev19_template_tool,
 )
@@ -366,12 +364,35 @@ class TestGroupingFieldsSSOT:
         )
 
     def test_shared_extract_handles_animal_id(self):
-        """Animal ID metadata keys are included in _GROUPING_METADATA_KEYS."""
+        """Animal ID is returned alongside grouping fields as a subject identifier."""
         from deerflow.tools.builtins._ev19_grouping import extract_grouping_fields
 
         result = extract_grouping_fields({"Animal ID": "1", "Group": "Control"})
         assert result["Animal ID"] == "1"
         assert result["Group"] == "Control"
+
+    def test_shared_extract_animal_id_takes_first_variant_only(self):
+        """Only the FIRST matching Animal ID variant is kept (break semantics).
+
+        Locks the parity with the original inspect _extract_grouping_fields: Animal ID
+        is a subject identifier (not a grouping field), so when multiple aliases appear
+        in one header we keep only the first per _ANIMAL_ID_KEYS order to avoid polluting
+        the grouping dict with duplicate identifiers. Regression guard for the SSOT
+        extraction (the shared function must not collect every alias).
+        """
+        from deerflow.tools.builtins._ev19_grouping import extract_grouping_fields
+
+        # Two Animal ID aliases present → only the first ("Animal ID") survives.
+        result = extract_grouping_fields({"Animal ID": "1", "Animal": "mouse-7"})
+        assert result == {"Animal ID": "1"}
+
+        # Chinese aliases: "动物 ID" precedes "动物编号" in _ANIMAL_ID_KEYS → it wins.
+        result_cn = extract_grouping_fields({"动物编号": "7", "动物 ID": "8"})
+        assert result_cn == {"动物 ID": "8"}
+
+        # Animal ID coexists with a real grouping field → both kept, single Animal ID.
+        result_mixed = extract_grouping_fields({"Group": "XX", "Animal ID": "1", "Animal": "m7"})
+        assert result_mixed == {"Group": "XX", "Animal ID": "1"}
 
     def test_shared_extract_behavior_empty_and_none(self):
         """Empty values skipped; None raw_metadata returns empty dict."""
