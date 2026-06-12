@@ -26,7 +26,7 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
-DEMO_DATA = Path(__file__).resolve().parents[4] / "demo-data"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def _has_calamine() -> bool:
@@ -51,38 +51,66 @@ def _read_both(
 
 
 # ---------------------------------------------------------------------------
-# 1. Corpus-level migration acceptance test
+# 1. Real EV19 fixture migration acceptance test (in-repo, runs in CI)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.skipif(not _has_calamine(), reason="python-calamine not installed")
-class TestCorpusEquivalence:
-    """Batch-read all EV19 xlsx files in demo-data with both engines, assert identity."""
+class TestRealEV19Equivalence:
+    """对入库的真实 EV19 xlsx fixture 双引擎对拍——CI 真跑的迁移验收。
 
-    def _collect_xlsx_files(self) -> list[Path]:
-        if not DEMO_DATA.is_dir():
+    demo-data/ 被 .gitignore（CI checkout 没有），故语料测试改指向入库的
+    tests/fixtures/*.xlsx 真实 EV19 文件。同时覆盖 raw read 和 parse_trajectory
+    全管线两个层面：raw 验证引擎本身等价，parse_trajectory 验证整个解析链
+    （含 numeric 转换、NaN 处理、列名归一）在换引擎后产出不变。
+    """
+
+    def _collect_ev19_fixtures(self) -> list[Path]:
+        if not FIXTURES.is_dir():
             return []
-        xlsx_files = sorted(DEMO_DATA.glob("*.xlsx"))
-        return [f for f in xlsx_files if "Raw data" in f.name or f.name.lower().endswith(".xlsx")]
+        return sorted(FIXTURES.glob("*.xlsx")) + sorted(FIXTURES.glob("*.xls"))
 
-    def test_all_demo_xlsx_equivalent(self):
-        """Every demo-data .xlsx 文件逐格等价。"""
-        files = self._collect_xlsx_files()
+    def test_real_ev19_raw_read_equivalent(self):
+        """真实 EV19 fixture：raw read（header=None 全表）逐格 + dtype 等价。"""
+        files = self._collect_ev19_fixtures()
         if not files:
-            pytest.skip("no demo-data xlsx files found")
-
-        assert len(files) > 0, "Expected at least one xlsx in demo-data"
+            pytest.skip("no EV19 xlsx fixtures in tests/fixtures/")
+        assert len(files) > 0, "Expected at least one EV19 xlsx fixture"
 
         for fp in files:
             df_cal, df_open = _read_both(fp, header=None)
-            # 列名对比（calamine 有时不给默认列名 "0,1,2..." 而是 ""？）
-            # 实际 Fable 实测一致，若不一致则此处先做归一化
             if list(df_cal.columns) != list(df_open.columns):
-                # Normalize: if calamine returns int columns and openpyxl returns str
                 df_cal.columns = [str(c) for c in df_cal.columns]
                 df_open.columns = [str(c) for c in df_open.columns]
             pd.testing.assert_frame_equal(
                 df_cal, df_open, check_dtype=True,
-                obj=f"Engine divergence in {fp.name}",
+                obj=f"Raw engine divergence in {fp.name}",
+            )
+
+    def test_real_ev19_parse_trajectory_equivalent(self):
+        """真实 EV19 fixture：parse_trajectory 全管线在 calamine vs openpyxl 下产出不变。
+
+        这是用户实际走的路径——code-executor 的每个 compute 脚本都经 parse_trajectory。
+        换引擎后整条解析链（含 to_numeric / "-"→NaN / 列名归一）必须等价。
+        """
+        files = self._collect_ev19_fixtures()
+        if not files:
+            pytest.skip("no EV19 xlsx fixtures in tests/fixtures/")
+
+        import ethoinsight.parse._core as core
+        from ethoinsight.parse._core import parse_trajectory
+
+        original_engine = core.EXCEL_ENGINE
+        for fp in files:
+            try:
+                core.EXCEL_ENGINE = "calamine"
+                df_cal = parse_trajectory(str(fp))
+                core.EXCEL_ENGINE = "openpyxl"
+                df_open = parse_trajectory(str(fp))
+            finally:
+                core.EXCEL_ENGINE = original_engine
+            pd.testing.assert_frame_equal(
+                df_cal, df_open, check_dtype=True,
+                obj=f"parse_trajectory engine divergence in {fp.name}",
             )
 
 
