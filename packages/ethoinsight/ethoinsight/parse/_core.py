@@ -19,6 +19,12 @@ import pandas as pd
 
 from ethoinsight.utils import detect_paradigm, normalize_columns
 
+# Excel 读引擎：calamine(Rust)比默认 openpyxl 快 ~8×，值逐格等价(见 spec 2026-06-12)。
+# 显式 pin 引擎名——不依赖 pandas 默认(engine=None 的自动选择上游可能变)。
+# 不做运行时 fallback：calamine 失败应响亮 raise(带 path+engine)，而非静默退 openpyxl
+# 掩盖 engine bug。openpyxl 仅留作 test 侧 fixture 写入(calamine 只读)。
+EXCEL_ENGINE = "calamine"
+
 
 def detect_ethovision(file_path: str) -> bool:
     """Detect whether a file is an EthoVision export.
@@ -88,7 +94,7 @@ def _detect_ethovision_xlsx(path: Path, sheet_name: str | int = 0) -> bool:
     "标题行数" for Chinese, "Number of header lines" for English).
     """
     try:
-        df = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=1)
+        df = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=1, engine=EXCEL_ENGINE)
     except Exception:
         return False
     if df.empty or df.iloc[0, 0] is None:
@@ -192,7 +198,7 @@ def _parse_header_xlsx(path: Path, sheet_name: str | int = 0) -> dict:
       R(N-1):     units
       RN:         data starts
     """
-    df_header = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=None)
+    df_header = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=None, engine=EXCEL_ENGINE)
     header_lines = int(df_header.iloc[0, 1])
 
     raw_metadata: dict[str, str] = {}
@@ -317,7 +323,7 @@ def _parse_trajectory_xlsx(path: Path, sheet_name: str | int = 0) -> pd.DataFram
     header = _parse_header_xlsx(path, sheet_name)
     header_lines = header["header_lines"]
 
-    df = pd.read_excel(path, sheet_name=sheet_name, header=None, skiprows=header_lines)
+    df = pd.read_excel(path, sheet_name=sheet_name, header=None, skiprows=header_lines, engine=EXCEL_ENGINE)
     df.columns = header["columns"]
 
     # Convert "-" to NaN
