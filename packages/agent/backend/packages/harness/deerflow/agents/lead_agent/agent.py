@@ -289,7 +289,7 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
 
     # LoopDetectionMiddleware — detect and break repetitive tool call loops.
     # Created early so it can be passed to summarization middleware for reset-on-compact.
-    loop_detection = LoopDetectionMiddleware()
+    loop_detection = LoopDetectionMiddleware.from_config(get_app_config().loop_detection)
 
     # Add summarization middleware if enabled
     summarization_middleware = _create_summarization_middleware()
