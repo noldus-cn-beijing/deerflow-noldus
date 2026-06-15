@@ -485,6 +485,23 @@ class CodeExecutorHandoff(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=dict 下，producer
+        字段名打错（parms vs parameters_used）→ 正确字段拿空默认 → 仍可标 completed →
+        下游读到"合法空值"。本校验把这类哑故障换成响亮 ValidationError。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.metrics_summary:
+            raise ValueError(
+                "status='completed' but metrics_summary is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
+
 
 class FailedChart(BaseModel):
     """One failed chart entry."""
@@ -519,6 +536,22 @@ class ChartMakerHandoff(BaseModel):
         default=None,
         description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
+
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=list 下，producer
+        字段名打错→ chart_files 拿空默认 → 仍可标 completed → 下游读到"合法空值"。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.chart_files:
+            raise ValueError(
+                "status='completed' but chart_files is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
 
     @field_validator("chart_files")
     @classmethod
@@ -625,6 +658,22 @@ class DataAnalystHandoff(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=list 下，producer
+        字段名打错→ key_findings 拿空默认 → 仍可标 completed → 下游读到"合法空值"。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.key_findings:
+            raise ValueError(
+                "status='completed' but key_findings is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
+
 
 class ReportWriterHandoff(BaseModel):
     """Handoff JSON produced by the report-writer subagent."""
@@ -647,6 +696,22 @@ class ReportWriterHandoff(BaseModel):
         default=None,
         description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
+
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=list 下，producer
+        字段名打错→ sections_written 拿空默认 → 仍可标 completed → 下游读到"合法空值"。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.sections_written:
+            raise ValueError(
+                "status='completed' but sections_written is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
 
 
 __all__ = [

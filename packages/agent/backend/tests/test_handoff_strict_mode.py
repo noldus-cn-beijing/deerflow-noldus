@@ -26,6 +26,7 @@ def _valid_handoff() -> dict:
         "summary": "test",
         "paradigm": "fst",
         "analysis_config_id": "x",
+        "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}},
     }
 
 

@@ -700,3 +700,59 @@ class TestRealDataNormalization:
         assert any("in_zone" in c and "open" in c for c in cols), (
             f"Demo EPM should still have in_zone_open_arms_* column. Got: {cols}"
         )
+
+
+# ============================================================================
+# 2026-06-12: calamine 启动期断言 (Spec S3 Part B)
+# ============================================================================
+
+
+class TestCalamineImportAssertion:
+    """parse 模块 import 期断言 python-calamine 可用。
+
+    PR #125 把 Excel 引擎换 calamine（硬依赖），但缺依赖只在第一次
+    pd.read_excel(engine="calamine") 才炸，且 _detect_ethovision_xlsx 的
+    try/except 会把 calamine 缺失误判成"非 EthoVision 文件"（哑故障）。
+    B1 在 parse/__init__.py import 期响亮断言，缺依赖当场失败。
+    """
+
+    def test_import_succeeds_when_calamine_available(self):
+        """正常路径：python-calamine 可用时 import ethoinsight.parse 成功。"""
+        import ethoinsight.parse  # noqa: F811 — already imported at module level, verify re-import ok
+        assert ethoinsight.parse.parse_header is not None
+
+    def test_missing_calamine_raises_import_error_with_guidance(self):
+        """calamine 不可用时 import ethoinsight.parse 抛带指引的 ImportError。"""
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        # ethoinsight 包根目录（含 pyproject + ethoinsight/ 包），从 __file__ 推导，
+        # 不硬编码绝对路径——换机器 / CI / 移动 worktree 仍可用。
+        pkg_root = Path(__file__).resolve().parents[1]
+
+        code = """
+import sys
+# 模拟 python_calamine 不可导入
+sys.modules['python_calamine'] = None
+try:
+    from ethoinsight import parse
+    print('UNEXPECTED_SUCCESS')
+except ImportError as e:
+    msg = str(e)
+    if 'python-calamine' in msg and 'calamine' in msg:
+        print('CORRECT_IMPORT_ERROR')
+    else:
+        print(f'WRONG_MESSAGE: {msg}')
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            cwd=str(pkg_root),
+            env={**os.environ, "PYTHONPATH": str(pkg_root)},
+        )
+        assert "CORRECT_IMPORT_ERROR" in result.stdout, (
+            f"Expected CORRECT_IMPORT_ERROR, got stdout={result.stdout!r} stderr={result.stderr!r}"
+        )

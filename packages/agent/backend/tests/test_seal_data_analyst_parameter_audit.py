@@ -117,6 +117,7 @@ class TestSealWritesFindings:
             "handoff_data_analyst.json",
             {
                 "status": "completed",
+                "key_findings": ["finding"],
                 "parameter_audit_findings": [_make_finding_dict()],
             },
             runtime,
@@ -179,7 +180,7 @@ class TestSealHandlesEmptyFindings:
         result = _seal_handoff(
             DataAnalystHandoff,
             "handoff_data_analyst.json",
-            {"status": "completed"},
+            {"status": "completed", "key_findings": ["finding"]},
             runtime,
         )
 
@@ -196,7 +197,7 @@ class TestSealHandlesEmptyFindings:
         result = _seal_handoff(
             DataAnalystHandoff,
             "handoff_data_analyst.json",
-            {"status": "completed", "parameter_audit_findings": []},
+            {"status": "completed", "key_findings": ["finding"], "parameter_audit_findings": []},
             runtime,
         )
 

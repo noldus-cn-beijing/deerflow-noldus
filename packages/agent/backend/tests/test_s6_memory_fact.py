@@ -277,6 +277,7 @@ class TestSealReportWriterMemoryIntegration:
             seal_report_writer_handoff.func(
                 status="completed",
                 report_path="/mnt/user-data/outputs/report.md",
+                sections_written=["Results"],
                 runtime=runtime,
             )
             call_kwargs = mock_mem.call_args.kwargs
@@ -291,6 +292,7 @@ class TestSealReportWriterMemoryIntegration:
             seal_report_writer_handoff.func(
                 status="completed",
                 report_path="/mnt/user-data/outputs/report.md",
+                sections_written=["Results"],
                 runtime=runtime,
             )
             call_kwargs = mock_mem.call_args.kwargs

@@ -65,21 +65,18 @@ class TestCodeExecutorHandoffNewFields:
             "summary": "done",
             "paradigm": "fst",
             "analysis_config_id": "PENDING_SPRINT_4.5",
+            "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}},
         }
         payload.update(overrides)
         return payload
 
     def test_paradigm_required(self):
         with pytest.raises(ValidationError, match="paradigm"):
-            CodeExecutorHandoff(status="completed", summary="done", analysis_config_id="x")
+            CodeExecutorHandoff.model_validate({"status": "completed", "summary": "done", "analysis_config_id": "x", "metrics_summary": {"g": {"m": {"mean": 1.0}}}})
 
     def test_analysis_config_id_required(self):
-        # CodeExecutorHandoff 是 handoff 链源头，由 seal tool 从 experiment-context.json
-        # 总会注入 analysis_config_id（seal_handoff_tools.py setdefault），故源头强制 required
-        # 保 lineage 完整。下游 handoff (DataAnalyst/ChartMaker/ReportWriter) 仍 optional
-        # default='PENDING'（见 test_analysis_config_id.py 的 *_for_downstream 测试）。
         with pytest.raises(ValidationError, match="analysis_config_id"):
-            CodeExecutorHandoff(status="completed", summary="done", paradigm="fst")
+            CodeExecutorHandoff.model_validate({"status": "completed", "summary": "done", "paradigm": "fst", "metrics_summary": {"g": {"m": {"mean": 1.0}}}})
 
     def test_ev19_template_optional(self):
         h = CodeExecutorHandoff(**self._base_payload())

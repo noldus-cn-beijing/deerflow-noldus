@@ -31,6 +31,7 @@ def _make_handoff_dict(raw_files: list[str], extras: dict | None = None) -> dict
         "summary": "OK",
         "paradigm": "fst",
         "analysis_config_id": "test-config-id",
+        "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}},
         "inputs": {"raw_files": raw_files, "groups": {"Arena 1": "Treatment"}},
     }
     if extras:
@@ -91,7 +92,7 @@ class TestCodeExecutorHandoffFullDoc:
 
     def test_handoff_without_inputs_is_legal(self):
         """Backward compatibility — older handoffs omit inputs altogether."""
-        handoff = CodeExecutorHandoff.model_validate({"status": "completed", "summary": "OK", "paradigm": "fst", "analysis_config_id": "test-config-id"})
+        handoff = CodeExecutorHandoff.model_validate({"status": "completed", "summary": "OK", "paradigm": "fst", "analysis_config_id": "test-config-id", "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}}})
         assert handoff.inputs is None
 
     def test_handoff_with_host_paths_rejected(self):

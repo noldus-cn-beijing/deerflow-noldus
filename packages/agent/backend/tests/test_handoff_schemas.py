@@ -47,6 +47,7 @@ class TestTaskContextBackwardCompat:
             "summary": "old handoff",
             "paradigm": "fst",
             "analysis_config_id": "deadbeef12345678",
+            "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}},
         }
         from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
 
@@ -55,7 +56,7 @@ class TestTaskContextBackwardCompat:
         assert handoff.task_context is None
 
     def test_data_analyst_without_task_context(self):
-        d = {"status": "completed", "analysis_config_id": "deadbeef12345678"}
+        d = {"status": "completed", "analysis_config_id": "deadbeef12345678", "key_findings": ["Treatment group shows significant difference (p=0.03)"]}
         from deerflow.subagents.handoff_schemas import DataAnalystHandoff
 
         handoff = DataAnalystHandoff.model_validate(d)
@@ -68,6 +69,7 @@ class TestTaskContextBackwardCompat:
             "paradigm": "fst",
             "summary": "charts done",
             "analysis_config_id": "deadbeef12345678",
+            "chart_files": ["/mnt/user-data/outputs/fst_bar.png"],
         }
         from deerflow.subagents.handoff_schemas import ChartMakerHandoff
 
@@ -80,6 +82,7 @@ class TestTaskContextBackwardCompat:
             "status": "completed",
             "report_path": "/mnt/user-data/outputs/report.md",
             "analysis_config_id": "deadbeef12345678",
+            "sections_written": ["Results"],
         }
         from deerflow.subagents.handoff_schemas import ReportWriterHandoff
 
@@ -99,6 +102,7 @@ class TestTaskContextForwardCompat:
             "summary": "new handoff",
             "paradigm": "fst",
             "analysis_config_id": "deadbeef12345678",
+            "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}},
             "task_context": {
                 "file_changes": ["/mnt/user-data/outputs/metrics.json"],
                 "verify_commands": ["python -m json.tool /mnt/user-data/outputs/metrics.json > /dev/null"],
@@ -121,6 +125,7 @@ class TestTaskContextForwardCompat:
             "summary": "with extra",
             "paradigm": "fst",
             "analysis_config_id": "deadbeef12345678",
+            "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}},
             "task_context": {
                 "file_changes": ["/a.txt"],
                 "verify_commands": [],
@@ -169,10 +174,10 @@ class TestHandoffStatusPartialConsistency:
         )
 
         for cls, extra in [
-            (CodeExecutorHandoff, {"summary": "s", "paradigm": "epm", "analysis_config_id": "deadbeef12345678"}),
-            (ChartMakerHandoff, {"summary": "s", "paradigm": "epm"}),
-            (DataAnalystHandoff, {}),
-            (ReportWriterHandoff, {"report_path": "/x/r.md"}),
+            (CodeExecutorHandoff, {"summary": "s", "paradigm": "epm", "analysis_config_id": "deadbeef12345678", "metrics_summary": {"g": {"m": {"mean": 1.0}}}}),
+            (ChartMakerHandoff, {"summary": "s", "paradigm": "epm", "chart_files": ["/mnt/user-data/outputs/x.png"]}),
+            (DataAnalystHandoff, {"key_findings": ["finding 1"]}),
+            (ReportWriterHandoff, {"report_path": "/x/r.md", "sections_written": ["Results"]}),
         ]:
             for st in ("completed", "partial", "failed"):
                 obj = cls(status=st, **extra)
@@ -183,3 +188,197 @@ class TestHandoffStatusPartialConsistency:
 
         with pytest.raises(ValidationError):
             DataAnalystHandoff(status="garbage")
+
+
+# ============================================================================
+# 2026-06-12: handoff schema fail-open 防护 — completed 要求核心产物非空 (Spec S3 Part A)
+# ============================================================================
+
+
+class TestCompletedRequiresCoreOutput:
+    """四个 handoff schema：status=completed 时核心字段必须非空。
+
+    Fable 实测：extra="allow" + default_factory=list/dict 下，producer 字段名打错
+    → 正确字段拿空默认 → 仍可标 completed → 下游读到"合法空值"（哑故障）。
+    本校验把这类哑故障换成响亮 ValidationError。
+    """
+
+    # ── CodeExecutorHandoff ────────────────────────────────────────────────
+
+    def test_code_executor_completed_empty_metrics_summary_raises(self):
+        """red 锚点：status=completed + metrics_summary={} → ValidationError。"""
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+
+        with pytest.raises(ValidationError, match="metrics_summary is empty"):
+            CodeExecutorHandoff(
+                status="completed",
+                summary="done",
+                paradigm="fst",
+                analysis_config_id="deadbeef12345678",
+                metrics_summary={},
+            )
+
+    def test_code_executor_completed_nonempty_metrics_summary_passes(self):
+        """正常 completed + 非空 metrics_summary → 通过。"""
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff, MetricStat
+
+        h = CodeExecutorHandoff(
+            status="completed",
+            summary="done",
+            paradigm="fst",
+            analysis_config_id="deadbeef12345678",
+            metrics_summary={"group_a": {"immobility": MetricStat(mean=50.0)}},
+        )
+        assert h.status == "completed"
+
+    def test_code_executor_partial_empty_metrics_summary_passes(self):
+        """partial + 空 metrics_summary → 放行（n=1 partial 路径）。"""
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+
+        h = CodeExecutorHandoff(
+            status="partial",
+            summary="n=1 skipped",
+            paradigm="fst",
+            analysis_config_id="deadbeef12345678",
+            metrics_summary={},
+        )
+        assert h.status == "partial"
+
+    def test_code_executor_failed_empty_metrics_summary_passes(self):
+        """failed + 空 metrics_summary → 放行。"""
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+
+        h = CodeExecutorHandoff(
+            status="failed",
+            summary="script crashed",
+            paradigm="fst",
+            analysis_config_id="deadbeef12345678",
+            metrics_summary={},
+        )
+        assert h.status == "failed"
+
+    def test_code_executor_typo_field_name_triggers_validator(self):
+        """Fable 核心场景：字段名打错（parms）→ metrics_summary 拿空默认 → 抛错。"""
+        from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+
+        # extra="allow" 让 typo 字段静默进 model_extra，metrics_summary 拿空 dict
+        with pytest.raises(ValidationError, match="metrics_summary is empty"):
+            CodeExecutorHandoff(
+                status="completed",
+                summary="done",
+                paradigm="fst",
+                analysis_config_id="deadbeef12345678",
+                parms={"velocity_threshold": 30.0},  # typo: should be parameters_used
+            )
+
+    # ── DataAnalystHandoff ──────────────────────────────────────────────────
+
+    def test_data_analyst_completed_empty_key_findings_raises(self):
+        """red 锚点：status=completed + key_findings=[] → ValidationError。"""
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
+
+        with pytest.raises(ValidationError, match="key_findings is empty"):
+            DataAnalystHandoff(status="completed", key_findings=[])
+
+    def test_data_analyst_completed_nonempty_key_findings_passes(self):
+        """正常 completed + 非空 key_findings → 通过。"""
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
+
+        h = DataAnalystHandoff(status="completed", key_findings=["Treatment 组 immobility 显著升高 (p=0.03)"])
+        assert h.status == "completed"
+
+    def test_data_analyst_partial_empty_key_findings_passes(self):
+        """partial + 空 key_findings → 放行（n=1 描述性路径）。"""
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
+
+        h = DataAnalystHandoff(status="partial", key_findings=[])
+        assert h.status == "partial"
+
+    def test_data_analyst_failed_empty_key_findings_passes(self):
+        """failed + 空 key_findings → 放行。"""
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
+
+        h = DataAnalystHandoff(status="failed", key_findings=[])
+        assert h.status == "failed"
+
+    # ── ChartMakerHandoff ───────────────────────────────────────────────────
+
+    def test_chart_maker_completed_empty_chart_files_raises(self):
+        """red 锚点：status=completed + chart_files=[] → ValidationError。"""
+        from deerflow.subagents.handoff_schemas import ChartMakerHandoff
+
+        with pytest.raises(ValidationError, match="chart_files is empty"):
+            ChartMakerHandoff(
+                status="completed",
+                paradigm="fst",
+                summary="charts done",
+                chart_files=[],
+            )
+
+    def test_chart_maker_completed_nonempty_chart_files_passes(self):
+        """正常 completed + 非空 chart_files → 通过。"""
+        from deerflow.subagents.handoff_schemas import ChartMakerHandoff
+
+        h = ChartMakerHandoff(
+            status="completed",
+            paradigm="fst",
+            summary="charts done",
+            chart_files=["/mnt/user-data/outputs/fst_bar.png"],
+        )
+        assert h.status == "completed"
+
+    def test_chart_maker_partial_empty_chart_files_passes(self):
+        """partial + 空 chart_files → 放行。"""
+        from deerflow.subagents.handoff_schemas import ChartMakerHandoff
+
+        h = ChartMakerHandoff(
+            status="partial",
+            paradigm="fst",
+            summary="only 1 chart of 3 succeeded",
+            chart_files=[],
+        )
+        assert h.status == "partial"
+
+    # ── ReportWriterHandoff ─────────────────────────────────────────────────
+
+    def test_report_writer_completed_empty_sections_written_raises(self):
+        """red 锚点：status=completed + sections_written=[] → ValidationError。"""
+        from deerflow.subagents.handoff_schemas import ReportWriterHandoff
+
+        with pytest.raises(ValidationError, match="sections_written is empty"):
+            ReportWriterHandoff(
+                status="completed",
+                report_path="/mnt/user-data/outputs/report.md",
+                sections_written=[],
+            )
+
+    def test_report_writer_completed_nonempty_sections_passes(self):
+        """正常 completed + 非空 sections_written → 通过。"""
+        from deerflow.subagents.handoff_schemas import ReportWriterHandoff
+
+        h = ReportWriterHandoff(
+            status="completed",
+            report_path="/mnt/user-data/outputs/report.md",
+            sections_written=["Results", "Discussion"],
+        )
+        assert h.status == "completed"
+
+    def test_report_writer_partial_empty_sections_written_passes(self):
+        """partial + 空 sections_written → 放行。"""
+        from deerflow.subagents.handoff_schemas import ReportWriterHandoff
+
+        h = ReportWriterHandoff(
+            status="partial",
+            report_path="/mnt/user-data/outputs/report.md",
+            sections_written=[],
+        )
+        assert h.status == "partial"
+
+    # ── 综合：四个 schema 的 model_validate 路径也触发 validator ──────────
+
+    def test_model_validate_triggers_completed_check(self):
+        """model_validate 路径也触发 completed validator（非仅构造函数）。"""
+        from deerflow.subagents.handoff_schemas import DataAnalystHandoff
+
+        with pytest.raises(ValidationError, match="key_findings is empty"):
+            DataAnalystHandoff.model_validate({"status": "completed", "key_findings": []})

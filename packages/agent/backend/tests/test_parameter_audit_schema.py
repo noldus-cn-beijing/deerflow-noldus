@@ -176,7 +176,7 @@ class TestSeverityCriticalNoAutoBlock:
 # ---------------------------------------------------------------------------
 class TestDataAnalystHandoffCarriesFindings:
     def test_empty_findings_default(self):
-        handoff = DataAnalystHandoff(status="completed", analysis_config_id="abc123")
+        handoff = DataAnalystHandoff(status="completed", analysis_config_id="abc123", key_findings=["finding"])
         assert handoff.parameter_audit_findings == []
 
     def test_handoff_with_findings(self):
@@ -187,6 +187,7 @@ class TestDataAnalystHandoffCarriesFindings:
         handoff = DataAnalystHandoff(
             status="completed",
             analysis_config_id="abc123",
+            key_findings=["finding"],
             parameter_audit_findings=findings,
         )
         assert len(handoff.parameter_audit_findings) == 2
@@ -196,7 +197,7 @@ class TestDataAnalystHandoffCarriesFindings:
     def test_handoff_round_trip_json(self):
         """Verify findings survive JSON serialization round-trip."""
         findings = [ParameterAuditFinding(**_make_finding())]
-        handoff = DataAnalystHandoff(status="completed", analysis_config_id="abc123", parameter_audit_findings=findings)
+        handoff = DataAnalystHandoff(status="completed", analysis_config_id="abc123", key_findings=["finding"], parameter_audit_findings=findings)
         json_str = handoff.model_dump_json()
         restored = DataAnalystHandoff.model_validate_json(json_str)
         assert len(restored.parameter_audit_findings) == 1
@@ -219,7 +220,7 @@ class TestGateSignalsCounts:
 
     def test_counts_in_data_analyst_handoff(self):
         gs = GateSignals(parameter_audit_findings_count=2, parameter_audit_critical_count=0)
-        handoff = DataAnalystHandoff(status="completed", analysis_config_id="abc123", gate_signals=gs)
+        handoff = DataAnalystHandoff(status="completed", analysis_config_id="abc123", key_findings=["finding"], gate_signals=gs)
         assert handoff.gate_signals.parameter_audit_findings_count == 2
 
 
@@ -313,6 +314,7 @@ class TestNormalizeAuditFinding:
         handoff = DataAnalystHandoff(
             status="completed",
             analysis_config_id="abc123",
+            key_findings=["finding"],
             parameter_audit_findings=[degenerate],
         )
         assert len(handoff.parameter_audit_findings) == 1

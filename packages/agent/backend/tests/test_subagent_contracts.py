@@ -34,7 +34,7 @@ from deerflow.subagents.handoff_schemas import (  # noqa: E402
 
 class TestCodeExecutorHandoffSchema:
     def test_minimal_completed_accepts(self):
-        handoff = CodeExecutorHandoff(status="completed", summary="ok", paradigm="fst", analysis_config_id="test-config-id")
+        handoff = CodeExecutorHandoff(status="completed", summary="ok", paradigm="fst", analysis_config_id="test-config-id", metrics_summary={"g": {"m": {"mean": 1.0}}})
         assert handoff.status == "completed"
         assert handoff.errors == []
         assert handoff.data_quality_warnings == []
@@ -132,9 +132,9 @@ class TestCodeExecutorHandoffSchema:
 
 class TestDataAnalystHandoffSchema:
     def test_minimal_completed_accepts(self):
-        h = DataAnalystHandoff(status="completed", analysis_config_id="test-config-id")
+        h = DataAnalystHandoff(status="completed", analysis_config_id="test-config-id", key_findings=["Finding 1"])
         assert h.status == "completed"
-        assert h.key_findings == []
+        assert h.key_findings == ["Finding 1"]
         assert h.outlier_findings == []
         assert h.method_warnings == []
 
@@ -158,8 +158,9 @@ class TestReportWriterHandoffSchema:
             status="completed",
             analysis_config_id="test-config-id",
             report_path="/mnt/user-data/outputs/report.md",
+            sections_written=["Results"],
         )
-        assert h.sections_written == []
+        assert h.sections_written == ["Results"]
 
     def test_rejects_missing_path(self):
         with pytest.raises(Exception):

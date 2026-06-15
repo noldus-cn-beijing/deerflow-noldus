@@ -240,6 +240,7 @@ class TestReportWriterHandoffNotAffected:
         h = ReportWriterHandoff(
             status="completed",
             report_path="/mnt/user-data/outputs/report.md",
+            sections_written=["Results"],
         )
         assert h.status == "completed"
         assert h.report_path == "/mnt/user-data/outputs/report.md"
