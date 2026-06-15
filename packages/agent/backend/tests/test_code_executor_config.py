@@ -33,10 +33,15 @@ def test_system_prompt_no_longer_runs_charts():
 
 
 def test_system_prompt_still_runs_metrics_and_stats():
+    """Spec S4: 跑 metrics+stats 的职责从 prompt（教 LLM 迭代 plan.metrics）
+    下沉到 run_metric_plan 工具（进程池确定性执行）。prompt 只需教调一次 run_metric_plan。
+    """
     cfg = CODE_EXECUTOR_CONFIG
-    assert "plan.metrics" in cfg.system_prompt
-    assert "plan.statistics" in cfg.system_prompt
-    assert "handoff_code_executor.json" in cfg.system_prompt
+    sp = cfg.system_prompt
+    assert "run_metric_plan" in sp, "prompt 必须教调 run_metric_plan 工具执行 metrics+stats"
+    assert "handoff_code_executor.json" in sp
+    # bash 编排段已删（职责在工具内）
+    assert "<bash_constraints>" not in sp
 
 
 def test_disallowed_tools_unchanged():
