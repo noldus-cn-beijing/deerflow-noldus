@@ -476,11 +476,12 @@ class CodeExecutorHandoff(BaseModel):
         default=None,
         description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
-    sealed_by: Literal["model", "framework_rebuild"] = Field(
+    sealed_by: Literal["model", "framework_rebuild", "run_plan"] = Field(
         default="model",
         description=(
             "Handoff 来源标记。model = subagent 自行调 seal 工具封存（正常路径）；"
-            "framework_rebuild = harness 在 auto-seal 兜底中从 m_*.json 机械重建。"
+            "framework_rebuild = harness 在 auto-seal 兜底中从 m_*.json 机械重建；"
+            "run_plan = run_metric_plan 工具确定性落盘（code-executor S4，确定性执行+聚合）。"
             "用于触发率可观测 + 回归探针（Spec A V1/V2 验收项）。"
         ),
     )

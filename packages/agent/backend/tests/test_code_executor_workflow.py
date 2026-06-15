@@ -4,11 +4,14 @@ from __future__ import annotations
 
 
 def test_code_executor_workflow_reads_plan_json():
+    """Spec S4: prompt 仍指向 plan_metrics.json，但迭代 metrics 的职责
+    下沉到 run_metric_plan 工具（不再 prompt 教 LLM 逐条 plan.metrics 迭代）。
+    """
     from deerflow.subagents.builtins.code_executor import CODE_EXECUTOR_CONFIG
     sp = CODE_EXECUTOR_CONFIG.system_prompt
 
     assert "plan_metrics.json" in sp, "workflow must reference plan.json"
-    assert "plan.metrics" in sp or "metrics 数组" in sp, "must describe iterating metrics"
+    assert "run_metric_plan" in sp, "must instruct calling run_metric_plan to execute the plan"
 
     assert "by-paradigm" not in sp, "should no longer read by-paradigm md"
     assert "决策树" not in sp or "选脚本" not in sp, "decision tree responsibility moved to lead"
@@ -21,28 +24,20 @@ def test_code_executor_skills_list_unchanged():
     assert "ethoinsight-code" in (CODE_EXECUTOR_CONFIG.skills or [])
 
 
-def test_parameters_used_passthrough_from_compute_result_not_plan():
-    """parameters_used 必须逐字透传 compute [result]，空 {} 是正确结果，不得回退用 plan 的 parameters_in_use。
+def test_parameters_used_sourced_from_disk_artifacts_not_prompt():
+    """Spec S4: parameters_used 透传职责从 prompt（教 LLM 抓 compute [result] stdout）
+    下沉到 metric_aggregation 聚合器——直接从磁盘 m_*.json 读 parameters_used，
+    不靠 LLM 抓 stdout（杜绝空 {} 被当 bug 修 / 幽灵参数）。
 
-    2026-06-03 实证：data-analyst step 2.8 死循环的更上游源——code-executor LLM 把空的
-    [result].parameters_used 当 bug，改用 plan_metrics.json 的全量 parameters_in_use，
-    导致 metrics_summary 报 12 个未参与计算的幽灵参数。skill 必须正面说明空 {} 是正确且
-    有意义的，并指明 [result] 是唯一真相源、plan 的 parameters_in_use 不是。
+    原 2026-06-03 故障（data-analyst step 2.8 死循环）的根因——LLM 把空 [result].
+    parameters_used 当 bug 改用 plan 全量 parameters_in_use——在 S4 后结构性消失：
+    聚合器从 m_*.json 的 parameters_used 字段机械读，LLM 不参与参数透传。
+    回归覆盖在 tests/test_run_metric_plan.py::TestListZoneParamsPreserved。
     """
     from deerflow.subagents.builtins.code_executor import CODE_EXECUTOR_CONFIG
     sp = CODE_EXECUTOR_CONFIG.system_prompt
-
-    # [result] 是 parameters_used 的权威/唯一真相源
-    assert "parameters_used" in sp
-    assert ("权威来源" in sp and "[result]" in sp) or ("唯一真相源" in sp), (
-        "必须声明 parameters_used 以 compute [result] 为权威/唯一真相源"
-    )
-    # 空 {} 被正面解释为正确，而非"可能为空"这种暗示它是 quirk 的措辞
-    assert "空" in sp and ("正确" in sp or "有意义" in sp), (
-        "必须正面说明空 parameters_used 是正确且有意义的结果（杜绝 LLM 当 bug 修）"
-    )
-    # 明确点名 plan 的 parameters_in_use 不是真相源
-    assert "parameters_in_use" in sp, (
-        "必须点名 plan_metrics.json 的 parameters_in_use 只是'打算用'清单、非实际用到"
+    # prompt 不再教抓 [result] stdout（职责在聚合器）
+    assert "抓 stdout" in sp or "不需要抓 stdout" in sp or "不需要手构 handoff" in sp, (
+        "prompt 应声明执行/聚合由 run_metric_plan 工具确定性完成，LLM 不抓 stdout"
     )
 

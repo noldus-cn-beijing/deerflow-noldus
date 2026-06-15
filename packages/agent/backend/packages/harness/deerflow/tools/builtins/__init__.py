@@ -4,6 +4,7 @@ from .inspect_uploaded_file_tool import inspect_uploaded_file_tool
 from .prep_metric_plan_tool import prep_metric_plan_tool
 from .present_assumptions import present_assumptions_tool
 from .present_file_tool import present_file_tool
+from .run_metric_plan_tool import run_metric_plan_tool
 from .seal_handoff_tools import (
     seal_chart_maker_handoff,
     seal_code_executor_handoff,
@@ -25,6 +26,7 @@ __all__ = [
     "view_image_tool",
     "task_tool",
     "prep_metric_plan_tool",
+    "run_metric_plan_tool",
     "present_assumptions_tool",
     "seal_code_executor_handoff",
     "seal_data_analyst_handoff",

@@ -75,19 +75,24 @@ class TestFilterLeadToolsPureFunction:
 
 
 class TestSubagentToolsUnchanged:
-    """子代理（code-executor / data-analyst）工具列表不受影响 —— 子代理通过 SubagentConfig.tools 显式声明 bash，跟 _filter_lead_tools 完全独立。"""
+    """子代理工具列表与 _filter_lead_tools 独立 —— 通过 SubagentConfig.tools 显式声明。
 
-    def test_code_executor_still_has_bash(self):
-        """grep subagents/builtins/__init__.py 验证 code-executor 注册时 tools 含 bash。"""
+    Spec S4 (2026-06-12): code-executor 工具粒度从裸 bash 改为 run_metric_plan 确定性工具。
+    bash/write_file/str_replace 已收走（§2.1 红线），run_metric_plan 加入。
+    """
+
+    def test_code_executor_uses_run_metric_plan_not_bash(self):
+        """S4: code-executor 不再用 bash，改用 run_metric_plan 确定性执行。"""
         from deerflow.subagents.registry import get_subagent_config
         config = get_subagent_config("code-executor")
         assert config is not None, "code-executor subagent 必须注册"
-        # tools=None 表示"全部工具"，即 bash 可用；
-        # tools 是显式列表时，bash 必须在内；
-        # disallowed_tools 不能拒绝 bash
-        if config.tools is not None:
-            assert "bash" in config.tools, (
-                f"code-executor 必须能用 bash；当前 tools={config.tools}"
-            )
-        if config.disallowed_tools is not None:
-            assert "bash" not in config.disallowed_tools
+        assert config.tools is not None
+        # run_metric_plan 是执行 metrics+stats 的唯一路径
+        assert "run_metric_plan" in config.tools, f"run_metric_plan 必须在 tools: {config.tools}"
+        # bash/write_file/str_replace 已收走（防 LLM 退回手拼命令老路）
+        assert "bash" not in config.tools, f"S4: code-executor 不应再有 bash: {config.tools}"
+        assert "write_file" not in config.tools
+        assert "str_replace" not in config.tools
+        # 显式 disallow 双保险（防被任何机制重新挂回）
+        assert "bash" in (config.disallowed_tools or [])
+
