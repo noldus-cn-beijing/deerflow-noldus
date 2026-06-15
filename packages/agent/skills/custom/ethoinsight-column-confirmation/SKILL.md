@@ -17,6 +17,10 @@ inspect_uploaded_file 报告有**未被系统识别的自定义分析区列**时
 
 **处理用户自定义列前，先 `read_file references/column-processing-methodology.md`** 了解三层列处理框架（固定列 / 自定义区 1:1 映射 / 子区聚合）与工具分工（identify → inspect → dump_headers）。
 
+### 重要：列名非标准 ≠ 换模板
+
+当 inspect 报告未识别的自定义分析区列（如 open/closed/中心区/zone_A）时，这是**列对齐**任务，不是重新判断模板的信号。模板变体（AllZones / FewZones / NoZones）由"录制时是否划分析区"决定：数据里有区归属列就属于划了区的变体（Few/AllZones）；NoZones 指数据完全没有任何区归属列（只有 x/y 轨迹）。**保持已选模板不变**，把已识别的归属列对齐到 catalog 概念即可（参考 `references/zone-concepts.generated.md` 菜单）。列名非标准是命名/对齐问题，换模板会丢掉全部区指标。
+
 ### 1. 理解 catalog 合法概念菜单
 
 先读 `identify_ev19_template` 结果中的 `paradigm_key`，按范式查 catalog 的合法分析区概念：
