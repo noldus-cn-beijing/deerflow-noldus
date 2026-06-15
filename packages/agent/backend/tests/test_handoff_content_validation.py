@@ -349,3 +349,99 @@ class TestExistingBehaviorPreserved:
         """general-purpose（白名单外）→ None（不进内容检查）"""
         ws = _make_workspace(tmp_path)
         assert _validate("general-purpose", ws) is None
+
+
+# ==================== status=failed 短路（2026-06-15 spec #3） ====================
+
+
+class TestFailedStatusShortCircuit:
+    """status=failed 的 handoff 合法地没有核心数据（失败的定义就是没产出）。
+
+    背景（2026-06-15 EPM dogfood）：_validate_handoff_emitted 调 content check 只看
+    核心字段非空，无视 status。code-executor 因环境错误正确 seal status=failed
+    （failed 本就没指标数据可填），却被判 "incomplete → re-dispatch"，触发 lead
+    规则 #7 自动重派死循环（gateway.log L288-361）。
+
+    修复：status=failed 时短路放行（一处覆盖四个 subagent）。partial 不放宽。
+    """
+
+    def test_failed_code_executor_passes_empty_metrics(self, tmp_path: Path):
+        """red 锚点：status=failed + metrics_summary 空 → 放行（修复前判 incomplete）。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content={
+                "status": "failed",
+                "summary": "环境层错误，140 指标全失败",
+                "metrics_summary": {},  # 失败本就该空
+                "errors": ["FileNotFoundError ..."],
+            },
+        )
+        assert _validate("code-executor", ws) is None
+
+    def test_failed_code_executor_all_metrics_fields_empty_passes(self, tmp_path: Path):
+        """status=failed + 三字段全空 → 仍放行（守护：failed 短路先于 content check）。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content={"status": "failed"},  # metrics/metrics_results/metrics_summary 全缺
+        )
+        assert _validate("code-executor", ws) is None
+
+    def test_failed_data_analyst_passes_empty_key_findings(self, tmp_path: Path):
+        """四个 subagent 一致：failed data-analyst（key_findings 空）放行。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_data_analyst.json",
+            content={
+                "status": "failed",
+                "summary": "前置 code-executor 失败，无法判读",
+                "key_findings": [],
+            },
+        )
+        assert _validate("data-analyst", ws) is None
+
+    def test_failed_report_writer_passes_empty_report_path(self, tmp_path: Path):
+        """守护一致性：failed report-writer（report_path 空）放行。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_report_writer.json",
+            content={
+                "status": "failed",
+                "summary": "上游数据缺失，无法生成报告",
+                "report_path": "",
+            },
+        )
+        assert _validate("report-writer", ws) is None
+
+    def test_failed_chart_maker_passes_empty_charts(self, tmp_path: Path):
+        """守护一致性：failed chart-maker（chart_files + failed_charts 均空）放行。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_chart_maker.json",
+            content={"status": "failed", "chart_files": [], "failed_charts": []},
+        )
+        assert _validate("chart-maker", ws) is None
+
+    def test_partial_status_still_requires_metrics(self, tmp_path: Path):
+        """守护：partial 不在放宽范围——partial + 核心字段空仍判 incomplete。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content={"status": "partial", "metrics_summary": {}},
+        )
+        result = _validate("code-executor", ws)
+        assert result is not None
+        assert "incomplete" in result
+
+    def test_completed_status_still_requires_metrics(self, tmp_path: Path):
+        """守护：放宽 failed 不误伤 completed——completed + 核心字段空仍判 incomplete。"""
+        ws = _make_workspace(
+            tmp_path,
+            filename="handoff_code_executor.json",
+            content={"status": "completed", "metrics_summary": {}},
+        )
+        result = _validate("code-executor", ws)
+        assert result is not None
+        assert "incomplete" in result
+

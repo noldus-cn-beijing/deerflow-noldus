@@ -236,6 +236,13 @@ def _validate_handoff_emitted(
                     expected_filename,
                 )
                 return None
+            # status=failed 的 handoff 合法地没有核心数据（失败的定义就是没产出）。
+            # 不能用"核心字段非空"判据卡它——否则诚实的 failed handoff 被误判 incomplete，
+            # seal-resume 救不回 → "terminated without emitting" → lead 无限重派（2026-06-15
+            # EPM dogfood 死循环根因；gateway.log L288-361）。failed 只要文件存在 + 是合法
+            # JSON 即放行。partial 不在本次放宽范围（partial=部分成功，仍要求核心字段非空）。
+            if isinstance(parsed, dict) and parsed.get("status") == "failed":
+                return None
             missing = content_check(parsed) if isinstance(parsed, dict) else "handoff is not a JSON object"
             if missing is None:
                 return None  # 文件存在 + 核心字段非空 → 通过
