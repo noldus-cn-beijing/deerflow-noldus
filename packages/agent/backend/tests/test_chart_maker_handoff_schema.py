@@ -10,8 +10,10 @@ class TestChartMakerMinimumFields:
     """paradigm + summary required; others have defaults."""
 
     def test_minimum_fields(self):
-        h = ChartMakerHandoff(paradigm="fst", summary="generated charts", analysis_config_id="PENDING_SPRINT_4.5")
-        assert h.status == "completed"
+        # status="failed" so the completed→non-empty-chart_files validator (Spec S3) does
+        # not fire — this test verifies field defaults, not the completed contract.
+        h = ChartMakerHandoff(status="failed", paradigm="fst", summary="generated charts", analysis_config_id="PENDING_SPRINT_4.5")
+        assert h.status == "failed"
         assert h.paradigm == "fst"
         assert h.summary == "generated charts"
         assert h.chart_files == []
@@ -62,9 +64,14 @@ class TestChartMakerPathValidation:
                 analysis_config_id="x",
             )
 
-    def test_empty_chart_files_ok(self):
-        h = ChartMakerHandoff(paradigm="fst", summary="no charts", analysis_config_id="x")
+    def test_empty_chart_files_ok_for_non_completed(self):
+        # Empty chart_files is legal only for partial/failed (seal tool contract:
+        # 全部失败时为 failed). The completed→non-empty validator (Spec S3) rejects
+        # completed + empty as a dumb-failure, so use failed/partial here.
+        h = ChartMakerHandoff(status="failed", paradigm="fst", summary="no charts", analysis_config_id="x")
         assert h.chart_files == []
+        h_partial = ChartMakerHandoff(status="partial", paradigm="fst", summary="some failed", analysis_config_id="x")
+        assert h_partial.chart_files == []
 
 
 class TestFailedChart:

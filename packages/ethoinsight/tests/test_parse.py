@@ -723,8 +723,14 @@ class TestCalamineImportAssertion:
 
     def test_missing_calamine_raises_import_error_with_guidance(self):
         """calamine 不可用时 import ethoinsight.parse 抛带指引的 ImportError。"""
+        import os
         import subprocess
         import sys
+        from pathlib import Path
+
+        # ethoinsight 包根目录（含 pyproject + ethoinsight/ 包），从 __file__ 推导，
+        # 不硬编码绝对路径——换机器 / CI / 移动 worktree 仍可用。
+        pkg_root = Path(__file__).resolve().parents[1]
 
         code = """
 import sys
@@ -744,8 +750,8 @@ except ImportError as e:
             [sys.executable, "-c", code],
             capture_output=True,
             text=True,
-            cwd="/home/wangqiuyang/noldus-insight-s3-worktree/packages/ethoinsight",
-            env={**__import__("os").environ, "PYTHONPATH": "."},
+            cwd=str(pkg_root),
+            env={**os.environ, "PYTHONPATH": str(pkg_root)},
         )
         assert "CORRECT_IMPORT_ERROR" in result.stdout, (
             f"Expected CORRECT_IMPORT_ERROR, got stdout={result.stdout!r} stderr={result.stderr!r}"
