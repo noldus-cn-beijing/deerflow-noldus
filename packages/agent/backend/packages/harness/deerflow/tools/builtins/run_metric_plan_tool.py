@@ -10,8 +10,10 @@ LLM 在工具边界只传「哪些」(`only_metric_ids`) 和「怎么对待」(`
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from typing import Any
@@ -38,13 +40,52 @@ _TASK_RUNNER_OVERRIDE = None
 # ============================================================================
 
 
+def _worker_init(path_env: dict[str, str]) -> None:
+    """ProcessPoolExecutor initializer — 在**每个 worker 进程内**设置 DEERFLOW_PATH_* env。
+
+    Spec S4 §1.3：worker 需要 DEERFLOW_PATH_* 才能让脚本内 resolve_sandbox_path 解
+    /mnt 虚拟路径。通过 initializer 在子进程内 os.environ.update，而非在父进程（Gateway）
+    mutate 全局 os.environ——父进程多线程并发跑多个 thread 的 subagent，全局 mutate 会让
+    一个 thread 的 workspace 路径泄漏成全局、污染其他 thread（潜在跨线程路径错配）。
+    initializer 把副作用关在 worker 进程里，父进程 env 不变。
+    """
+    if path_env:
+        os.environ.update(path_env)
+
+
+@contextlib.contextmanager
+def _scoped_path_env(path_env: dict[str, str] | None) -> Iterator[None]:
+    """临时把 path_env 设进父进程 os.environ，退出即恢复原值（含删除新增的键）。
+
+    用于在父进程内跑 statistics（_run_metric_task 直接调 mod.main，脚本内
+    resolve_sandbox_path 读 DEERFLOW_PATH_* env）。比永久 os.environ.update 安全：
+    多线程 Gateway 下副作用只在 with 块内可见、退出即还原，不泄漏给其他 thread。
+    （注：理论上 with 块内的并发线程仍可能瞥见这些键——statistics 是单 task 短调用，
+    窗口极小；彻底隔离需把 statistics 也移进进程池，本次保持最小改动。）
+    """
+    if not path_env:
+        yield
+        return
+    _sentinel = object()
+    saved: dict[str, Any] = {k: os.environ.get(k, _sentinel) for k in path_env}
+    os.environ.update(path_env)
+    try:
+        yield
+    finally:
+        for k, old in saved.items():
+            if old is _sentinel:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = old
+
+
 def _run_metric_task(
     script: str, args: list[str], task_id: str
 ) -> tuple[str, int, str]:
     """Run one compute/statistics script in-process. Returns (task_id, returncode, error).
 
     returncode 0 = success; non-zero or exception = failure with error string.
-    Worker 继承 parent 的 os.environ（含 DEERFLOW_PATH_* env，Spec S4 §1.3），
+    Worker 的 DEERFLOW_PATH_* env 由 _worker_init initializer 在进程内设置（Spec S4 §1.3），
     所以脚本内 resolve_sandbox_path 能解 /mnt 虚拟路径。
 
     必须模块级 + 顶层无 deerflow/ethoinsight import（pickle 友好 + 守 harness 闭环纪律）。
@@ -134,11 +175,11 @@ def run_metric_plan_tool(
             return _error_result("empty_after_filter", f"only_metric_ids 过滤后无 metric: {sorted(only_set)}")
 
     # ---- Step 4: build DEERFLOW_PATH_* env so workers resolve /mnt virtual paths ----
-    # ProcessPoolExecutor 在 Linux 默认 fork（继承 parent env），但显式 update 保险——
-    # spawn 模式或被改默认时不继承，虚拟路径就解不开（Spec S4 §1.3 风险点）。
+    # 不在父进程 mutate 全局 os.environ（Gateway 多线程并发跑多 thread subagent，全局
+    # mutate 会让一个 thread 的 workspace 路径泄漏成全局污染其他 thread）。改为：
+    #   - compute 池 worker：经 ProcessPoolExecutor initializer 在子进程内设置（_worker_init）。
+    #   - statistics（在父进程内跑）：用 _scoped_path_env 临时设置 + 退出即恢复（见 Step 7）。
     path_env = _build_path_env(thread_data)
-    if path_env:
-        os.environ.update(path_env)
 
     # ---- Step 5: build task list (compute metrics) ----
     # compute 脚本的 args 已含完整 argv（--input --output --parameters-json ...），直接透传。
@@ -160,6 +201,7 @@ def run_metric_plan_tool(
         on_error=on_error,
         timeout=PER_TASK_TIMEOUT_SECONDS,
         runner=_TASK_RUNNER_OVERRIDE,
+        path_env=path_env,
     )
 
     n_total = len(tasks)
@@ -188,9 +230,12 @@ def run_metric_plan_tool(
             stats_argv = ["--inputs", inputs_arg, "--groups", groups_arg, "--output", stats_output]
 
             # 统计单独提交（不进上面的池：单 task，避免 inputs.json/groups.json 写竞争）。
+            # 在父进程内跑（_run_metric_task 直接调 mod.main），脚本内 resolve_sandbox_path
+            # 读 DEERFLOW_PATH_* env——用 _scoped_path_env 临时设置 + 退出即恢复，不留全局副作用。
             # 感知测试 runner override（与 compute 路径一致，mock 出同一脚本行为）。
             _stats_runner = _TASK_RUNNER_OVERRIDE if _TASK_RUNNER_OVERRIDE is not None else _run_metric_task
-            _tid, src_rc, src_err = _stats_runner(stats_script, stats_argv, "statistics")
+            with _scoped_path_env(path_env):
+                _tid, src_rc, src_err = _stats_runner(stats_script, stats_argv, "statistics")
             if src_rc == 0:
                 # 读 statistics 产物（output 是虚拟路径，resolve 后读）。
                 stats_real = replace_virtual_path(stats_output, thread_data)
@@ -259,17 +304,19 @@ def _execute_tasks(
     on_error: str = "continue",
     timeout: int = PER_TASK_TIMEOUT_SECONDS,
     runner=None,
+    path_env: dict[str, str] | None = None,
 ) -> tuple[dict[str, tuple[int, str]], list[dict[str, str]]]:
     """Execute all compute tasks, return (results, failures).
 
-    Spec S4 §1.3 / §1.5: per-task timeout (不杀整池), on_error policy, 结果按提交顺序。
+    Spec S4 §1.3 / §1.5: per-task timeout (不杀整池), on_error policy。
 
     Args:
       tasks: list of (script, args, task_id).
-      on_error: "continue" (跑完全部) | "abort" (遇首个失败停止提交后续).
+      on_error: "continue" (跑完全部) | "abort" (遇首个失败即停，不再等待 / 取消未启动).
       timeout: per-task wall-clock seconds.
       runner: callable(script, args, task_id) -> (task_id, rc, error). None = default
         _run_metric_task via ProcessPoolExecutor. **测试注入同步 runner 绕开 fork/pickle**。
+      path_env: DEERFLOW_PATH_* env，经 initializer 在每个 worker 进程内设置（不污染父进程）。
 
     Returns:
       results: {task_id: (rc, error_str)}.
@@ -295,34 +342,43 @@ def _execute_tasks(
                     break
         return results, failures
 
-    # 生产路径：ProcessPoolExecutor。
-    aborted = False
-    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        future_map = {pool.submit(_run_metric_task, sc, ar, tid): tid for (sc, ar, tid) in tasks}
-        for fut, tid in future_map.items():
-            if aborted:
-                fut.cancel()
-                results[tid] = (1, "aborted (on_error=abort 前序失败)")
-                failures.append({"id": tid, "error": "aborted"})
-                continue
+    # 生产路径：ProcessPoolExecutor。worker env 经 initializer 在子进程内设置（不污染父进程）。
+    pool = ProcessPoolExecutor(
+        max_workers=MAX_WORKERS,
+        initializer=_worker_init,
+        initargs=(path_env or {},),
+    )
+    try:
+        future_to_tid = {pool.submit(_run_metric_task, sc, ar, tid): tid for (sc, ar, tid) in tasks}
+        ordered = list(future_to_tid.items())  # 提交顺序
+        # 按提交顺序逐个 result(timeout=)——每个 future 有独立 per-task 超时预算。真正挂死的
+        # task 会在它自己那轮触发 timeout；若改用 as_completed，挂死 task 永不被 yield、其
+        # 超时永不触发，整轮 wait 会卡死，故坚持提交序逐个等。
+        for idx, (fut, tid) in enumerate(ordered):
             try:
                 _tid, rc, err = fut.result(timeout=timeout)
                 results[tid] = (rc, err)
                 if rc != 0:
                     failures.append({"id": tid, "error": (err or "")[:500]})
-                    if on_error == "abort":
-                        aborted = True
-                        logger.warning("[run_metric_plan] on_error=abort，停止提交后续 task")
             except FuturesTimeoutError:
                 results[tid] = (1, f"timeout (>{timeout}s)")
                 failures.append({"id": tid, "error": f"timeout (>{timeout}s)"})
-                if on_error == "abort":
-                    aborted = True
             except BaseException as e:  # noqa: BLE001
                 results[tid] = (1, f"pool error: {e}")
                 failures.append({"id": tid, "error": f"pool error: {type(e).__name__}: {e}"})
-                if on_error == "abort":
-                    aborted = True
+
+            if on_error == "abort" and results[tid][0] != 0:
+                # 真正停止：取消所有尚未启动的 future（排队未启动的会被 cancel；运行中的进程
+                # 无法取消，这是进程池固有性质）。被取消项标 aborted 计入 failures。
+                logger.warning("[run_metric_plan] on_error=abort，遇失败即停，取消未启动 task")
+                for other_fut, other_tid in ordered[idx + 1:]:
+                    other_fut.cancel()
+                    results[other_tid] = (1, "aborted (on_error=abort 前序失败)")
+                    failures.append({"id": other_tid, "error": "aborted"})
+                break
+    finally:
+        # cancel_futures：回收时取消仍排队未启动的 future；wait=True 等运行中的退出。
+        pool.shutdown(wait=True, cancel_futures=True)
     return results, failures
 
 

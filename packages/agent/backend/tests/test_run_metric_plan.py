@@ -318,7 +318,7 @@ class TestSSOTParity:
         plan = _plan(metrics, workspace=ws, raw_files=["/mnt/user-data/uploads/s0.txt", "/mnt/user-data/uploads/s1.txt"])
         _write_plan(ws, plan)
 
-        res = _call(_runtime(ws))
+        _call(_runtime(ws))  # 副作用：落盘 handoff（下方读文件 + 直调聚合器断言，不用返回值）
 
         # §4 #6 SSOT parity: aggregate_metrics_to_handoff 是纯函数——同一 plan + 同一
         # 磁盘产物集，调两次结果必须字节一致（确定性）。run_metric_plan 和 auto-seal
@@ -333,6 +333,98 @@ class TestSSOTParity:
         assert set(h["metrics_summary"]) == set(direct1["metrics_summary"])
         # per_subject 直接透传（不经 Pydantic 重塑，逐字段一致）
         assert h["per_subject"] == direct1["per_subject"]
+
+    def test_aggregator_output_matches_expected_payload(self, tmp_path):
+        """§4 #6（强化）：直接钉死聚合器对已知 m_*.json 的**逐字段**输出，而非只测确定性。
+
+        测试 #6 的 spec 本意是"抽出复用无行为变化"。仅断言 direct1==direct2 只证纯函数
+        确定性，不证语义正确。这里给定已知 value/group/subject，断言聚合器产出的
+        metrics_summary / per_subject / status / 完整性字段逐一符合预期——任何聚合逻辑
+        漂移（分组映射、MetricStat 形状、completed 判据）都会在这里响亮失败。
+        """
+        from deerflow.subagents.metric_aggregation import aggregate_metrics_to_handoff
+
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        # 两 subject 同 metric，分属两组；写真实 m_*.json + groups.json。
+        metrics = [
+            {"id": "open_arm_time_ratio_s0", "subject_index": 0, "output": str(ws / "m_open_arm_time_ratio_s0.json")},
+            {"id": "open_arm_time_ratio_s1", "subject_index": 1, "output": str(ws / "m_open_arm_time_ratio_s1.json")},
+        ]
+        raw_files = ["/mnt/user-data/uploads/ctrl.txt", "/mnt/user-data/uploads/drug.txt"]
+        plan = _plan(metrics, workspace=ws, raw_files=raw_files)
+        (ws / "m_open_arm_time_ratio_s0.json").write_text(
+            json.dumps({"metric": "open_arm_time_ratio", "value": 0.30, "parameters_used": {"open_arm_zones": ["open"]}}),
+            encoding="utf-8",
+        )
+        (ws / "m_open_arm_time_ratio_s1.json").write_text(
+            json.dumps({"metric": "open_arm_time_ratio", "value": 0.55, "parameters_used": {"open_arm_zones": ["open"]}}),
+            encoding="utf-8",
+        )
+        (ws / "groups.json").write_text(
+            json.dumps({"/mnt/user-data/uploads/ctrl.txt": "Control", "/mnt/user-data/uploads/drug.txt": "Treatment"}),
+            encoding="utf-8",
+        )
+
+        agg = aggregate_metrics_to_handoff(plan, ws, run_validation=False)
+
+        assert agg["status"] == "completed"
+        assert agg["n_total"] == 2
+        assert agg["n_present"] == 2
+        assert agg["missing_expected"] == []
+        # 逐字段 metrics_summary：分组映射 + MetricStat 形状 + list zone 参数透传。
+        assert agg["metrics_summary"] == {
+            "Control": {"open_arm_time_ratio": {"mean": 0.30, "std": None, "n": 1, "parameters_used": {"open_arm_zones": ["open"]}}},
+            "Treatment": {"open_arm_time_ratio": {"mean": 0.55, "std": None, "n": 1, "parameters_used": {"open_arm_zones": ["open"]}}},
+        }
+        # per_subject 按 subject stem 命名，值逐字段。
+        assert agg["per_subject"] == {
+            "ctrl": {"open_arm_time_ratio": 0.30},
+            "drug": {"open_arm_time_ratio": 0.55},
+        }
+
+
+# ===================================================================
+# Review-fix: env 不污染父进程 + _scoped_path_env 还原
+# ===================================================================
+
+
+class TestEnvNotGloballeyPolluted:
+    """run_metric_plan 不得永久 mutate 父进程 os.environ 的 DEERFLOW_PATH_*。
+
+    多线程 Gateway 下，一个 thread 的 run_metric_plan 若全局 mutate DEERFLOW_PATH_*，
+    会泄漏成全局污染并发跑的其他 thread（潜在跨线程 workspace 路径错配）。worker env
+    走 ProcessPoolExecutor initializer（子进程内），父进程 env 调用前后不变。
+    """
+
+    def test_tool_run_does_not_leave_path_env_in_parent(self, tmp_path, monkeypatch):
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        # 清掉可能预存的 DEERFLOW_PATH_* 以纯净观察
+        for k in [k for k in os.environ if k.startswith("DEERFLOW_PATH_")]:
+            monkeypatch.delenv(k, raising=False)
+        before = {k: v for k, v in os.environ.items() if k.startswith("DEERFLOW_PATH_")}
+
+        metrics = [{"id": "m0"}]
+        plan = _plan(metrics, workspace=ws, raw_files=["/mnt/user-data/uploads/s0.txt"])
+        _write_plan(ws, plan)
+        _call(_runtime(ws))  # sync runner path（autouse fixture）
+
+        after = {k: v for k, v in os.environ.items() if k.startswith("DEERFLOW_PATH_")}
+        assert after == before, f"run_metric_plan 泄漏了 DEERFLOW_PATH_* 到父进程: {set(after) - set(before)}"
+
+    def test_scoped_path_env_restores_on_exit(self, monkeypatch):
+        """_scoped_path_env：with 块内可见，退出后还原（新增键删除、原有键复原）。"""
+        monkeypatch.delenv("DEERFLOW_PATH_WORKSPACE", raising=False)
+        monkeypatch.setenv("DEERFLOW_PATH_EXISTING", "old")
+
+        with _TOOL._scoped_path_env({"DEERFLOW_PATH_WORKSPACE": "/w", "DEERFLOW_PATH_EXISTING": "new"}):
+            assert os.environ["DEERFLOW_PATH_WORKSPACE"] == "/w"
+            assert os.environ["DEERFLOW_PATH_EXISTING"] == "new"
+
+        # 新增键退出后删除；原有键复原
+        assert "DEERFLOW_PATH_WORKSPACE" not in os.environ
+        assert os.environ["DEERFLOW_PATH_EXISTING"] == "old"
 
 
 # ===================================================================
