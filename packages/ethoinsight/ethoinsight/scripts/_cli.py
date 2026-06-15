@@ -116,7 +116,10 @@ def save_output_json(path: str | Path, data: dict[str, Any]) -> None:
     (``python -m ethoinsight.validate_catalog``) — which may run under a different
     sandbox uid — can read them. So we relax to 0o644 after the atomic rename.
     """
-    p = Path(path)
+    # resolve /mnt 虚拟沙箱路径（run_metric_plan 进程内执行无 bash mount 时必需；
+    # fail-safe 幂等——真实路径/bash-mounted 路径原样返回，零行为变化）。与
+    # read_inputs_json/read_groups_json 在同一 I/O 边界对称收口（2026-06-15 spec #2）。
+    p = Path(resolve_sandbox_path(path))
     p.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
     try:

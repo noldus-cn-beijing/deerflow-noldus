@@ -79,11 +79,19 @@ def _parse_path_and_sheet(file_path: str) -> tuple[Path, str | int]:
     Supports the ``path::SheetName`` convention for referencing a specific
     sheet in a multi-sheet XLSX file.  If no ``::`` separator is present,
     sheet_name defaults to 0 (first sheet).
+
+    resolve /mnt 虚拟沙箱路径（run_metric_plan 进程内执行无 bash mount 时必需；
+    fail-safe 幂等——真实路径/bash-mounted 路径原样返回，对现有调用方零行为变化，
+    只对"进程内喂 /mnt + 设了 DEERFLOW_PATH_* env"场景生效）。注意先 resolve 再切
+    ::sheet，与 save_output_json/read_inputs_json 同一 I/O 边界对称收口（2026-06-15
+    spec #2）。惰性 import 守「parse 比 scripts 更底层、不顶层倒置」纪律。
     """
+    from ethoinsight.scripts._cli import resolve_sandbox_path
+
     if "::" in file_path:
         path_str, sheet = file_path.rsplit("::", 1)
-        return Path(path_str), sheet
-    return Path(file_path), 0
+        return Path(resolve_sandbox_path(path_str)), sheet
+    return Path(resolve_sandbox_path(file_path)), 0
 
 
 def _detect_ethovision_xlsx(path: Path, sheet_name: str | int = 0) -> bool:
@@ -266,7 +274,8 @@ def parse_trajectory(file_path: str) -> pd.DataFrame:
     # Read data rows, skipping header + units line
     # Data starts at line header_lines + 1 (0-indexed: header_lines)
     # But pandas skiprows is 0-indexed, and we also skip the units line
-    path = Path(file_path)
+    # 复用已 resolve 的 real_path（txt 分支不重新构造裸路径，否则 /mnt 虚拟路径漏 resolve）。
+    path = real_path
     with open(path, "r", encoding="utf-16-le") as f:
         all_lines = f.readlines()
 
