@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from deerflow.subagents.handoff_schemas import CodeExecutorHandoff, MetricStat
+from deerflow.subagents.handoff_schemas import CodeExecutorHandoff, MetricStat, ParameterAuditFinding
 
 
 class TestMetricStatParametersUsed:
@@ -27,6 +27,34 @@ class TestMetricStatParametersUsed:
         m = MetricStat(mean=1.0, median=2.0, iqr=0.5)
         assert m.median == 2.0  # extra="allow"
 
+    def test_list_valued_zone_params(self):
+        """EPM/Zero Maze 多列 zone 聚合参数是 list[str]，必须合法（thread 38be2753 实证）。"""
+        m = MetricStat(mean=None, parameters_used={"open_arm_zones": ["open"], "closed_arm_zones": ["closed"]})
+        assert m.parameters_used["open_arm_zones"] == ["open"]
+        assert m.parameters_used["closed_arm_zones"] == ["closed"]
+
+    def test_scalar_params_still_work(self):
+        """放宽 union 不得破坏旧标量参数（smart-union 不坍缩 str↔list 回归）。"""
+        m = MetricStat(parameters_used={"velocity_threshold": 30.0, "unit": "mm/s", "n": 25})
+        assert m.parameters_used == {"velocity_threshold": 30.0, "unit": "mm/s", "n": 25}
+
+
+class TestParameterAuditFindingListUsedValue:
+    """A1b: ParameterAuditFinding.used_value 接受 list[str]（data_analyst.py:210 指示逐字拷贝 parameters_used 值）。"""
+
+    def test_list_used_value_accepted(self):
+        """used_value=["open"] 不抛 ValidationError。"""
+        finding = ParameterAuditFinding(
+            parameter="open_arm_zones",
+            metric="open_arm_time_ratio",
+            severity="warning",
+            used_value=["open"],
+            observed_distribution={"n_subjects": 10},
+            mismatch_kind="category_mismatch",
+            suggestion="建议确认分析区映射。",
+        )
+        assert finding.used_value == ["open"]
+
 
 class TestCodeExecutorHandoffNewFields:
     """paradigm, ev19_template, analysis_config_id are Sprint 0 additions."""
@@ -37,21 +65,18 @@ class TestCodeExecutorHandoffNewFields:
             "summary": "done",
             "paradigm": "fst",
             "analysis_config_id": "PENDING_SPRINT_4.5",
+            "metrics_summary": {"group_a": {"immobility": {"mean": 50.0}}},
         }
         payload.update(overrides)
         return payload
 
     def test_paradigm_required(self):
         with pytest.raises(ValidationError, match="paradigm"):
-            CodeExecutorHandoff(status="completed", summary="done", analysis_config_id="x")
+            CodeExecutorHandoff.model_validate({"status": "completed", "summary": "done", "analysis_config_id": "x", "metrics_summary": {"g": {"m": {"mean": 1.0}}}})
 
     def test_analysis_config_id_required(self):
-        # CodeExecutorHandoff 是 handoff 链源头，由 seal tool 从 experiment-context.json
-        # 总会注入 analysis_config_id（seal_handoff_tools.py setdefault），故源头强制 required
-        # 保 lineage 完整。下游 handoff (DataAnalyst/ChartMaker/ReportWriter) 仍 optional
-        # default='PENDING'（见 test_analysis_config_id.py 的 *_for_downstream 测试）。
         with pytest.raises(ValidationError, match="analysis_config_id"):
-            CodeExecutorHandoff(status="completed", summary="done", paradigm="fst")
+            CodeExecutorHandoff.model_validate({"status": "completed", "summary": "done", "paradigm": "fst", "metrics_summary": {"g": {"m": {"mean": 1.0}}}})
 
     def test_ev19_template_optional(self):
         h = CodeExecutorHandoff(**self._base_payload())

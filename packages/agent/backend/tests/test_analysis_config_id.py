@@ -214,7 +214,7 @@ class TestHandoffSchemaConfigId:
     def test_code_executor_handoff_has_config_id(self):
         from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
 
-        h = CodeExecutorHandoff(status="completed", summary="ok", paradigm="epm", analysis_config_id="abcd1234efgh5678")
+        h = CodeExecutorHandoff(status="completed", summary="ok", paradigm="epm", analysis_config_id="abcd1234efgh5678", metrics_summary={"g": {"m": {"mean": 1.0}}})
         assert h.analysis_config_id == "abcd1234efgh5678"
 
     def test_data_analyst_handoff_has_config_id(self):
@@ -226,13 +226,13 @@ class TestHandoffSchemaConfigId:
     def test_report_writer_handoff_has_config_id(self):
         from deerflow.subagents.handoff_schemas import ReportWriterHandoff
 
-        h = ReportWriterHandoff(status="completed", report_path="/path", analysis_config_id="abcd1234efgh5678")
+        h = ReportWriterHandoff(status="completed", report_path="/path", analysis_config_id="abcd1234efgh5678", sections_written=["Results"])
         assert h.analysis_config_id == "abcd1234efgh5678"
 
     def test_chart_maker_handoff_has_config_id(self):
         from deerflow.subagents.handoff_schemas import ChartMakerHandoff
 
-        h = ChartMakerHandoff(paradigm="epm", summary="ok", analysis_config_id="abcd1234efgh5678")
+        h = ChartMakerHandoff(paradigm="epm", summary="ok", analysis_config_id="abcd1234efgh5678", chart_files=["/mnt/user-data/outputs/x.png"])
         assert h.analysis_config_id == "abcd1234efgh5678"
 
     def test_config_id_defaults_to_pending_for_downstream(self):

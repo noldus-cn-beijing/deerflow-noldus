@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import fnmatch
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,8 @@ from ethoinsight.catalog.schema import (
     PlanStatistics,
     StatisticsEntry,
 )
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.1"
 
@@ -171,6 +174,17 @@ def resolve_metrics(
             message=f"Catalog YAML for '{paradigm}' is malformed: {e}",
             details={"paradigm": paradigm},
         ) from e
+
+    # #6a 自派生组计数：groups_file 是分组事实的唯一真相源，组计数是它的投影。
+    # 调用方漏传计数（prep_metric_plan 的 #6a bug）时从 groups_file 派生，
+    # 使"有分组却 statistics={}"结构上不可能。显式入参仍优先（兼容 CLI 兜底/测试）。
+    # 派生发生在 plan 期 resolve 内、单一评估点，不引入 runtime 第二评估路径。
+    if groups_file and (n_per_group is None or n_groups is None):
+        derived_npg, derived_ng = _derive_group_counts(groups_file, workspace_dir)
+        if n_per_group is None:
+            n_per_group = derived_npg
+        if n_groups is None:
+            n_groups = derived_ng
 
     include_set = set(include or ())
     exclude_set = set(exclude or ())
@@ -314,10 +328,23 @@ def resolve_metrics(
                 virtual_workspace_dir=virtual_workspace_dir,
             )
         else:
+            # #6a 层② 兜底信号：区分两类 skip。
+            # - groups_file=None 或计数可得但不满足门槛（如单组 n_groups=1）→ 正常 skip。
+            # - groups_file 非空但计数仍为 None（派生/读取失败）→ "组计数不可得"，
+            #   这是 bug 信号（哑故障→响亮），区别于"n 真的不足"。不直接 raise
+            #   ResolveError（避免一次 groups.json 读取抖动整盘失败），但做成可 grep 的信号。
+            if groups_file and (n_per_group is None or n_groups is None):
+                skip_reason = (
+                    f"groups_file 提供但组计数不可得（n_per_group={n_per_group}, n_groups={n_groups}）"
+                    f"——通常是 groups.json 读取/格式问题，非样本量不足；统计被跳过需排查"
+                )
+                logger.warning("[resolve] %s groups_file=%s", skip_reason, groups_file)
+            else:
+                skip_reason = f"condition '{cat.statistics_default.when}' not met (n_per_group={n_per_group}, n_groups={n_groups})"
             plan_stats = _stats_to_plan(
                 cat.statistics_default,
                 workspace_dir,
-                skip_reason=f"condition '{cat.statistics_default.when}' not met (n_per_group={n_per_group}, n_groups={n_groups})",
+                skip_reason=skip_reason,
                 virtual_workspace_dir=virtual_workspace_dir,
             )
 
@@ -1047,6 +1074,61 @@ def _stats_to_plan(
         output=str(Path(effective_workspace) / "stats.json"),
         skip_reason=skip_reason,
     )
+
+
+def _derive_group_counts(
+    groups_file: str | None, workspace_dir: str | None = None
+) -> tuple[int | None, int | None]:
+    """从 groups_file 派生 (n_per_group=最小组 size, n_groups=组数)。
+
+    groups 是分组事实的唯一真相源；组计数是它的投影。让 resolve 在评估点就近
+    自派生计数，使"有分组却漏传组计数"结构上不可能（#6a 根因：prep_metric_plan
+    调 resolve_metrics 传了 groups_file 但漏传 n_per_group/n_groups → gate 用 None
+    评 False → statistics 静默 skip → handoff statistics={} 毒化 data-analyst）。
+
+    groups.json 两种形状都支持：
+      - {subject_path: group_name}（prep_metric_plan 写的正向映射）→ Counter(values)
+      - {group_name: [subject_path, ...]}（read_groups_json/charts 的反向）→ {g: len(lst)}
+    None/读不到/空/形状不可识别 → (None, None)（单组或无分组场景，gate 正确 skip，
+    行为与修复前等价）。fail-safe：读不到不阻断（不引入新失败模式）。
+
+    路径解析（收口到机制 B 的 workspace_base 兜底，不在 resolve 里维护第二套兜底逻辑）：
+      调 ``resolve_sandbox_path(groups_file, workspace_base=workspace_dir)``——它先试
+      env（沙箱子进程路径），无 env 时用 workspace_base 拼 workspace 前缀虚拟路径的
+      真实物理位置。若解析结果不存在（如 groups_file 本就是物理路径或非 workspace 前缀），
+      再退回把 groups_file 直接当物理路径读。两个候选覆盖所有调用形态（虚拟+env /
+      虚拟+无env+workspace_dir / 物理路径），同一处方收口（2026-06-16 故障族根治改动②）。
+    """
+    if not groups_file:
+        return (None, None)
+    data = None
+    try:
+        from ethoinsight.scripts._cli import resolve_sandbox_path
+
+        candidates: list[Path] = [
+            Path(resolve_sandbox_path(groups_file, workspace_base=workspace_dir)),
+            Path(groups_file),
+        ]
+        for cand in candidates:
+            if cand.exists():
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                break
+    except Exception:
+        return (None, None)  # fail-safe：读不到/坏 JSON 不阻断（与修复前等价）
+    if not isinstance(data, dict) or not data:
+        return (None, None)
+    vals = list(data.values())
+    if all(isinstance(v, str) for v in vals):  # {subject: group}
+        from collections import Counter
+
+        counts = Counter(vals)
+    elif all(isinstance(v, list) for v in vals):  # {group: [subjects]}
+        counts = {k: len(v) for k, v in data.items()}
+    else:
+        return (None, None)  # 形状不可识别（保守不猜）
+    if not counts:
+        return (None, None)
+    return (min(counts.values()), len(counts))
 
 
 def _evaluate_when(

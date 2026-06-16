@@ -19,6 +19,12 @@ import pandas as pd
 
 from ethoinsight.utils import detect_paradigm, normalize_columns
 
+# Excel 读引擎：calamine(Rust)比默认 openpyxl 快 ~8×，值逐格等价(见 spec 2026-06-12)。
+# 显式 pin 引擎名——不依赖 pandas 默认(engine=None 的自动选择上游可能变)。
+# 不做运行时 fallback：calamine 失败应响亮 raise(带 path+engine)，而非静默退 openpyxl
+# 掩盖 engine bug。openpyxl 仅留作 test 侧 fixture 写入(calamine 只读)。
+EXCEL_ENGINE = "calamine"
+
 
 def detect_ethovision(file_path: str) -> bool:
     """Detect whether a file is an EthoVision export.
@@ -73,11 +79,19 @@ def _parse_path_and_sheet(file_path: str) -> tuple[Path, str | int]:
     Supports the ``path::SheetName`` convention for referencing a specific
     sheet in a multi-sheet XLSX file.  If no ``::`` separator is present,
     sheet_name defaults to 0 (first sheet).
+
+    resolve /mnt 虚拟沙箱路径（run_metric_plan 进程内执行无 bash mount 时必需；
+    fail-safe 幂等——真实路径/bash-mounted 路径原样返回，对现有调用方零行为变化，
+    只对"进程内喂 /mnt + 设了 DEERFLOW_PATH_* env"场景生效）。注意先 resolve 再切
+    ::sheet，与 save_output_json/read_inputs_json 同一 I/O 边界对称收口（2026-06-15
+    spec #2）。惰性 import 守「parse 比 scripts 更底层、不顶层倒置」纪律。
     """
+    from ethoinsight.scripts._cli import resolve_sandbox_path
+
     if "::" in file_path:
         path_str, sheet = file_path.rsplit("::", 1)
-        return Path(path_str), sheet
-    return Path(file_path), 0
+        return Path(resolve_sandbox_path(path_str)), sheet
+    return Path(resolve_sandbox_path(file_path)), 0
 
 
 def _detect_ethovision_xlsx(path: Path, sheet_name: str | int = 0) -> bool:
@@ -88,7 +102,7 @@ def _detect_ethovision_xlsx(path: Path, sheet_name: str | int = 0) -> bool:
     "标题行数" for Chinese, "Number of header lines" for English).
     """
     try:
-        df = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=1)
+        df = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=1, engine=EXCEL_ENGINE)
     except Exception:
         return False
     if df.empty or df.iloc[0, 0] is None:
@@ -192,7 +206,7 @@ def _parse_header_xlsx(path: Path, sheet_name: str | int = 0) -> dict:
       R(N-1):     units
       RN:         data starts
     """
-    df_header = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=None)
+    df_header = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=None, engine=EXCEL_ENGINE)
     header_lines = int(df_header.iloc[0, 1])
 
     raw_metadata: dict[str, str] = {}
@@ -260,7 +274,8 @@ def parse_trajectory(file_path: str) -> pd.DataFrame:
     # Read data rows, skipping header + units line
     # Data starts at line header_lines + 1 (0-indexed: header_lines)
     # But pandas skiprows is 0-indexed, and we also skip the units line
-    path = Path(file_path)
+    # 复用已 resolve 的 real_path（txt 分支不重新构造裸路径，否则 /mnt 虚拟路径漏 resolve）。
+    path = real_path
     with open(path, "r", encoding="utf-16-le") as f:
         all_lines = f.readlines()
 
@@ -317,7 +332,7 @@ def _parse_trajectory_xlsx(path: Path, sheet_name: str | int = 0) -> pd.DataFram
     header = _parse_header_xlsx(path, sheet_name)
     header_lines = header["header_lines"]
 
-    df = pd.read_excel(path, sheet_name=sheet_name, header=None, skiprows=header_lines)
+    df = pd.read_excel(path, sheet_name=sheet_name, header=None, skiprows=header_lines, engine=EXCEL_ENGINE)
     df.columns = header["columns"]
 
     # Convert "-" to NaN
@@ -345,6 +360,15 @@ def parse_batch(file_paths: list[str] | str) -> dict:
         {
             "metadata": dict — merged header metadata,
             "subjects": dict[str, DataFrame] — per-subject DataFrames,
+            "file_subjects": dict[str, str] — maps each parsed input path
+                (exactly as received, ``::sheet`` suffix included) to the
+                ``subjects`` key produced for it. Lets callers that hold file
+                paths (e.g. groups.json) bridge to subject keys **by file**,
+                not by positional index — robust even when some inputs are
+                silently filtered out below (non-existent / non-EthoVision).
+                EV19 "对象名称" is frequently blank, so subject keys can be
+                ``''`` / ``'_1'`` / …; this map is the only reliable
+                file→subject link (the ``subjects`` keys carry no file identity).
             "all_data": DataFrame — concatenated with 'subject' and 'file' columns,
             "summary": dict — summary statistics,
         }
@@ -373,6 +397,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
         return {
             "metadata": {},
             "subjects": {},
+            "file_subjects": {},
             "all_data": pd.DataFrame(),
             "summary": {
                 "total_files": 0,
@@ -386,6 +411,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
 
     # Parse all files
     subjects: dict[str, pd.DataFrame] = {}
+    file_subjects: dict[str, str] = {}
     all_dfs: list[pd.DataFrame] = []
     first_header = None
 
@@ -401,6 +427,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
             key = f"{subject}_{trial}" if trial else f"{subject}_{len(subjects)}"
 
         subjects[key] = df
+        file_subjects[p] = key
 
         # Add subject/file columns for concatenation
         df_copy = df.copy()
@@ -429,6 +456,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
     return {
         "metadata": first_header or {},
         "subjects": subjects,
+        "file_subjects": file_subjects,
         "all_data": all_data,
         "summary": {
             "total_files": len(trajectory_paths),

@@ -52,15 +52,21 @@ def test_code_executor_declares_matching_tools():
     _executor_mock.MAX_CONCURRENT_SUBAGENTS = 3
     sys.modules["deerflow.subagents.executor"] = _executor_mock
     from deerflow.subagents.builtins.code_executor import CODE_EXECUTOR_CONFIG as c
-    # SOTA glue-script architecture: only filesystem + bash tools (no langchain pipeline tools)
-    required = {"bash", "read_file", "write_file", "ls", "str_replace"}
+    # Spec S4: code-executor 工具粒度从裸 bash 改为 run_metric_plan 确定性工具。
+    # bash/write_file/str_replace 已收走，run_metric_plan 是执行 metrics+stats 的唯一路径。
+    required = {"run_metric_plan", "read_file", "ls", "seal_code_executor_handoff"}
     declared = set(c.tools or [])
     missing = required - declared
     assert not missing, f"code_executor missing tools: {missing}"
+    # S4 收走的旧 bash 编排工具必须不在
+    removed = {"bash", "write_file", "str_replace"}
+    present_removed = removed & declared
+    assert not present_removed, f"S4: code_executor should no longer have bash/write_file/str_replace: {present_removed}"
     # Old langchain pipeline tools must NOT be present
     old_tools = {"parse_trajectories", "compute_metrics", "run_statistics",
                  "generate_charts", "assess_and_handoff", "get_analysis_template"}
     present_old = old_tools & declared
     assert not present_old, f"code_executor still has deprecated tools: {present_old}"
-    assert c.max_turns == 40, f"max_turns should be 40, got {c.max_turns}"
+    # S4: happy path 薄到 2-3 message，max_turns 从 40（bash 编排时代）降到 20。
+    assert c.max_turns == 20, f"S4: max_turns should be 20, got {c.max_turns}"
     assert "ethoinsight-code" in (c.skills or [])

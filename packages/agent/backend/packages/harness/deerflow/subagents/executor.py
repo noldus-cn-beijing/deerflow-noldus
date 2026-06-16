@@ -236,6 +236,13 @@ def _validate_handoff_emitted(
                     expected_filename,
                 )
                 return None
+            # status=failed 的 handoff 合法地没有核心数据（失败的定义就是没产出）。
+            # 不能用"核心字段非空"判据卡它——否则诚实的 failed handoff 被误判 incomplete，
+            # seal-resume 救不回 → "terminated without emitting" → lead 无限重派（2026-06-15
+            # EPM dogfood 死循环根因；gateway.log L288-361）。failed 只要文件存在 + 是合法
+            # JSON 即放行。partial 不在本次放宽范围（partial=部分成功，仍要求核心字段非空）。
+            if isinstance(parsed, dict) and parsed.get("status") == "failed":
+                return None
             missing = content_check(parsed) if isinstance(parsed, dict) else "handoff is not a JSON object"
             if missing is None:
                 return None  # 文件存在 + 核心字段非空 → 通过
@@ -400,9 +407,9 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
 
         elif subagent_name == "code-executor":
             # Spec A: 从 m_*.json + plan_metrics.json + groups.json 机械重建 handoff。
-            # 核心假设（已核实）：plan 阶段就构造好了期望输出绝对路径，
-            # 结果文件按命名约定落盘（m_<id>.json / m_<id>_s<idx>.json），
-            # 值就在命名 JSON 里 → 可重建。
+            # Spec S4 (2026-06-12): 聚合逻辑下沉到 metric_aggregation.aggregate_metrics_to_handoff
+            # 纯函数，与 run_metric_plan 工具共用同一份聚合逻辑（SSOT，守测试 #6 字节一致）。
+            # 此处只做 auto-seal 特有的措辞/sealed_by 包装 + 缺失完整性警告。
             plan_path = ws / "plan_metrics.json"
             if not plan_path.exists():
                 return False
@@ -416,92 +423,43 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
             if not plan_metrics:
                 return False
 
-            # 枚举 plan 期望集（expected output filenames）
-            expected: set[str] = set()
+            # plan 里没有 output → 纯函数会返回 failed status；auto-seal 历史行为
+            # 是无法对账 → 不兜底。保持该早退（守 TestAutoSealCodeExecutorCompleted
+            # .test_no_expected_outputs_in_plan_does_not_auto_seal）。
+            if not any(m.get("output") for m in plan_metrics):
+                return False
+
+            # 惰性 import：metric_aggregation 与本模块同包（subagents/），但守 harness
+            # 顶层 import 闭环纪律，import 行放函数体内。
+            from deerflow.subagents.metric_aggregation import aggregate_metrics_to_handoff
+
+            # run_validation=False：auto-seal 是事后兜底，保持与 pre-S4 字节一致
+            # （测试 #6 锁住现有 payload；加 validation 会改它）。validation 是
+            # run_metric_plan 工具路径的职责（它跑完 compute 才算完整）。
+            agg = aggregate_metrics_to_handoff(plan, ws, run_validation=False)
+
+            status = agg["status"]
+            # 纯函数无法对账时返回 failed → auto-seal 历史是 return False（不兜底）。
+            # 守 TestAutoSealCodeExecutorCompleted 的早退语义：仅当实际是 failed
+            # 且因无 expected output 时才 return False（上面已早退），其余路径继续。
+            if status == "failed":
+                return False
+
+            missing = agg["missing_expected"]
+            n_total = agg["n_total"]
+            n_present = agg["n_present"]
+
+            # auto-seal 特有措辞包装 errors（纯函数产出的是中性描述）。
             metric_id_to_entry: dict[str, dict] = {}
             for m in plan_metrics:
                 output = m.get("output", "")
                 if output:
-                    fname = Path(output).name
-                    expected.add(fname)
-                    metric_id_to_entry[fname] = m
+                    metric_id_to_entry[Path(output).name] = m
 
-            if not expected:
-                return False  # plan 里没有 output → 无法对账
-
-            # glob 实际 m_*.json
-            actual: set[str] = set()
-            for f in ws.glob("m_*.json"):
-                actual.add(f.name)
-
-            # 完整性判据（Spec A 承重）
-            missing = expected - actual
-            status = "completed" if not missing else "partial"
-
-            # 读 groups.json
-            groups: dict[str, str] = {}
-            groups_path = ws / "groups.json"
-            if groups_path.exists():
-                try:
-                    groups = json.loads(groups_path.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-
-            # 从 plan 取 inputs.raw_files 做 subject_index → subject_file 映射
-            raw_files: list[str] = []
-            plan_inputs = plan.get("inputs", {})
-            if isinstance(plan_inputs, dict):
-                raw_files = plan_inputs.get("raw_files", []) or []
-
-            # 读每个存在的 m_*.json，重建 metrics_summary + per_subject
-            metrics_summary: dict[str, dict[str, dict]] = {}
-            per_subject: dict[str, dict[str, Any]] = {}
-            output_files_metrics: list[str] = []
-            data_quality_warnings: list[dict] = []
             errors: list[str] = []
-
-            for fname in sorted(actual):
-                fpath = ws / fname
-                try:
-                    mdata = json.loads(fpath.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
-
-                metric_name = mdata.get("metric", "")
-                value = mdata.get("value")
-                params = mdata.get("parameters_used", {}) or {}
-
-                entry = metric_id_to_entry.get(fname, {})
-                subject_index = entry.get("subject_index", 0)
-                subject_file = raw_files[subject_index] if subject_index < len(raw_files) else f"subject_{subject_index}"
-                subject_name = Path(subject_file).stem
-                group_name = groups.get(subject_file, groups.get(Path(subject_file).name, "unknown"))
-
-                # per_subject
-                if subject_name not in per_subject:
-                    per_subject[subject_name] = {}
-                per_subject[subject_name][metric_name] = value
-
-                # metrics_summary (group → metric → MetricStat)
-                if group_name not in metrics_summary:
-                    metrics_summary[group_name] = {}
-                if metric_name not in metrics_summary[group_name]:
-                    metrics_summary[group_name][metric_name] = {
-                        "mean": value,
-                        "std": None,
-                        "n": 1,
-                        "parameters_used": params,
-                    }
-                else:
-                    # 同 group 同 metric 多 subject → 简单聚合
-                    existing = metrics_summary[group_name][metric_name]
-                    existing["n"] = (existing.get("n") or 0) + 1
-
-                output_files_metrics.append(f"/mnt/user-data/workspace/{fname}")
-
-            # 缺失项列 errors（Spec A 完整性判据）
+            data_quality_warnings: list[dict] = list(agg["data_quality_warnings"])
             if missing:
-                for mf in sorted(missing):
+                for mf in missing:
                     entry = metric_id_to_entry.get(mf, {})
                     mid = entry.get("id", mf)
                     si = entry.get("subject_index", "?")
@@ -514,32 +472,41 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
                     "code": "METHOD.AUTO_SEAL_INCOMPLETE",
                     "metric": "all",
                     "message": (
-                        f"harness auto-seal: {len(missing)}/{len(expected)} 期望产物缺失，"
+                        f"harness auto-seal: {len(missing)}/{n_total} 期望产物缺失，"
                         f"handoff 标为 partial"
                     ),
-                    "evidence": {"missing_count": len(missing), "expected_count": len(expected)},
+                    "evidence": {"missing_count": len(missing), "expected_count": n_total},
                     "blocks_downstream": True,
                 })
 
-            # 读 paradigm / ev19_template
-            paradigm = plan.get("paradigm", "")
-            ev19_template = plan.get("ev19_template")
+            # 从 plan 取 inputs.raw_files / groups（auto-seal 历史透传 inputs 块）
+            raw_files: list[str] = []
+            plan_inputs = plan.get("inputs", {})
+            if isinstance(plan_inputs, dict):
+                raw_files = plan_inputs.get("raw_files", []) or []
+            groups: dict[str, str] = {}
+            groups_path = ws / "groups.json"
+            if groups_path.exists():
+                try:
+                    groups = json.loads(groups_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
 
             payload = {
                 "status": status,
                 "summary": (
-                    f"harness auto-seal：机械重建，{len(actual)}/{len(expected)} 指标产出，"
+                    f"harness auto-seal：机械重建，{n_present}/{n_total} 指标产出，"
                     f"status={status}"
                 ),
-                "paradigm": paradigm,
-                "ev19_template": ev19_template,
-                "metrics_summary": metrics_summary,
-                "per_subject": per_subject,
+                "paradigm": agg["paradigm"],
+                "ev19_template": agg["ev19_template"],
+                "metrics_summary": agg["metrics_summary"],
+                "per_subject": agg["per_subject"],
                 "inputs": {
                     "raw_files": raw_files,
                     "groups": groups,
                 },
-                "output_files": {"metrics": output_files_metrics},
+                "output_files": agg["output_files"],
                 "data_quality_warnings": data_quality_warnings,
                 "errors": errors,
                 "confidence": None,
@@ -553,8 +520,8 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
             # 结构化日志：触发率可观测（Spec A 验收项 V1）
             logger.warning(
                 "[auto_seal] code-executor sealed_by=framework_rebuild "
-                "status=%s actual=%d expected=%d missing=%d",
-                status, len(actual), len(expected), len(missing),
+                "status=%s present=%d total=%d missing=%d",
+                status, n_present, n_total, len(missing),
             )
             return True
 
@@ -1000,6 +967,7 @@ class SubagentExecutor:
             middleware=middlewares,
             system_prompt=None,
             state_schema=ThreadState,
+            checkpointer=False,
         )
 
     def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool], Any]:

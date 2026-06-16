@@ -46,21 +46,25 @@ class TestCodeExecutorPromptClarity:
         assert "handoff_code_executor.json" in self.prompt
 
     def test_describes_workflow_steps(self):
-        """Prompt must describe the script-orchestration workflow steps."""
-        assert "inputs.json" in self.prompt or "scripts" in self.prompt
-        # New catalog architecture: code-executor reads plan_metrics.json, not by-paradigm md
+        """Spec S4: prompt 教调 run_metric_plan 一步执行 plan，不再描述 bash 编排步骤。"""
         assert "plan_metrics.json" in self.prompt
+        assert "run_metric_plan" in self.prompt
+        # bash 编排段已删（职责在工具内）
+        assert "<bash_constraints>" not in self.prompt
 
     def test_has_failure_section(self):
+        """Spec S4: 失败分诊段 (<triage>) 是 subagent 唯一真 LLM 职责。"""
         assert "<failure>" in self.prompt
-        # New arch: failure is handled by middleware (traceback auto-returned)
-        assert "traceback" in self.prompt or "loop_detection" in self.prompt
+        assert "<triage>" in self.prompt  # 失败分诊三类
+        # run_metric_plan 失败时由分诊处理；loop_detection 仍是兜底
+        assert "traceback" in self.prompt or "loop_detection" in self.prompt or "failures" in self.prompt
 
     def test_forbids_hardcoded_columns(self):
-        """Must tell subagent NOT to hardcode column names."""
-        # SOTA: script-orchestration arch — executor doesn't write code at all,
-        # so "hardcoded columns" is replaced by bash_constraints whitelist.
-        assert "bash_constraints" in self.prompt or "硬编码" in self.prompt
+        """Spec S4: script 编排已下沉到 run_metric_plan 工具，prompt 不再有 bash_constraints。
+        保留对 plan_metrics.json 作为施工单唯一来源的硬约束。"""
+        assert "plan_metrics.json" in self.prompt
+        # bash 已收走——硬约束改为"用 run_metric_plan 执行，不退回手拼命令"
+        assert "run_metric_plan" in self.prompt
 
 
 class TestDataAnalystPromptClarity:

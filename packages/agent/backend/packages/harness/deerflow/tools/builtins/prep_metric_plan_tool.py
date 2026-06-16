@@ -261,6 +261,21 @@ def prep_metric_plan_tool(
             sorted(set(groups.values())),
         )
 
+    # #6a 层③ prep 侧显式派生组计数（双保险 + 可读性）：
+    # groups 是分组事实的源；在写完 groups.json、调 resolve 前显式派生计数传入。
+    # 与 resolve 内自派生互为冗余校验（resolve 自派生兜住所有调用方；这里让 prep 的
+    # plan 意图自解释，且即便 resolve 自派生因故失效 prep 仍正确）。
+    # n_groups=不同组数=len(set(group_names))；n_per_group=最小组 size（gate 语义"每组都≥2"）。
+    n_groups_val: int | None = None
+    n_per_group_val: int | None = None
+    if groups:
+        from collections import Counter
+
+        counts = Counter(groups.values())
+        if counts:
+            n_groups_val = len(counts)
+            n_per_group_val = min(counts.values())
+
     try:
         plan = resolve_metrics(
             paradigm=paradigm,
@@ -270,6 +285,8 @@ def prep_metric_plan_tool(
             virtual_workspace_dir="/mnt/user-data/workspace",
             column_aliases=column_aliases,
             groups_file=groups_file_virtual,
+            n_per_group=n_per_group_val,  # #6a: 显式派生传入（resolve 也自派生兜底）
+            n_groups=n_groups_val,
             overrides=parameter_overrides,  # Sprint 4.5: 把用户确认的参数覆盖真正传入计算（非仅展示）
             common_catalog=load_common_catalog(),  # Sprint 4.5: shared_parameters 来源；缺它则 velocity_*/pendulum_* 等共享参数进不了 parameters_in_use，override 无可覆盖
         )

@@ -1,4 +1,4 @@
-"""Memory API router for retrieving and managing per-user memory data."""
+"""Memory API router for retrieving and managing global memory data."""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -13,15 +13,9 @@ from deerflow.agents.memory.updater import (
     update_memory_fact,
 )
 from deerflow.config.memory_config import get_memory_config
-from deerflow.runtime.user_context import get_current_user
+from deerflow.runtime.user_context import get_effective_user_id
 
 router = APIRouter(prefix="/api", tags=["memory"])
-
-
-def _resolve_user_id() -> str | None:
-    """Resolve the current user id from the request-scoped ContextVar."""
-    user = get_current_user()
-    return user.id if user is not None else None
 
 
 class ContextSection(BaseModel):
@@ -104,6 +98,7 @@ class MemoryConfigResponse(BaseModel):
     fact_confidence_threshold: float = Field(..., description="Minimum confidence threshold for facts")
     injection_enabled: bool = Field(..., description="Whether memory injection is enabled")
     max_injection_tokens: int = Field(..., description="Maximum tokens for memory injection")
+    token_counting: str = Field(..., description="Token counting strategy for memory injection ('tiktoken' or 'char')")
 
 
 class MemoryStatusResponse(BaseModel):
@@ -121,7 +116,7 @@ class MemoryStatusResponse(BaseModel):
     description="Retrieve the current global memory data including user context, history, and facts.",
 )
 async def get_memory() -> MemoryResponse:
-    """Get the current per-user memory data.
+    """Get the current global memory data.
 
     Returns:
         The current memory data with user context, history, and facts.
@@ -154,7 +149,7 @@ async def get_memory() -> MemoryResponse:
         }
         ```
     """
-    memory_data = get_memory_data(user_id=_resolve_user_id())
+    memory_data = get_memory_data(user_id=get_effective_user_id())
     return MemoryResponse(**memory_data)
 
 
@@ -174,7 +169,7 @@ async def reload_memory() -> MemoryResponse:
     Returns:
         The reloaded memory data.
     """
-    memory_data = reload_memory_data(user_id=_resolve_user_id())
+    memory_data = reload_memory_data(user_id=get_effective_user_id())
     return MemoryResponse(**memory_data)
 
 
@@ -188,7 +183,7 @@ async def reload_memory() -> MemoryResponse:
 async def clear_memory() -> MemoryResponse:
     """Clear all persisted memory data."""
     try:
-        memory_data = clear_memory_data(user_id=_resolve_user_id())
+        memory_data = clear_memory_data(user_id=get_effective_user_id())
     except OSError as exc:
         raise HTTPException(status_code=500, detail="Failed to clear memory data.") from exc
 
@@ -209,7 +204,7 @@ async def create_memory_fact_endpoint(request: FactCreateRequest) -> MemoryRespo
             content=request.content,
             category=request.category,
             confidence=request.confidence,
-            user_id=_resolve_user_id(),
+            user_id=get_effective_user_id(),
         )
     except ValueError as exc:
         raise _map_memory_fact_value_error(exc) from exc
@@ -229,7 +224,7 @@ async def create_memory_fact_endpoint(request: FactCreateRequest) -> MemoryRespo
 async def delete_memory_fact_endpoint(fact_id: str) -> MemoryResponse:
     """Delete a single fact from memory by fact id."""
     try:
-        memory_data = delete_memory_fact(fact_id, user_id=_resolve_user_id())
+        memory_data = delete_memory_fact(fact_id, user_id=get_effective_user_id())
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Memory fact '{fact_id}' not found.") from exc
     except OSError as exc:
@@ -253,7 +248,7 @@ async def update_memory_fact_endpoint(fact_id: str, request: FactPatchRequest) -
             content=request.content,
             category=request.category,
             confidence=request.confidence,
-            user_id=_resolve_user_id(),
+            user_id=get_effective_user_id(),
         )
     except ValueError as exc:
         raise _map_memory_fact_value_error(exc) from exc
@@ -274,7 +269,7 @@ async def update_memory_fact_endpoint(fact_id: str, request: FactPatchRequest) -
 )
 async def export_memory() -> MemoryResponse:
     """Export the current memory data."""
-    memory_data = get_memory_data(user_id=_resolve_user_id())
+    memory_data = get_memory_data(user_id=get_effective_user_id())
     return MemoryResponse(**memory_data)
 
 
@@ -288,7 +283,7 @@ async def export_memory() -> MemoryResponse:
 async def import_memory(request: MemoryResponse) -> MemoryResponse:
     """Import and persist memory data."""
     try:
-        memory_data = import_memory_data(request.model_dump(), user_id=_resolve_user_id())
+        memory_data = import_memory_data(request.model_dump(), user_id=get_effective_user_id())
     except OSError as exc:
         raise HTTPException(status_code=500, detail="Failed to import memory data.") from exc
 
@@ -316,7 +311,8 @@ async def get_memory_config_endpoint() -> MemoryConfigResponse:
             "max_facts": 100,
             "fact_confidence_threshold": 0.7,
             "injection_enabled": true,
-            "max_injection_tokens": 2000
+            "max_injection_tokens": 2000,
+            "token_counting": "tiktoken"
         }
         ```
     """
@@ -329,6 +325,7 @@ async def get_memory_config_endpoint() -> MemoryConfigResponse:
         fact_confidence_threshold=config.fact_confidence_threshold,
         injection_enabled=config.injection_enabled,
         max_injection_tokens=config.max_injection_tokens,
+        token_counting=config.token_counting,
     )
 
 
@@ -346,7 +343,7 @@ async def get_memory_status() -> MemoryStatusResponse:
         Combined memory configuration and current data.
     """
     config = get_memory_config()
-    memory_data = get_memory_data()
+    memory_data = get_memory_data(user_id=get_effective_user_id())
 
     return MemoryStatusResponse(
         config=MemoryConfigResponse(
@@ -357,6 +354,7 @@ async def get_memory_status() -> MemoryStatusResponse:
             fact_confidence_threshold=config.fact_confidence_threshold,
             injection_enabled=config.injection_enabled,
             max_injection_tokens=config.max_injection_tokens,
+            token_counting=config.token_counting,
         ),
         data=MemoryResponse(**memory_data),
     )

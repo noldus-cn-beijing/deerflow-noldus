@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 协同开发最佳实践</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  background: #09090f;
+  color: #e2e8f0;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── 进度条 ── */
+#progress {
+  position: fixed; top: 0; left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #6366f1, #22d3ee);
+  transition: width 0.35s ease;
+  z-index: 999;
+}
+
+/* ── 幻灯片容器 ── */
+.deck { position: relative; width: 100vw; height: 100vh; }
+
+.slide {
+  position: absolute; inset: 0;
+  padding: 52px 72px 80px;
+  display: none;
+  flex-direction: column;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.slide.active { display: flex; }
+
+/* 背景 */
+.slide::after {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(99,102,241,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+.slide > * { position: relative; z-index: 1; }
+
+/* ── 封面变体 ── */
+.slide.cover {
+  justify-content: center;
+  align-items: flex-start;
+  background:
+    radial-gradient(ellipse 60% 60% at 80% 50%, rgba(99,102,241,.12) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 40% at 10% 80%, rgba(34,211,238,.06) 0%, transparent 60%),
+    #09090f;
+}
+
+/* ── 通用头部 ── */
+.slide-head {
+  margin-bottom: 36px;
+}
+.slide-kicker {
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #6366f1;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.slide-title {
+  font-size: 34px;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+.slide-title em {
+  font-style: normal;
+  color: #818cf8;
+}
+.slide-rule {
+  margin-top: 12px;
+  width: 40px; height: 3px;
+  background: linear-gradient(90deg, #6366f1, #22d3ee);
+  border-radius: 2px;
+}
+
+/* ── 封面文字 ── */
+.cover-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(99,102,241,.12);
+  border: 1px solid rgba(99,102,241,.25);
+  border-radius: 999px;
+  padding: 5px 16px;
+  font-size: 12px; color: #a5b4fc;
+  letter-spacing: .06em;
+  margin-bottom: 28px;
+}
+.cover-h1 {
+  font-size: 58px; font-weight: 900; line-height: 1.1;
+  background: linear-gradient(135deg, #f8fafc 20%, #818cf8 80%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 18px;
+  max-width: 760px;
+}
+.cover-sub {
+  font-size: 20px; color: #22d3ee; font-weight: 500; margin-bottom: 20px;
+}
+.cover-desc {
+  font-size: 15px; color: #475569; line-height: 1.9; max-width: 560px;
+}
+.cover-tags {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px;
+}
+.tag {
+  padding: 4px 14px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
+  font-size: 12px; color: #64748b;
+}
+
+/* ── 大数字装饰 ── */
+.big-num {
+  position: absolute;
+  right: 72px; top: 44px;
+  font-size: 120px; font-weight: 900;
+  color: rgba(99,102,241,.07);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ── 卡片 ── */
+.cards-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.cards-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+.cards-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
+
+.card {
+  background: rgba(255,255,255,.025);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 14px;
+  padding: 22px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--bar, linear-gradient(90deg,#6366f1,#818cf8));
+  border-radius: 2px 2px 0 0;
+}
+.card-icon { font-size: 26px; margin-bottom: 10px; display: block; }
+.card-title { font-size: 14px; font-weight: 700; color: #e2e8f0; margin-bottom: 8px; }
+.card-body { font-size: 12.5px; color: #64748b; line-height: 1.75; }
+.card-body b { color: #94a3b8; }
+.card-body code {
+  background: rgba(99,102,241,.15);
+  border-radius: 3px; padding: 1px 5px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a5b4fc;
+}
+
+/* ── 两栏布局 ── */
+.cols { display: grid; gap: 32px; }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+.cols-5-4 { grid-template-columns: 5fr 4fr; }
+.cols-4-5 { grid-template-columns: 4fr 5fr; }
+
+/* ── 列表条目 ── */
+.items { display: flex; flex-direction: column; gap: 10px; }
+.item {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 8px;
+  padding: 13px 15px;
+}
+.item-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 5px;
+  background: #6366f1;
+}
+.item-dot.g { background: #22c55e; }
+.item-dot.y { background: #f59e0b; }
+.item-dot.r { background: #ef4444; }
+.item-dot.c { background: #22d3ee; }
+.item-title { font-size: 13px; font-weight: 700; color: #e2e8f0; margin-bottom: 3px; }
+.item-desc { font-size: 12px; color: #64748b; line-height: 1.65; }
+.item-desc code {
+  background: rgba(99,102,241,.15); border-radius: 3px;
+  padding: 1px 5px; font-family: monospace; font-size: 11px; color: #a5b4fc;
+}
+
+/* ── 代码块 ── */
+.code {
+  background: #0d1117;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 10px;
+  padding: 18px 20px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12.5px;
+  line-height: 1.75;
+  overflow-x: auto;
+}
+.code .c  { color: #8b949e; }
+.code .k  { color: #ff7b72; }
+.code .s  { color: #a5d6ff; }
+.code .n  { color: #79c0ff; }
+.code .ok { color: #56d364; }
+.code .w  { color: #e3b341; }
+.code .p  { color: #d2a8ff; }
+
+/* ── 引用 ── */
+.callout {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: rgba(34,211,238,.06);
+  border-left: 3px solid #22d3ee;
+  border-radius: 0 8px 8px 0;
+  padding: 13px 16px;
+  margin-top: 14px;
+}
+.callout-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.callout-body { font-size: 12.5px; color: #67e8f9; line-height: 1.7; }
+.callout-body b { color: #a5f3fc; }
+
+.callout.warn {
+  background: rgba(245,158,11,.06);
+  border-left-color: #f59e0b;
+}
+.callout.warn .callout-body { color: #fde68a; }
+.callout.warn .callout-body b { color: #fef08a; }
+
+.callout.danger {
+  background: rgba(239,68,68,.06);
+  border-left-color: #ef4444;
+}
+.callout.danger .callout-body { color: #fca5a5; }
+
+/* ── 区块标签 ── */
+.section-kicker {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .1em;
+  color: #6366f1; font-weight: 700; margin-bottom: 10px;
+}
+
+/* ── 流程图 ── */
+.flow { display: flex; align-items: stretch; gap: 0; }
+.flow-step {
+  background: rgba(99,102,241,.1);
+  border: 1px solid rgba(99,102,241,.25);
+  border-radius: 10px;
+  padding: 14px 16px; text-align: center;
+  min-width: 100px; flex: 1;
+}
+.flow-step .fi { font-size: 20px; margin-bottom: 4px; }
+.flow-step .fl { font-size: 11px; color: #a5b4fc; font-weight: 700; line-height: 1.3; }
+.flow-step .fs { font-size: 10px; color: #4f46e5; margin-top: 3px; }
+.flow-arrow { color: #4f46e5; font-size: 18px; padding: 0 6px; display: flex; align-items: center; }
+
+/* ── 层级 ── */
+.layer {
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 8px;
+  padding: 9px 14px;
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 6px;
+}
+.layer-name { font-size: 12px; font-weight: 700; color: #a5b4fc; min-width: 160px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  background: rgba(99,102,241,.12);
+  border: 1px solid rgba(99,102,241,.2);
+  border-radius: 4px;
+  padding: 2px 9px; font-size: 10.5px; color: #818cf8;
+}
+.chip.g { background: rgba(34,197,94,.1); border-color: rgba(34,197,94,.2); color: #86efac; }
+.chip.y { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.2); color: #fde68a; }
+.chip.r { background: rgba(239,68,68,.1);  border-color: rgba(239,68,68,.2);  color: #fca5a5; }
+
+/* ── 统计数字 ── */
+.stats { display: grid; }
+.stat { text-align: center; padding: 16px 8px; }
+.stat-n {
+  font-size: 38px; font-weight: 900; line-height: 1;
+  background: linear-gradient(135deg, #818cf8, #22d3ee);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.stat-l { font-size: 12px; color: #475569; margin-top: 5px; line-height: 1.4; }
+
+/* ── 高亮框 ── */
+.highlight {
+  background: rgba(99,102,241,.08);
+  border: 1px solid rgba(99,102,241,.2);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-top: 16px;
+}
+
+/* ── 导航 ── */
+#nav {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(0,0,0,.7);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  padding: 7px 20px;
+  backdrop-filter: blur(16px);
+  z-index: 998;
+}
+#nav button {
+  background: none; border: none;
+  color: #94a3b8; font-size: 17px;
+  cursor: pointer; padding: 3px 8px;
+  border-radius: 6px; transition: .15s;
+  line-height: 1;
+}
+#nav button:hover:not(:disabled) { color: #fff; background: rgba(255,255,255,.08); }
+#nav button:disabled { opacity: .2; cursor: default; }
+.nav-dots { display: flex; gap: 5px; align-items: center; }
+.nav-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(255,255,255,.2); cursor: pointer; transition: .15s;
+}
+.nav-dot.on { background: #6366f1; transform: scale(1.4); }
+.nav-ctr { font-size: 12px; color: #475569; min-width: 44px; text-align: center; }
+
+/* ── 结尾 ── */
+.slide.end {
+  justify-content: center; align-items: center; text-align: center;
+  background:
+    radial-gradient(ellipse 50% 50% at 50% 40%, rgba(99,102,241,.15) 0%, transparent 65%),
+    #09090f;
+}
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<div class="deck" id="deck">
+
+<!-- ══════════ 0 · 封面 ══════════ -->
+<div class="slide cover active">
+  <div class="cover-eyebrow">💡 AI 协同开发 · 工程实践指南</div>
+  <h1 class="cover-h1">AI 辅助软件开发<br>最佳实践</h1>
+  <p class="cover-sub">让 AI 成为真正靠谱的工程协作者</p>
+  <p class="cover-desc">
+    基于真实企业级项目的经验提炼——<br>
+    从需求到测试、从部署到 Agent 协作，<br>
+    系统梳理人机协同的工程方法论。
+  </p>
+  <div class="cover-tags">
+    <span class="tag">Spec-First 开发</span>
+    <span class="tag">TDD + AI</span>
+    <span class="tag">Agent 工程</span>
+    <span class="tag">根因隔离</span>
+    <span class="tag">单一事实来源</span>
+    <span class="tag">可观测性</span>
+    <span class="tag">上游同步策略</span>
+  </div>
+</div>
+
+<!-- ══════════ 1 · AI 辅助开发的核心问题 ══════════ -->
+<div class="slide">
+  <div class="big-num">01</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Why · 为什么需要方法论</div>
+    <h2 class="slide-title">AI 带来了能力，<em>也带来了新的失控风险</em></h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cards-3">
+    <div class="card" style="--bar: linear-gradient(90deg,#ef4444,#f87171)">
+      <span class="card-icon">🌀</span>
+      <div class="card-title">过度自作主张</div>
+      <div class="card-body">
+        AI 补全了你没要求的"优化"，加了你不需要的抽象，改了你没注意到的边界条件。<br><br>
+        <b>结果：</b>diff 变大、审查困难、引入隐患
+      </div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#f59e0b,#fde68a)">
+      <span class="card-icon">🪤</span>
+      <div class="card-title">静默失败 / 哑故障</div>
+      <div class="card-body">
+        AI 给出了看起来正确的代码，测试全绿，但实际上走了错误路径——错误被兜底机制悄悄藏起来。<br><br>
+        <b>结果：</b>空心绿比诚实 FAILED 更危险
+      </div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#6366f1,#818cf8)">
+      <span class="card-icon">📡</span>
+      <div class="card-title">上下文丢失与误判</div>
+      <div class="card-body">
+        AI 不了解项目历史，容易把表象当根因，把巧合当规律，把临时方案当永久设计。<br><br>
+        <b>结果：</b>重复踩坑，叠加兜底，越修越脆
+      </div>
+    </div>
+  </div>
+  <div class="callout" style="margin-top: 24px;">
+    <span class="callout-icon">💡</span>
+    <div class="callout-body">
+      AI 的价值在于<b>执行力</b>——它能快速写代码、生成测试、重构结构。<br>
+      但<b>判断力</b>——什么该做、什么不该做、根因是什么——必须由人来掌控。<br>
+      方法论的核心，就是<b>让 AI 在正确的边界内发挥最大价值</b>。
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 2 · Spec-First 开发 ══════════ -->
+<div class="slide">
+  <div class="big-num">02</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 1 · 规格先行</div>
+    <h2 class="slide-title"><em>Spec-First</em>：先对齐，再执行</h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cols cols-5-4">
+    <div>
+      <div class="section-kicker">为什么 AI 更需要规格文档</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">AI 执行快，所以"跑题"的代价更高</div>
+            <div class="item-desc">人工编码跑偏，还在思考过程中能察觉。AI 几秒钟已经写完了五个文件——方向错了，撤销成本极高。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">Spec 是人机之间的契约</div>
+            <div class="item-desc">明确写出：修改哪些文件、预期行为、不能动什么、验收标准是什么。AI 只做 Spec 说的事，不多也不少。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">先写 Red Test，再让 AI 实现</div>
+            <div class="item-desc">Red Anchor Test = 先写一个必须失败的测试，然后让 AI 把它变绿。<br>防止 AI "实现了一个没有行为的 pass"。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">Spec 不做，AI 会自己做决策</div>
+            <div class="item-desc">没有 Spec，AI 会做"合理推断"——它的推断不一定和你的业务背景一致。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">一份 Spec 应该包含</div>
+      <div class="code">
+<span class="c"># spec: fix-handoff-status-field.md</span>
+
+<span class="w">## 根因</span>
+<span class="s">handoff 字段三分裂：metrics /</span>
+<span class="s">metrics_results / metrics_summary</span>
+<span class="s">校验器只认 metrics_summary</span>
+<span class="s">→ 28/56 条完整 handoff 被误判</span>
+
+<span class="w">## 修改范围</span>
+<span class="ok">executor.py L104   # 校验逻辑</span>
+<span class="ok">schemas.py L78     # 字段定义</span>
+
+<span class="w">## 不能动</span>
+<span class="k">- 上游 DeerFlow 相关文件</span>
+<span class="k">- 其他 handoff 类型</span>
+
+<span class="w">## 验收标准</span>
+<span class="ok">pytest test_handoff_field.py → GREEN</span>
+<span class="ok">dogfood FST 完整分析 → completed</span>
+      </div>
+      <div class="callout warn">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <b>反模式：</b>"帮我修一下这个 bug"<br>
+          → AI 会猜测根因，可能修错位置，可能引入新问题
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 3 · 测试驱动 ══════════ -->
+<div class="slide">
+  <div class="big-num">03</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 2 · 测试优先</div>
+    <h2 class="slide-title">TDD × AI：<em>让测试成为合同，而不是补丁</em></h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cols cols-2">
+    <div>
+      <div class="section-kicker">AI 时代 TDD 的新意义</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">测试是 AI 行为的边界围栏</div>
+            <div class="item-desc">AI 生成代码时会持续跑测试自检。测试写得越精确，AI 越不会跑偏。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">合并前必须全量通过</div>
+            <div class="item-desc">只跑新增测试是常见陷阱——修改了共享逻辑但没发现旧测试被悄悄破坏。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">警惕测试隔离污染</div>
+            <div class="item-desc">有些测试单独跑全绿、全量跑必红——这是测试卫生债，不是你的代码写坏了，要区分清楚。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">conftest mock 会掩盖真实问题</div>
+            <div class="item-desc">测试框架的 mock 可能让循环依赖、启动错误在 pytest 里假绿——<br>改核心模块后必须额外做<b>裸导入验证</b>。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">三类关键测试</div>
+      <div class="layer">
+        <span class="layer-name">🔴 Red Anchor Test</span>
+        <div class="chips"><span class="chip r">先写必须失败的测试</span><span class="chip r">防止 AI 偷懒</span></div>
+      </div>
+      <div class="layer">
+        <span class="layer-name">🔁 等价性测试</span>
+        <div class="chips"><span class="chip y">重构前后行为一致</span><span class="chip y">必须看 baseline 内容</span></div>
+      </div>
+      <div class="layer">
+        <span class="layer-name">🚪 裸导入测试</span>
+        <div class="chips"><span class="chip">绕过 conftest mock</span><span class="chip">发现循环依赖</span></div>
+      </div>
+      <div class="code" style="margin-top: 14px;">
+<span class="c"># ✅ 裸导入：绕过 conftest mock</span>
+<span class="n">python</span> <span class="k">-c</span> <span class="s">"import app.gateway"</span>
+<span class="ok">→ OK（无循环依赖）</span>
+
+<span class="c"># ⚠️ 等价性测试必须看 baseline 内容</span>
+<span class="c"># 如果 6 个 baseline 全是同一句错误串</span>
+<span class="c"># → 调用签名写错被 except 吞了 → 假绿</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 4 · 根因隔离 ══════════ -->
+<div class="slide">
+  <div class="big-num">04</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 3 · 诊断优先</div>
+    <h2 class="slide-title"><em>根因未隔离前</em>，不加兜底机制</h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cols cols-2">
+    <div>
+      <div class="section-kicker">AI 时代的误诊模式</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">同一表象，异质根因</div>
+            <div class="item-desc">
+              同样的"任务卡死"现象可能源于：<br>
+              ① Prompt 矛盾造成叙述黑洞<br>
+              ② Schema 缺少合法状态值<br>
+              ③ 参数类型不匹配（标量 vs 列表）<br>
+              每次都要<b>实验确认</b>，不能复用上次的结论。
+            </div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">决定性实验条件必须显式核实</div>
+            <div class="item-desc">"加固后仍失败"可能是在旧条件下测的——只能证明旧条件压不过，无法证明新根因不存在。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">加兜底 = 给下次误判铺路</div>
+            <div class="item-desc">根因未隔离就加兜底机制，下次同类故障更难排查——兜底把错误藏进了"管线全绿"。</div>
+          </div>
+        </div>
+      </div>
+      <div class="callout danger" style="margin-top: 14px;">
+        <span class="callout-icon">🚨</span>
+        <div class="callout-body">
+          <b>原则：</b>先做决定性实验，隔离根因；<br>
+          然后修根因；最后<b>按需</b>补防御层。<br>
+          顺序不能倒。
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">正确的诊断流程</div>
+      <div class="flow" style="flex-direction: column; gap: 0;">
+        <div class="flow-step" style="min-width: unset; text-align: left; display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+          <div class="fi" style="font-size: 18px;">🔬</div>
+          <div>
+            <div class="fl">Step 1 · 复现</div>
+            <div class="fs">最小可复现场景，固定变量</div>
+          </div>
+        </div>
+        <div class="flow-step" style="min-width: unset; text-align: left; display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+          <div class="fi" style="font-size: 18px;">📊</div>
+          <div>
+            <div class="fl">Step 2 · 读原始证据</div>
+            <div class="fs">看真实日志/headers，不靠猜测</div>
+          </div>
+        </div>
+        <div class="flow-step" style="min-width: unset; text-align: left; display: flex; align-items: center; gap: 12px; margin-bottom: 6px; background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.25);">
+          <div class="fi" style="font-size: 18px;">🎯</div>
+          <div>
+            <div class="fl" style="color: #fca5a5;">Step 3 · 隔离根因</div>
+            <div class="fs" style="color: #ef4444;">决定性实验：证伪竞争假设</div>
+          </div>
+        </div>
+        <div class="flow-step" style="min-width: unset; text-align: left; display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+          <div class="fi" style="font-size: 18px;">🔧</div>
+          <div>
+            <div class="fl">Step 4 · 修根因</div>
+            <div class="fs">最小改动，不顺带"清理"</div>
+          </div>
+        </div>
+        <div class="flow-step" style="min-width: unset; text-align: left; display: flex; align-items: center; gap: 12px;">
+          <div class="fi" style="font-size: 18px;">🛡️</div>
+          <div>
+            <div class="fl">Step 5 · 按需补防御</div>
+            <div class="fs">防御层可观测，有触发率指标</div>
+          </div>
+        </div>
+      </div>
+      <div class="callout" style="margin-top: 14px;">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <b>实例：</b>Cookie 403 故障——第一反应是"上游禁用了 Auth"，但 <code>curl -D -</code> 看 Set-Cookie 的 Max-Age 就发现：是 session cookie 生命周期不对称，不是 Auth 配置问题。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 5 · 单一事实来源 ══════════ -->
+<div class="slide">
+  <div class="big-num">05</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 4 · 知识管理</div>
+    <h2 class="slide-title">单一事实来源 <em>（SSOT）</em>：知识只存一份</h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cols cols-2">
+    <div>
+      <div class="section-kicker">AI 协作中的知识双存危机</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">AI 文档 vs 代码：谁说了算？</div>
+            <div class="item-desc">AI 会同时读 Skill 文档、System Prompt、代码注释。三处描述不一致时，AI 自己选一个——通常选错的那个。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">Skill 文档描述工具输出 → AI 脑补</div>
+            <div class="item-desc">Skill 写了"调用此工具会返回 X 格式的结果"→ AI 不再真正调用工具，直接伪造返回值。<br><b>规则：</b>工具文档只教"何时调"，绝不描述"返回什么"。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">Deny 消息必须含明确指令</div>
+            <div class="item-desc">只写"不允许此操作"不够——AI 知道错了但不知道该怎么办，会继续。<br>必须写："请改调 X 工具，原因是 Y，然后做 Z"。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">SSOT 的实践规则</div>
+      <div class="layer" style="background: rgba(34,197,94,.06); border-color: rgba(34,197,94,.15);">
+        <span class="layer-name" style="color: #86efac;">✅ 业务规则</span>
+        <div class="chips"><span class="chip g">只在代码里</span><span class="chip g">文档引用代码</span></div>
+      </div>
+      <div class="layer" style="background: rgba(34,197,94,.06); border-color: rgba(34,197,94,.15);">
+        <span class="layer-name" style="color: #86efac;">✅ Schema 定义</span>
+        <div class="chips"><span class="chip g">单一文件</span><span class="chip g">其他地方 import</span></div>
+      </div>
+      <div class="layer" style="background: rgba(239,68,68,.06); border-color: rgba(239,68,68,.15);">
+        <span class="layer-name" style="color: #fca5a5;">❌ 双存知识</span>
+        <div class="chips"><span class="chip r">文档 + 代码各一份</span><span class="chip r">必然漂移</span></div>
+      </div>
+      <div class="layer" style="background: rgba(239,68,68,.06); border-color: rgba(239,68,68,.15);">
+        <span class="layer-name" style="color: #fca5a5;">❌ AI Prompt 里内嵌规则</span>
+        <div class="chips"><span class="chip r">无法通过测试验证</span><span class="chip r">难以追踪变更</span></div>
+      </div>
+      <div class="callout" style="margin-top: 14px;">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          判断是否双存的标准：<b>人能手改且手改能静默存活</b>——如果你改了 A 但 B 自动跟着变（如生成代码），B 是物化视图，不是双存。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 6 · 可观测性 ══════════ -->
+<div class="slide">
+  <div class="big-num">06</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 5 · 可观测性</div>
+    <h2 class="slide-title">兜底要<em>可见</em>：静默成功是最危险的</h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cols cols-2">
+    <div>
+      <div class="section-kicker">兜底机制的双刃剑</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">兜底是合理的工程手段</div>
+            <div class="item-desc">在边界条件下自动恢复，防止整个流程因单点失败而崩溃。这是好的。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">静默兜底 = 把回归藏进绿色</div>
+            <div class="item-desc">兜底机制本身没坏过——坏的是它工作得太好，把上游回归藏在"管线全绿"下。兜底触发率悄悄升高，没有人知道。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">空心绿 vs 诚实 FAILED</div>
+            <div class="item-desc">一个任务"完成"了，但关键字段是兜底填充的，数据不可信——这比报错更糟，因为下游会信任这个结果继续处理。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">可观测性设计清单</div>
+      <div class="layer" style="background: rgba(34,197,94,.05); border-color: rgba(34,197,94,.12);">
+        <span class="layer-name" style="color: #86efac; font-size: 11px;">来源标记</span>
+        <div class="chips"><span class="chip g">sealed_by: "auto" vs "agent"</span><span class="chip g">区分正常与兜底</span></div>
+      </div>
+      <div class="layer" style="background: rgba(34,197,94,.05); border-color: rgba(34,197,94,.12);">
+        <span class="layer-name" style="color: #86efac; font-size: 11px;">触发率指标</span>
+        <div class="chips"><span class="chip g">写进验收标准</span><span class="chip g">不是日志备注</span></div>
+      </div>
+      <div class="layer" style="background: rgba(34,197,94,.05); border-color: rgba(34,197,94,.12);">
+        <span class="layer-name" style="color: #86efac; font-size: 11px;">完整性对账</span>
+        <div class="chips"><span class="chip g">计划产出 vs 实际产出</span><span class="chip g">缺失就报错</span></div>
+      </div>
+      <div class="layer" style="background: rgba(239,68,68,.05); border-color: rgba(239,68,68,.12);">
+        <span class="layer-name" style="color: #fca5a5; font-size: 11px;">❌ 反模式</span>
+        <div class="chips"><span class="chip r">兜底无日志</span><span class="chip r">触发率不监控</span><span class="chip r">下游不区分来源</span></div>
+      </div>
+      <div class="callout warn" style="margin-top: 14px;">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <b>验收标准的写法：</b><br>
+          "auto-seal 触发率 &lt; 5%"——不是"日志里有 auto-seal 字样"<br>
+          前者是指标，后者是摆设。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 7 · 上下文管理 ══════════ -->
+<div class="slide">
+  <div class="big-num">07</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 6 · 上下文工程</div>
+    <h2 class="slide-title">AI 没有记忆——<em>上下文工程</em>决定质量下限</h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cards-3" style="margin-bottom: 20px;">
+    <div class="card" style="--bar: linear-gradient(90deg,#6366f1,#818cf8)">
+      <span class="card-icon">📋</span>
+      <div class="card-title">CLAUDE.md / 项目文档</div>
+      <div class="card-body">
+        把<b>项目级约束</b>写进持久化文件：<br>
+        • 不能动哪些文件<br>
+        • 受保护的设计决策<br>
+        • 已知坑与解决方法<br><br>
+        每次会话 AI 都会读取，无需重复解释
+      </div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#10b981,#22d3ee)">
+      <span class="card-icon">🤝</span>
+      <div class="card-title">Handoff 文档</div>
+      <div class="card-body">
+        跨会话传递上下文：<br>
+        • 已验证的事实（非假设）<br>
+        • 当前阻塞原因<br>
+        • 已完成的 artifacts<br>
+        • 下一步明确指令<br><br>
+        接手前必须<b>核实声称的事实</b>
+      </div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#f59e0b,#fde68a)">
+      <span class="card-icon">🧠</span>
+      <div class="card-title">记忆系统</div>
+      <div class="card-body">
+        把跨会话有价值的判断持久化：<br>
+        • 用户偏好与工作方式<br>
+        • 项目特有约定<br>
+        • 已学到的教训<br><br>
+        <b>不应存：</b>代码结构、git 历史（从代码读）
+      </div>
+    </div>
+  </div>
+  <div class="cols cols-2">
+    <div class="callout danger">
+      <span class="callout-icon">🚨</span>
+      <div class="callout-body">
+        <b>Handoff 接手陷阱：</b>不能直接信任 Handoff 文档的声称——<br>
+        先 grep 代码 + 解码真实 trace，确认声称的根因真实存在，再继续。<br>
+        "前任说 X 是根因"≠ "X 确实是根因"
+      </div>
+    </div>
+    <div class="callout warn">
+      <span class="callout-icon">⚠️</span>
+      <div class="callout-body">
+        <b>上下文污染：</b>AI 会把对话历史中的错误假设当作事实。<br>
+        当你发现 AI 在重复一个错误结论时，<b>明确纠正</b>并让它重新推理，而不是在错误基础上继续叠加。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 8 · Agent 编排 ══════════ -->
+<div class="slide">
+  <div class="big-num">08</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 7 · Agent 工程</div>
+    <h2 class="slide-title">多 Agent 协作：<em>边界清晰</em>是一切的前提</h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cols cols-2">
+    <div>
+      <div class="section-kicker">Agent 边界设计原则</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">每个 Agent 只做一件事</div>
+            <div class="item-desc">职责越模糊，边界越容易被 AI 自作主张突破。明确声明"哪些工具可用，哪些绝对不能用"。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">Handoff 协议是硬契约</div>
+            <div class="item-desc">Agent 之间通过结构化 JSON 传递状态，字段有 Schema 校验，不用自然语言传递关键信息。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">Guardrail 放在工具调用前</div>
+            <div class="item-desc">不要靠 prompt 说"不要做 X"——在 Agent 调用工具之前，用硬代码检查并拒绝越界调用。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">Lead Agent 不亲自执行</div>
+            <div class="item-desc">编排者只做派遣和协调，不自己写脚本、调分析库——越界执行是角色混乱的根源。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">Middleware 模式：行为可组合</div>
+      <div class="layer"><span class="layer-name">数据隔离层</span><div class="chips"><span class="chip">线程独立工作区</span><span class="chip">沙箱执行</span></div></div>
+      <div class="layer"><span class="layer-name">授权控制层</span><div class="chips"><span class="chip y">Guardrail 工具授权</span><span class="chip y">行为白名单</span></div></div>
+      <div class="layer"><span class="layer-name">上下文管理层</span><div class="chips"><span class="chip">上下文压缩</span><span class="chip">记忆更新</span></div></div>
+      <div class="layer"><span class="layer-name">质量保障层</span><div class="chips"><span class="chip g">任务状态追踪</span><span class="chip g">Handoff 校验</span></div></div>
+      <div class="layer"><span class="layer-name">数据采集层</span><div class="chips"><span class="chip">训练数据收集</span><span class="chip">行为日志</span></div></div>
+      <div class="callout" style="margin-top: 12px;">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <b>Middleware 模式的优势：</b>每个行为是独立模块，可以单独测试、开关切换、顺序调整，不修改核心逻辑。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 9 · 代码管理与同步 ══════════ -->
+<div class="slide">
+  <div class="big-num">09</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 8 · 代码管理</div>
+    <h2 class="slide-title">Fork 维护：<em>定制与上游</em>的长期共存策略</h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cols cols-2">
+    <div>
+      <div class="section-kicker">分层保护策略</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">默认全量跟随上游</div>
+            <div class="item-desc">上游的 bug 修复和性能提升应默认合入——主动跳过 = 主动制造分叉，维护成本指数级增长。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">定制文件清单 + Surgical Merge</div>
+            <div class="item-desc">维护一份受保护文件列表，这些文件绝不整文件覆盖——逐行对比，只合并上游的非冲突改动。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">清单本身也会过时</div>
+            <div class="item-desc">每次同步前，diff 所有触及文件——不能只查静态保护清单，新定制文件可能还没有被加入清单。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">Prompt 文件合并的特殊规则</div>
+      <div class="code" style="font-size: 11.5px;">
+<span class="c"># ❌ 危险：只用 grep 确认关键字还在</span>
+<span class="n">grep</span> <span class="s">"topOfMind"</span> prompt.py
+<span class="ok">Found!  ← 关键字在，但约束可能已被削弱</span>
+
+<span class="c"># 真实案例：</span>
+<span class="c"># BASE（强约束）：</span>
+<span class="p">"MUST NOT be written into any memory field"</span>
+<span class="c"># 合并后退化为（弱约束）：</span>
+<span class="p">"Do not record uploads"</span>
+<span class="c"># grep 串在，但枚举范围缩小了</span>
+
+<span class="c"># ✅ 正确：三方字节对账</span>
+<span class="n">diff</span> &lt;(sed -n <span class="s">'100,200p'</span> base/prompt.py) \
+     &lt;(sed -n <span class="s">'100,200p'</span> merged/prompt.py)
+<span class="c"># 看：强句计数 / 枚举完整性 / 缩进层级</span>
+      </div>
+      <div class="callout warn" style="margin-top: 12px;">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <b>关键词还在 ≠ 约束完整</b><br>
+          强约束伞句可能被降格为弱约束子句，或者枚举范围被缩小——必须看<b>强句计数和完整性</b>，不只看关键词。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 10 · CI/CD 与部署 ══════════ -->
+<div class="slide">
+  <div class="big-num">10</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Principle 9 · 部署工程</div>
+    <h2 class="slide-title">AI 写的代码也要<em>严格走 CI/CD</em></h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div style="margin-bottom: 24px;">
+    <div class="flow">
+      <div class="flow-step"><div class="fi">✏️</div><div class="fl">编写/生成</div><div class="fs">人+AI 协作</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="fi">🧪</div><div class="fl">全量测试</div><div class="fs">make test</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="fi">🔍</div><div class="fl">Code Review</div><div class="fs">人工审查</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step" style="background: rgba(34,197,94,.1); border-color: rgba(34,197,94,.25);"><div class="fi">✅</div><div class="fl" style="color: #86efac;">CI Gate</div><div class="fs" style="color: #22c55e;">自动验证</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="fi">🐳</div><div class="fl">构建镜像</div><div class="fs">Docker Build</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="fi">🚀</div><div class="fl">部署</div><div class="fs">全量推送</div></div>
+    </div>
+  </div>
+  <div class="cols cols-2">
+    <div>
+      <div class="section-kicker">AI 生成代码的特殊 CI 要求</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">阻塞 IO 检测</div>
+            <div class="item-desc">AI 生成的异步代码容易误用同步 IO——专项 gate 检测 async handler 里的阻塞调用。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot g"></div>
+          <div>
+            <div class="item-title">导入循环检测</div>
+            <div class="item-desc">AI 跨文件写代码容易引入循环依赖——CI 里跑裸导入（非 pytest），绕开 mock。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">Schema 兼容性验证</div>
+            <div class="item-desc">AI 修改 Schema 时可能不知道所有下游消费者——自动验证所有已知调用场景。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-kicker">部署常见陷阱</div>
+      <div class="items">
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">部署不等于数据库迁移</div>
+            <div class="item-desc">docker compose up 不会自动给已存在的表加列——加列的变更必须单独跑迁移脚本。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot r"></div>
+          <div>
+            <div class="item-title">漏推镜像 = 静默跑旧代码</div>
+            <div class="item-desc">多服务部署时漏推某个镜像，compose 不报错，直接用旧镜像启动——bug 没修好但看起来部署成功了。</div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="item-dot y"></div>
+          <div>
+            <div class="item-title">dev 配置必须对齐到 compose</div>
+            <div class="item-desc">本地 make dev 的 flags 是产品属性——必须同步到 docker-compose.yaml，不能只放 .env。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 11 · 工作流总结 ══════════ -->
+<div class="slide">
+  <div class="big-num">11</div>
+  <div class="slide-head">
+    <div class="slide-kicker">Summary · 实践总结</div>
+    <h2 class="slide-title">AI 协同开发的<em>九条核心原则</em></h2>
+    <div class="slide-rule"></div>
+  </div>
+  <div class="cards-3">
+    <div class="card" style="--bar: linear-gradient(90deg,#6366f1,#818cf8)">
+      <div class="card-title">① Spec-First</div>
+      <div class="card-body">先写规格文档，明确边界和验收标准，再让 AI 执行。避免 AI 自作主张跑偏。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#6366f1,#818cf8)">
+      <div class="card-title">② TDD 是护栏</div>
+      <div class="card-body">先写 Red Test，再让 AI 实现变绿。测试是 AI 行为的边界约束，不是事后补丁。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#6366f1,#818cf8)">
+      <div class="card-title">③ 根因隔离优先</div>
+      <div class="card-body">症状相同不等于根因相同。先做决定性实验，再修，最后按需加防御。顺序不能倒。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#22d3ee,#6366f1)">
+      <div class="card-title">④ SSOT 原则</div>
+      <div class="card-body">知识只存一份。禁止在 AI Prompt / 文档 / 代码三处各自维护同一个业务规则。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#22d3ee,#6366f1)">
+      <div class="card-title">⑤ 兜底要可见</div>
+      <div class="card-body">兜底触发率写进验收标准。静默成功比诚实 FAILED 更危险——空心绿是最大的风险。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#22d3ee,#6366f1)">
+      <div class="card-title">⑥ 上下文工程</div>
+      <div class="card-body">CLAUDE.md 存项目约束，Handoff 传跨会话状态，记忆系统存教训——三层互补。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#22d3ee,#10b981)">
+      <div class="card-title">⑦ Agent 边界清晰</div>
+      <div class="card-body">每个 Agent 职责单一，Guardrail 硬约束，Handoff 有 Schema——不靠 Prompt 维持秩序。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#22d3ee,#10b981)">
+      <div class="card-title">⑧ Fork 维护策略</div>
+      <div class="card-body">默认全量跟随上游，只对定制文件 Surgical Merge。清单本身也需要定期审查更新。</div>
+    </div>
+    <div class="card" style="--bar: linear-gradient(90deg,#22d3ee,#10b981)">
+      <div class="card-title">⑨ 严格走 CI/CD</div>
+      <div class="card-body">AI 生成的代码同样需要全量测试、导入检测、人工 Review——不因为"是 AI 写的"就降低标准。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 12 · 结尾 ══════════ -->
+<div class="slide end">
+  <div style="position: relative; z-index: 1;">
+    <div class="cover-eyebrow" style="justify-content: center;">AI 协同开发最佳实践</div>
+    <h1 class="cover-h1" style="text-align: center; margin: 0 auto 16px;">核心是人来判断，<br>AI 来执行</h1>
+    <p class="cover-sub">方法论让 AI 在正确的边界内发挥最大价值</p>
+    <div style="display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; max-width: 640px; margin: 32px auto 0;">
+      <div style="background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 16px; text-align: center;">
+        <div style="font-size: 28px; margin-bottom: 6px;">📋</div>
+        <div style="font-size: 12px; color: #64748b; line-height: 1.6;">Spec-First<br>规格先于代码</div>
+      </div>
+      <div style="background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 16px; text-align: center;">
+        <div style="font-size: 28px; margin-bottom: 6px;">🔬</div>
+        <div style="font-size: 12px; color: #64748b; line-height: 1.6;">根因隔离<br>实验先于结论</div>
+      </div>
+      <div style="background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 16px; text-align: center;">
+        <div style="font-size: 28px; margin-bottom: 6px;">📡</div>
+        <div style="font-size: 12px; color: #64748b; line-height: 1.6;">兜底可见<br>失败优于静默</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- 导航 -->
+<div id="nav">
+  <button id="prev" onclick="go(-1)" disabled>←</button>
+  <div class="nav-dots" id="dots"></div>
+  <span class="nav-ctr" id="ctr"></span>
+  <button id="next" onclick="go(1)">→</button>
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const N = slides.length;
+let cur = 0;
+
+const bar   = document.getElementById('progress');
+const dots  = document.getElementById('dots');
+const ctr   = document.getElementById('ctr');
+const prev  = document.getElementById('prev');
+const next  = document.getElementById('next');
+
+slides.forEach((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'nav-dot' + (i === 0 ? ' on' : '');
+  d.onclick = () => go(i - cur);
+  dots.appendChild(d);
+});
+
+function render() {
+  slides.forEach((s, i) => s.classList.toggle('active', i === cur));
+  document.querySelectorAll('.nav-dot').forEach((d, i) => d.classList.toggle('on', i === cur));
+  bar.style.width = ((cur + 1) / N * 100) + '%';
+  ctr.textContent = (cur + 1) + ' / ' + N;
+  prev.disabled = cur === 0;
+  next.disabled = cur === N - 1;
+}
+
+function go(delta) {
+  const n = cur + delta;
+  if (n >= 0 && n < N) { cur = n; render(); }
+}
+
+document.addEventListener('keydown', e => {
+  if (['ArrowRight','ArrowDown',' '].includes(e.key)) { e.preventDefault(); go(1); }
+  else if (['ArrowLeft','ArrowUp'].includes(e.key))   { e.preventDefault(); go(-1); }
+  else if (e.key === 'Home') { e.preventDefault(); cur = 0; render(); }
+  else if (e.key === 'End')  { e.preventDefault(); cur = N-1; render(); }
+});
+
+let tx = 0;
+document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+document.addEventListener('touchend',   e => {
+  const dx = e.changedTouches[0].clientX - tx;
+  if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+});
+
+render();
+</script>
+</body>
+</html>

@@ -15,6 +15,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# 单一 value-domain 声明：metric 参数的合法值形状。
+# 标量(旧 velocity_threshold=30.0)+ list[str](列语义对齐引入的多列 zone 聚合，如 open_arm_zones=['open'])。
+# 两个字段(MetricStat.parameters_used / ParameterAuditFinding.used_value)共用此别名，
+# 避免「同一 domain 两份声明独立漂移」——这正是本次 84-error seal 失败的 bug 类。
+ParamValue = float | int | str | list[str] | None
+
 # Virtual path contract: all subagent handoff JSON files must reference user-data
 # files via virtual paths (e.g. /mnt/user-data/uploads/x.txt), never host absolute
 # paths (e.g. /home/.../user-data/uploads/x.txt). Downstream consumers like
@@ -106,7 +112,7 @@ class MetricStat(BaseModel):
         default=None,
         description="Present when applicable=False; explains why.",
     )
-    parameters_used: dict[str, float | int | str | None] = Field(
+    parameters_used: dict[str, ParamValue] = Field(
         default_factory=dict,
         description=(
             "Actual parameters used to compute this metric, e.g. "
@@ -114,7 +120,10 @@ class MetricStat(BaseModel):
             "Populated by Sprint 2b execution pipeline. "
             "Sprint 0 only defines the field; defaults to empty dict. "
             "None is allowed for individual values when the param is not "
-            "applicable to this metric (e.g. pendulum params on EPM)."
+            "applicable to this metric (e.g. pendulum params on EPM). "
+            "list[str] values represent multi-column zone aggregation params "
+            "(e.g. open_arm_zones=['open'], closed_arm_zones=['closed']), "
+            "introduced by column-semantics alignment (Sprint 1)."
         ),
     )
 
@@ -236,8 +245,12 @@ class ParameterAuditFinding(BaseModel):
         description="Affected metric slug, e.g. 'immobility_time', 'total_entry_count'."
     )
     severity: Literal["critical", "warning", "info"]
-    used_value: float | int | str = Field(
-        description="Parameter value actually used in the run (from MetricStat.parameters_used)."
+    used_value: ParamValue = Field(
+        description=(
+            "Parameter value actually used in the run (from MetricStat.parameters_used). "
+            "Accepts float|int|str|list[str]|None; list[str] for multi-column zone "
+            "aggregation params (e.g. open_arm_zones=['open']), mirroring ParamValue."
+        ),
     )
     observed_distribution: dict[str, float | int] = Field(
         description=(
@@ -286,6 +299,10 @@ class ParameterAuditFinding(BaseModel):
 
         # 1. used_value=None → "" (schema requires float|int|str; degenerate
         #    scene prompt should fill real param value, this catches edge leaks)
+        # 注：used_value 类型(ParamValue)现含 None，但此处仍主动 None→"" 归一。
+        # 理由：下游 data-analyst 审计逻辑(prompt data_analyst.py:236 的 used_value>p90×3 数值比对)
+        # 在概念上不接受 None；prompt 已硬性要求"绝不填 None"(:210)。此归一是该硬约束的兜底，
+        # 是 documented 例外而非疏漏。删除它会改变一条未坏路径的行为(违"根因未隔离前别叠加")，本次不做。
         if values.get("used_value") is None:
             values["used_value"] = ""
 
@@ -459,14 +476,32 @@ class CodeExecutorHandoff(BaseModel):
         default=None,
         description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
-    sealed_by: Literal["model", "framework_rebuild"] = Field(
+    sealed_by: Literal["model", "framework_rebuild", "run_plan"] = Field(
         default="model",
         description=(
             "Handoff 来源标记。model = subagent 自行调 seal 工具封存（正常路径）；"
-            "framework_rebuild = harness 在 auto-seal 兜底中从 m_*.json 机械重建。"
+            "framework_rebuild = harness 在 auto-seal 兜底中从 m_*.json 机械重建；"
+            "run_plan = run_metric_plan 工具确定性落盘（code-executor S4，确定性执行+聚合）。"
             "用于触发率可观测 + 回归探针（Spec A V1/V2 验收项）。"
         ),
     )
+
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=dict 下，producer
+        字段名打错（parms vs parameters_used）→ 正确字段拿空默认 → 仍可标 completed →
+        下游读到"合法空值"。本校验把这类哑故障换成响亮 ValidationError。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.metrics_summary:
+            raise ValueError(
+                "status='completed' but metrics_summary is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
 
 
 class FailedChart(BaseModel):
@@ -502,6 +537,22 @@ class ChartMakerHandoff(BaseModel):
         default=None,
         description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
+
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=list 下，producer
+        字段名打错→ chart_files 拿空默认 → 仍可标 completed → 下游读到"合法空值"。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.chart_files:
+            raise ValueError(
+                "status='completed' but chart_files is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
 
     @field_validator("chart_files")
     @classmethod
@@ -608,6 +659,22 @@ class DataAnalystHandoff(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=list 下，producer
+        字段名打错→ key_findings 拿空默认 → 仍可标 completed → 下游读到"合法空值"。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.key_findings:
+            raise ValueError(
+                "status='completed' but key_findings is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
+
 
 class ReportWriterHandoff(BaseModel):
     """Handoff JSON produced by the report-writer subagent."""
@@ -630,6 +697,22 @@ class ReportWriterHandoff(BaseModel):
         default=None,
         description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
+
+    @model_validator(mode="after")
+    def _completed_requires_core_output(self):
+        """status=completed 但核心产物为空 = 字段名打错/聚合漏填的哑故障，响亮拒绝。
+
+        Fable 实测（2026-06-12）：extra="allow" + default_factory=list 下，producer
+        字段名打错→ sections_written 拿空默认 → 仍可标 completed → 下游读到"合法空值"。
+        partial/failed 允许空（部分/失败本就可能无产物）。
+        """
+        if self.status == "completed" and not self.sections_written:
+            raise ValueError(
+                "status='completed' but sections_written is empty — "
+                "likely a field-name typo (data landed in model_extra) or aggregation gap. "
+                "Use status='partial'/'failed' if output is genuinely incomplete."
+            )
+        return self
 
 
 __all__ = [

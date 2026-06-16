@@ -29,18 +29,9 @@ from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
 
-logger = logging.getLogger(__name__)
+from deerflow.tools.builtins._ev19_grouping import extract_grouping_fields
 
-# EV19 metadata 中表示"分组"的关键字段 (中英文都覆盖)
-# 按出现频率排序: Treatment 是 Noldus 默认分组字段
-_GROUPING_METADATA_KEYS = (
-    "Treatment", "treatment",
-    "Group", "group", "组别",
-    "Drug", "drug",
-    "Condition", "condition",
-    "Dose", "dose", "剂量",
-    "Compound", "compound",
-)
+logger = logging.getLogger(__name__)
 
 # Number of data rows to include in data_preview
 _DATA_PREVIEW_N_ROWS = 5
@@ -275,20 +266,6 @@ def inspect_uploaded_file_tool(
     return result
 
 
-def _extract_grouping_fields(raw_metadata: dict[str, str]) -> dict[str, str]:
-    """从 EV19 raw_metadata 中提取分组相关字段。"""
-    result: dict[str, str] = {}
-    for key in _GROUPING_METADATA_KEYS:
-        if key in raw_metadata and raw_metadata[key]:
-            result[key] = raw_metadata[key]
-    # 额外: Animal ID 不一定是分组字段但是 subject identifier, 一起返回方便 lead 理解
-    for k in ("Animal ID", "Animal", "动物 ID", "动物编号"):
-        if k in raw_metadata and raw_metadata[k] and k not in result:
-            result[k] = raw_metadata[k]
-            break
-    return result
-
-
 def _try_parse_header(file_path: str) -> dict[str, Any] | None:
     """复用 ethoinsight.parse.parse_header,失败返回 None。"""
     try:
@@ -414,7 +391,7 @@ def _inspect_txt(virtual_path: str, real_path: str) -> dict[str, Any]:
             "subject": header.get("subject", ""),
             "start_time": header.get("start_time", ""),
             "duration": header.get("duration", ""),
-            "grouping_fields": _extract_grouping_fields(raw_metadata),
+            "grouping_fields": extract_grouping_fields(raw_metadata),
         },
         "sheets": [],
         "columns": header.get("columns", []),
@@ -474,7 +451,7 @@ def _inspect_excel(virtual_path: str, real_path: str) -> dict[str, Any]:
                 sheet_info["ev19_metadata"] = {
                     "arena": sheet_header.get("arena", ""),
                     "subject": sheet_header.get("subject", ""),
-                    "grouping_fields": _extract_grouping_fields(raw_metadata),
+                    "grouping_fields": extract_grouping_fields(raw_metadata),
                 }
                 sheet_info["columns"] = sheet_header.get("columns", [])
             else:
@@ -509,7 +486,7 @@ def _inspect_excel(virtual_path: str, real_path: str) -> dict[str, Any]:
                     "trial_name": header.get("trial_name", ""),
                     "arena": header.get("arena", ""),
                     "subject": header.get("subject", ""),
-                    "grouping_fields": _extract_grouping_fields(raw_metadata),
+                    "grouping_fields": extract_grouping_fields(raw_metadata),
                 },
                 "sheets": [],
                 "columns": header.get("columns", []),
@@ -569,7 +546,7 @@ def _inspect_csv(virtual_path: str, real_path: str) -> dict[str, Any]:
                 "trial_name": header.get("trial_name", ""),
                 "arena": header.get("arena", ""),
                 "subject": header.get("subject", ""),
-                "grouping_fields": _extract_grouping_fields(raw_metadata),
+                "grouping_fields": extract_grouping_fields(raw_metadata),
             },
             "sheets": [],
             "columns": header.get("columns", []),

@@ -98,14 +98,14 @@ class TestSealDataAnalystMinimumFields:
         result = _seal_handoff(
             DataAnalystHandoff,
             "handoff_data_analyst.json",
-            {"status": "completed"},
+            {"status": "completed", "key_findings": ["finding"]},
             runtime,
         )
         assert result.startswith("OK: sealed handoff_data_analyst.json")
 
         data = json.loads((ws / "handoff_data_analyst.json").read_text(encoding="utf-8"))
         assert data["status"] == "completed"
-        assert data["key_findings"] == []
+        assert data["key_findings"] == ["finding"]
 
 
 class TestSealAtomicWriteNoPartial:
@@ -117,9 +117,8 @@ class TestSealAtomicWriteNoPartial:
             "status": "completed",
             "summary": "test",
             "paradigm": "fst",
+            "metrics_summary": {"g": {"m": {"mean": 1.0}}},
         }
-
-        # Pre-create the target file as a directory to make os.rename fail
         (ws / "handoff_code_executor.json").mkdir()
 
         with pytest.raises(OSError):
@@ -137,7 +136,7 @@ class TestManifestSha256:
         _seal_handoff(
             CodeExecutorHandoff,
             "handoff_code_executor.json",
-            {"status": "completed", "summary": "s", "paradigm": "fst"},
+            {"status": "completed", "summary": "s", "paradigm": "fst", "metrics_summary": {"g": {"m": {"mean": 1.0}}}},
             runtime,
         )
 
@@ -156,7 +155,7 @@ class TestSealPendingConfigId:
         _seal_handoff(
             CodeExecutorHandoff,
             "handoff_code_executor.json",
-            {"status": "completed", "summary": "s", "paradigm": "fst"},
+            {"status": "completed", "summary": "s", "paradigm": "fst", "metrics_summary": {"g": {"m": {"mean": 1.0}}}},
             runtime,
         )
 
@@ -172,13 +171,13 @@ class TestManifestConcurrent:
         _seal_handoff(
             CodeExecutorHandoff,
             "handoff_code_executor.json",
-            {"status": "completed", "summary": "s", "paradigm": "fst"},
+            {"status": "completed", "summary": "s", "paradigm": "fst", "metrics_summary": {"g": {"m": {"mean": 1.0}}}},
             runtime,
         )
         _seal_handoff(
             DataAnalystHandoff,
             "handoff_data_analyst.json",
-            {"status": "completed"},
+            {"status": "completed", "key_findings": ["f"]},
             runtime,
         )
 
@@ -341,6 +340,7 @@ class TestSealIntegrationTaskContext:
                 "status": "completed",
                 "summary": "all metrics computed",
                 "paradigm": "fst",
+                "metrics_summary": {"g": {"m": {"mean": 1.0}}},
                 "output_files": {
                     "metrics": "/mnt/user-data/outputs/metrics.json",
                     "chart": "/mnt/user-data/outputs/heatmap.png",
@@ -398,6 +398,7 @@ class TestSealIntegrationTaskContext:
                 "status": "completed",
                 "summary": "test",
                 "paradigm": "fst",
+                "metrics_summary": {"g": {"m": {"mean": 1.0}}},
                 "task_context": {"file_changes": ["/custom/path.txt"], "verify_commands": [], "failed_paths": [], "pending_items": []},
             },
             runtime,
