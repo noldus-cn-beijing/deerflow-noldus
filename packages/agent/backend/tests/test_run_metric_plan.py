@@ -650,3 +650,88 @@ class TestTimeoutHandling:
         res = _call(_runtime(ws), on_error="continue")
         assert res["n_failed"] == 1
         assert {f["id"] for f in res["failures"]} == {"m0"}
+
+
+# ===================================================================
+# Spec 2026-06-16 statistics 路径列对齐：plan.statistics.parameters 透传成
+# run_groupwise_stats 的 --parameters-json argv（harness 侧接线坐实）。
+# ===================================================================
+
+
+class TestStatisticsParametersPropagation:
+    """run_metric_plan Step7 把 plan.statistics.parameters 序列化进 stats_argv。"""
+
+    def test_statistics_argv_carries_parameters_json(self, tmp_path, monkeypatch):
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        metrics = [{"id": "m0"}]
+        zone_params = {"open_arm_zones": ["open"], "closed_arm_zones": ["closed"]}
+        statistics = {
+            "id": "epm_stats",
+            "script": "ethoinsight.scripts.epm.run_groupwise_stats",
+            "input": "/mnt/user-data/workspace/handoff_code_executor.json",
+            "output": str(ws / "stats.json"),
+            "skip_reason": None,
+            "parameters": zone_params,
+        }
+        plan = _plan(
+            metrics,
+            workspace=ws,
+            raw_files=["/mnt/user-data/uploads/s0.txt"],
+            groups_file="/mnt/user-data/workspace/groups.json",
+            statistics=statistics,
+        )
+        _write_plan(ws, plan)
+
+        captured: dict = {}
+
+        def capture_runner(script, args, tid):
+            if tid == "statistics":
+                captured["args"] = list(args)
+            return _runner_success(script, args, tid)
+
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", capture_runner)
+        _call(_runtime(ws), on_error="continue")
+
+        assert "args" in captured, "statistics task 未被捕获执行"
+        argv = captured["args"]
+        assert "--parameters-json" in argv, f"stats_argv 应含 --parameters-json，实际 {argv}"
+        idx = argv.index("--parameters-json")
+        payload = json.loads(argv[idx + 1])
+        assert payload == zone_params, f"--parameters-json 内容应为 zone 参数，实际 {payload}"
+
+    def test_statistics_argv_empty_parameters_when_none(self, tmp_path, monkeypatch):
+        """无 column_aliases → plan.statistics.parameters 缺失 → --parameters-json={}（向后兼容）。"""
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        metrics = [{"id": "m0"}]
+        statistics = {
+            "id": "epm_stats",
+            "script": "ethoinsight.scripts.epm.run_groupwise_stats",
+            "input": "/mnt/user-data/workspace/handoff_code_executor.json",
+            "output": str(ws / "stats.json"),
+            "skip_reason": None,
+            # 无 parameters 字段（旧 plan 兼容）
+        }
+        plan = _plan(
+            metrics,
+            workspace=ws,
+            raw_files=["/mnt/user-data/uploads/s0.txt"],
+            groups_file="/mnt/user-data/workspace/groups.json",
+            statistics=statistics,
+        )
+        _write_plan(ws, plan)
+
+        captured: dict = {}
+
+        def capture_runner(script, args, tid):
+            if tid == "statistics":
+                captured["args"] = list(args)
+            return _runner_success(script, args, tid)
+
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", capture_runner)
+        _call(_runtime(ws), on_error="continue")
+
+        argv = captured["args"]
+        idx = argv.index("--parameters-json")
+        assert json.loads(argv[idx + 1]) == {}

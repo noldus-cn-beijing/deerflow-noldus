@@ -356,7 +356,12 @@ def make_plot_parser(
 
 
 def make_stats_parser(description: str) -> argparse.ArgumentParser:
-    """Argparse for ``run_*_stats.py``: --inputs --groups --output."""
+    """Argparse for ``run_*_stats.py``: --inputs --groups --output --parameters-json.
+
+    ``--parameters-json`` 与 compute 脚本的 ``make_compute_parser`` 对称（复用
+    ``parse_parameters``），由 catalog.resolve 把 statistics 段的 ``parameters``
+    透传进来 → run_groupwise_stats → dispatcher 的 zone_overrides（spec 2026-06-16）。
+    """
     ap = argparse.ArgumentParser(description=description)
     ap.add_argument(
         "--inputs",
@@ -369,4 +374,13 @@ def make_stats_parser(description: str) -> argparse.ArgumentParser:
         help="Path to a JSON file mapping group_name -> [subject_name, ...]",
     )
     ap.add_argument("--output", required=True, help="Path to write the stats JSON")
+    ap.add_argument(
+        "--parameters-json",
+        default="{}",
+        help=(
+            "JSON dict of zone column overrides (e.g. open_arm_zones, center_zone). "
+            "Empty dict means use metric-function autodiscovery defaults. "
+            "Populated by catalog.resolve from PlanStatistics.parameters."
+        ),
+    )
     return ap

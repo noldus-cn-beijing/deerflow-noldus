@@ -85,6 +85,7 @@
     "id": "groupwise_compare",
     "input": "/tmp/handoff_code_executor.json",
     "output": "/tmp/stats.json",
+    "parameters": {},
     "script": "ethoinsight.scripts.fst.run_groupwise_stats",
     "skip_reason": "condition 'n_per_group >= 2 and n_groups >= 2' not met (n_per_group=None, n_groups=None)"
   }

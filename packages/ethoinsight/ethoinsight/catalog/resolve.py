@@ -326,6 +326,7 @@ def resolve_metrics(
             plan_stats = _stats_to_plan(
                 cat.statistics_default, workspace_dir, skip_reason=None,
                 virtual_workspace_dir=virtual_workspace_dir,
+                zone_overrides=zone_aliases_overrides,
             )
         else:
             # #6a 层② 兜底信号：区分两类 skip。
@@ -346,6 +347,7 @@ def resolve_metrics(
                 workspace_dir,
                 skip_reason=skip_reason,
                 virtual_workspace_dir=virtual_workspace_dir,
+                zone_overrides=zone_aliases_overrides,
             )
 
     notes: list[str] = []
@@ -1065,6 +1067,7 @@ def _chart_to_plan(
 def _stats_to_plan(
     st: StatisticsEntry, workspace_dir: str, skip_reason: str | None,
     virtual_workspace_dir: str | None = None,
+    zone_overrides: dict[str, list[str] | str] | None = None,
 ) -> PlanStatistics:
     effective_workspace = virtual_workspace_dir or workspace_dir
     return PlanStatistics(
@@ -1073,6 +1076,10 @@ def _stats_to_plan(
         input=str(Path(effective_workspace) / "handoff_code_executor.json"),
         output=str(Path(effective_workspace) / "stats.json"),
         skip_reason=skip_reason,
+        # statistics 段复用 metrics 段同一份 zone_aliases_overrides 的投影（SSOT，
+        # spec 2026-06-16）。默认空 dict 向后兼容；有 column_aliases 时透传给
+        # run_groupwise_stats → dispatcher。
+        parameters=dict(zone_overrides) if zone_overrides else {},
     )
 
 
@@ -1314,6 +1321,7 @@ def plan_to_dict(plan: Plan) -> dict:
                 "input": plan.statistics.input,
                 "output": plan.statistics.output,
                 "skip_reason": plan.statistics.skip_reason,
+                "parameters": plan.statistics.parameters,
             }
         ),
         "charts": [
@@ -1370,6 +1378,7 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
                 "input": pm.statistics.input,
                 "output": pm.statistics.output,
                 "skip_reason": pm.statistics.skip_reason,
+                "parameters": pm.statistics.parameters,
             }
         ),
         "skipped": [

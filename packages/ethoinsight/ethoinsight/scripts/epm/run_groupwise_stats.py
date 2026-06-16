@@ -19,6 +19,7 @@ from ethoinsight.scripts._cli import (
     bridge_groups_to_subjects,
     emit_result,
     make_stats_parser,
+    parse_parameters,
     read_groups_json,
     read_inputs_json,
     save_output_json,
@@ -45,7 +46,10 @@ def main(argv: list[str] | None = None) -> int:
     # 按 parse_batch 的 subject key 匹配（EV19 对象名，常为空串）。用 file_subjects
     # 映射按文件桥接成 subject key，否则 comparisons 在真实数据上必空。
     groups = bridge_groups_to_subjects(groups, parsed["file_subjects"])
-    metrics = compute_paradigm_metrics(parsed, paradigm="epm", groups=groups)
+    zone_overrides = parse_parameters(args)
+    metrics = compute_paradigm_metrics(
+        parsed, paradigm="epm", groups=groups, zone_overrides=zone_overrides
+    )
     stats = compare_groups(metrics, metrics_to_test=METRICS_TO_TEST)
 
     payload = {"paradigm": "epm", **stats}

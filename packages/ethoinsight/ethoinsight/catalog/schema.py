@@ -239,6 +239,10 @@ class PlanStatistics:
     input: str
     output: str
     skip_reason: str | None  # None = 跑；非空字符串 = 跳过原因
+    # Sprint 列对齐（spec 2026-06-16）：statistics 路径复用 metrics 段同一份
+    # zone_aliases_overrides 的投影（SSOT），透传给 run_groupwise_stats → dispatcher。
+    # 默认空 dict 向后兼容（无 column_aliases 时 statistics 行为不变）。
+    parameters: dict[str, list[str] | str] = field(default_factory=dict)
 
 
 @dataclass
