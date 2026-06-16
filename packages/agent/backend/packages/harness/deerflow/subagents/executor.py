@@ -967,6 +967,7 @@ class SubagentExecutor:
             middleware=middlewares,
             system_prompt=None,
             state_schema=ThreadState,
+            checkpointer=False,
         )
 
     def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool], Any]:
