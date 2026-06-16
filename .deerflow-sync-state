@@ -9,7 +9,7 @@
 # - 6-02 sync (全量跟随 f9b70713→74e3e80c, 34 commit): 仍未 squash, 故 git log origin/dev..deerflow/main
 #   会虚高到 ~2192 (假象); 真实 delta 用 git log <last_sync_commit>..deerflow/main = 34
 
-last_sync_commit: 2d5f0787
-last_sync_date: 2026-06-11
-last_sync_commits_count: 9
-last_sync_prs: "待填实际 PR 号 (9 commit sync: 7 全量接受 + 2 surgical; 16391e35 slash skill 跳过待独立评估)"
+last_sync_commit: d2cc991d
+last_sync_date: 2026-06-16
+last_sync_commits_count: 14
+last_sync_prs: "2d5f0787→d2cc991d (14 commit harness delta): 16 safe + 13 new 全量跟随, 5 protected surgical (thread_state merge_sandbox / executor checkpointer=False / setup_agent 空soul守卫 / app_config suggestions+channel_connections / paths sha256+迁移); IM-channels #3487 全拉 harness 侧(app 层未接, inert) + 补 cryptography>=43 进 pyproject; 2 out-of-subtree 测试同步 (test_todo_middleware 去 _completion_reminder_count + 保 Noldus _is_awaiting_clarification / test_remote_sandbox_backend 改 raise 语义)"

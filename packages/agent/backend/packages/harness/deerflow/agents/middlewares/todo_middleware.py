@@ -46,11 +46,6 @@ def _reminder_in_messages(messages: list[Any]) -> bool:
     return False
 
 
-def _completion_reminder_count(messages: list[Any]) -> int:
-    """Return the number of todo_completion_reminder HumanMessages in *messages*."""
-    return sum(1 for msg in messages if isinstance(msg, HumanMessage) and getattr(msg, "name", None) == "todo_completion_reminder")
-
-
 def _is_awaiting_clarification(messages: list[Any]) -> bool:
     """Return True if the agent just asked a clarification and the user hasn't answered yet.
 
