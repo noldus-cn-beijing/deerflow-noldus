@@ -360,6 +360,15 @@ def parse_batch(file_paths: list[str] | str) -> dict:
         {
             "metadata": dict — merged header metadata,
             "subjects": dict[str, DataFrame] — per-subject DataFrames,
+            "file_subjects": dict[str, str] — maps each parsed input path
+                (exactly as received, ``::sheet`` suffix included) to the
+                ``subjects`` key produced for it. Lets callers that hold file
+                paths (e.g. groups.json) bridge to subject keys **by file**,
+                not by positional index — robust even when some inputs are
+                silently filtered out below (non-existent / non-EthoVision).
+                EV19 "对象名称" is frequently blank, so subject keys can be
+                ``''`` / ``'_1'`` / …; this map is the only reliable
+                file→subject link (the ``subjects`` keys carry no file identity).
             "all_data": DataFrame — concatenated with 'subject' and 'file' columns,
             "summary": dict — summary statistics,
         }
@@ -388,6 +397,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
         return {
             "metadata": {},
             "subjects": {},
+            "file_subjects": {},
             "all_data": pd.DataFrame(),
             "summary": {
                 "total_files": 0,
@@ -401,6 +411,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
 
     # Parse all files
     subjects: dict[str, pd.DataFrame] = {}
+    file_subjects: dict[str, str] = {}
     all_dfs: list[pd.DataFrame] = []
     first_header = None
 
@@ -416,6 +427,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
             key = f"{subject}_{trial}" if trial else f"{subject}_{len(subjects)}"
 
         subjects[key] = df
+        file_subjects[p] = key
 
         # Add subject/file columns for concatenation
         df_copy = df.copy()
@@ -444,6 +456,7 @@ def parse_batch(file_paths: list[str] | str) -> dict:
     return {
         "metadata": first_header or {},
         "subjects": subjects,
+        "file_subjects": file_subjects,
         "all_data": all_data,
         "summary": {
             "total_files": len(trajectory_paths),

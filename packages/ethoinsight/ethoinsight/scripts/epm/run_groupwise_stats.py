@@ -16,6 +16,7 @@ import sys
 from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 from ethoinsight.parse import parse_batch
 from ethoinsight.scripts._cli import (
+    bridge_groups_to_subjects,
     emit_result,
     make_stats_parser,
     read_groups_json,
@@ -40,6 +41,10 @@ def main(argv: list[str] | None = None) -> int:
     groups = read_groups_json(args.groups)
 
     parsed = parse_batch(paths)
+    # 第三层 bug 修复（spec 2026-06-16）：groups 的成员是文件路径，但 dispatcher
+    # 按 parse_batch 的 subject key 匹配（EV19 对象名，常为空串）。用 file_subjects
+    # 映射按文件桥接成 subject key，否则 comparisons 在真实数据上必空。
+    groups = bridge_groups_to_subjects(groups, parsed["file_subjects"])
     metrics = compute_paradigm_metrics(parsed, paradigm="epm", groups=groups)
     stats = compare_groups(metrics, metrics_to_test=METRICS_TO_TEST)
 

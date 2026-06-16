@@ -228,6 +228,47 @@ def read_groups_json(path: str | Path) -> dict[str, list[str]]:
     return inverted
 
 
+def bridge_groups_to_subjects(
+    groups: dict[str, list[str]],
+    file_subjects: dict[str, str],
+) -> dict[str, list[str]]:
+    """Translate file-path groups into subject-key groups for the dispatcher.
+
+    ``read_groups_json`` yields ``{group: [file_path, ...]}`` (SSOT keys files),
+    but ``compute_paradigm_metrics`` matches each group member against
+    ``parse_batch()["subjects"]`` **keys** — which are EV19 "对象名称" values
+    (frequently blank → ``''`` / ``'_1'`` / …), NOT file paths. Without a bridge
+    the match set is always empty and ``comparisons`` is always empty on real
+    data (spec 2026-06-16 第三层 bug).
+
+    ``parse_batch`` now returns ``file_subjects`` (``{file_path: subject_key}``).
+    This helper rewrites each group's file paths into the corresponding subject
+    keys **by file**, not by positional index — so a file silently dropped by
+    ``parse_batch`` (non-existent / non-EthoVision) simply drops out of its
+    group instead of shifting every subsequent group member onto the wrong file.
+
+    Both sides resolve paths via :func:`resolve_sandbox_path` upstream
+    (``read_groups_json`` and ``read_inputs_json``), so the path strings match
+    directly. A path with no parsed subject (filtered out) is skipped; a
+    ``stderr`` note is emitted so the drop is observable, never silent.
+    """
+    bridged: dict[str, list[str]] = {}
+    for group, file_paths in groups.items():
+        subject_keys: list[str] = []
+        for fp in file_paths:
+            key = file_subjects.get(fp)
+            if key is None:
+                print(
+                    f"[warning] groups file has no parsed subject (filtered "
+                    f"out?), dropping from group '{group}': {fp}",
+                    file=sys.stderr,
+                )
+                continue
+            subject_keys.append(key)
+        bridged[group] = subject_keys
+    return bridged
+
+
 def resolve_per_subject_input(args: argparse.Namespace) -> str:
     """For per-subject plots: return the single trajectory path from args.
 
