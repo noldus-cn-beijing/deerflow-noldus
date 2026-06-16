@@ -1,12 +1,23 @@
 # Skill ↔ Catalog 指标核对表（基于真实 DemoData，2026-06-16）
 
-**判据来源**：`/home/wangqiuyang/DemoData/newdemodata/` 真实 EV19 导出数据，经 `ethoinsight.parse._core.parse_header` 提取真实列（**非 `head -1`**，避免 UTF-16/分号/标题多行陷阱）。
+> **2026-06-16 行为学同事裁决已并入**（见第零节）。本表上半部分的"真实列推断"已被同事裁决覆盖处，以同事裁决为准。
 
-**结论先行**：用真实数据验证后，skill 讲的"风险评估行为"里——
-- **伸展注意（SAP）全 6 范式可算**（`elongation` 列普遍存在）→ 保留
-- **低头探索/探出 在 EPM/OFT/O-Maze 可算**（有 `heading` + 专门的 `nose_over_*` 列）→ 保留
-- **LDB 的 peek-out 算不出**（LDB 真实列只有 `in_zone`，无 nose_over / heading）→ 排除
-- **后腿直立 rearing 全范式算不出**（无任何 Z 轴/高度信号）→ 排除
+## 零、行为学同事裁决（权威，覆盖下方推断）
+
+来源：行为学同事（曲若衡）2026-06-16 回复。
+
+| 指标 | 同事裁决 | skill 处置 |
+|---|---|---|
+| **rearing（后腿直立）** | **不支持**。真因=① EthoVision 精细行为分类器**信效度不佳**（销售/同事均认可不好）② 在焦虑/旷场范式里**非必须**，只在专门测精细行为的范式需要，那类实验不在支持范围。本质=速度不变+身长变短+投影面积变小，理论上能从 elongation 推但**没必要** | 标注"本系统不支持"，给出信效度+非必须的真实理由，不产出、报告不得编造 |
+| **伸展注意 SAP / 身体伸长 elongation** | 实践中**很少使用**（"stretch 和 elongation 很少会用"） | 降级为"很少用、默认不算、报告不提，用户明确要求才算" |
+| **head-dipping（低头探索）** | **只适用 EPM 和未来巴恩斯迷宫**——只有这两个有不带墙的边缘，鼠才能探头往下看。其他实验都带墙，不存在探头/低头，**既不需统计也无法计算** | EPM 保留（开臂无墙，走 `nose_over_edge_open_arms` 分析区列）；OFT/LDB 不提（带墙） |
+| **Zero Maze 低头/探出** | **一般不测，优先用 FewZones 模板**做开放区时间/进入分析；**就算测，用鼻尖点在不在"探头区"分析区**来做，不是 stretch/elongation；stretch/elongation 很少用 | ZM skill 撤掉"stretch-attend 是核心洞察/最敏感指标"的拔高；低头改"一般不测优先 FewZones，测则用鼻尖点在探头区"；`hesitation_count`（catalog default 真实指标）保留为辅助 |
+| **LDB peek-out / nose-in-zone** | LDB **不测 nose-in-zone**，以**身体中心点**为标准 | LDB 标注"封闭箱无开放边缘 + 以中心点判定、无鼻尖探出指标、不产出" |
+
+**FST / TST 的 velocity 列**：同事说明——FST/TST **不需要测速度**，导出 sample 时**手动删了 velocity 列**，但**默认导出是带 velocity 的**。
+→ 影响：FST/TST catalog 的 `activity_intensity` 图表（must_have）`requires_columns: velocity`。**默认导出有 velocity，依赖合理，catalog 不改**。但若用户上传删了 velocity 的导出，该图会缺列失败 → 属数据契约边界，code-executor 记 warning，非 bug。
+
+**关键纠错记录**（防后续 agent 重蹈）：本次会话最初基于"真实数据列推断"得出"SAP/head-dip 普遍可算"，被同事裁决推翻——**可算性 ≠ 该算**。elongation 列虽存在，但 SAP 很少用；head-dipping 受**物理范式（有无开放边缘）**约束只 EPM 适用；rearing 即便能从 elongation 推也因信效度+非必须而不做。**指标取舍以行为学同事的实践判断为准，不以"数据列在不在"为准。**
 
 ---
 
