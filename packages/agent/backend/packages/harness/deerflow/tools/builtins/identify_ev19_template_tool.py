@@ -91,6 +91,24 @@ _FILENAME_PARADIGM_PATTERNS: list[tuple[re.Pattern, str]] = [
 _ZONE_COLUMN_PATTERN = re.compile(r"in zone\s*\(|in_zone", re.IGNORECASE)
 _NOVOBJ_COLUMN_PATTERN = re.compile(r"nose within object zone|novel.?object", re.IGNORECASE)
 
+# 疑似分析区归属列检测（窄白名单，2026-06-16 新增）。
+# 用途：仅用于排除 NoZones（NoZones 定义=完全无任何区归属列），**不用于判定哪列是哪个区**
+# ——哪列对哪个区仍由 column-confirmation skill 反问用户（守 feedback_oft_single_zone_must_ask_not_guess）。
+# 命中真实场景：EPM 的 open/closed（dogfood 实证）、OFT 的 center/中心区/边缘区、
+# Zero Maze 的 open/closed。这些是"列名非标准但确实划了区"的归属列。
+# 排除 x_center/y_center（坐标列固定名，绝不会单叫 center；坐标列叫 *_center）。
+# label 仅用于措辞展示（"疑似归属列 open、closed"），绝不在 filter 逻辑里做区归属推断。
+_SUSPECT_ZONE_COLUMN_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"(?:^|[_\s])open(?:[_\s]|$)|open_?arms?", re.IGNORECASE), "开臂"),
+    (re.compile(r"(?:^|[_\s])closed(?:[_\s]|$)|closed_?arms?", re.IGNORECASE), "闭臂"),
+    (re.compile(r"(?:^|[_\s])cent(er|re)(?:[_\s]|$)", re.IGNORECASE), "中心区"),
+    (re.compile(r"head.?dip", re.IGNORECASE), "head dip 区"),
+    (re.compile(r"zone[_\s]*[a-z0-9]", re.IGNORECASE), "分析区"),
+    (re.compile(r"开臂|闭臂|中心区|中央区|边缘区|周边区|外周区", re.IGNORECASE), "分析区"),
+]
+# 坐标列固定名（绝不可能是区归属列）——在疑似归属列检测时显式排除。
+_COORD_COLUMN_PATTERN = re.compile(r"^[xy][_ ]?cent(er|re)$", re.IGNORECASE)
+
 # 用户消息中的物种提示
 _SUBJECT_HINTS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"大鼠|rat|sprague.?dawley|wistar|long.?evans", re.IGNORECASE), "rodent"),
@@ -139,23 +157,44 @@ def _detect_zone_config(columns: list[str]) -> dict:
     """Detect zone configuration from data columns.
 
     Returns:
-      {"has_zone_columns": bool, "has_novobj_columns": bool, "zone_columns": [...]}
+      {"has_zone_columns": bool,          # 标准 in_zone 列（精确）
+       "has_novobj_columns": bool,        # novel object 列
+       "has_suspect_zone_columns": bool,  # 疑似非标准归属列（窄白名单；仅排除 NoZones 用）
+       "zone_columns": [...],
+       "novobj_columns": [...],
+       "suspect_columns": [...]}          # 疑似归属列的原始列名（仅措辞展示，不判区归属）
+
+    疑似归属列仅在 ``has_zone_columns=False`` 时才扫——标准 in_zone 命中即无需疑似判定。
     """
     zone_cols = [c for c in columns if _ZONE_COLUMN_PATTERN.search(c)]
     novobj_cols = [c for c in columns if _NOVOBJ_COLUMN_PATTERN.search(c)]
+    # 疑似归属列：非标准命名但可能是区归属（open/closed/center/中心区/...），排除坐标列。
+    # 守 feedback_oft_single_zone_must_ask_not_guess：这里只标"疑似"，不判哪列是哪个区。
+    suspect_cols: list[str] = []
+    if not zone_cols:
+        for c in columns:
+            if _COORD_COLUMN_PATTERN.search(c):
+                continue  # x_center/y_center 坐标列，绝非区归属
+            if any(pat.search(c) for pat, _label in _SUSPECT_ZONE_COLUMN_PATTERNS):
+                suspect_cols.append(c)
     return {
         "has_zone_columns": len(zone_cols) > 0,
         "has_novobj_columns": len(novobj_cols) > 0,
+        "has_suspect_zone_columns": len(suspect_cols) > 0,
         "zone_columns": zone_cols,
         "novobj_columns": novobj_cols,
+        "suspect_columns": suspect_cols,
     }
 
 
 def _filter_candidates_by_zone(template_ids: list[str], zone_info: dict) -> list[str]:
     """Filter template candidates based on zone column evidence.
 
-    - has_zone_columns → prefer AllZones/NovObjZones/FewZones/AFewZones variants
-    - no zone columns → prefer NoZones variants
+    - has_zone_columns（标准 in_zone）→ prefer AllZones/NovObjZones/FewZones/AFewZones variants
+    - has_suspect_zone_columns（疑似非标准归属列，如 open/closed）→ 剔除 NoZones
+      （NoZones 定义=完全无任何区归属列；疑似归属列存在即不满足该定义。守
+      feedback_lead_inverts_fewzones_vs_nozones_by_column_name：有归属列绝不改判 NoZones）。
+    - no zone columns at all（纯轨迹）→ prefer NoZones variants
     - has_novobj_columns → prefer NovObjZones variants
     """
     if not template_ids:
@@ -163,6 +202,7 @@ def _filter_candidates_by_zone(template_ids: list[str], zone_info: dict) -> list
 
     has_zone = zone_info["has_zone_columns"]
     has_novobj = zone_info["has_novobj_columns"]
+    has_suspect = zone_info.get("has_suspect_zone_columns", False)
 
     filtered = []
     for tid in template_ids:
@@ -174,10 +214,13 @@ def _filter_candidates_by_zone(template_ids: list[str], zone_info: dict) -> list
             filtered.append(tid)
         elif has_zone and is_zone_variant:
             filtered.append(tid)
-        elif not has_zone and is_nozone:
+        elif has_suspect and is_zone_variant:
+            # 疑似归属列存在 → 划了区的变体，剔除 NoZones（定义层面，非猜测）。
             filtered.append(tid)
-        elif not has_zone and not has_novobj:
-            # No zone columns at all — keep everything, note in evidence
+        elif not has_zone and not has_suspect and is_nozone:
+            filtered.append(tid)
+        elif not has_zone and not has_suspect and not has_novobj:
+            # 纯轨迹、无任何疑似归属列 — keep everything, note in evidence
             filtered.append(tid)
 
     # If filtering eliminated everything, return original list (defer to lead)
@@ -245,7 +288,19 @@ def _build_clarification_question(
         lines.append(f"- 实验对象：{evidence['subject']}")
     zone_info = evidence.get("zone_info", {})
     if zone_info.get("has_zone_columns"):
-        lines.append("- 数据含 zone 列（区域标记）")
+        lines.append("- 数据含标准 zone 列（区域标记）")
+    elif zone_info.get("has_suspect_zone_columns"):
+        # 非标准命名但疑似区归属列（open/closed/中心区 等）。如实呈现，明示非 NoZones，
+        # 破除"无 zone 列"假陈述（2026-06-16 EPM dogfood：open/closed 被 _ZONE_COLUMN_PATTERN
+        # 漏检 → 旧措辞误报"无 zone 列"→ lead 植入 NoZones 印象）。哪列对哪个区不在这里判，
+        # 留给列语义对齐环节反问（守 feedback_oft_single_zone_must_ask_not_guess）。
+        suspects = zone_info.get("suspect_columns") or []
+        suspects_str = "、".join(suspects[:6]) if suspects else "若干非标准列"
+        lines.append(
+            f"- 未检测到标准 in_zone 列，但发现疑似分析区归属列：{suspects_str}。"
+            "这些列是否为区归属列请在后续列语义对齐环节确认；若属实则属于划了区的变体"
+            "（Few/AllZones），非 NoZones。"
+        )
     else:
         lines.append("- 数据无 zone 列（仅坐标 + mobility state）")
 
@@ -539,7 +594,12 @@ def identify_ev19_template_tool(
         "paradigm_key": paradigm_key,
         "filename_hint": filename_hint,
         "subject": subject_hint,
-        "zone_info": {"has_zone_columns": zone_info["has_zone_columns"], "has_novobj_columns": zone_info["has_novobj_columns"]},
+        "zone_info": {
+            "has_zone_columns": zone_info["has_zone_columns"],
+            "has_novobj_columns": zone_info["has_novobj_columns"],
+            "has_suspect_zone_columns": zone_info.get("has_suspect_zone_columns", False),
+            "suspect_columns": zone_info.get("suspect_columns", []),
+        },
         "columns": columns[:20],  # first 20 columns for reference
     }
 
