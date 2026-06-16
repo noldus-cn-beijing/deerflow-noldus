@@ -103,6 +103,67 @@ def test_derive_group_counts_from_grouplist_shape(tmp_path: Path) -> None:
     assert _get_resolve()._derive_group_counts(str(f)) == (1, 2)
 
 
+def test_derive_group_counts_virtual_path_no_env_uses_workspace_fallback(tmp_path: Path) -> None:
+    """生产保真锚点：prep 传 /mnt 虚拟 groups_file 且**没设 DEERFLOW_PATH env**——
+    self-derive 必须经 workspace_dir 兜底读到真实 groups.json，否则 (None,None)。
+
+    这是 layer① 真正覆盖主调用方 prep 的关键路径：prep 传 virtual path + 不设 env
+    （prep_metric_plan 实测如此）。若不经 workspace_dir 兜底，resolve_sandbox_path
+    对无 env 的 /mnt 路径 fail-safe 原样返回 → 读不到 → 自派生对 prep 形同虚设、
+    只剩 prep 显式传计数 layer③ 承重（仍是"两字段须同步"的脆弱）。
+    """
+    import os
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "groups.json").write_text(
+        json.dumps({f"s{i:02d}.txt": ("control" if i < 7 else "treatment") for i in range(28)}),
+        encoding="utf-8",
+    )
+    # 确保无 env（复现 prep 运行时态）。
+    os.environ.pop("DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE", None)
+    derive = _get_resolve()._derive_group_counts
+    # 无 workspace_dir 兜底 → 读不到（证明这正是会失效的路径）
+    assert derive("/mnt/user-data/workspace/groups.json", None) == (None, None)
+    # 有 workspace_dir 兜底 → 经 workspace/groups.json 读到真实文件
+    assert derive("/mnt/user-data/workspace/groups.json", str(workspace)) == (7, 2)
+
+
+def test_resolve_self_derives_with_virtual_groups_file_no_env(tmp_path: Path) -> None:
+    """生产保真端到端：resolve_metrics(groups_file=/mnt 虚拟路径, 不传 n, 无 env)
+    → 经 workspace_dir 自派生 → statistics 不被 skip。
+
+    复现 prep_metric_plan 的真实入参形态（virtual groups_file + workspace_dir + 漏传 n）。
+    这是 backend layer-B 测试结构上无法覆盖的路径（backend prep 工具 import 主仓 resolve，
+    非 worktree），必须在 ethoinsight 层 importlib 加载 worktree 源验证。
+    """
+    import os
+
+    resolve = _get_resolve()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "groups.json").write_text(
+        json.dumps({f"{VIRTUAL_UPLOADS}/s{i:02d}.txt": ("control" if i < 7 else "treatment") for i in range(28)}),
+        encoding="utf-8",
+    )
+    os.environ.pop("DEERFLOW_PATH_MNT_USER_DATA_WORKSPACE", None)
+    raw_files = [f"{VIRTUAL_UPLOADS}/s{i:02d}.txt" for i in range(28)]
+    pm = resolve.resolve_metrics(
+        paradigm="epm",
+        columns=EPM_MIN_COLUMNS,
+        raw_files=raw_files,
+        workspace_dir=str(workspace),
+        virtual_workspace_dir=VIRTUAL_WORKSPACE,
+        groups_file=f"{VIRTUAL_WORKSPACE}/groups.json",  # 虚拟路径（prep 实测传的）
+        # 不传 n_per_group/n_groups（prep #6a bug 形态）
+    )
+    assert pm.statistics is not None
+    assert pm.statistics.skip_reason is None, (
+        f"虚拟 groups_file + workspace_dir 兜底应使 self-derive 生效、统计不 skip："
+        f"{pm.statistics.skip_reason}"
+    )
+
+
 def test_derive_group_counts_none_when_no_groups_file() -> None:
     """groups_file=None（单组/无分组）→ (None, None)，gate 正确 skip。"""
     assert _get_resolve()._derive_group_counts(None) == (None, None)

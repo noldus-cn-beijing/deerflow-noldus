@@ -180,7 +180,7 @@ def resolve_metrics(
     # 使"有分组却 statistics={}"结构上不可能。显式入参仍优先（兼容 CLI 兜底/测试）。
     # 派生发生在 plan 期 resolve 内、单一评估点，不引入 runtime 第二评估路径。
     if groups_file and (n_per_group is None or n_groups is None):
-        derived_npg, derived_ng = _derive_group_counts(groups_file)
+        derived_npg, derived_ng = _derive_group_counts(groups_file, workspace_dir)
         if n_per_group is None:
             n_per_group = derived_npg
         if n_groups is None:
@@ -1076,7 +1076,9 @@ def _stats_to_plan(
     )
 
 
-def _derive_group_counts(groups_file: str | None) -> tuple[int | None, int | None]:
+def _derive_group_counts(
+    groups_file: str | None, workspace_dir: str | None = None
+) -> tuple[int | None, int | None]:
     """从 groups_file 派生 (n_per_group=最小组 size, n_groups=组数)。
 
     groups 是分组事实的唯一真相源；组计数是它的投影。让 resolve 在评估点就近
@@ -1090,15 +1092,30 @@ def _derive_group_counts(groups_file: str | None) -> tuple[int | None, int | Non
     None/读不到/空/形状不可识别 → (None, None)（单组或无分组场景，gate 正确 skip，
     行为与修复前等价）。fail-safe：读不到不阻断（不引入新失败模式）。
 
-    groups_file 可能是 /mnt 虚拟路径（prep 传的）或物理路径（测试）：经
-    resolve_sandbox_path 统一解析（非 /mnt 路径原样返回）。
+    路径解析（让自派生成为真正覆盖所有调用方的兜底，而非只对传真实路径者生效）：
+      1. groups_file 直接当路径读（物理路径直接命中）。
+      2. 不存在则经 resolve_sandbox_path 解 /mnt 虚拟路径（需 DEERFLOW_PATH_* env）。
+      3. 仍不存在且给了 workspace_dir，则用 ``workspace_dir / basename(groups_file)``
+         兜底——prep_metric_plan 传的是 /mnt 虚拟路径但**没设 env**，real groups.json
+         就在 workspace_dir 下，靠此兜底才能读到（否则自派生对 prep 这个主调用方失效、
+         layer① 形同虚设，只剩 prep 显式传计数 layer③ 承重 = 仍是"两字段须同步"的脆弱）。
     """
     if not groups_file:
         return (None, None)
+    data = None
     try:
         from ethoinsight.scripts._cli import resolve_sandbox_path
 
-        data = json.loads(Path(resolve_sandbox_path(groups_file)).read_text(encoding="utf-8"))
+        candidates: list[Path] = [Path(groups_file)]
+        resolved = Path(resolve_sandbox_path(groups_file))
+        if resolved not in candidates:
+            candidates.append(resolved)
+        if workspace_dir:
+            candidates.append(Path(workspace_dir) / Path(groups_file).name)
+        for cand in candidates:
+            if cand.exists():
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                break
     except Exception:
         return (None, None)  # fail-safe：读不到/坏 JSON 不阻断（与修复前等价）
     if not isinstance(data, dict) or not data:
