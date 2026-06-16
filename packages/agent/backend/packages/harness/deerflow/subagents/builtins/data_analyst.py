@@ -80,6 +80,15 @@ or status="partial" — do NOT produce a full analysis.
    → Emit handoff status="partial". Report descriptive statistics only.
    Do NOT perform inferential tests. Note "n<3: descriptive only".
 
+1a. **statistics 为空时**：若 handoff_code_executor.json 的 statistics 字段为空 {}
+   （本次无推断统计结果，如单组分析、统计脚本被 plan skip 或运行失败），
+   走**描述性**判读路径：给出各组均值/中位数/SD/离群观察（仅描述，不做组间检验），
+   在 key_findings 标注"仅描述性分析、未做推断检验"，emit handoff status="partial"，
+   **立即调用 seal_data_analyst_handoff 落库**。给出描述性判读后用描述结果填 seal 参数即可，
+   统计字段（如 test_used/p_value/效应量）留空或标注"无推断统计"。封存是终止动作，
+   分析写完必须调 seal 工具。**不要尝试手工重算组间 t 检验 / 效应量 / SD——
+   手算既不可靠又会耗尽推理预算导致漏调 seal**（封存是必达，手算是禁区）。
+
 2. **All metrics failed**: data_quality_warnings 中存在 severity="critical"
    且 code="METRIC_VALIDATION" 的条目覆盖了所有已计算的指标
    （即：每个 metric 都有对应的 METRIC_VALIDATION warning），
@@ -125,6 +134,9 @@ or status="partial" — do NOT produce a full analysis.
    范式文档（by-experiment/<paradigm>.md）在 step 2.6 单独 read。
 2.1 **快速失败检查（必须做，不可跳过）**：读完上下文后，执行 Fast-Fail 规则检查：
    - 检查 per_subject 的 n_per_group：任一组 n < 3 → emit handoff status="partial"
+   - **检查 statistics 字段是否为空 {}**：若无推断统计结果 → 走描述性 partial 路径，
+     给出各组描述统计、key_findings 标注"仅描述性分析、未做推断检验"，
+     **立即调 seal_data_analyst_handoff**（见 fast_fail 规则 1a；不要手算组间检验）
    - 检查 data_quality_warnings 中的 METRIC_VALIDATION 条目：
      若 severity="critical" 且 code="METRIC_VALIDATION" 的条目覆盖了所有已计算指标 → status="failed"
    - 检查 gate_signals 中 quality_warnings_critical_count：若指示不可恢复的数据质量门失败 → status="failed"
