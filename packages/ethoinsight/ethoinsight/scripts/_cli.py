@@ -172,11 +172,16 @@ def read_inputs_json(path: str | Path) -> list[str]:
 
     Format: ``["/path/to/subject1.txt", "/path/to/subject2.txt", ...]``
 
-    Virtual sandbox paths (``/mnt/...``) are resolved to real host paths
-    via :func:`resolve_sandbox_path` so callers can ``Path().open()`` them
-    directly.  Already-real paths pass through unchanged.
+    Both the JSON file itself and the listed file paths are resolved to real
+    host paths via :func:`resolve_sandbox_path` — virtual ``/mnt/...`` paths
+    become real so callers can ``Path().open()`` them directly; already-real
+    paths pass through unchanged.
+
+    Spec 2026-06-16 缺陷 1a：``path`` 参数本身也要 resolve（statistics 链读
+    workspace 下的 inputs.json，其 /mnt 虚拟路径此前无人 resolve → FileNotFoundError）。
+    与 ``save_output_json`` 在同一 I/O 边界对称（#2 当时漏了这两个读函数）。
     """
-    p = Path(path)
+    p = Path(resolve_sandbox_path(path))
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise ValueError(
@@ -186,21 +191,82 @@ def read_inputs_json(path: str | Path) -> list[str]:
 
 
 def read_groups_json(path: str | Path) -> dict[str, list[str]]:
-    """Read a JSON file containing the groups mapping.
+    """Read groups.json and return ``{group_name: [subject_path, ...]}``.
 
-    Format: ``{"group_name": ["subject_path_1", "subject_path_2"], ...}``
+    SSOT 文件格式（``prep_metric_plan`` 写、``metric_aggregation`` 主读）：
+    ``{subject_file: group_name}``（flat map）。本函数读入后**反转**成下游
+    ``compute_paradigm_metrics`` / ``compare_groups`` 期望的
+    ``{group_name: [subject_path, ...]}``。subject 路径经 ``resolve_sandbox_path``
+    解析（虚拟 ``/mnt/...`` → 真实）。
 
-    Subject paths (inside the per-group lists) are resolved via
-    :func:`resolve_sandbox_path` — virtual ``/mnt/...`` paths become real
-    host paths; already-real paths pass through unchanged.
+    兼容两种输入（用首个 value 的类型判别，避免破坏遗留形态）：
+      - ``{file: group}``（str value）→ SSOT flat map，反转。
+      - ``{group: [files]}``（list value）→ 已是目标形态，直通。
+
+    Spec 2026-06-16 缺陷 1a+1b：①``path`` 参数也要 resolve（statistics 链读
+    workspace 下 groups.json 的 /mnt 虚拟路径此前 FileNotFoundError）；②旧的 docstring
+    认为文件就是 ``{group: [files]}``，与 SSOT ``{file: group}`` 不符——透传会把
+    字符串组名当可迭代拆字符。修法是函数内反转（派生视图，非双存——守 SSOT 铁律，
+    格式只存一份，写方/主读方都不动）。
     """
-    p = Path(path)
+    p = Path(resolve_sandbox_path(path))
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(
-            f"{path} must be a JSON object mapping group names to subject lists"
+            f"{path} must be a JSON object, got {type(data).__name__}"
         )
-    return {k: [str(resolve_sandbox_path(s)) for s in v] for k, v in data.items()}
+
+    inverted: dict[str, list[str]] = {}
+    for k, v in data.items():
+        if isinstance(v, list):
+            # 遗留形态 {group: [files]}：直通 + resolve。
+            inverted[k] = [str(resolve_sandbox_path(s)) for s in v]
+        else:
+            # SSOT 形态 {file: group}：反转成 {group: [file]}。
+            group = str(v)
+            inverted.setdefault(group, []).append(str(resolve_sandbox_path(k)))
+    return inverted
+
+
+def bridge_groups_to_subjects(
+    groups: dict[str, list[str]],
+    file_subjects: dict[str, str],
+) -> dict[str, list[str]]:
+    """Translate file-path groups into subject-key groups for the dispatcher.
+
+    ``read_groups_json`` yields ``{group: [file_path, ...]}`` (SSOT keys files),
+    but ``compute_paradigm_metrics`` matches each group member against
+    ``parse_batch()["subjects"]`` **keys** — which are EV19 "对象名称" values
+    (frequently blank → ``''`` / ``'_1'`` / …), NOT file paths. Without a bridge
+    the match set is always empty and ``comparisons`` is always empty on real
+    data (spec 2026-06-16 第三层 bug).
+
+    ``parse_batch`` now returns ``file_subjects`` (``{file_path: subject_key}``).
+    This helper rewrites each group's file paths into the corresponding subject
+    keys **by file**, not by positional index — so a file silently dropped by
+    ``parse_batch`` (non-existent / non-EthoVision) simply drops out of its
+    group instead of shifting every subsequent group member onto the wrong file.
+
+    Both sides resolve paths via :func:`resolve_sandbox_path` upstream
+    (``read_groups_json`` and ``read_inputs_json``), so the path strings match
+    directly. A path with no parsed subject (filtered out) is skipped; a
+    ``stderr`` note is emitted so the drop is observable, never silent.
+    """
+    bridged: dict[str, list[str]] = {}
+    for group, file_paths in groups.items():
+        subject_keys: list[str] = []
+        for fp in file_paths:
+            key = file_subjects.get(fp)
+            if key is None:
+                print(
+                    f"[warning] groups file has no parsed subject (filtered "
+                    f"out?), dropping from group '{group}': {fp}",
+                    file=sys.stderr,
+                )
+                continue
+            subject_keys.append(key)
+        bridged[group] = subject_keys
+    return bridged
 
 
 def resolve_per_subject_input(args: argparse.Namespace) -> str:

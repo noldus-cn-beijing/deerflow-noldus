@@ -26,6 +26,7 @@ contract is "run compute + statistics + aggregate + validate, all deterministic"
 from __future__ import annotations
 
 import logging
+import statistics as _stats
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +94,31 @@ def _collect_validation_warnings(
 # ============================================================================
 # Core pure aggregation
 # ============================================================================
+
+
+def _compute_stat(values: list[Any]) -> dict[str, Any]:
+    """Compute mean/std/n over a list of per-subject values for one metric.
+
+    Spec 2026-06-16 缺陷 2：旧的聚合循环只 n+=1，mean 恒等于首个 subject 的值、
+    std 恒为 null，致 metrics_summary 与 per_subject 矛盾（data-analyst 手算螺旋）。
+
+    语义锁定（spec §2，避免下游 LLM 重算）：
+      - ``None``（compute 脚本报"不适用"）忽略——不计入 mean/std/n，与下游
+        ``MetricStat.applicable`` 语义对齐。
+      - **mean** = 算术平均（``statistics.mean``），忽略 None。
+      - **std** = **样本标准差**（``statistics.stdev``，n−1 分母），n<2 时 None。
+        与 scipy/pandas ddof=1 默认一致，行为学统计惯例。
+      - **n** = 非 None 值个数（applicable subject 数）。
+
+    抽成纯函数便于直接单测（spec §2 末允许），避免构造整份 plan/workspace。
+    """
+    vals_clean = [v for v in values if v is not None]
+    n = len(vals_clean)
+    return {
+        "mean": _stats.mean(vals_clean) if vals_clean else None,
+        "std": _stats.stdev(vals_clean) if n >= 2 else None,
+        "n": n,
+    }
 
 
 def aggregate_metrics_to_handoff(
@@ -228,18 +254,22 @@ def aggregate_metrics_to_handoff(
         per_subject[subject_name][metric_name] = value
 
         # metrics_summary: group -> metric -> MetricStat-shaped dict
+        # 累加器：循环内只收集 values 到临时 _values 列表，循环结束后统一算
+        # mean/std/n（spec 2026-06-16 缺陷 2：旧实现只 n+=1，mean 恒=首个 subject、
+        # std 恒=null，致 data-analyst 读到与 per_subject 矛盾的 mean 手算螺旋）。
         if group_name not in metrics_summary:
             metrics_summary[group_name] = {}
         if metric_name not in metrics_summary[group_name]:
             metrics_summary[group_name][metric_name] = {
-                "mean": value,
+                "_values": [value],          # 临时累加，末尾 _finalize_stats 清除
+                "mean": None,
                 "std": None,
                 "n": 1,
                 "parameters_used": params,
             }
         else:
             existing = metrics_summary[group_name][metric_name]
-            existing["n"] = (existing.get("n") or 0) + 1
+            existing["_values"].append(value)
 
         output_files_metrics.append(f"/mnt/user-data/workspace/{fname}")
 
@@ -256,6 +286,17 @@ def aggregate_metrics_to_handoff(
                 f"expected output {mf} (metric_id={mid}, subject_index={si}) "
                 f"not found in workspace"
             )
+
+    # Finalize statistics: 循环内只收 _values，这里统一算 mean/std/n 并删临时字段。
+    # _compute_stat 忽略 None（不适用 subject 不计入 mean/std/n）。
+    for group_metrics in metrics_summary.values():
+        for stat in group_metrics.values():
+            vals = stat.pop("_values", None)
+            if vals:
+                computed = _compute_stat(vals)
+                stat["mean"] = computed["mean"]
+                stat["std"] = computed["std"]
+                stat["n"] = computed["n"]
 
     # Optional validation (run_metric_plan path only).
     if run_validation:
