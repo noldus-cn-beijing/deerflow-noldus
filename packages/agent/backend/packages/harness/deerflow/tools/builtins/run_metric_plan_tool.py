@@ -248,7 +248,13 @@ def run_metric_plan_tool(
                 failures.append({"id": "statistics", "error": src_err[:500]})
 
     # ---- Step 8: aggregate from disk artifacts (SSOT, run_validation=True) ----
-    agg = aggregate_metrics_to_handoff(plan, workspace, run_validation=True)
+    # validation 子步（validate_plan_results）在父进程内经 resolve_sandbox_path 读 plan 的
+    # /mnt 虚拟 output 路径，需 DEERFLOW_PATH_* env——与 statistics runner 同样必须包
+    # _scoped_path_env（否则全指标误报 result_file_unreadable，毒化 data-analyst fast-fail；
+    # 2026-06-15 dogfood 实证）。aggregate 主体 glob 真实 workspace 不受影响，但 validation
+    # 走虚拟路径必须有 env。
+    with _scoped_path_env(path_env):
+        agg = aggregate_metrics_to_handoff(plan, workspace, run_validation=True)
     status = _derive_status(agg["status"], n_total, n_failed)
 
     # ---- Step 9: assemble + seal handoff (deterministic, sealed_by="run_plan") ----
