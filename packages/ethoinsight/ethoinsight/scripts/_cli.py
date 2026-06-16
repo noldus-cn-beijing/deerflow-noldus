@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -74,23 +78,37 @@ def _sandbox_env_key_for_prefix(prefix: str) -> str:
     return "DEERFLOW_PATH_" + prefix.strip("/").replace("/", "_").replace("-", "_").upper()
 
 
-def resolve_sandbox_path(path: str | Path) -> Path:
+def resolve_sandbox_path(
+    path: str | Path, workspace_base: str | Path | None = None
+) -> Path:
     """把 ``/mnt/<x>/...`` 虚拟沙箱路径解析成真实路径。
 
     设计依据：local sandbox 给脚本进程注入 ``DEERFLOW_PATH_*`` 环境变量
     （见 sandbox/local/local_sandbox.py）。命令行参数里的 /mnt 路径由 bash
     工具替换，但**从 JSON 内部读出的路径字符串**不经替换——本函数补这个解析。
 
-    - 输入是 /mnt/... 且能匹配到 DEERFLOW_PATH_* env → 返回真实路径。
-    - 输入已是真实路径（不以 /mnt 开头）→ 原样返回（Path）。
-    - 输入是 /mnt 但匹配不到 env（如非沙箱环境/直接跑测试）→ 原样返回
-      （fail-safe，行为与修复前一致，不引入新失败模式）。
+    解析优先级：
+      1. ``DEERFLOW_PATH_*`` env（沙箱子进程/进程池 worker 内：env 已设，原路径）。
+      2. ``workspace_base`` 兜底（**仅对 workspace 前缀**）——当 ethoinsight 函数被
+         harness **进程内直接调用**（不经沙箱子进程、未设 env）时，调用方传入真实
+         workspace 物理路径即可可靠解析，不再依赖 env。这是 2026-06-16 故障族根治
+         （#5/#6a 是该族两个已点修实例）：让"进程内调 ethoinsight 读 workspace /mnt
+         文件"不再依赖调用方记得设 env。其他前缀（uploads/outputs）不在此兜底——
+         它们的兜底由 prep 已做的 ``replace_virtual_path`` 在传入前解决。
+      3. 都没有 → 原样返回（fail-safe，与历史等价）。
+
+    ⚠️ 隐性契约显性化：harness 进程内直接调 ethoinsight 读 /mnt 文件时，**必须传
+    ``workspace_base``（或先用 ``replace_virtual_path`` 预解析），不能依赖 env**——
+    否则本函数 fail-safe 原样返回 /mnt，下游读到的是物理上不存在的路径、静默退化。
+
+    - 输入已是真实路径（不以 /mnt 开头）→ 原样返回（Path），``workspace_base`` 无影响。
     """
     p = str(path)
     if not p.startswith("/mnt/"):
         return Path(p)
 
-    # 最长前缀优先匹配
+    # 最长前缀优先匹配 env（保持历史循环语义：某前缀无 env 不阻断，继续找更短前缀
+    # 的 env——如 workspace env 缺失时退化到 user-data env）。
     for prefix in _KNOWN_SANDBOX_PREFIXES:
         if p.startswith(prefix + "/") or p == prefix:
             env_key = _sandbox_env_key_for_prefix(prefix)
@@ -99,7 +117,24 @@ def resolve_sandbox_path(path: str | Path) -> Path:
                 suffix = p[len(prefix):].lstrip("/")
                 return Path(real_base) / suffix if suffix else Path(real_base)
 
-    # 匹配不到 → 原样（fail-safe：非沙箱环境/测试直接运行）
+    # 所有前缀都无 env：对 workspace 前缀用 workspace_base 兜底（进程内被 harness
+    # 直接调、未设 env 时：用真实 workspace 物理路径拼后缀）。**在 env 全扫完之后**
+    # 才兜底——保证 env 始终优先于 workspace_base（env 优先路径字节不变）。
+    if workspace_base and (
+        p.startswith("/mnt/user-data/workspace/")
+        or p == "/mnt/user-data/workspace"
+    ):
+        suffix = p[len("/mnt/user-data/workspace"):].lstrip("/")
+        return Path(workspace_base) / suffix if suffix else Path(workspace_base)
+
+    # 都没有 → 原样（fail-safe：非沙箱环境/测试直接运行）
+    # 可观测信号：收到 /mnt 路径却既无 env 又无 workspace_base 兜底，原样返回时记
+    # 一行 debug（非 warning——正常沙箱外测试也走这条，不该刷 warning）。给未来排查
+    # "读不到 /mnt 文件"提供 grep 锚点（守 feedback_isolate_root_cause_*：合法静默
+    # 路径不响亮，但留痕）。
+    logger.debug(
+        "resolve_sandbox_path: 虚拟路径未解析（无 env/无兜底），原样返回 %s", p
+    )
     return Path(p)
 
 

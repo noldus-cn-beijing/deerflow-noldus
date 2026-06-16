@@ -1092,13 +1092,12 @@ def _derive_group_counts(
     None/读不到/空/形状不可识别 → (None, None)（单组或无分组场景，gate 正确 skip，
     行为与修复前等价）。fail-safe：读不到不阻断（不引入新失败模式）。
 
-    路径解析（让自派生成为真正覆盖所有调用方的兜底，而非只对传真实路径者生效）：
-      1. groups_file 直接当路径读（物理路径直接命中）。
-      2. 不存在则经 resolve_sandbox_path 解 /mnt 虚拟路径（需 DEERFLOW_PATH_* env）。
-      3. 仍不存在且给了 workspace_dir，则用 ``workspace_dir / basename(groups_file)``
-         兜底——prep_metric_plan 传的是 /mnt 虚拟路径但**没设 env**，real groups.json
-         就在 workspace_dir 下，靠此兜底才能读到（否则自派生对 prep 这个主调用方失效、
-         layer① 形同虚设，只剩 prep 显式传计数 layer③ 承重 = 仍是"两字段须同步"的脆弱）。
+    路径解析（收口到机制 B 的 workspace_base 兜底，不在 resolve 里维护第二套兜底逻辑）：
+      调 ``resolve_sandbox_path(groups_file, workspace_base=workspace_dir)``——它先试
+      env（沙箱子进程路径），无 env 时用 workspace_base 拼 workspace 前缀虚拟路径的
+      真实物理位置。若解析结果不存在（如 groups_file 本就是物理路径或非 workspace 前缀），
+      再退回把 groups_file 直接当物理路径读。两个候选覆盖所有调用形态（虚拟+env /
+      虚拟+无env+workspace_dir / 物理路径），同一处方收口（2026-06-16 故障族根治改动②）。
     """
     if not groups_file:
         return (None, None)
@@ -1106,12 +1105,10 @@ def _derive_group_counts(
     try:
         from ethoinsight.scripts._cli import resolve_sandbox_path
 
-        candidates: list[Path] = [Path(groups_file)]
-        resolved = Path(resolve_sandbox_path(groups_file))
-        if resolved not in candidates:
-            candidates.append(resolved)
-        if workspace_dir:
-            candidates.append(Path(workspace_dir) / Path(groups_file).name)
+        candidates: list[Path] = [
+            Path(resolve_sandbox_path(groups_file, workspace_base=workspace_dir)),
+            Path(groups_file),
+        ]
         for cand in candidates:
             if cand.exists():
                 data = json.loads(cand.read_text(encoding="utf-8"))
