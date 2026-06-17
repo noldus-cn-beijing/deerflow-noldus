@@ -244,6 +244,57 @@ class TestPrepChartPlanGroupsFromContext:
         plan_data = json.loads((workspace / "plan_charts.json").read_text())
         assert plan_data["inputs"]["groups_file"] == "/mnt/user-data/workspace/groups.json"
 
+    def test_two_group_box_chart_gets_materialised_groups(self, tmp_path):
+        """端到端 parity：SSOT {full_path: group} groups.json（prep_metric_plan 落盘形态）
+        + 满足 n_per_group>=3 的 box_open_arm → box 图真拿到 --groups，且分组按文件精确映射。
+
+        守红线一（降级不静默）：之前 groups_applied=True 但 box 静默丢 --groups（resolve_charts
+        的 _build_groups_payload 子串启发式匹配不了完整路径键）；P3 配套修复后 box 真带分组。
+        """
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+
+        raw_virtual = []
+        groups_map = {}
+        for i in range(1, 7):
+            data_file = uploads / f"arena{i}.txt"
+            _write_ethovision_file(str(data_file), STANDARD_EPM_COLUMNS)
+            vp = f"/mnt/user-data/uploads/arena{i}.txt"
+            raw_virtual.append(vp)
+            groups_map[vp] = "control" if i <= 3 else "treatment"
+        _write_groups_json(workspace, groups_map)
+
+        runtime = _runtime_with_paths(workspace, uploads)
+        result = prep_chart_plan_tool.invoke({
+            "uploaded_files": raw_virtual,
+            "paradigm": "epm",
+            "runtime": runtime,
+            "total_subjects": 6,
+            "n_groups": 2,
+            "n_per_group": 3,
+        })
+
+        assert result["status"] == "ok"
+        assert result["plan_summary"]["groups_applied"] is True
+        plan_data = json.loads((workspace / "plan_charts.json").read_text())
+
+        # box_open_arm（aggregate + needs_groups, when=n_per_group>=3）必须存在且带 --groups
+        box = [c for c in plan_data["charts"] if c["id"] == "box_open_arm"]
+        assert box, f"box_open_arm 应在 n_per_group=3 时出现，实际 {[c['id'] for c in plan_data['charts']]}"
+        box_args = box[0]["args"]
+        assert "--groups" in box_args, (
+            f"box_open_arm 必须拿到 --groups（groups 已从 context 自读并精确匹配），实际 args={box_args}"
+        )
+        # materialised groups 文件按文件精确分组（不是子串瞎猜）
+        groups_arg_path = box_args[box_args.index("--groups") + 1]
+        materialised_name = groups_arg_path.rsplit("/", 1)[-1]
+        materialised = json.loads((workspace / materialised_name).read_text())
+        assert set(materialised) == {"control", "treatment"}
+        assert set(materialised["control"]) == set(raw_virtual[:3])
+        assert set(materialised["treatment"]) == set(raw_virtual[3:])
+
 
 class TestPrepChartPlanErrors:
     def test_workspace_missing(self):

@@ -984,29 +984,51 @@ def _chart_to_plan(
     def _build_groups_payload(paths: list[str]) -> dict[str, list[str]] | None:
         """Reshape catalog/groups dict into {group_name: [subject_path, ...]}.
 
-        Accepts two upstream shapes:
-          - {arena_key: group_name}: assigns each raw_file to its group via arena_key match.
-          - {group_name: [subject_id, ...]}: passed through verbatim (legacy).
+        Accepts these upstream shapes:
+          - {subject_file: group_name}: the SSOT flat map written by ``prep_metric_plan`` /
+            ``prep_chart_plan`` (key = the exact ``raw_files`` virtual path, optionally with a
+            ``::sheet`` suffix). Inverted by **exact path identity**, mirroring
+            ``scripts._cli.read_groups_json`` so the charts path and the metrics path consume
+            the same SSOT identically (P3, 红线二：单一来源 + 同一消费语义).
+          - {arena_key: group_name}: legacy short-key form (e.g. ``"Arena 1"``); matched by the
+            ``arena_key in filename`` substring heuristic only as a fallback when no exact path
+            match succeeds — so a real SSOT map is never silently misbucketed by substring noise.
+          - {group_name: [subject_id, ...]}: already-final shape, passed through verbatim.
         Returns None when groups can't be confidently mapped (avoids guessing).
         """
         if not groups:
             return None
-        # Detect shape: values are str → {arena: group_name}; values are list → already final.
-        if all(isinstance(v, str) for v in groups.values()):
-            mapping: dict[str, list[str]] = {}
-            # Heuristic: each raw_file path likely contains the arena key (e.g. "Arena 1").
-            for arena_key, group_name in groups.items():
-                bucket = mapping.setdefault(group_name, [])
-                for p in paths:
-                    if arena_key in Path(p).name:
-                        bucket.append(p)
-            # If nothing matched, fall back to None to avoid silent miscategorisation.
-            if not any(mapping.values()):
-                return None
-            # Trim empty groups (defensive).
-            return {k: v for k, v in mapping.items() if v}
+        # Already-final shape: values are lists.
         if all(isinstance(v, list) for v in groups.values()):
             return {k: [str(x) for x in v] for k, v in groups.items()}
+        # Flat map: values are group-name strings. Two key conventions, exact-path first.
+        if all(isinstance(v, str) for v in groups.values()):
+            # Index raw_files by full virtual path and by ::sheet-stripped path so SSOT keys
+            # (which equal the raw_files paths) match by identity, not by substring.
+            by_full = {p: p for p in paths}
+            by_clean = {p.split("::", 1)[0]: p for p in paths}
+
+            mapping: dict[str, list[str]] = {}
+            unmatched_keys: list[tuple[str, str]] = []
+            for key, group_name in groups.items():
+                matched = by_full.get(key) or by_clean.get(key.split("::", 1)[0] if "::" in key else key)
+                if matched is not None:
+                    mapping.setdefault(group_name, []).append(matched)
+                else:
+                    unmatched_keys.append((key, group_name))
+
+            # Legacy fallback for keys that were NOT exact raw_file paths (e.g. "Arena 1"):
+            # substring-match against filenames. Applied per-unmatched-key so an SSOT map that
+            # already matched exactly is never reprocessed by the fuzzy heuristic.
+            for key, group_name in unmatched_keys:
+                for p in paths:
+                    if key in Path(p).name:
+                        mapping.setdefault(group_name, []).append(p)
+
+            if not any(mapping.values()):
+                return None
+            # De-dup while preserving order (a path could match both exact + fuzzy in theory).
+            return {g: list(dict.fromkeys(v)) for g, v in mapping.items() if v}
         return None
 
     plans: list[PlanChart] = []

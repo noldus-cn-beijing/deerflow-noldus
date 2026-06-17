@@ -115,16 +115,17 @@ def prep_chart_plan_tool(
         )
     real_workspace_path = thread_data["workspace_path"]
 
-    # Lazy imports to avoid circular dependency + keep deerflow harness importable
-    # without ethoinsight installed (same discipline as prep_metric_plan_tool).
-    from deerflow.sandbox.tools import replace_virtual_path
-
+    # Lazy imports (same discipline as prep_metric_plan_tool): avoid circular dependency
+    # and keep the deerflow harness importable without ethoinsight installed. The
+    # ethoinsight domain library is only required when this tool actually runs.
     from ethoinsight.catalog.resolve import (
         ResolveError,
         plan_charts_to_dict,
         resolve_charts,
     )
     from ethoinsight.parse._core import detect_ethovision, parse_header
+
+    from deerflow.sandbox.tools import replace_virtual_path
 
     # Step 2: per-file validation (existence + EthoVision detect) + header parse on first file.
     # header 用第 1 个文件（同一批次 EV 导出列结构一致；若不一致 resolve_charts 会 columns_missing skip）。
@@ -172,15 +173,18 @@ def prep_chart_plan_tool(
     # column_aliases: experiment-context.json 的 column_semantics 投影（Gate 1 落盘）。
     #                 不读它 → resolve_charts 拿不到别名 → 自定义分析区列仍 columns_missing skip
     #                 （dogfood 实证：FewZones open/closed 列被 skip 掉 box/bar/rose）。
-    # groups: groups.json（prep_metric_plan 落盘）。catalog needs_groups:true 的 aggregate
-    #         chart（box/bar 等）依赖它做组间对比。
+    # groups: groups.json（prep_metric_plan 落盘的 SSOT {file_path: group_name} flat map）。
+    #         catalog needs_groups:true 的 aggregate chart（box 等）依赖它做组间对比。
+    #         resolve_charts 内部 _build_groups_payload 按完整路径精确匹配（与 metrics 路径
+    #         scripts._cli.read_groups_json 同语义）后 materialise 成 --groups，所以这里把
+    #         整份 dict 透传即可，box_open_arm 会真带分组（P3 配套修复，见 test_resolve_charts
+    #         的 test_groups_ssot_fullpath_keys_materialise_into_box）。
     from deerflow.agents.middlewares.experiment_context import read_context
 
     ctx = read_context(real_workspace_path)
     column_aliases = ctx.get("column_aliases") if ctx else None
 
     groups_file_virtual: str | None = None
-    groups_file_real: str | None = None
     groups_dict: dict | None = None
     groups_path = Path(real_workspace_path) / "groups.json"
     if groups_path.exists():
@@ -188,7 +192,6 @@ def prep_chart_plan_tool(
             groups_data = json.loads(groups_path.read_text(encoding="utf-8"))
             if isinstance(groups_data, dict):
                 groups_dict = groups_data
-                groups_file_real = str(groups_path)
                 groups_file_virtual = "/mnt/user-data/workspace/groups.json"
         except (OSError, json.JSONDecodeError) as e:
             logger.warning("prep_chart_plan: failed to read groups.json: %s", e)
