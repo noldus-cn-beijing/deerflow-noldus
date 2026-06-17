@@ -51,7 +51,13 @@ def test_chart_maker_system_prompt_workflow():
     cfg = CHART_MAKER_CONFIG
     assert "execution-conventions" in cfg.system_prompt
     assert "ethoinsight-chart-maker" in cfg.system_prompt
-    assert "catalog.resolve" in cfg.system_prompt
-    assert "--mode charts" in cfg.system_prompt
+    # Spec 3 (P3): plan_charts.json 改由 prep_chart_plan 工具生成（内部自读 context
+    # 拿 column_aliases / groups），不再 bash 拼 catalog.resolve。
+    assert "prep_chart_plan" in cfg.system_prompt
     assert "handoff_chart_maker.json" in cfg.system_prompt
     assert "present_files" in cfg.system_prompt
+
+
+def test_chart_maker_has_prep_chart_plan_tool():
+    """Spec 3: chart-maker 工具集含 prep_chart_plan（取代 bash 拼 catalog.resolve）。"""
+    assert "prep_chart_plan" in CHART_MAKER_CONFIG.tools
