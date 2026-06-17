@@ -374,6 +374,22 @@ class GateSignals(BaseModel):
             "可据此拦截下游 subagent。"
         ),
     )
+    # P2 (spec 2026-06-17-statistics-loud-failure): statistics 子步骤降级信号（三态可机读）。
+    # 这个 Pydantic Literal 是 statistics_status 的**权威、受校验**定义——任何写入此字段的值都按
+    # 它校验，下游 DegradationCircuitBreakerMiddleware 也据此判断。run_metric_plan_tool 里的同名
+    # 局部注解只是与之对齐的镜像（type hint，非第二份受校验定义）；改三态时以本处为准同步那侧。
+    statistics_status: Literal["ok", "crashed", "absent_by_design"] = Field(
+        default="absent_by_design",
+        description=(
+            "statistics 子步骤状态。ok=成功且 payload 非空；crashed=脚本非零退出或产物不可读"
+            "（损害可复现性，DegradationCircuitBreakerMiddleware 据此熔断：自救一次→HITL）；"
+            "absent_by_design=plan.statistics 有 skip_reason（单组/单样本，合理 skip，正常描述性 partial，不熔断）。"
+        ),
+    )
+    statistics_error: str | None = Field(
+        default=None,
+        description="statistics_status=='crashed' 时的 error 摘要（<500 字），供熔断器 reminder 引用。",
+    )
 
 
 class CodeExecutorInputs(BaseModel):

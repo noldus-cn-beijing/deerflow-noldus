@@ -134,7 +134,7 @@ Noldus 独特改动包括(但不限于):
 
 - **Prompt 与提示词**:`agents/lead_agent/prompt.py`(中文调度规则、subagent 描述、Gate 反问机制)、subagent 系统 prompt、tool description 中文化
 - **Subagent 名字与注册**:`subagents/builtins/__init__.py`(注册的 4 个 ethoinsight 子代理:`code-executor`、`data-analyst`、`report-writer`、`knowledge-assistant` 等)
-- **自定义中间件**:`ArchivingSummarizationMiddleware`、`ThinkTagMiddleware`、`TrainingDataMiddleware`、`GateEnforcementMiddleware` 等(它们出现在 `lead_agent/agent.py` 的中间件链里,上游没有)
+- **自定义中间件**:`ArchivingSummarizationMiddleware`、`ThinkTagMiddleware`、`TrainingDataMiddleware`、`GateEnforcementMiddleware`、`SealGateMiddleware`、`DegradationCircuitBreakerMiddleware`(数据降级熔断器，挂 lead 链，检测 code-executor handoff 的 `gate_signals.statistics_status=="crashed"` → 自救一次 → 转 HITL `ask_clarification`；spec 2026-06-17 P2+P7)等(它们出现在 `lead_agent/agent.py` 的中间件链里,上游没有)
 - **Sandbox 接口扩展**:`sandbox/sandbox.py` 的 `extra_env` 参数、`local_sandbox.py` 的 venv PATH + `DEERFLOW_PATH_*` 环境变量、`sandbox/tools.py` 的 `{{shared://}}` 占位符
 - **Shared workspace 路径**:`config/paths.py` 的 `/mnt/shared`、`shared_dir()`、`thread_state.py` / `thread_data_middleware.py` 的 `shared_path` 字段
 - **错误处理增强**:`llm_error_handling_middleware.py` 的总超时上限 + 多种 timeout 关键字识别
