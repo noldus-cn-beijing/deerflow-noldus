@@ -931,6 +931,16 @@ class SubagentExecutor:
             tool_freq_hard_limit=50,
         ))
 
+        # SealGate (spec 2026-06-16): structural after_model gate that forces
+        # seal_<name>_handoff before a seal-requiring subagent (data-analyst /
+        # chart-maker / report-writer) can exit on pure text. Replicates the
+        # ParadigmIdentificationGate pattern. Lazy import (harness core import rule).
+        # One instance per subagent — it self-gates by config.name and derives its
+        # own seal tool name; code-executor / bash / general pass through silently.
+        from deerflow.agents.middlewares.seal_gate_middleware import SealGateMiddleware
+
+        middlewares.append(SealGateMiddleware(subagent_name=self.config.name))
+
         return middlewares
 
     def _create_agent(self, tools: list[BaseTool] | None = None, *, deferred_setup: "DeferredToolSetup | None" = None):

@@ -84,10 +84,9 @@ or status="partial" — do NOT produce a full analysis.
    （本次无推断统计结果，如单组分析、统计脚本被 plan skip 或运行失败），
    走**描述性**判读路径：给出各组均值/中位数/SD/离群观察（仅描述，不做组间检验），
    在 key_findings 标注"仅描述性分析、未做推断检验"，emit handoff status="partial"，
-   **立即调用 seal_data_analyst_handoff 落库**。给出描述性判读后用描述结果填 seal 参数即可，
-   统计字段（如 test_used/p_value/效应量）留空或标注"无推断统计"。封存是终止动作，
-   分析写完必须调 seal 工具。**不要尝试手工重算组间 t 检验 / 效应量 / SD——
-   手算既不可靠又会耗尽推理预算导致漏调 seal**（封存是必达，手算是禁区）。
+   **立即调用 seal_data_analyst_handoff 落库**（把描述性判读直接作为 seal 参数发出）。给出描述性判读后用描述结果填 seal 参数即可，
+   统计字段（如 test_used/p_value/效应量）留空或标注"无推断统计"。**不要手工重算组间 t 检验 / 效应量 / SD——
+   手算既不可靠又会耗尽推理预算**。
 
 2. **All metrics failed**: data_quality_warnings 中存在 severity="critical"
    且 code="METRIC_VALIDATION" 的条目覆盖了所有已计算的指标
@@ -162,7 +161,11 @@ or status="partial" — do NOT produce a full analysis.
      "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
    - 该文档定义"必算指标"、"风险点"、"标准报告语言"、"与其他范式区分"——
      在 method_warnings / recommendations / 解读语言中遵循它，不要自创术语
-2.7 **一次性完成核心分析推理**（单轮 LLM 思考，不拆分多个 turn；参数审计（step 2.8）至多占 2-3 轮思考，无论审计是否产出 finding，都必须留出轮次走 step 3 调 seal_data_analyst_handoff。seal 是必达，审计是尽力。step 3 会通过发出 seal 工具调用来落库本次分析）:
+2.7 **用思考推导分析素材**（单轮 LLM 思考，不拆分多个 turn）:
+   思考阶段的任务是**推导分析素材**——识别离群受试者 + leave-one-out 统计 + 选定判据 + 比对参数，
+   在思考里得出"该写什么结论"的判断即可。**不要在思考里撰写最终的 key_findings / 各字段成文文本**——
+   那些文本直接在 step 3 作为 seal 工具的参数第一次成文，思考只负责把判断做出来。参数审计（step 2.8）
+   至多占 2-3 轮思考。
    a. **方法学把关**：检查 statistics.test_used 是否匹配实验设计
       - MWM 训练数据用了 one-way ANOVA 而非 RM-ANOVA → method_warnings 添加一条
       - 配对设计用了 independent/welch-t-test → method_warnings 添加
@@ -180,7 +183,7 @@ or status="partial" — do NOT produce a full analysis.
         写入 excluded_metrics
    d. **给研究者的行动建议**：样本量扩充、检查异常个体健康状态、方法学修正等
       → 写入 recommendations
-	2.8 **参数适配性审计**（Sprint 3 — 只警告不调参，铁律。seal 是必达，审计是尽力）：
+	2.8 **参数适配性审计**（Sprint 3 — 只警告不调参，铁律）：
 	   **第一步：判断本轮是否有可审计的参数。**
 	   parameters_used 的唯一真相源是 handoff_code_executor.json 的 metrics_summary[*].parameters_used，
 	   它表示"实际调用计算时真正用到的可调参数"。
@@ -196,7 +199,7 @@ or status="partial" — do NOT produce a full analysis.
 	   - 若至少有一个 metric 的 parameters_used 非空：只对这些非空 metric 做参数-vs-数据分布比对，
 	     parameters_used 为空 `{}` 的 metric 不产生 finding。比对方法见下方 a–f。
 
-	     **进入 a–f 之前先记住：本段至多 2-3 轮思考，到点立即带着已有 finding（哪怕只有一条 info）进入 step 3 发出 seal_data_analyst_handoff 的 tool_call。seal 是必达，审计是尽力——审计纠结到第 3 轮还没定论，就用降级字段填法记一条 info finding 收尾，随即 seal。在 thinking 里把 finding 写完是叙述，发出 seal tool_call 才是落库。**
+	     **进入 a–f 之前先记住：本段至多 2-3 轮思考，到点立即带着已有 finding（哪怕只有一条 info）进入 step 3 发出 seal_data_analyst_handoff 的 tool_call——审计到第 3 轮还没定论，就用降级字段填法记一条 info finding 收尾。思考里把 finding 的判断做出来即可；结论是作为 seal 工具的参数第一次成文，发出 seal tool_call 本身就是"把分析落库"这一动作（产出=交付，合一）。**
 
 	     **捷径（命中即用，不必走完 a–f）：若该参数是离散/类别参数（如 zone 选择 `open_zones`、`body_point` 等取值而非数值阈值），且当前范式文档没有该参数的领域判据 → 这属于"判据缺失"降级场景，直接按下方降级字段填法记【一条】info finding（mismatch_kind 取最接近的 `category_mismatch`，suggestion 写"该范式 [参数名] 参数判据待补，参见 issue #63；当前值为用户/上游确认值"），不要在 Phase 2/Phase 1/mismatch_kind 之间反复权衡——记完即进入 step 3 发 seal。**
 
@@ -267,11 +270,10 @@ or status="partial" — do NOT produce a full analysis.
 	      - gate_signals.parameter_audit_findings_count = findings 总数
 	      - gate_signals.parameter_audit_critical_count = sum(severity=="critical" AND blocks_downstream==True)
 	      - 透传到 seal_data_analyst_handoff 的 parameter_audit_findings 参数
-	3. **封存 handoff —— 本步骤的完成标志是"发出一次 seal_data_analyst_handoff 的 tool_call"。**
-	   handoff JSON 只有在你发出 seal_data_analyst_handoff 工具调用时才会真正落库。
-	   请把你已经得出的结论（key_findings / 各结构化字段）作为该工具的参数填入并发出调用——
-	   这一次工具调用本身，就是"封存"这个动作；它是本次任务的最后一步，发出后任务即完成。
-	   （在文字里描述"已封存""分析完成"是叙述，不会落库；真正落库靠这一次 tool_call。）
+	3. **产出分析 = 发出 seal_data_analyst_handoff 的 tool_call（产出与交付合一）。**
+	   你的结论第一次成文，就是直接写在 seal_data_analyst_handoff 的工具参数里——没有"先在别处写一遍、
+	   再誊抄填进来"这一步。这次工具调用本身既是产出也是落库：发出它，本次分析就产出并交付了，
+	   它也是本次任务的最后一步，发出后任务即完成。把 step 2 推导出的判断直接作为参数发出即可。
 	   调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/
 	   method_warnings/recommendations/errors/gate_signals/quality_warnings/parameter_audit_findings，
 	   工具会自动写入 /mnt/user-data/workspace/handoff_data_analyst.json 并落 manifest hash。

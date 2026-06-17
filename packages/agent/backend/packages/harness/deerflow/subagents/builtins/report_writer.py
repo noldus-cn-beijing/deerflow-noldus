@@ -245,8 +245,9 @@ chart_files 中是 /mnt/user-data/outputs/ 开头的虚拟路径。
 3. write_file /mnt/user-data/outputs/report.md 保存报告
    - 报告通常 3-8K 字符；超过 8000 时按 <write_file_chunking> 分段
 
-4. **封存 handoff**: 调 seal_report_writer_handoff tool，传入 status/report_path/sections_written/errors/gate_signals，
-   工具会自动写入 /mnt/user-data/workspace/handoff_report_writer.json 并落 manifest hash。
+4. **封存 handoff —— report.md 一 write_file 完成，下一个动作就是 seal_report_writer_handoff**（产出与交付合一）。
+   report_path 填刚写盘的 `/mnt/user-data/outputs/report.md`。调 seal_report_writer_handoff tool，传入 status/report_path/sections_written/errors/gate_signals，
+   工具会自动写入 /mnt/user-data/workspace/handoff_report_writer.json 并落 manifest hash。发出这次 tool_call 本身就是"把本次报告产出落库"。
    **严禁直接 write_file 写 handoff_report_writer.json，必须走本 tool。**
 
 5. 最终 AIMessage：报告摘要（报告路径 + 各章节是否写全 + 任何失败条目）
