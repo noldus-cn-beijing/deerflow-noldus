@@ -229,6 +229,15 @@ def run_metric_plan_tool(
             inputs_arg = "/mnt/user-data/workspace/inputs.json"
             stats_argv = ["--inputs", inputs_arg, "--groups", groups_arg, "--output", stats_output]
 
+            # 列对齐透传（spec 2026-06-16-statistics-path-column-alignment）：把 plan
+            # statistics 段的 parameters（resolve 投影自 metrics 段同源 zone_aliases_overrides）
+            # 序列化成 --parameters-json 传给 run_groupwise_stats → dispatcher.zone_overrides。
+            # 与 compute step 传 parameters 的方式对称（compute 用 plan_metric.args 内嵌的
+            # --parameters-json）。无 column_aliases 时 parameters={} → 等价于不传，行为不变。
+            stats_parameters = stats_obj.get("parameters") or {}
+            stats_argv.append("--parameters-json")
+            stats_argv.append(json.dumps(stats_parameters, ensure_ascii=False))
+
             # 统计单独提交（不进上面的池：单 task，避免 inputs.json/groups.json 写竞争）。
             # 在父进程内跑（_run_metric_task 直接调 mod.main），脚本内 resolve_sandbox_path
             # 读 DEERFLOW_PATH_* env——用 _scoped_path_env 临时设置 + 退出即恢复，不留全局副作用。

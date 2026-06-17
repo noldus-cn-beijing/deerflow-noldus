@@ -19,6 +19,7 @@ from ethoinsight.scripts._cli import (
     bridge_groups_to_subjects,
     emit_result,
     make_stats_parser,
+    parse_parameters,
     read_groups_json,
     read_inputs_json,
     save_output_json,
@@ -41,8 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parse_batch(paths)
     # 第三层 bug 修复（spec 2026-06-16）：按文件桥接 groups→subject key（见 _cli.bridge_groups_to_subjects）。
     groups = bridge_groups_to_subjects(groups, parsed["file_subjects"])
+    zone_overrides = parse_parameters(args)
     metrics = compute_paradigm_metrics(
-        parsed, paradigm="tail_suspension", groups=groups
+        parsed, paradigm="tail_suspension", groups=groups, zone_overrides=zone_overrides
     )
     stats = compare_groups(metrics, metrics_to_test=METRICS_TO_TEST)
 

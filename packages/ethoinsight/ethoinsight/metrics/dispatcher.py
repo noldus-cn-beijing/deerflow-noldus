@@ -87,6 +87,7 @@ def compute_paradigm_metrics(
     paradigm: str,
     groups: dict[str, list[str]] | None = None,
     metrics: list[str] | None = None,
+    zone_overrides: dict[str, list[str] | str] | None = None,
 ) -> dict:
     """Compute metrics for a specific paradigm.
 
@@ -98,6 +99,12 @@ def compute_paradigm_metrics(
             If None, all subjects are in a single "all" group.
         metrics: Optional list of metric names to compute.
             If None, computes all metrics for the paradigm.
+        zone_overrides: Optional zone column overrides keyed by the底层 metric
+            function's kwarg name（e.g. ``{"open_arm_zones": ["open"],
+            "center_zone": "中心区"}``）。形态（list vs str）由各范式 catalog 的
+            ``wrap_list`` 决定，与底层函数签名天然匹配。None 或缺 key 时底层函数
+            走原有自动检测，完全向后兼容。这是 statistics 路径接入列对齐机制的透传
+            通道（compute 路径经 ``parameters_in_use`` 已接，spec 2026-06-16）。
 
     Returns:
         {
@@ -116,31 +123,52 @@ def compute_paradigm_metrics(
         groups = {"all": list(subjects.keys())}
 
     # Compute per-subject scalar metrics
+    # zone_overrides 透传：key 用底层函数的 kwarg 名（open_arm_zones / center_zone /
+    # open_zones / light_zone 等），与 resolve 的 zone_aliases_overrides 输出 key 同源。
+    # 形态（list/str）由各范式 catalog 的 wrap_list 决定，与底层函数签名天然匹配。
+    #
+    # 只在 zo 有非空值时透传对应 kwarg；缺 key 时**不传**该 kwarg，让底层函数用各自默认值
+    # 走原有自动检测（EPM/zero_maze 默认 None=自动检测；OFT/ldb 默认是具体列名字符串，
+    # 显式传 None 会破坏 `in df.columns` 成员测试 → 必须用"不传"而非"传 None"）。
+    # 这是 statistics 路径接入列对齐机制的透传通道（compute 路径经 parameters_in_use 已接，
+    # spec 2026-06-16）。
+    zo = zone_overrides or {}
+
+    def _zone_kwargs(keys: list[str]) -> dict:
+        """从 zo 取存在的 zone 参数，缺/空 key 不进 kwargs（让底层用默认）。"""
+        return {k: zo[k] for k in keys if zo.get(k)}
+
     per_subject: dict[str, dict] = {}
     for name, df in subjects.items():
         m: dict[str, float | dict | None] = {}
         m["distance_moved"] = compute_distance_moved(df)
         m["velocity_stats"] = compute_velocity_stats(df)
         if paradigm == "open_field":
-            m["center_time_ratio"] = compute_center_time_ratio(df)
-            m["thigmotaxis_index"] = compute_thigmotaxis_index(df)
-            m["center_distance_ratio"] = compute_center_distance_ratio(df)
-            m["center_entry_count"] = compute_center_entry_count(df)
+            zk = _zone_kwargs(["center_zone"])
+            m["center_time_ratio"] = compute_center_time_ratio(df, **zk)
+            m["thigmotaxis_index"] = compute_thigmotaxis_index(df)  # 几何指标，无 zone 注入点
+            m["center_distance_ratio"] = compute_center_distance_ratio(df, **zk)
+            m["center_entry_count"] = compute_center_entry_count(df, **zk)
         elif paradigm == "epm":
-            m["open_arm_time_ratio"] = compute_open_arm_time_ratio(df)
-            m["open_arm_entry_ratio"] = compute_open_arm_entry_ratio(df)
-            m["open_arm_entry_count"] = compute_open_arm_entry_count(df)
-            m["open_arm_time"] = compute_open_arm_time(df)
-            m["total_entry_count"] = compute_total_entry_count(df)
+            zk = _zone_kwargs(["open_arm_zones", "closed_arm_zones"])
+            m["open_arm_time_ratio"] = compute_open_arm_time_ratio(df, **_zone_kwargs(["open_arm_zones"]))
+            m["open_arm_entry_ratio"] = compute_open_arm_entry_ratio(df, **zk)
+            m["open_arm_entry_count"] = compute_open_arm_entry_count(df, **_zone_kwargs(["open_arm_zones"]))
+            m["open_arm_time"] = compute_open_arm_time(df, **_zone_kwargs(["open_arm_zones"]))
+            m["total_entry_count"] = compute_total_entry_count(df, **zk)
         elif paradigm == "zero_maze":
-            m["open_zone_time_ratio"] = compute_open_zone_time_ratio(df)
-            m["open_zone_time"] = compute_open_zone_time(df)
-            m["open_zone_distance"] = compute_open_zone_distance(df)
-            m["hesitation_count"] = compute_hesitation_count(df)
+            zk = _zone_kwargs(["open_zones", "closed_zones"])
+            ozk = _zone_kwargs(["open_zones"])
+            m["open_zone_time_ratio"] = compute_open_zone_time_ratio(df, **ozk)
+            m["open_zone_time"] = compute_open_zone_time(df, **ozk)
+            m["open_zone_distance"] = compute_open_zone_distance(df, **ozk)
+            m["hesitation_count"] = compute_hesitation_count(df, **zk)
         elif paradigm == "light_dark_box":
-            m["light_time_ratio"] = compute_light_time_ratio(df)
-            m["transition_count"] = compute_transition_count(df)
-            m["light_latency"] = compute_light_latency(df)
+            ldk = _zone_kwargs(["light_zone", "dark_zone"])
+            lk = _zone_kwargs(["light_zone"])
+            m["light_time_ratio"] = compute_light_time_ratio(df, **lk)
+            m["transition_count"] = compute_transition_count(df, **ldk)
+            m["light_latency"] = compute_light_latency(df, **lk)
         elif paradigm == "forced_swim":
             m["immobility_time"] = compute_immobility_time_fst(df)
             m["immobility_latency"] = compute_immobility_latency_fst(df)
