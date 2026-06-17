@@ -39,7 +39,7 @@ import sys
 from pathlib import Path
 
 from ethoinsight.catalog.loader import load_common_catalog
-from ethoinsight.catalog.resolve import ResolveError, plan_charts_to_dict, plan_metrics_to_dict, resolve_charts, resolve_metrics
+from ethoinsight.catalog.resolve import ResolveError, plan_charts_to_dict, plan_metrics_to_dict, resolve_charts, resolve_metrics, select_charts_by_priority
 
 
 # 与 deerflow.sandbox.tools._build_path_env 完全一致的命名规则：
@@ -105,6 +105,10 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Optional JSON file with parameter overrides (Sprint 2b). "
                         "Content must be a JSON dict, e.g. "
                         "{\"velocity_threshold\": 5.0, \"pendulum_periodicity_threshold\": 0.6}.")
+    p.add_argument("--chart-budget", type=int, default=None,
+                   help="charts mode only (P5): total chart plot budget. aggregate 图（组间对比）"
+                        "全画不受限；per_subject 图（个体）用剩余预算按代表性子集取。"
+                        "省略 = 不限制（全画）。被截断的 per_subject 图写入 charts_budget_remaining。")
     p.add_argument("--output", required=True)
     return p
 
@@ -250,6 +254,21 @@ def main(argv: list[str] | None = None) -> int:
             return _emit_error(e.code, str(e), e.details)
         except Exception as e:
             return _emit_error("schema_violation", f"Unexpected resolver failure: {e}", {})
+
+        # P5: 按类型定优先级选图。aggregate 全画优先；per_subject 用剩余预算取代表性子集。
+        # 不传 --chart-budget 时全画（select 返回原样，remaining=[]）。
+        if args.chart_budget is not None:
+            selected, remaining = select_charts_by_priority(pc.charts, budget=args.chart_budget)
+            pc.charts = selected
+            pc.charts_budget_remaining = remaining
+            if remaining:
+                # 红线一：预算挤掉产出要留指纹。降级原因写进 notes。
+                remaining_ids = sorted({c.id for c in remaining})
+                pc.notes.append(
+                    f"Chart budget ({args.chart_budget}) cut {len(remaining)} per_subject "
+                    f"chart(s) — aggregate plots prioritized; cut chart types: "
+                    f"{', '.join(remaining_ids)}. User may re-request more individual plots."
+                )
 
         plan_dict = plan_charts_to_dict(pc)
         out_path.write_text(

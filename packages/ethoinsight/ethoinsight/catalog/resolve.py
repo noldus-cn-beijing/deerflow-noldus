@@ -1057,6 +1057,7 @@ def _chart_to_plan(
                 display_name_zh=ch.display_name_zh,
                 confidence=ch.confidence,
                 args=args,
+                output_mode=ch.output_mode,
             )
         )
         return plans
@@ -1081,6 +1082,7 @@ def _chart_to_plan(
                 display_name_zh=ch.display_name_zh,
                 confidence=ch.confidence,
                 args=args,
+                output_mode=ch.output_mode,
             )
         )
     return plans
@@ -1410,6 +1412,51 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
     }
 
 
+def select_charts_by_priority(
+    charts: list[PlanChart],
+    budget: int | None = None,
+) -> tuple[list[PlanChart], list[PlanChart]]:
+    """按图类型定优先级选图（spec 2026-06-17-chart-budget-by-type）。
+
+    旧预算是"数量上限"，按数组顺序取前 N —— per_subject 个体图（trajectory/heatmap，
+    N×类 张）会先吃光名额，挤掉组间对比图（box/bar/rose，aggregate，最有分析价值）。
+
+    新规则（确定性，不靠 LLM 判断"哪张更重要"）：
+
+    1. **aggregate 图全留**（box/bar/rose/zone_distribution 等组间对比，通常 ≤ 5 张，
+       是分析核心），不受预算限制。
+    2. **per_subject 图受预算限制**：aggregate 画完后用剩余预算画**代表性子集**——
+       subject_index=0 的全部 per_subject 图优先（每组首个 subject 各一张），再
+       subject_index=1，以此类推轮转，直到预算耗尽。
+    3. budget=None 表示不限制（全画），remaining=[]。
+
+    返回 ``(selected, remaining)``：
+    - ``selected`` 内部顺序：aggregate 在前（chart-maker 按数组顺序执行时 aggregate 先跑），
+      per_subject 代表子集在后。
+    - ``remaining`` 是被预算截断的 per_subject 图（降级指纹，红线一：挤掉要留痕）。
+    - 稳定性：相同输入恒定相同输出（按 ``(id, subject_index, script)`` 排序，无随机性）。
+    """
+    if budget is None or budget <= 0:
+        return list(charts), []
+
+    aggregate = [c for c in charts if c.output_mode == "aggregate"]
+    per_subject = [c for c in charts if c.output_mode != "aggregate"]
+
+    # aggregate 全画优先（核心：组间对比不受预算挤占）。
+    selected: list[PlanChart] = list(aggregate)
+
+    # per_subject 预算 = 总预算 - aggregate 占用（floor 0，aggregate 超预算时全画 aggregate）。
+    per_subject_budget = max(0, budget - len(aggregate))
+
+    # 稳定排序：subject_index 升序轮转 → 每组首个 subject 各一张（spec「代表性子集」）。
+    ordered = sorted(per_subject, key=lambda c: (c.subject_index, c.id, c.script))
+    selected_per_subject = ordered[:per_subject_budget]
+    remaining_per_subject = ordered[per_subject_budget:]
+
+    selected.extend(selected_per_subject)
+    return selected, remaining_per_subject
+
+
 def plan_charts_to_dict(pc: PlanCharts) -> dict:
     """PlanCharts dataclass → JSON-serializable dict."""
     return {
@@ -1427,6 +1474,8 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
                 "id": c.id, "script": c.script, "input": c.input, "output": c.output,
                 "subject_index": c.subject_index,
                 "display_name_zh": c.display_name_zh,
+                "confidence": c.confidence,
+                "output_mode": c.output_mode,
                 "args": c.args,
             }
             for c in pc.charts
@@ -1436,9 +1485,22 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
                 "id": c.id, "script": c.script, "input": c.input, "output": c.output,
                 "subject_index": c.subject_index,
                 "display_name_zh": c.display_name_zh,
+                "confidence": c.confidence,
+                "output_mode": c.output_mode,
                 "args": c.args,
             }
             for c in pc.charts_fallback_available
+        ],
+        "charts_budget_remaining": [
+            {
+                "id": c.id, "script": c.script, "input": c.input, "output": c.output,
+                "subject_index": c.subject_index,
+                "display_name_zh": c.display_name_zh,
+                "confidence": c.confidence,
+                "output_mode": c.output_mode,
+                "args": c.args,
+            }
+            for c in pc.charts_budget_remaining
         ],
         "skipped": [
             {"id": s.id, "reason": s.reason, "detail": s.detail} for s in pc.skipped
