@@ -466,6 +466,50 @@ def set_experiment_paradigm_tool(
             response_data["resolved_facts_saved"] = len(resolved_facts)
         return json.dumps(response_data, ensure_ascii=False)
 
+    # --- Standalone column_semantics path (Sprint 1: no Gate 1/2 params) ---
+    # Symmetric with the resolved_facts standalone path: read existing context,
+    # merge column_semantics + derive column_aliases, write back preserving all
+    # other fields. Allows the agent to align columns SEPARATELY after Gate 1,
+    # instead of being forced through the full-fields Gate 1 path (which would
+    # clobber resolved/groups — see Bug 3 in spec 2026-06-17).
+    #
+    # ⚠️ Placement: MUST come BEFORE the standalone resolved_facts path so that a
+    # single call carrying BOTH column_semantics + resolved_facts is handled here.
+    # Otherwise the resolved_facts path below — gated only on ``if resolved_facts:``
+    # — would intercept it first and silently drop column_semantics. The
+    # resolved_facts path still handles the column_semantics-absent case unchanged.
+    if column_semantics is not None and isinstance(column_semantics, dict):
+        if existing is None:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "No experiment-context.json found. Call set_experiment_paradigm with paradigm fields first.",
+                },
+                ensure_ascii=False,
+            )
+        data = dict(existing)  # inherit all existing fields (Bug 3 defensive: don't clobber)
+        cs = _normalize_column_semantics(column_semantics)  # reuse existing pure fn
+        data["column_semantics"] = cs
+        aliases = _derive_column_aliases(cs)  # reuse existing pure fn
+        if aliases:
+            data["column_aliases"] = aliases
+
+        # resolved_facts may ride the same call (same combination semantics as the
+        # other channels: Gate 2 / resolved_facts standalone all accept it).
+        if resolved_facts:
+            _apply_resolved_facts(data, resolved_facts)
+
+        path = Path(actual_workspace) / "experiment-context.json"
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        if resolved_facts:
+            _persist_resolved_facts_to_memory(resolved_facts, _thread_id_from_runtime(runtime))
+
+        resp: dict = {"status": "ok", "path": str(path), "column_semantics_saved": True}
+        if resolved_facts:
+            resp["resolved_facts_saved"] = len(resolved_facts)
+        return json.dumps(resp, ensure_ascii=False)
+
     # --- Standalone resolved_facts path (Spec B: no Gate 1/2 params) ---
     if resolved_facts:
         if existing is None:
@@ -530,7 +574,16 @@ def set_experiment_paradigm_tool(
     catalog_default = {"paradigm": paradigm, "ev19_template": ev19_template, "subject": subject}
     config_id = compute_analysis_config_id(catalog_default, overrides)
 
+    # Inherit the existing context first (Bug 3, spec 2026-06-17): a Gate 1 re-run
+    # (user re-confirming the same paradigm/template) must NOT silently drop already-
+    # aligned column_semantics/column_aliases or already-resolved groups. We start from
+    # ``existing`` and let this call's Gate 1 fields override; this mirrors the line-566
+    # ``prior_gate_completed`` preservation but extends it to every field.
+    # NB: column_semantics (591) / resolved_facts (599) handlers below run AFTER this dict
+    # literal, so an explicit this-call value still wins over the inherited one.
+    base = dict(existing) if isinstance(existing, dict) else {}
     data = {
+        **base,
         "paradigm": paradigm,
         "paradigm_cn": paradigm_cn,
         "category": category,
