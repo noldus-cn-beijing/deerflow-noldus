@@ -694,9 +694,13 @@ loop_detection:
   # for high-frequency tools like bash in batch workflows (e.g. RNA-seq pipelines)
   # without weakening protection on every other tool.
   tool_freq_overrides:
+    # write_todos is a bookkeeping tool — a long E2E legitimately updates todos
+    # once per pipeline stage (code → data → chart → report). A high call count
+    # is normal bookkeeping, not a loop, so it gets a lenient threshold. The
+    # identical-call hash detection (the real loop signal) still applies.
     write_todos:
-      warn: 2
-      hard_limit: 4
+      warn: 15
+      hard_limit: 30
     inspect_uploaded_file:
       warn: 50
       hard_limit: 100

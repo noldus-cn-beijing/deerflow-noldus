@@ -210,7 +210,7 @@ class TestInspectUploadedFileOverrideBehavior:
                     "args": {"file_name": f"file_{i}.xlsx"},
                 }
             ]
-            warning, hard_stop = mw._track_and_check(
+            warning, hard_stop, _offending = mw._track_and_check(
                 _make_state_from_ai(tool_calls=call),
                 runtime,
             )
@@ -239,7 +239,7 @@ class TestInspectUploadedFileOverrideBehavior:
                     "args": {"file_name": f"file_{i}.xlsx"},
                 }
             ]
-            warning, hard_stop = mw._track_and_check(
+            warning, hard_stop, _offending = mw._track_and_check(
                 _make_state_from_ai(tool_calls=call),
                 runtime,
             )
@@ -266,7 +266,7 @@ class TestInspectUploadedFileOverrideBehavior:
                     "args": {"file_name": f"file_{i}.xlsx"},
                 }
             ]
-            warning, hard_stop = mw._track_and_check(
+            warning, hard_stop, _offending = mw._track_and_check(
                 _make_state_from_ai(tool_calls=call),
                 runtime,
             )
@@ -280,7 +280,7 @@ class TestInspectUploadedFileOverrideBehavior:
                 "args": {"file_name": "file_5.xlsx"},
             }
         ]
-        warning, hard_stop = mw._track_and_check(
+        warning, hard_stop, _offending = mw._track_and_check(
             _make_state_from_ai(tool_calls=call),
             runtime,
         )
@@ -317,4 +317,30 @@ class TestConfigOverrideParsing:
         # from_config must also correctly translate the override
         mw = LoopDetectionMiddleware.from_config(cfg)
         assert mw._tool_freq_overrides["inspect_uploaded_file"] == (50, 100)
-        assert mw._tool_freq_overrides["write_todos"] == (2, 4)
+        # write_todos is a bookkeeping tool with a semantic *floor* (warn=15,
+        # hard_limit=30). A caller that tries to tighten it to (2, 4) — the very
+        # config that caused the 2026-06-17 dogfood failure — is floored up to
+        # (15, 30) so the E2E cannot be killed again (red-line-4 正模式 1).
+        assert mw._tool_freq_overrides["write_todos"] == (15, 30)
+
+    def test_write_todos_floor_not_lowered_below_semantic_minimum(self):
+        """Even an explicit low write_todos override is raised to the floor."""
+        cfg = LoopDetectionConfig(
+            tool_freq_hard_limit=50,
+            tool_freq_warn=30,
+            tool_freq_overrides={"write_todos": ToolFreqOverride(warn=1, hard_limit=2)},
+        )
+        floored = cfg.tool_freq_overrides["write_todos"]
+        assert floored.warn == 15
+        assert floored.hard_limit == 30
+
+    def test_write_todos_caller_can_raise_above_floor(self):
+        """A caller that wants thresholds *higher* than the floor keeps them."""
+        cfg = LoopDetectionConfig(
+            tool_freq_hard_limit=50,
+            tool_freq_warn=30,
+            tool_freq_overrides={"write_todos": ToolFreqOverride(warn=40, hard_limit=80)},
+        )
+        kept = cfg.tool_freq_overrides["write_todos"]
+        assert kept.warn == 40
+        assert kept.hard_limit == 80
