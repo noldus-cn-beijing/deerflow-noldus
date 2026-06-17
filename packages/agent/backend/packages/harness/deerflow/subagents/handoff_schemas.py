@@ -543,6 +543,12 @@ class ChartMakerHandoff(BaseModel):
         description="Virtual paths under /mnt/user-data/outputs/.",
     )
     failed_charts: list[FailedChart] = Field(default_factory=list)
+    remaining_charts: list[FailedChart] = Field(
+        default_factory=list,
+        description="P5: 预算截断未画的 per_subject 图（aggregate 全画优先规则的降级指纹）。"
+        "每条 {chart_id, reason}。来自 plan_charts.json.charts_budget_remaining。"
+        "红线一：预算挤掉产出要留痕——非空 = 用户可再要更多个体图。",
+    )
     summary: str = Field(description="One-liner describing generated charts.")
     gate_signals: GateSignals | None = None
     analysis_config_id: str = Field(

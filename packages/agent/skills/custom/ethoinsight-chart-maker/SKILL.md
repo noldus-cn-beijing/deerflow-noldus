@@ -23,15 +23,16 @@ author: noldus-insight
    - **uploaded_files（必填）**: 原样取自 `plan_metrics.json.inputs.raw_files`（数组原样传入，**不要**从 handoff_code_executor.json 抄，**不要**用 `Path(...).resolve()` / `realpath`）。
    - **paradigm（必填）**: 原样取自 `handoff_code_executor.json.paradigm`。
    - **user_intent / total_subjects / n_per_group / n_groups（可选）**: 从 handoff + 派遣 prompt 原样传。
+   - **chart_budget（P5，可选）**: 绘图预算总数（如 6-8）。aggregate 图（box/bar 组间对比）全画不受限；per_subject 图（trajectory/heatmap 个体图）用剩余预算按代表性子集取（每组首个 subject 各一张）。被截断的进 `charts_budget_remaining[]`。用户明确要"所有个体图"时省略（全画）。
    - **column_aliases / groups 不用你传**：工具内部自读 `experiment-context.json`（Gate 1 列语义对齐投影）+ `groups.json`（prep_metric_plan 落盘的分组）。这是取代「bash 手拼 `--column-aliases-file` / `--groups-json`」的确定性入口——session 级横切状态由工具自取，你无从遗漏（红线二正模式 1）。
-   - 工具返回 `plan_summary`（chart_count / fallback_count / skipped_count / chart_ids / column_aliases_applied / groups_applied），据此进入步骤 3 的决策树。
-3. read `plan_charts.json` → charts[] + charts_fallback_available[]
+   - 工具返回 `plan_summary`（chart_count / fallback_count / skipped_count / chart_ids / column_aliases_applied / groups_applied / budget_remaining_count / budget_remaining_ids），据此进入步骤 3 的决策树。**charts[] 已按 output_mode 预算优先级筛过（aggregate 在前），按数组顺序全部执行即可。**
+3. read `plan_charts.json` → charts[] + charts_fallback_available[] + charts_budget_remaining[]
 4. 决策(见 references/fallback-decision-tree.md)
-5. for each entry in plan_charts.json.charts: bash 跑脚本
+5. for each entry in plan_charts.json.charts（全部执行，已预算筛过）: bash 跑脚本
    - 用 `python -m <entry.script> <entry.args 拼接>` 形式调用
    - **entry.args 永远是 `--inputs <inputs.json>` + 可能 `--groups <groups.json>` + `--output <png>` + 可能 `--paradigm`** —— resolve 已物化对应 JSON 文件到 workspace,**不要自己拼 `--input` 单文件形式**(脚本不再接受单文件 `--input` 之外的 fallback)
    - **不要自己拼 paradigm 前缀或追加 --paradigm 参数**——entry.script 和 entry.args 已经是 resolve 阶段按 catalog yaml `accepts_paradigm` 字段拼好的
-6. write `handoff_chart_maker.json`(**任何退出路径都必须先写**,见下面"失败硬规范")
+6. write `handoff_chart_maker.json`(**任何退出路径都必须先写**,见下面"失败硬规范")。若 `charts_budget_remaining[]` 非空 → 透传进 handoff 的 `remaining_charts[]`（降级指纹，红线一）。
 7. `present_files(<生成的 png 列表>)`
 8. 输出 `OK: <N> charts generated\n[gate_signals]\n...`
 

@@ -61,6 +61,7 @@ def prep_chart_plan_tool(
     total_subjects: int | None = None,
     n_per_group: int | None = None,
     n_groups: int | None = None,
+    chart_budget: int | None = None,
 ) -> dict:
     """一步生成 plan_charts.json，无需 bash 拼 catalog.resolve CLI。
 
@@ -81,6 +82,10 @@ def prep_chart_plan_tool(
       total_subjects: subject 总数（可选）。原样取自 handoff_code_executor.json。
       n_per_group: 每组 subject 数（可选）。原样取自 handoff_code_executor.json。
       n_groups: 组数（可选）。原样取自 handoff_code_executor.json。
+      chart_budget: chart 绘图预算总数（可选，P5 / spec 2026-06-17）。aggregate 图（组间对比）
+                    全画不受限；per_subject 图（个体）用剩余预算按代表性子集取（每组首个
+                    subject 各一张）。被截断的 per_subject 写进 plan_charts.json
+                    charts_budget_remaining[]。省略/None = 不限制（全画）。
 
     Returns:
       status="ok" 时:
@@ -122,6 +127,7 @@ def prep_chart_plan_tool(
         ResolveError,
         plan_charts_to_dict,
         resolve_charts,
+        select_charts_by_priority,
     )
     from ethoinsight.parse._core import detect_ethovision, parse_header
 
@@ -228,6 +234,21 @@ def prep_chart_plan_tool(
             f"Unexpected error during catalog resolve: {e}",
         )
 
+    # P5 (spec 2026-06-17): 按图类型定优先级选图。aggregate 全画优先；
+    # per_subject 用剩余预算取代表性子集。chart_budget=None 时全画。
+    if chart_budget is not None:
+        selected, remaining = select_charts_by_priority(pc.charts, budget=chart_budget)
+        pc.charts = selected
+        pc.charts_budget_remaining = remaining
+        if remaining:
+            # 红线一：预算挤掉产出要留指纹。降级原因写进 notes。
+            remaining_ids = sorted({c.id for c in remaining})
+            pc.notes.append(
+                f"Chart budget ({chart_budget}) cut {len(remaining)} per_subject "
+                f"chart(s) — aggregate plots prioritized; cut chart types: "
+                f"{', '.join(remaining_ids)}. User may re-request more individual plots."
+            )
+
     # Step 5: serialize plan to workspace/plan_charts.json
     plan_dict = plan_charts_to_dict(pc)
     plan_path = Path(real_workspace_path) / "plan_charts.json"
@@ -240,13 +261,16 @@ def prep_chart_plan_tool(
         )
 
     chart_ids = [c.get("id", "") for c in plan_dict.get("charts", [])]
+    budget_remaining = plan_dict.get("charts_budget_remaining", [])
+    budget_remaining_ids = sorted({c.get("id", "") for c in budget_remaining})
     logger.info(
         "prep_chart_plan success: paradigm=%s, charts=%d, fallback=%d, skipped=%d, "
-        "column_aliases_applied=%s, groups_applied=%s, plan=%s",
+        "budget_remaining=%d, column_aliases_applied=%s, groups_applied=%s, plan=%s",
         paradigm,
         len(chart_ids),
         len(plan_dict.get("charts_fallback_available", [])),
         len(plan_dict.get("skipped", [])),
+        len(budget_remaining),
         bool(column_aliases),
         bool(groups_dict),
         plan_path,
@@ -263,6 +287,9 @@ def prep_chart_plan_tool(
             "chart_ids": chart_ids,
             "column_aliases_applied": bool(column_aliases),
             "groups_applied": bool(groups_dict),
+            # P5: 预算截断降级指纹。非空时 chart-maker 透传进 handoff.remaining_charts[]。
+            "budget_remaining_count": len(budget_remaining),
+            "budget_remaining_ids": budget_remaining_ids,
         },
     }
 

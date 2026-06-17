@@ -296,6 +296,80 @@ class TestPrepChartPlanGroupsFromContext:
         assert set(materialised["treatment"]) == set(raw_virtual[3:])
 
 
+class TestPrepChartPlanBudget:
+    """P5 (spec 2026-06-17-chart-budget-by-type): chart_budget 按图类型定优先级。
+
+    chart_budget=N → aggregate 图（box_open_arm）全画不受限，per_subject 图用剩余预算
+    取代表性子集；被截断的 per_subject 进 charts_budget_remaining + plan_summary 的
+    budget_remaining_*。守红线一（降级留指纹）。
+    """
+
+    @staticmethod
+    def _six_subject_epm(tmp_path):
+        """6-subject EPM（n_per_group=3 → box_open_arm aggregate 进入）+ groups.json。"""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        raw_virtual, groups_map = [], {}
+        for i in range(1, 7):
+            _write_ethovision_file(str(uploads / f"arena{i}.txt"), STANDARD_EPM_COLUMNS)
+            vp = f"/mnt/user-data/uploads/arena{i}.txt"
+            raw_virtual.append(vp)
+            groups_map[vp] = "control" if i <= 3 else "treatment"
+        _write_groups_json(workspace, groups_map)
+        runtime = _runtime_with_paths(workspace, uploads)
+        return workspace, raw_virtual, runtime
+
+    def test_budget_prioritizes_aggregate_and_truncates_per_subject(self, tmp_path):
+        """chart_budget=4 → box_open_arm（aggregate）入选，per_subject 被截断，
+        budget_remaining_count > 0 且 charts_budget_remaining 落盘。"""
+        workspace, raw_virtual, runtime = self._six_subject_epm(tmp_path)
+        result = prep_chart_plan_tool.invoke({
+            "uploaded_files": raw_virtual,
+            "paradigm": "epm",
+            "runtime": runtime,
+            "total_subjects": 6,
+            "n_groups": 2,
+            "n_per_group": 3,
+            "chart_budget": 4,
+        })
+        assert result["status"] == "ok"
+        summary = result["plan_summary"]
+        plan_data = json.loads((workspace / "plan_charts.json").read_text())
+
+        chart_ids = [c["id"] for c in plan_data["charts"]]
+        assert "box_open_arm" in chart_ids  # aggregate 全画优先
+        assert len(plan_data["charts"]) == 4  # 预算 4 全用满
+
+        # 被截断的 per_subject 落盘 + summary 暴露
+        remaining = plan_data["charts_budget_remaining"]
+        assert len(remaining) > 0
+        assert all(c["output_mode"] != "aggregate" for c in remaining)
+        assert summary["budget_remaining_count"] == len(remaining)
+        assert summary["budget_remaining_ids"]  # 非空 id 列表
+
+        # notes 留降级指纹（红线一）
+        assert any("Chart budget" in n for n in plan_data["notes"])
+
+    def test_no_budget_draws_all(self, tmp_path):
+        """省略 chart_budget → 全画，budget_remaining_count=0，charts_budget_remaining=[]。"""
+        workspace, raw_virtual, runtime = self._six_subject_epm(tmp_path)
+        result = prep_chart_plan_tool.invoke({
+            "uploaded_files": raw_virtual,
+            "paradigm": "epm",
+            "runtime": runtime,
+            "total_subjects": 6,
+            "n_groups": 2,
+            "n_per_group": 3,
+        })
+        assert result["status"] == "ok"
+        summary = result["plan_summary"]
+        assert summary["budget_remaining_count"] == 0
+        plan_data = json.loads((workspace / "plan_charts.json").read_text())
+        assert plan_data["charts_budget_remaining"] == []
+
+
 class TestPrepChartPlanErrors:
     def test_workspace_missing(self):
         runtime = ToolRuntime(

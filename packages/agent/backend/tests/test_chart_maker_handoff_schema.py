@@ -84,3 +84,47 @@ class TestFailedChart:
     def test_missing_chart_id(self):
         with pytest.raises(ValidationError):
             FailedChart(reason="no data")
+
+
+class TestRemainingCharts:
+    """P5 (spec 2026-06-17-chart-budget-by-type): remaining_charts 降级指纹字段。
+
+    chart 预算按类型而非数量后，aggregate 全画、per_subject 代表性子集入 charts_budget_remaining；
+    chart-maker 把它透传进 handoff 的 remaining_charts[]，让 lead/用户知道还能画更多个体图。
+    """
+
+    def test_default_empty(self):
+        """无降级时 remaining_charts=[]（向后兼容旧 handoff）。"""
+        h = ChartMakerHandoff(status="failed", paradigm="fst", summary="ok", analysis_config_id="x")
+        assert h.remaining_charts == []
+
+    def test_populated_from_budget_truncation(self):
+        """预算截断 → remaining_charts 非空，复用 FailedChart 结构。"""
+        h = ChartMakerHandoff(
+            status="partial",
+            paradigm="epm",
+            summary="aggregate 全画 + 代表性 per_subject",
+            chart_files=["/mnt/user-data/outputs/plot_box_open_arm.png"],
+            remaining_charts=[
+                FailedChart(chart_id="trajectory", reason="chart_budget_truncated"),
+                FailedChart(chart_id="heatmap", reason="chart_budget_truncated"),
+            ],
+            analysis_config_id="x",
+        )
+        assert len(h.remaining_charts) == 2
+        assert h.remaining_charts[0].chart_id == "trajectory"
+        assert "truncated" in h.remaining_charts[1].reason
+
+    def test_remaining_does_not_block_completed_validator(self):
+        """completed + chart_files 非空仍合法；remaining_charts 与 completed 不冲突
+        （completed 校验只看 chart_files 非空，降级指纹独立）。"""
+        h = ChartMakerHandoff(
+            status="completed",
+            paradigm="epm",
+            summary="aggregate 优先画完",
+            chart_files=["/mnt/user-data/outputs/plot_box_open_arm.png"],
+            remaining_charts=[FailedChart(chart_id="trajectory", reason="chart_budget_truncated")],
+            analysis_config_id="x",
+        )
+        assert h.status == "completed"
+        assert len(h.remaining_charts) == 1

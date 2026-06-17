@@ -255,6 +255,11 @@ class PlanChart:
     display_name_zh: str = ""           # 1.1: 中文图名，透传自 ChartEntry
     confidence: str = "optional"        # 透传自 ChartEntry.confidence
     args: list[str] = field(default_factory=list)  # 1.1: resolve 阶段填充的 CLI 参数数组
+    output_mode: str = "per_subject"    # P5: 透传自 ChartEntry.output_mode
+                                         # "aggregate" = 组间对比图（box/bar/rose，1 张/全文件）
+                                         # "per_subject" = 个体图（trajectory/heatmap，N 张/每文件）
+                                         # chart-maker 据此按类型定优先级（aggregate 全画优先于 per_subject 代表子集），
+                                         # 而非按数组顺序取前 N（spec 2026-06-17-chart-budget-by-type）
 
 
 @dataclass
@@ -308,4 +313,5 @@ class PlanCharts:
     skipped: list[PlanSkipped]
     user_intent: str | None
     notes: list[str]
+    charts_budget_remaining: list[PlanChart] = field(default_factory=list)  # P5: 预算截断的 per_subject 图（降级指纹）
     schema_version: str = "1.1"
