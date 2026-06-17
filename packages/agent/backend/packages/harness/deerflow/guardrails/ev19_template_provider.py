@@ -63,10 +63,19 @@ class Ev19TemplateGuardrailProvider:
         # ── Lock check: set_experiment_paradigm cannot change an already-set ev19_template ──
         if request.tool_name == "set_experiment_paradigm":
             args = request.tool_input or {}
-            # Gate 2 quality acknowledgement mode is orthogonal to template setting —
-            # it neither sets nor changes ev19_template / paradigm fields. Pass through
-            # so the existing context is preserved and only gate_completed gets updated.
-            if args.get("acknowledge_quality") and not (args.get("ev19_template") or args.get("paradigm")):
+            # Bug 1 (spec 2026-06-17): the lock's job is to prevent MID-ANALYSIS
+            # template switching. The correct trigger is "is THIS call trying to set
+            # or change ev19_template / paradigm?" — and that signal is simply whether
+            # either field is present in the call. Calls that only carry orthogonal
+            # fields (acknowledge_quality / column_semantics / resolved_facts /
+            # parameter_overrides) neither set nor change the template, so they pass
+            # straight through to the tool body's standalone channels. Previously this
+            # pass-through was hard-wired to acknowledge_quality only, so every later
+            # orthogonal usage got mis-locked as template_already_set.
+            # Note: ambiguous/already_set checks below stay gated on `workspace is not
+            # None` and only act when a template field was actually passed — so this
+            # short-circuit cannot bypass them.
+            if not (args.get("ev19_template") or args.get("paradigm")):
                 return GuardrailDecision(allow=True, reasons=[GuardrailReason(code="oap.allowed")])
 
             workspace = self._resolve_workspace()
