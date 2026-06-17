@@ -97,4 +97,3 @@ class LoopDetectionConfig(BaseModel):
     def _apply_semantic_overrides(self) -> None:
         for name, (warn, hard) in self._SEMANTIC_OVERRIDE_FLOORS.items():
             self._apply_semantic_override(name, warn, hard)
-        return self
