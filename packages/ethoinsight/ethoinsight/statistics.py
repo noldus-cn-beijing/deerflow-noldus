@@ -6,6 +6,8 @@ high-level dispatcher that works with the output of ``metrics.compute_paradigm_m
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from scipy import stats as sp_stats
 
@@ -363,6 +365,13 @@ def compute_omega_squared(
 _OUTLIER_SD_THRESHOLD = 1.5
 _OUTLIER_MEDIAN_RATIO_THRESHOLD = 2.0
 
+# deviation_median_ratio 出口哨兵值：value/median 一方为 0 一方非 0 = 极端偏离（必然
+# 离群），语义上 ratio = +inf。但 float('inf') 经 json.dump 默认写出非法 JSON `Infinity`
+# （前端 JSON.parse 崩），故出口字段用这个大有限数代替真 inf：判据 `ratio >= 阈值`
+# 仍必然成立，且严格 JSON 合法、跨语言可读（spec 2026-06-17-outlier-diagnostics-
+# zerodivision §5）。判据逻辑内部仍按真 inf 比较，仅在产出 dict 时哨兵化。
+_OUTLIER_RATIO_SENTINEL_INF = 1e9
+
 
 def _nonnan_indices(values: list[float]) -> list[int]:
     """返回非 NaN 值在原列表里的下标，保持与去 NaN 后数组的顺序对齐。"""
@@ -418,12 +427,16 @@ def compute_outlier_diagnostics(
         grp_subjects = names.get(grp_name) or [f"subject #{i}" for i in range(len(vals))]
         for i, (raw_idx, value) in enumerate(zip(nonnan_idx, arr.tolist())):
             deviation_sd = abs(value - grp_mean) / grp_std if grp_std > 0 else 0.0
-            if grp_median != 0:
-                ratio = max(value / grp_median, grp_median / value)
-            elif value != 0:
-                ratio = float("inf")
+            # median-ratio：value 偏离组中位数的倍数。穷举 value/median 的 0 组合，
+            # 任一为 0 而另一非 0 = 极端偏离 = inf（必然离群）；都为 0 = 不偏离 = 1.0。
+            # 修复 value==0、median≠0 时 `grp_median / value` 的 ZeroDivisionError（spec
+            # 2026-06-17-outlier-diagnostics-zerodivision；触发值 Trial 19 ratio=0.0）。
+            if value == 0 and grp_median == 0:
+                ratio = 1.0  # 都 0，不偏离
+            elif value == 0 or grp_median == 0:
+                ratio = float("inf")  # 一方 0 一方非 0 = 极端偏离
             else:
-                ratio = 1.0
+                ratio = max(value / grp_median, grp_median / value)  # 双向，覆盖两侧
             is_outlier = deviation_sd >= sd_threshold or ratio >= median_ratio_threshold
             if not is_outlier:
                 continue
@@ -446,7 +459,9 @@ def compute_outlier_diagnostics(
                     "subject": subject,
                     "value": value,
                     "deviation_sd": float(deviation_sd),
-                    "deviation_median_ratio": float(ratio),
+                    # 判据内部用真 inf，出口哨兵化为大有限数（见 _OUTLIER_RATIO_SENTINEL_INF）
+                    # 保证 statistics.json 严格 JSON 合法、前端 JSON.parse 不崩。
+                    "deviation_median_ratio": _OUTLIER_RATIO_SENTINEL_INF if math.isinf(ratio) else float(ratio),
                     "group_mean": grp_mean,
                     "group_std": grp_std,
                     "group_median": grp_median,

@@ -11,6 +11,9 @@ statistics.json，data-analyst 只读不算。
 
 from __future__ import annotations
 
+import json
+import math
+
 import numpy as np
 
 from ethoinsight import statistics
@@ -183,3 +186,121 @@ class TestCompareGroupsAttachesOutlierDiagnostics:
         diags = result["outlier_diagnostics"]
         subjects = {d["subject"] for d in diags}
         assert "subject #2" in subjects  # control 的 1.0
+
+
+# ---------------------------------------------------------------------------
+# ZeroDivision 回归（spec 2026-06-17-outlier-diagnostics-zerodivision）
+#
+# PR#144 的 median-ratio 判据漏了 `value==0 且 grp_median!=0` 这一支：
+# `grp_median / value` = `grp_median / 0` → ZeroDivisionError → statistics runner
+# 失败 → handoff statistics={} → data-analyst 走描述性 partial，用户拿不到组间检验。
+#
+# 触发值来自真实 dogfood 数据 `/home/wangqiuyang/DemoData/real_data/
+# Raw data-EPM-Xuhui-28`：Trial 19 的 `open_arm_time_ratio == 0.0`（动物完全不进
+# 开放臂），落在 treatment 组，组中位数 ≈ 0.042（非 0）→ 命中未守卫路径。
+# 红线三：测试必须含真实数据边界值（0），不得用理想化合成数据（PR#144 的
+# `test_median_ratio_rule` 用 `[1,...,100]` 没有零值，故假绿）。
+# ---------------------------------------------------------------------------
+
+# 真实 dogfood treatment 组 open_arm_time_ratio（含 Trial 19 = 0.0），median ≠ 0。
+# 取自 Raw data-EPM-Xuhui-28，compute_open_arm_time_ratio(open_arm_zones=['open']) 实算。
+_REAL_TREATMENT_WITH_ZERO = [
+    0.08484005563282336,
+    0.09039853115887245,
+    0.044896640826873384,
+    0.1981020166073547,
+    0.1503946821769839,
+    0.10225210801579677,
+    0.0014043426596089446,
+    0.019150080688542227,
+    0.0418808911739503,
+    0.027003578787550157,
+    0.0,  # ← Trial 19：崩溃触发值
+    0.025214650581458536,
+    0.006048169348741765,
+    0.004772510340439071,
+    0.02073415846821115,
+    0.05497240558381128,
+    0.004666454555095981,
+    0.03576058772687986,
+    0.0528529824182936,
+    0.05394594594594595,
+]
+
+
+class TestZeroDivisionRegression:
+    """value/median 的 0 组合穷举：修复前 ZeroDivisionError，修复后零值离群→哨兵 inf。"""
+
+    def test_zero_value_nonzero_median_no_crash(self):
+        """真实 dogfood treatment（含 0.0、median≠0）→ 不抛，0 值 subject 被标离群。
+
+        修复前此测试 = ZeroDivisionError（红）；修复后 = 0 值离群、ratio 哨兵化。
+        """
+        diags = compute_outlier_diagnostics({"treatment": _REAL_TREATMENT_WITH_ZERO})
+        # 0.0 必被标为离群（median≠0 时 0 值是极端偏离）
+        by_value = {d["value"]: d for d in diags}
+        assert 0.0 in by_value, "value==0 且 median≠0 必须被标离群"
+        d = by_value[0.0]
+        # 出口字段哨兵化：有限大数（JSON 合法），语义=极端偏离（必然离群）
+        assert math.isfinite(d["deviation_median_ratio"])
+        assert d["deviation_median_ratio"] >= 2.0
+        # 0 值的组中位数确实非 0（坐实命中"一方 0 一方非 0"分支）
+        assert d["group_median"] != 0.0
+
+    def test_zero_value_zero_median_ratio_one(self):
+        """多数为 0（median=0）+ 个别非 0：value==0 → ratio=1.0（不离群），value≠0 → 离群。
+
+        都为 0 = 不偏离（ratio=1.0）；一方 0 一方非 0 = 极端偏离。穷举四象限的另一支。
+        """
+        group_values = {"control": [0.0, 0.0, 0.0, 0.0, 8.0]}
+        diags = compute_outlier_diagnostics(group_values)
+        by_value = {d["value"]: d for d in diags}
+        # 8.0 离群（median=0 时非 0 值是极端偏离）
+        assert 8.0 in by_value
+        assert math.isfinite(by_value[8.0]["deviation_median_ratio"])
+        assert by_value[8.0]["deviation_median_ratio"] >= 2.0
+
+    def test_all_zero_group_no_outlier(self):
+        """整组全 0 → median=0、全 value=0 → 无离群、不抛（四象限：都 0=不偏离）。"""
+        diags = compute_outlier_diagnostics({"treatment": [0.0, 0.0, 0.0, 0.0]})
+        assert diags == []
+
+    def test_median_ratio_field_json_serializable(self):
+        """deviation_median_ratio 出口必须是严格 JSON 合法值（spec §5 未定细节：哨兵化）。
+
+        float('inf') 经 json.dump 默认写出 `Infinity`（非法 JSON，前端 JSON.parse 崩）。
+        出口字段哨兵化为大有限数，保证 statistics.json 严格 JSON、跨语言可读。
+        """
+        diags = compute_outlier_diagnostics({"treatment": _REAL_TREATMENT_WITH_ZERO})
+        by_value = {d["value"]: d for d in diags}
+        d = by_value[0.0]
+        # allow_nan=False 下必须可序列化（严格 JSON）
+        serialized = json.dumps({"deviation_median_ratio": d["deviation_median_ratio"]}, allow_nan=False)
+        roundtrip = json.loads(serialized)
+        assert roundtrip["deviation_median_ratio"] == d["deviation_median_ratio"]
+
+
+class TestCompareGroupsWithZeroValueSubject:
+    """端到端：含 0 值的 group_summary 调 compare_groups → 不抛、outlier_diagnostics 完整。"""
+
+    def test_compare_groups_with_zero_value_subject(self):
+        """statistics 段不再因零值崩：返回完整 comparisons + outlier_diagnostics。
+
+        坐实 spec §0 的链路断点被修复——ZeroDivision 不再吞掉整个推断统计层。
+        """
+        metrics_result = _metrics_result_with(
+            {
+                "control": [0.099, 0.084, 0.258, 0.133, 0.138, 0.059, 0.09],
+                "treatment": _REAL_TREATMENT_WITH_ZERO,
+            },
+            metric="open_arm_time_ratio",
+        )
+        result = statistics.compare_groups(metrics_result)
+        # comparisons 完整产出（ZeroDivision 不再让整层失败）
+        assert "comparisons" in result
+        assert "open_arm_time_ratio" in result["comparisons"]
+        # outlier_diagnostics 含 0 值离群条目
+        diags = result["outlier_diagnostics"]
+        zero_diags = [d for d in diags if d["value"] == 0.0]
+        assert len(zero_diags) == 1
+        assert math.isfinite(zero_diags[0]["deviation_median_ratio"])
