@@ -351,6 +351,114 @@ def compute_omega_squared(
 
 
 # ============================================================================
+# Outlier + leave-one-out diagnostics（确定性，下沉自 data-analyst prompt）
+# ============================================================================
+#
+# spec 2026-06-17-data-analyst-loo-counterfactual-pushdown：识别离群 subject +
+# 算 leave-one-out 反事实是纯确定性数值计算，曾在 data-analyst 自然语言推理里手算
+# （反复验算耗尽预算）。这里把它做成纯函数，由 compare_groups 产出、落盘进
+# statistics.json，data-analyst 只读不算。判据与 prompt step 2.7 b 字面一致：
+# 偏离组均值 ≥ 1.5 SD，或偏离组中位数 ≥ 2×（取并集）。
+
+_OUTLIER_SD_THRESHOLD = 1.5
+_OUTLIER_MEDIAN_RATIO_THRESHOLD = 2.0
+
+
+def _nonnan_indices(values: list[float]) -> list[int]:
+    """返回非 NaN 值在原列表里的下标，保持与去 NaN 后数组的顺序对齐。"""
+    return [i for i, v in enumerate(values) if not (v != v)]
+
+
+def compute_outlier_diagnostics(
+    group_values: dict[str, list[float]],
+    subject_names: dict[str, list[str]] | None = None,
+    sd_threshold: float = _OUTLIER_SD_THRESHOLD,
+    median_ratio_threshold: float = _OUTLIER_MEDIAN_RATIO_THRESHOLD,
+) -> list[dict]:
+    """对每组识别离群 subject 并预算 leave-one-out 反事实。纯确定性，无 LLM。
+
+    判据（与 data-analyst prompt step 2.7 b 完全一致，取并集）：
+      - ``|value - group_mean| / group_std >= sd_threshold``（默认 1.5），或
+      - ``max(value/median, median/value) >= median_ratio_threshold``（默认 2×），
+        方向独立判，极小值与极大值相对中位数的偏离都覆盖。
+
+    Args:
+        group_values: ``{group_name: [float, ...]}``，每组某 metric 的 per-subject
+            标量值（与 ``group_summary[grp][metric]["values"]`` 同结构）。
+        subject_names: 可选 ``{group_name: [subject_id, ...]}``，顺序须与
+            ``group_values`` 里该组的值顺序一致。调用方有真名时透传，data-analyst
+            引用更可读；缺失则用组内 index 兜底（``subject #i``）。subject 真名映射
+            属 Issue #98 列对齐家族另一轴，本函数不负责重建。
+        sd_threshold / median_ratio_threshold: 离群判据阈值，默认与 prompt 字面一致。
+
+    Returns:
+        每个离群 subject 一条 dict：
+        ``{group, subject, value, deviation_sd, deviation_median_ratio,
+           group_mean, group_std, group_median, loo_mean, loo_std,
+           counterfactual}``。
+        ``counterfactual`` 是预格式化串，如
+        ``"control mean 0.2530 → 0.1285 (std 0.3356 → 0.0701) if subject #2 excluded"``，
+        data-analyst 原样引用不重算。
+
+    Notes:
+        - 组内 <2 值时 SD/LOO 无意义，跳过该组（与 compare_groups 的 ``len>=2`` 门一致）。
+        - ``std`` 用 ddof=1（与 dispatcher.compute_paradigm_metrics 一致）。
+    """
+    diagnostics: list[dict] = []
+    names = subject_names or {}
+    for grp_name, vals in group_values.items():
+        arr = np.array(vals, dtype=float)
+        nonnan_idx = _nonnan_indices(vals)
+        arr = arr[~np.isnan(arr)]
+        if len(arr) < 2:
+            continue
+        grp_mean = float(arr.mean())
+        grp_std = float(arr.std(ddof=1))
+        grp_median = float(np.median(arr))
+        grp_subjects = names.get(grp_name) or [f"subject #{i}" for i in range(len(vals))]
+        for i, (raw_idx, value) in enumerate(zip(nonnan_idx, arr.tolist())):
+            deviation_sd = abs(value - grp_mean) / grp_std if grp_std > 0 else 0.0
+            if grp_median != 0:
+                ratio = max(value / grp_median, grp_median / value)
+            elif value != 0:
+                ratio = float("inf")
+            else:
+                ratio = 1.0
+            is_outlier = deviation_sd >= sd_threshold or ratio >= median_ratio_threshold
+            if not is_outlier:
+                continue
+            # leave-one-out：排除该 subject 后重算组 mean/std
+            loo_arr = np.delete(arr, i)
+            loo_mean = float(loo_arr.mean()) if len(loo_arr) > 0 else grp_mean
+            loo_std = float(loo_arr.std(ddof=1)) if len(loo_arr) > 1 else 0.0
+            subject = (
+                grp_subjects[raw_idx]
+                if raw_idx < len(grp_subjects)
+                else f"subject #{raw_idx}"
+            )
+            counterfactual = (
+                f"{grp_name} mean {grp_mean:.4f} → {loo_mean:.4f} "
+                f"(std {grp_std:.4f} → {loo_std:.4f}) if {subject} excluded"
+            )
+            diagnostics.append(
+                {
+                    "group": grp_name,
+                    "subject": subject,
+                    "value": value,
+                    "deviation_sd": float(deviation_sd),
+                    "deviation_median_ratio": float(ratio),
+                    "group_mean": grp_mean,
+                    "group_std": grp_std,
+                    "group_median": grp_median,
+                    "loo_mean": loo_mean,
+                    "loo_std": loo_std,
+                    "counterfactual": counterfactual,
+                }
+            )
+    return diagnostics
+
+
+# ============================================================================
 # High-level dispatcher
 # ============================================================================
 
@@ -392,6 +500,7 @@ def compare_groups(
             "summary": "Need at least 2 groups for comparison.",
             "alpha": alpha,
             "correction": correction,
+            "outlier_diagnostics": [],
         }
 
     # Collect all testable metric names
@@ -411,6 +520,10 @@ def compare_groups(
     comparisons: dict[str, list[dict]] = {}
     sig_count = 0
     total_count = 0
+    # 每个离群 subject 一条（spec 2026-06-17 LOO 下沉）：data-analyst 只读不算。
+    # subject 真名 compare_groups 拿不到（dispatcher 落盘时丢了 group→subject 映射），
+    # 纯函数内用组内 index 兜底；真名映射属 Issue #98 另一轴。
+    outlier_diagnostics: list[dict] = []
 
     for metric_name in sorted(all_metrics):
         # Gather values per group
@@ -423,6 +536,13 @@ def compare_groups(
         valid_groups = {k: v for k, v in group_values.items() if len(v) >= 2}
         if len(valid_groups) < 2:
             continue
+
+        # 离群 + LOO 诊断：用全 group_values（纯函数内部对 <2 值组自行跳过），
+        # 与 comparisons 的 valid_groups 门独立，但只在 ≥2 组参与比较时才有意义。
+        metric_outliers = compute_outlier_diagnostics(group_values)
+        for diag in metric_outliers:
+            diag["metric"] = metric_name
+            outlier_diagnostics.append(diag)
 
         grp_names = list(valid_groups.keys())
         grp_arrays = list(valid_groups.values())
@@ -520,4 +640,5 @@ def compare_groups(
         "summary": " ".join(summary_parts),
         "alpha": alpha,
         "correction": correction,
+        "outlier_diagnostics": outlier_diagnostics,
     }
