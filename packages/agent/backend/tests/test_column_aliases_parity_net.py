@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from ethoinsight.catalog.loader import load_common_catalog
 from ethoinsight.catalog.resolve import ResolveError, resolve_charts, resolve_metrics
 
