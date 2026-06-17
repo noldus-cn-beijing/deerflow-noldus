@@ -478,7 +478,17 @@ def set_experiment_paradigm_tool(
     # Otherwise the resolved_facts path below — gated only on ``if resolved_facts:``
     # — would intercept it first and silently drop column_semantics. The
     # resolved_facts path still handles the column_semantics-absent case unchanged.
-    if column_semantics is not None and isinstance(column_semantics, dict):
+    #
+    # ⚠️ Guard (2026-06-17 dogfood regression): only enter the standalone channel
+    # when NO paradigm field is present. A FIRST call carrying paradigm fields
+    # TOGETHER with column_semantics is a real Gate 1 call (the agent confirms the
+    # paradigm and aligns columns in one shot) — it must fall through to Gate 1
+    # (which creates the file AND writes column_semantics at the Gate 1 block),
+    # not be hijacked here where ``existing is None`` would wrongly error
+    # "No experiment-context.json found". Mirrors the guardrail Bug 1
+    # generalization: "carries a paradigm/template field" = "this is a Gate 1 call".
+    _is_paradigm_call = bool(paradigm or ev19_template)
+    if not _is_paradigm_call and column_semantics is not None and isinstance(column_semantics, dict):
         if existing is None:
             return json.dumps(
                 {
@@ -511,7 +521,9 @@ def set_experiment_paradigm_tool(
         return json.dumps(resp, ensure_ascii=False)
 
     # --- Standalone resolved_facts path (Spec B: no Gate 1/2 params) ---
-    if resolved_facts:
+    # Same guard: a FIRST call with paradigm fields + resolved_facts is a Gate 1
+    # call (Gate 1 writes resolved_facts too) — don't hijack it here.
+    if not _is_paradigm_call and resolved_facts:
         if existing is None:
             return json.dumps(
                 {
