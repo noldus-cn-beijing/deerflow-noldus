@@ -356,3 +356,90 @@ class TestGate1RerunPreservesState:
         assert ctx is not None
         assert ctx["column_aliases"]["open"] == "open_arms"
         assert ctx["resolved"]["groups"] == "control=7,treatment=21"
+
+
+# ===========================================================================
+# Regression (2026-06-17 dogfood): FIRST call carrying paradigm fields TOGETHER
+# with column_semantics/resolved_facts must go through Gate 1 (create the file),
+# NOT be intercepted by the standalone channels (which require existing != None
+# and would error "No experiment-context.json found"). PR #143 introduced this
+# regression because the standalone channels gate only on `column_semantics is
+# not None` / `resolved_facts` without excluding the case where paradigm fields
+# are also present (= a real Gate 1 call).
+# ===========================================================================
+
+
+class TestFirstCallWithParadigmAndColumnSemantics:
+    """A first-time call with paradigm fields + column_semantics (+resolved_facts)
+    must create experiment-context.json via Gate 1 — not be hijacked by the
+    standalone column_semantics channel and rejected for missing existing context."""
+
+    def test_first_call_paradigm_plus_column_semantics_creates_context(self, tmp_path):
+        """No existing file + (paradigm fields AND column_semantics) → Gate 1 writes everything."""
+        ec = _experiment_context_module()
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        runtime = _runtime_with_workspace(ws)
+
+        cs = {
+            "columns": {
+                "open": {"raw_name": "open", "resolves_to": "open_arms", "meaning_zh": "开臂", "confirmed": True},
+                "closed": {"raw_name": "closed", "resolves_to": "closed_arms", "meaning_zh": "闭臂", "confirmed": True},
+            },
+        }
+        # The exact failing dogfood sequence: everything in the FIRST call.
+        result_raw = ec.set_experiment_paradigm_tool.func(
+            paradigm="epm",
+            paradigm_cn="高架十字迷宫",
+            category="anxiety",
+            subject="rodent",
+            ev19_template="PlusMaze-FewZones",
+            column_semantics=cs,
+            resolved_facts=[{"key": "groups", "value": "XX=control, XY/YY/YZ=treatment"}],
+            workspace_dir=str(ws),
+            runtime=runtime,
+        )
+        result = json.loads(result_raw)
+        # Current (buggy) code: standalone column_semantics channel intercepts →
+        # existing is None → "No experiment-context.json found" error. After fix:
+        # Gate 1 runs and writes paradigm + column_semantics + resolved.
+        assert result["status"] == "ok", f"expected ok, got: {result}"
+
+        ctx = ec.read_context(str(ws))
+        assert ctx is not None
+        # Gate 1 fields written
+        assert ctx["paradigm"] == "epm"
+        assert ctx["ev19_template"] == "PlusMaze-FewZones"
+        assert "gate1_paradigm" in ctx["gate_completed"]
+        # column_semantics + aliases written in the same call
+        assert ctx["column_aliases"]["open"] == "open_arms"
+        assert ctx["column_aliases"]["closed"] == "closed_arms"
+        # resolved_facts written in the same call
+        assert ctx["resolved"]["groups"] == "XX=control, XY/YY/YZ=treatment"
+
+    def test_first_call_paradigm_plus_resolved_facts_creates_context(self, tmp_path):
+        """No existing file + (paradigm fields AND resolved_facts, no column_semantics)
+        → Gate 1 writes both (resolved_facts standalone channel must not hijack)."""
+        ec = _experiment_context_module()
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        runtime = _runtime_with_workspace(ws)
+
+        result_raw = ec.set_experiment_paradigm_tool.func(
+            paradigm="epm",
+            paradigm_cn="高架十字迷宫",
+            category="anxiety",
+            subject="rodent",
+            ev19_template="PlusMaze-FewZones",
+            resolved_facts=[{"key": "groups", "value": "XX=control"}],
+            workspace_dir=str(ws),
+            runtime=runtime,
+        )
+        result = json.loads(result_raw)
+        assert result["status"] == "ok", f"expected ok, got: {result}"
+
+        ctx = ec.read_context(str(ws))
+        assert ctx is not None
+        assert ctx["paradigm"] == "epm"
+        assert "gate1_paradigm" in ctx["gate_completed"]
+        assert ctx["resolved"]["groups"] == "XX=control"
