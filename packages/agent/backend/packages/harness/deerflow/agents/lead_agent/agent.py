@@ -475,6 +475,21 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
 
     middlewares.append(QualityWarningBroadcastMiddleware())
 
+    # DegradationCircuitBreakerMiddleware (P7) — detect statistics crash from
+    # code-executor handoff (gate_signals.statistics_status=='crashed'), bounded
+    # self-help (jump_to=model, re-dispatch code-executor) then HITL (let model call
+    # ask_clarification). Placed after QualityWarningBroadcast (both read
+    # handoff_code_executor.json on the lead's broadcast/content-only turn, same
+    # precondition) and before SafetyFinishReason / ClarificationMiddleware (so its
+    # jump_to='model' reminder is not stripped/short-circuited, and a model-issued
+    # ask_clarification can be intercepted by ClarificationMiddleware). Lazy import —
+    # harness import-cycle 铁律。
+    from deerflow.agents.middlewares.degradation_circuit_breaker_middleware import (
+        DegradationCircuitBreakerMiddleware,
+    )
+
+    middlewares.append(DegradationCircuitBreakerMiddleware())
+
     # SafetyFinishReasonMiddleware — suppress tool execution when the provider
     # safety-terminates the response (OpenAI content_filter / Anthropic refusal /
     # Gemini SAFETY). Appended near the end so LangChain's reverse-order

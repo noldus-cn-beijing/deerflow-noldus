@@ -735,3 +735,129 @@ class TestStatisticsParametersPropagation:
         argv = captured["args"]
         idx = argv.index("--parameters-json")
         assert json.loads(argv[idx + 1]) == {}
+
+
+# ===================================================================
+# Spec 2026-06-17 P2 statistics 降级信号：gate_signals.statistics_status
+# 三态（ok / crashed / absent_by_design）。修复前 statistics 崩溃静默成空，
+# 下游无法区分"崩了"vs"本就无统计"。本组坐实三态可机读 + status 可区分。
+# ===================================================================
+
+
+def _stats_plan(tmp_path, *, skip_reason=None, parameters=None):
+    """Build a one-metric plan with a statistics segment for the status tests."""
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+    statistics = {
+        "id": "epm_stats",
+        "script": "ethoinsight.scripts.epm.run_groupwise_stats",
+        "input": "/mnt/user-data/workspace/handoff_code_executor.json",
+        "output": str(ws / "stats.json"),
+        "skip_reason": skip_reason,
+    }
+    if parameters is not None:
+        statistics["parameters"] = parameters
+    plan = _plan(
+        [{"id": "m0"}],
+        workspace=ws,
+        raw_files=["/mnt/user-data/uploads/s0.txt"],
+        groups_file="/mnt/user-data/workspace/groups.json",
+        statistics=statistics,
+    )
+    _write_plan(ws, plan)
+    return ws
+
+
+def _read_handoff_gate_signals(ws):
+    """Read the sealed handoff_code_executor.json and return its gate_signals dict."""
+    handoff_path = ws / "handoff_code_executor.json"
+    assert handoff_path.exists(), "handoff 未落盘"
+    data = json.loads(handoff_path.read_text(encoding="utf-8"))
+    return data["gate_signals"]
+
+
+class TestStatisticsStatus:
+    """gate_signals.statistics_status 三态可机读信号（P2 信号源）。"""
+
+    def test_statistics_ok_when_runner_succeeds(self, tmp_path, monkeypatch):
+        """statistics 段无 skip_reason + runner 成功 + 非空产物 → statistics_status=ok。"""
+        ws = _stats_plan(tmp_path, skip_reason=None)
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success)
+        res = _call(_runtime(ws), on_error="continue")
+
+        assert res["gate_signals"]["statistics_status"] == "ok"
+        assert res["gate_signals"]["statistics_error"] is None
+        # compute 全成功 → status 仍是 completed（ok 不降级）
+        assert res["status"] == "completed"
+        # handoff 落盘一致
+        gf = _read_handoff_gate_signals(ws)
+        assert gf["statistics_status"] == "ok"
+
+    def test_statistics_crashed_when_runner_fails(self, tmp_path, monkeypatch):
+        """statistics runner rc=1 → statistics_status=crashed + 带 error；status 降为 partial。"""
+        ws = _stats_plan(tmp_path, skip_reason=None)
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_fail_on({"statistics"}))
+        res = _call(_runtime(ws), on_error="continue")
+
+        assert res["gate_signals"]["statistics_status"] == "crashed"
+        assert "planned failure" in res["gate_signals"]["statistics_error"]
+        # compute 全成功但 statistics 崩 → 降为 partial（不加新枚举，复用三态）
+        assert res["status"] == "partial"
+        # failures 仍记 statistics 那笔
+        assert any(f["id"] == "statistics" for f in res["failures"])
+
+    def test_statistics_absent_by_design_when_skip_reason(self, tmp_path, monkeypatch):
+        """statistics 段有 skip_reason（单组/单样本）→ absent_by_design；status 不受影响。"""
+        ws = _stats_plan(tmp_path, skip_reason="single sample, n<2")
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success)
+        res = _call(_runtime(ws), on_error="continue")
+
+        assert res["gate_signals"]["statistics_status"] == "absent_by_design"
+        assert res["gate_signals"]["statistics_error"] is None
+        # 合理 skip 不降级（compute 全成 → completed）
+        assert res["status"] == "completed"
+        # absent_by_design 时 statistics 字段为空 dict（schema 默认值），但 statistics_status 信号
+        # 明确标记 absent_by_design——这正是 P2 的核心：用信号区分"空"的成因（崩溃 vs 设计内缺席）。
+        handoff = json.loads((ws / "handoff_code_executor.json").read_text(encoding="utf-8"))
+        assert handoff["statistics"] == {}
+
+    def test_statistics_crashed_distinct_from_absent(self, tmp_path, monkeypatch):
+        """crashed 与 absent_by_design 的 statistics_status 字面量不同（可机读区分）。"""
+        # crashed
+        ws_crashed = _stats_plan(tmp_path, skip_reason=None)
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_fail_on({"statistics"}))
+        res_crashed = _call(_runtime(ws_crashed), on_error="continue")
+
+        # absent_by_design（独立 tmp_path）
+        ws_absent = _stats_plan(tmp_path / "absent", skip_reason="single sample")
+        # absent 时 runner 不被调，override 不影响
+        res_absent = _call(_runtime(ws_absent), on_error="continue")
+
+        assert res_crashed["gate_signals"]["statistics_status"] == "crashed"
+        assert res_absent["gate_signals"]["statistics_status"] == "absent_by_design"
+        # 关键：两者字节不再相同（crashed 带 error，absent 带 skip 语义）
+        assert res_crashed["gate_signals"]["statistics_status"] != res_absent["gate_signals"]["statistics_status"]
+        assert res_crashed["gate_signals"]["statistics_error"] is not None
+        assert res_absent["gate_signals"]["statistics_error"] is None
+
+    def test_statistics_empty_payload_treated_as_crashed(self, tmp_path, monkeypatch):
+        """runner rc=0 但写空产物 → crashed（防脚本半成功：rc=0 却没写真东西）。"""
+        ws = _stats_plan(tmp_path, skip_reason=None)
+
+        def empty_stats_runner(script, args, tid):
+            # statistics task: rc=0 但写空 dict（半成功）
+            if tid == "statistics":
+                out = None
+                for i, a in enumerate(args):
+                    if a == "--output" and i + 1 < len(args):
+                        out = args[i + 1]
+                if out:
+                    Path(out).parent.mkdir(parents=True, exist_ok=True)
+                    Path(out).write_text("{}", encoding="utf-8")
+                return (tid, 0, "")
+            return _runner_success(script, args, tid)
+
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", empty_stats_runner)
+        res = _call(_runtime(ws), on_error="continue")
+
+        assert res["gate_signals"]["statistics_status"] == "crashed"

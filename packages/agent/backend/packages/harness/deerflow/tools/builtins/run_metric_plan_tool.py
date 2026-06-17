@@ -14,9 +14,10 @@ import contextlib
 import logging
 import os
 from collections.abc import Iterator
-from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from langchain.tools import ToolRuntime, tool
 from langgraph.typing import ContextT
@@ -138,8 +139,8 @@ def run_metric_plan_tool(
     import json
 
     from deerflow.sandbox.tools import _build_path_env, replace_virtual_path
-    from deerflow.subagents.metric_aggregation import aggregate_metrics_to_handoff
     from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
+    from deerflow.subagents.metric_aggregation import aggregate_metrics_to_handoff
     from deerflow.tools.builtins.seal_handoff_tools import _seal_handoff_to_workspace
 
     # ---- Step 1: resolve workspace from thread_data ----
@@ -210,6 +211,12 @@ def run_metric_plan_tool(
 
     # ---- Step 7: statistics (single task, skip if skip_reason set) ----
     statistics_payload: dict[str, Any] | None = None
+    # P2 (spec 2026-06-17-statistics-loud-failure): statistics 子步骤三态可机读降级信号。
+    # SSOT 三态定义在 handoff_schemas.GateSignals.statistics_status。crashed 损害可复现性，
+    # 交由 DegradationCircuitBreakerMiddleware 熔断（自救一次 → HITL）；absent_by_design 是
+    # 单组/单样本合理 skip，正常描述性 partial，不熔断。
+    statistics_status: Literal["ok", "crashed", "absent_by_design"] = "absent_by_design"
+    statistics_error: str | None = None
     stats_obj = plan.get("statistics")
     if isinstance(stats_obj, dict) and stats_obj.get("skip_reason") is None:
         stats_script = stats_obj.get("script", "")
@@ -252,9 +259,20 @@ def run_metric_plan_tool(
                     statistics_payload = json.loads(Path(stats_real).read_text(encoding="utf-8"))
                 except Exception as e:
                     logger.warning("[run_metric_plan] 读 statistics 产物失败: %s", e)
+                # P2: runner 成功（rc=0）但产物空/不可读也算 crashed（脚本半成功，损害可复现性）。
+                if statistics_payload:
+                    statistics_status = "ok"
+                else:
+                    statistics_status = "crashed"
+                    statistics_error = "statistics payload empty or unreadable"[:500]
             else:
                 logger.warning("[run_metric_plan] statistics 失败 (rc=%d): %s", src_rc, src_err)
                 failures.append({"id": "statistics", "error": src_err[:500]})
+                statistics_status = "crashed"
+                statistics_error = (src_err or "")[:500]
+        # skip_reason is None 但缺 script/output：statistics 段声明了却无法跑 → crashed（非设计内缺席）。
+        # 保持 statistics_status 默认 absent_by_design 仅当 skip_reason 非空或整段缺失。
+    # stats_obj 缺失或 skip_reason 非空：statistics_status 保持 absent_by_design（合理 skip）。
 
     # ---- Step 8: aggregate from disk artifacts (SSOT, run_validation=True) ----
     # validation 子步（validate_plan_results）在父进程内经 resolve_sandbox_path 读 plan 的
@@ -265,6 +283,10 @@ def run_metric_plan_tool(
     with _scoped_path_env(path_env):
         agg = aggregate_metrics_to_handoff(plan, workspace, run_validation=True)
     status = _derive_status(agg["status"], n_total, n_failed)
+    # P2: statistics 崩溃单独降级 completed→partial（不加新枚举，复用现有三态；failed 保持 failed，
+    # 更严重的优先）。完成度仍由 compute 决定（n_failed 不含 statistics）——区分靠 statistics_status。
+    if statistics_status == "crashed" and status == "completed":
+        status = "partial"
 
     # ---- Step 9: assemble + seal handoff (deterministic, sealed_by="run_plan") ----
     payload: dict[str, Any] = {
@@ -280,7 +302,11 @@ def run_metric_plan_tool(
         "ev19_template": agg.get("ev19_template", plan.get("ev19_template")),
         "inputs": plan.get("inputs", {}),
         "sealed_by": "run_plan",
-        "gate_signals": _build_gate_signals(agg, status, n_failed),
+        "gate_signals": _build_gate_signals(
+            agg, status, n_failed,
+            statistics_status=statistics_status,
+            statistics_error=statistics_error,
+        ),
     }
     if statistics_payload is not None:
         payload["statistics"] = statistics_payload
@@ -426,7 +452,10 @@ def _default_summary(status: str, n_total: int, n_completed: int, n_failed: int)
 
 
 def _build_gate_signals(
-    agg: dict[str, Any], status: str, n_failed: int
+    agg: dict[str, Any], status: str, n_failed: int,
+    *,
+    statistics_status: Literal["ok", "crashed", "absent_by_design"] = "absent_by_design",
+    statistics_error: str | None = None,
 ) -> dict[str, Any]:
     """Build gate_signals for lead decision (mirrors code_executor [gate_signals] format)."""
     warnings = agg.get("data_quality_warnings", []) or []
@@ -453,6 +482,9 @@ def _build_gate_signals(
         },
         "statistical_validity": stat_validity,
         "errors_count": len(errors),
+        # P2: statistics 子步骤三态降级信号。SSOT: handoff_schemas.GateSignals.statistics_status。
+        "statistics_status": statistics_status,
+        "statistics_error": statistics_error,
     }
 
 
