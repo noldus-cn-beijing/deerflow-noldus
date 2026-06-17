@@ -375,8 +375,9 @@ class GateSignals(BaseModel):
         ),
     )
     # P2 (spec 2026-06-17-statistics-loud-failure): statistics 子步骤降级信号（三态可机读）。
-    # SSOT: 此 Literal 是 statistics_status 唯一定义处；run_metric_plan_tool 赋值与
-    # DegradationCircuitBreakerMiddleware 判断都引用同字面量，避免漂移。
+    # 这个 Pydantic Literal 是 statistics_status 的**权威、受校验**定义——任何写入此字段的值都按
+    # 它校验，下游 DegradationCircuitBreakerMiddleware 也据此判断。run_metric_plan_tool 里的同名
+    # 局部注解只是与之对齐的镜像（type hint，非第二份受校验定义）；改三态时以本处为准同步那侧。
     statistics_status: Literal["ok", "crashed", "absent_by_design"] = Field(
         default="absent_by_design",
         description=(

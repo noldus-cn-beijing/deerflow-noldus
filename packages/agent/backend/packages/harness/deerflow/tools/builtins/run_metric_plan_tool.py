@@ -212,9 +212,11 @@ def run_metric_plan_tool(
     # ---- Step 7: statistics (single task, skip if skip_reason set) ----
     statistics_payload: dict[str, Any] | None = None
     # P2 (spec 2026-06-17-statistics-loud-failure): statistics 子步骤三态可机读降级信号。
-    # SSOT 三态定义在 handoff_schemas.GateSignals.statistics_status。crashed 损害可复现性，
-    # 交由 DegradationCircuitBreakerMiddleware 熔断（自救一次 → HITL）；absent_by_design 是
-    # 单组/单样本合理 skip，正常描述性 partial，不熔断。
+    # 权威受校验定义在 handoff_schemas.GateSignals.statistics_status（Pydantic Literal）；下面的
+    # 注解是与之对齐的镜像 type hint（不能在此 top-level import 那个类型——handoff_schemas 经
+    # subagents.__init__ 闭环，本文件所有 deerflow import 都惰性）。crashed 损害可复现性，交由
+    # DegradationCircuitBreakerMiddleware 熔断（自救一次 → HITL）；absent_by_design 是单组/单样本
+    # 合理 skip，正常描述性 partial，不熔断。
     statistics_status: Literal["ok", "crashed", "absent_by_design"] = "absent_by_design"
     statistics_error: str | None = None
     stats_obj = plan.get("statistics")
@@ -270,9 +272,19 @@ def run_metric_plan_tool(
                 failures.append({"id": "statistics", "error": src_err[:500]})
                 statistics_status = "crashed"
                 statistics_error = (src_err or "")[:500]
-        # skip_reason is None 但缺 script/output：statistics 段声明了却无法跑 → crashed（非设计内缺席）。
-        # 保持 statistics_status 默认 absent_by_design 仅当 skip_reason 非空或整段缺失。
-    # stats_obj 缺失或 skip_reason 非空：statistics_status 保持 absent_by_design（合理 skip）。
+        else:
+            # skip_reason is None 但缺 script/output：statistics 段声明了"应该跑"却无法跑
+            # （catalog/resolve 投影出了残缺的 statistics 段）→ crashed（非设计内缺席）。
+            # 这堵住一个红线一静默降级口子：残缺段不能伪装成 absent_by_design 走正常 partial。
+            logger.warning(
+                "[run_metric_plan] statistics 段 skip_reason=None 但缺 script/output "
+                "(script=%r, output=%r) — 标记 crashed",
+                stats_script,
+                stats_output,
+            )
+            statistics_status = "crashed"
+            statistics_error = "statistics segment declared (skip_reason=None) but missing script/output"[:500]
+    # stats_obj 缺失或 skip_reason 非空：statistics_status 保持默认 absent_by_design（合理 skip）。
 
     # ---- Step 8: aggregate from disk artifacts (SSOT, run_validation=True) ----
     # validation 子步（validate_plan_results）在父进程内经 resolve_sandbox_path 读 plan 的

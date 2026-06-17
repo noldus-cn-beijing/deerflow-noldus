@@ -861,3 +861,33 @@ class TestStatisticsStatus:
         res = _call(_runtime(ws), on_error="continue")
 
         assert res["gate_signals"]["statistics_status"] == "crashed"
+
+    def test_statistics_declared_but_missing_script_is_crashed(self, tmp_path, monkeypatch):
+        """statistics 段 skip_reason=None 但缺 script → crashed（残缺段不伪装 absent_by_design）。
+
+        红线一静默降级口子：catalog/resolve 投影出残缺 statistics 段（声明应跑却无 script/output）
+        时，必须 crashed 让熔断器接管，而非默认 absent_by_design 走正常 partial。
+        """
+        ws = tmp_path / "ws"
+        ws.mkdir(parents=True, exist_ok=True)
+        # 直接构 plan：statistics 段 skip_reason=None 但 script 为空（残缺段）。
+        plan = _plan(
+            [{"id": "m0"}],
+            workspace=ws,
+            raw_files=["/mnt/user-data/uploads/s0.txt"],
+            statistics={
+                "id": "epm_stats",
+                "script": "",  # 残缺：声明应跑（skip_reason=None）却无脚本
+                "input": "/mnt/user-data/workspace/handoff_code_executor.json",
+                "output": str(ws / "stats.json"),
+                "skip_reason": None,
+            },
+        )
+        _write_plan(ws, plan)
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success)
+        res = _call(_runtime(ws), on_error="continue")
+
+        assert res["gate_signals"]["statistics_status"] == "crashed"
+        assert res["gate_signals"]["statistics_error"] is not None
+        # compute 全成功但 statistics 段残缺 → 降为 partial（与 runner 崩溃一致对待）
+        assert res["status"] == "partial"
