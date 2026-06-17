@@ -28,7 +28,6 @@ from ethoinsight.catalog.resolve import (
 )
 from ethoinsight.catalog.schema import PlanChart, PlanCharts, PlanInputs
 
-
 EPM_COLUMNS_SAMPLE = [
     "Trial time", "X center", "Y center",
     "in_zone_open_arms_center", "in_zone_closed_arms_center",
@@ -59,14 +58,18 @@ def _per(cid: str, idx: int) -> PlanChart:
 
 def test_aggregate_charts_prioritized():
     """5 aggregate + 56 per_subject（7 类 × 8 subject），预算 N=6 →
-    5 张 aggregate 全部入选，per_subject 仅剩 1 个名额（subject_index=0 优先）。"""
+    5 张 aggregate 全部入选，per_subject 仅剩 1 个名额（subject_index=0 优先）。
+
+    关键：per_subject 排在输入数组**前面**（dogfood 真实顺序——plan_charts 里 28 trajectory +
+    28 heatmap 先于 box/bar），断言 aggregate 仍全部入选——证明是「按类型优先」而非
+    「按数组顺序取前 N」（naive first-N 会在此输入下漏掉所有 aggregate）。"""
     agg = [_agg(f"agg{i}") for i in range(5)]
     per = [_per(f"per{j}", idx) for j in range(7) for idx in range(8)]  # 56
-    charts = agg + per
+    charts = per + agg  # per_subject 在前：naive 取前 6 会全是 per_subject，漏掉 aggregate
 
     selected, remaining = select_charts_by_priority(charts, budget=6)
 
-    # aggregate 全部入选（核心：组间对比不受预算挤占）
+    # aggregate 全部入选（核心：组间对比不受预算挤占，即使排在数组末尾）
     selected_agg_ids = {c.id for c in selected if c.output_mode == "aggregate"}
     assert selected_agg_ids == {f"agg{i}" for i in range(5)}
 

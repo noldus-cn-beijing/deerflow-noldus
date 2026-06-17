@@ -523,6 +523,7 @@ def seal_chart_maker_handoff(
     summary: str,
     chart_files: list[str] | None = None,
     failed_charts: list[dict[str, str]] | None = None,
+    remaining_charts: list[dict[str, str]] | None = None,
     status: str = "completed",
     gate_signals: dict[str, Any] | None = None,
     runtime: Runtime = None,
@@ -536,6 +537,9 @@ def seal_chart_maker_handoff(
         summary: 一句话描述生成的图表
         chart_files: 成功的图表 png 路径（必须在 /mnt/user-data/outputs/ 下）
         failed_charts: 失败列表，每条 {chart_id, reason}
+        remaining_charts: P5 预算降级指纹——被 chart_budget 截断未画的 per_subject 图，
+            每条 {chart_id, reason}（reason 通常 "chart_budget_truncated"）。
+            来自 prep_chart_plan 返回的 plan_summary.budget_remaining_ids。无截断时省略/[]。
         status: "completed" / "partial" / "failed"（全部失败时为 failed）
         gate_signals: 决策信号
     """
@@ -545,6 +549,7 @@ def seal_chart_maker_handoff(
         "summary": summary,
         "chart_files": chart_files or [],
         "failed_charts": failed_charts or [],
+        "remaining_charts": remaining_charts or [],
         "gate_signals": gate_signals,
     }
     return _seal_handoff(ChartMakerHandoff, "handoff_chart_maker.json", payload, runtime)

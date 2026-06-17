@@ -128,3 +128,51 @@ class TestRemainingCharts:
         )
         assert h.status == "completed"
         assert len(h.remaining_charts) == 1
+
+
+class TestSealChartMakerHandoffRemainingCharts:
+    """P5: seal_chart_maker_handoff 必须把 remaining_charts 写进 handoff_chart_maker.json。
+
+    回归守护：SKILL 指示 chart-maker 给 seal 工具传 remaining_charts（预算降级指纹），
+    若 seal 工具不接受/不透传该参数，降级指纹会在落盘时被丢弃（红线一留痕失效）。
+    本测试走 _seal_handoff_to_workspace（seal_chart_maker_handoff 的纯函数变体，同一 payload 契约）。
+    """
+
+    def test_seal_payload_persists_remaining_charts(self, tmp_path):
+        import json
+
+        from deerflow.tools.builtins.seal_handoff_tools import _seal_handoff_to_workspace
+
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        # seal_chart_maker_handoff 构造的 payload（含 P5 的 remaining_charts）
+        payload = {
+            "status": "partial",
+            "paradigm": "epm",
+            "summary": "aggregate 全画 + 代表性 per_subject",
+            "chart_files": ["/mnt/user-data/outputs/plot_box_open_arm.png"],
+            "failed_charts": [],
+            "remaining_charts": [
+                {"chart_id": "trajectory", "reason": "chart_budget_truncated"},
+                {"chart_id": "heatmap", "reason": "chart_budget_truncated"},
+            ],
+            "gate_signals": None,
+        }
+        _seal_handoff_to_workspace(ChartMakerHandoff, "handoff_chart_maker.json", payload, ws)
+
+        written = json.loads((ws / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert [c["chart_id"] for c in written["remaining_charts"]] == ["trajectory", "heatmap"]
+        assert all(c["reason"] == "chart_budget_truncated" for c in written["remaining_charts"])
+
+    def test_seal_tool_signature_accepts_remaining_charts(self):
+        """seal_chart_maker_handoff 工具签名必须含 remaining_charts（SKILL 指示它传入）。"""
+        import inspect
+
+        from deerflow.tools.builtins.seal_handoff_tools import seal_chart_maker_handoff
+
+        # @tool 装饰后函数体在 .func；签名应含 remaining_charts 形参
+        fn = getattr(seal_chart_maker_handoff, "func", seal_chart_maker_handoff)
+        params = inspect.signature(fn).parameters
+        assert "remaining_charts" in params, (
+            "seal_chart_maker_handoff 必须接受 remaining_charts——SKILL 指示 chart-maker 传它"
+        )
