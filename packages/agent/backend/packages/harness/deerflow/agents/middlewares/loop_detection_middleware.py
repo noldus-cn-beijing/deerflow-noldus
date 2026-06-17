@@ -182,9 +182,23 @@ _HARD_STOP_MSG = "[FORCED STOP] Repeated tool calls exceeded the safety limit. P
 
 _TOOL_FREQ_HARD_STOP_MSG = (
     "[FORCED STOP] Tool {tool_name} called {count} times — exceeded the per-tool safety limit."
-    " All tool_calls stripped."
+    " The offending {tool_name} call was removed; any other tool_calls in this turn were preserved."
     " Produce a final text answer now summarizing what to do next (e.g., dispatch task(code-executor) or ask_clarification)."
 )
+
+
+# Bookkeeping / orchestration tools where a high call count is *normal* in a long
+# end-to-end run (each pipeline stage updates todos) and is therefore not evidence
+# of a loop. These carry lenient per-tool frequency thresholds out of the box so a
+# legitimate E2E is not killed (红线四 正模式 1). Hash-based detection (identical
+# call repetition) still applies to them — that is the real-loop signal — only the
+# per-tool *type* frequency is relaxed.
+_TOOL_FREQ_SEMANTIC_OVERRIDES: dict[str, tuple[int, int]] = {
+    # Bookkeeping: every pipeline stage legitimately updates todos. The 2026-06-17
+    # dogfood had write_todos called 5-6 times across code→data→chart→report, which
+    # is normal bookkeeping, not a loop.
+    "write_todos": (15, 30),
+}
 
 
 class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
@@ -261,6 +275,22 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             tool_freq_overrides={name: (o.warn, o.hard_limit) for name, o in config.tool_freq_overrides.items()},
         )
 
+    @classmethod
+    def with_semantic_defaults(cls) -> LoopDetectionMiddleware:
+        """Construct with the semantic tool-frequency overrides baked in.
+
+        Bookkeeping/orchestration tools (``write_todos``) get lenient thresholds
+        so a legitimate long E2E does not trip FORCED STOP. Used by tests to model
+        the production default behaviour; production wiring applies the same
+        overrides via ``LoopDetectionConfig`` defaults / ``config.yaml``.
+        """
+        overrides = dict(_TOOL_FREQ_SEMANTIC_OVERRIDES)
+        return cls(
+            tool_freq_warn=_DEFAULT_TOOL_FREQ_WARN,
+            tool_freq_hard_limit=_DEFAULT_TOOL_FREQ_HARD_LIMIT,
+            tool_freq_overrides=overrides,
+        )
+
     def _get_thread_id(self, runtime: Runtime) -> str:
         """Extract thread_id from runtime context for per-thread tracking."""
         thread_id = runtime.context.get("thread_id") if runtime.context else None
@@ -335,7 +365,7 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             self._touch_pending_warning_key_locked(pending_key)
             self._prune_pending_warning_state_locked(protected_key=pending_key)
 
-    def _track_and_check(self, state: AgentState, runtime: Runtime) -> tuple[str | None, bool]:
+    def _track_and_check(self, state: AgentState, runtime: Runtime) -> tuple[str | None, bool, str | None]:
         """Track tool calls and check for loops.
 
         Two detection layers:
@@ -345,19 +375,23 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
              on 40 different files).
 
         Returns:
-            (warning_message_or_none, should_hard_stop)
+            ``(warning_message_or_none, should_hard_stop, offending_freq_key)``.
+            ``offending_freq_key`` is set only on a *frequency* hard stop and
+            identifies the bucket (raw tool name, or ``task:<subagent>``) whose
+            call(s) should be stripped. ``None`` means either no hard stop or a
+            hash-based hard stop (the whole identical set is the loop → strip all).
         """
         messages = state.get("messages", [])
         if not messages:
-            return None, False
+            return None, False, None
 
         last_msg = messages[-1]
         if getattr(last_msg, "type", None) != "ai":
-            return None, False
+            return None, False, None
 
         tool_calls = getattr(last_msg, "tool_calls", None)
         if not tool_calls:
-            return None, False
+            return None, False, None
 
         thread_id = self._get_thread_id(runtime)
         call_hash = _hash_tool_calls(tool_calls)
@@ -395,7 +429,9 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                         "tools": tool_names,
                     },
                 )
-                return _HARD_STOP_MSG, True
+                # Whole identical set is the loop — strip all. offending=None
+                # signals "strip everything" to _apply.
+                return _HARD_STOP_MSG, True, None
 
             if count >= self.warn_threshold:
                 warned = self._warned[thread_id]
@@ -410,7 +446,7 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                             "tools": tool_names,
                         },
                     )
-                    return _WARNING_MSG, False
+                    return _WARNING_MSG, False, None
 
             # --- Layer 2: per-tool-type frequency ---
             # `task` is a dispatcher tool — bucket per subagent_type so that
@@ -451,7 +487,14 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                             "count": tc_count,
                         },
                     )
-                    return _TOOL_FREQ_HARD_STOP_MSG.format(tool_name=display_name, count=tc_count), True
+                    # 红线四 正模式 2: strip ONLY the offending tool's call(s),
+                    # preserve siblings. Return the freq_key so _apply can match
+                    # the exact call(s) to remove.
+                    return (
+                        _TOOL_FREQ_HARD_STOP_MSG.format(tool_name=display_name, count=tc_count),
+                        True,
+                        freq_key,
+                    )
 
                 if tc_count >= eff_warn:
                     warned = self._tool_freq_warned[thread_id]
@@ -465,9 +508,9 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
                                 "count": tc_count,
                             },
                         )
-                        return _TOOL_FREQ_WARNING_MSG.format(tool_name=display_name, count=tc_count), False
+                        return _TOOL_FREQ_WARNING_MSG.format(tool_name=display_name, count=tc_count), False, None
 
-        return None, False
+        return None, False, None
 
     @staticmethod
     def _append_text(content: str | list | None, text: str) -> str | list:
@@ -506,8 +549,72 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
 
         return update
 
+    @staticmethod
+    def _offending_call_ids(tool_calls: list[dict], offending_freq_key: str) -> set[str]:
+        """Return the ids of the tool calls that belong to the offending freq bucket.
+
+        For non-task tools ``offending_freq_key`` is the raw tool name. For the
+        ``task`` dispatcher it is ``task:<subagent_type>`` and we match that
+        specific subagent only.
+        """
+        ids: set[str] = set()
+        target_name = offending_freq_key
+        target_subagent: str | None = None
+        if offending_freq_key.startswith("task:"):
+            target_name = "task"
+            target_subagent = offending_freq_key.split(":", 1)[1]
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            if name != target_name:
+                continue
+            if target_name == "task":
+                args, _fallback = _normalize_tool_call_args(tc.get("args", {}))
+                if (args.get("subagent_type") or "?") != target_subagent:
+                    continue
+            tc_id = tc.get("id")
+            if tc_id:
+                ids.add(tc_id)
+        return ids
+
+    @classmethod
+    def _build_partial_strip_update(cls, last_msg, tool_calls: list[dict], offending_freq_key: str, content: str | list) -> dict:
+        """Strip only the offending tool's call(s), preserving siblings.
+
+        红线四 正模式 2: a frequency hard stop on one tool must not cascade-kill
+        unrelated calls in the same message (e.g. ``write_todos`` over the limit
+        must not strip ``task(report-writer)``). We keep the surviving tool_calls
+        intact so the flow keeps advancing; their matching ToolMessages are
+        produced normally by the tools node (or, in the interrupted/edge case,
+        by ``DanglingToolCallMiddleware``). Only when nothing survives do we fall
+        back to the full-clear metadata treatment so the message serializes as
+        plain text (no dangling tool calls).
+        """
+        offending_ids = cls._offending_call_ids(tool_calls, offending_freq_key)
+        surviving = [tc for tc in tool_calls if tc.get("id") not in offending_ids]
+
+        update: dict = {
+            "tool_calls": surviving,
+            "content": content,
+        }
+
+        additional_kwargs = dict(getattr(last_msg, "additional_kwargs", {}) or {})
+        raw_tcs = additional_kwargs.get("tool_calls")
+        if isinstance(raw_tcs, list):
+            filtered_raw = [raw for raw in raw_tcs if not (isinstance(raw, dict) and raw.get("id") in offending_ids)]
+            additional_kwargs["tool_calls"] = filtered_raw
+        update["additional_kwargs"] = additional_kwargs
+
+        response_metadata = deepcopy(getattr(last_msg, "response_metadata", {}) or {})
+        # Only flip finish_reason to stop when no tool calls survive — otherwise the
+        # surviving calls must still be executed (finish_reason stays 'tool_calls').
+        if not surviving and response_metadata.get("finish_reason") == "tool_calls":
+            response_metadata["finish_reason"] = "stop"
+        update["response_metadata"] = response_metadata
+
+        return update
+
     def _apply(self, state: AgentState, runtime: Runtime) -> dict | None:
-        warning, hard_stop = self._track_and_check(state, runtime)
+        warning, hard_stop, offending_freq_key = self._track_and_check(state, runtime)
 
         if hard_stop:
             # Strip tool_calls from the last AIMessage to force text output.
@@ -516,8 +623,17 @@ class LoopDetectionMiddleware(AgentMiddleware[AgentState]):
             # is safe for OpenAI/Moonshot pairing validators.
             messages = state.get("messages", [])
             last_msg = messages[-1]
+            tool_calls = list(getattr(last_msg, "tool_calls", None) or [])
             content = self._append_text(last_msg.content, warning or _HARD_STOP_MSG)
-            stripped_msg = last_msg.model_copy(update=self._build_hard_stop_update(last_msg, content))
+            if offending_freq_key is not None and tool_calls:
+                # 红线四 正模式 2: frequency hard stop — strip ONLY the offending
+                # tool's call(s); preserve sibling calls so the flow keeps advancing.
+                update = self._build_partial_strip_update(last_msg, tool_calls, offending_freq_key, content)
+            else:
+                # Hash-based hard stop (the whole identical set is the loop) or a
+                # frequency stop with no tool_calls to selectively strip → full clear.
+                update = self._build_hard_stop_update(last_msg, content)
+            stripped_msg = last_msg.model_copy(update=update)
             return {"messages": [stripped_msg]}
 
         if warning:

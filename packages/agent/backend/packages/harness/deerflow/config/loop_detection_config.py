@@ -1,5 +1,7 @@
 """Configuration for loop detection middleware."""
 
+from typing import ClassVar
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -70,4 +72,28 @@ class LoopDetectionConfig(BaseModel):
             raise ValueError("hard_limit must be greater than or equal to warn_threshold")
         if self.tool_freq_hard_limit < self.tool_freq_warn:
             raise ValueError("tool_freq_hard_limit must be greater than or equal to tool_freq_warn")
+        self._apply_semantic_overrides()
         return self
+
+    # Bookkeeping / orchestration tools where high call counts are normal in a long
+    # E2E (红线四 正模式 1). These thresholds are *floors*: a caller may raise them
+    # further, but may not silently tighten them below the floor — that would
+    # re-introduce the 2026-06-17 dogfood failure (write_todos killed the E2E).
+    _SEMANTIC_OVERRIDE_FLOORS: ClassVar[dict[str, tuple[int, int]]] = {
+        "write_todos": (15, 30),
+    }
+
+    def _apply_semantic_override(self, name: str, floor_warn: int, floor_hard: int) -> None:
+        existing = self.tool_freq_overrides.get(name)
+        if existing is None:
+            self.tool_freq_overrides[name] = ToolFreqOverride(warn=floor_warn, hard_limit=floor_hard)
+            return
+        # Floor: keep the more lenient (higher) of caller vs semantic for each field.
+        self.tool_freq_overrides[name] = ToolFreqOverride(
+            warn=max(existing.warn, floor_warn),
+            hard_limit=max(existing.hard_limit, floor_hard),
+        )
+
+    def _apply_semantic_overrides(self) -> None:
+        for name, (warn, hard) in self._SEMANTIC_OVERRIDE_FLOORS.items():
+            self._apply_semantic_override(name, warn, hard)

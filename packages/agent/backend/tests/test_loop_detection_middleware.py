@@ -1064,11 +1064,18 @@ class TestFromConfig:
     def test_overrides_converted_to_tuples(self):
         config = self._config(tool_freq_overrides={"bash": {"warn": 50, "hard_limit": 100}})
         mw = LoopDetectionMiddleware.from_config(config)
-        assert mw._tool_freq_overrides == {"bash": (50, 100)}
+        # bash override passed through verbatim...
+        assert mw._tool_freq_overrides["bash"] == (50, 100)
+        # ...and the write_todos semantic floor is always injected by default
+        # (red-line-4 正模式 1): bookkeeping tools cannot be silently tightened.
+        assert "write_todos" in mw._tool_freq_overrides
 
     def test_empty_overrides(self):
         mw = LoopDetectionMiddleware.from_config(self._config())
-        assert mw._tool_freq_overrides == {}
+        # Even with no caller-supplied overrides, the write_todos bookkeeping
+        # floor is injected so a bare LoopDetectionConfig() does not re-introduce
+        # the 2026-06-17 dogfood failure.
+        assert "write_todos" in mw._tool_freq_overrides
 
     def test_constructed_middleware_queues_loop_warning(self):
         mw = LoopDetectionMiddleware.from_config(self._config(warn_threshold=2, hard_limit=4))
