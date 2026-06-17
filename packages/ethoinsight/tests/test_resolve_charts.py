@@ -1,6 +1,7 @@
 """W4: resolve_charts 函数验收。"""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -153,3 +154,88 @@ def test_trajectory_filtered_when_xy_missing(tmp_path):
     assert "heatmap" not in chart_ids
     assert "trajectory" in skipped_ids
     assert "heatmap" in skipped_ids
+
+
+# ============================================================================
+# groups 透传 → aggregate plot 拿到 --groups（Spec 3 / P3 配套修复）
+# 病根：``_build_groups_payload`` 只认 {arena_key: group} 短键的子串启发式
+# (``arena_key in Path(p).name``)，对 ``prep_metric_plan`` 写的 SSOT
+# {full_path: group} 形态匹配失败 → box_open_arm 静默丢 --groups（红线一静默降级）。
+# 修法：先按完整路径精确匹配（与 scripts._cli.read_groups_json 同语义），
+# 短键子串匹配降级为 fallback。
+# ============================================================================
+
+
+def _box_open_arm_groups_arg(pc):
+    """Return the --groups value materialised for box_open_arm, or None."""
+    for c in pc.charts:
+        if c.id == "box_open_arm" and "--groups" in c.args:
+            return c.args[c.args.index("--groups") + 1]
+    return None
+
+
+def test_groups_ssot_fullpath_keys_materialise_into_box(tmp_path):
+    """SSOT {full_path: group}（prep_metric_plan 落盘形态）→ box_open_arm 拿到 --groups
+    且分组按文件精确映射。修复前必红：旧子串启发式无法匹配完整路径键。"""
+    raw_files = [f"/mnt/user-data/uploads/arena{i}.txt" for i in range(1, 7)]
+    groups = {p: ("control" if i < 3 else "treatment") for i, p in enumerate(raw_files)}
+    pc = resolve_charts(
+        paradigm="epm", columns=EPM_COLUMNS_SAMPLE, raw_files=raw_files,
+        workspace_dir=str(tmp_path), total_subjects=6, n_per_group=3, n_groups=2,
+        groups=groups,
+    )
+    groups_arg = _box_open_arm_groups_arg(pc)
+    assert groups_arg is not None, (
+        "box_open_arm 必须拿到 --groups（SSOT 完整路径键应精确匹配）；"
+        f"args={[c.args for c in pc.charts if c.id == 'box_open_arm']}"
+    )
+    materialised = json.loads((tmp_path / Path(groups_arg).name).read_text(encoding="utf-8"))
+    assert set(materialised) == {"control", "treatment"}
+    assert set(materialised["control"]) == set(raw_files[:3])
+    assert set(materialised["treatment"]) == set(raw_files[3:])
+
+
+def test_groups_legacy_arena_key_substring_still_works(tmp_path):
+    """向后兼容：旧 {arena_key: group} 短键（子串匹配文件名）仍生效。"""
+    raw_files = [
+        "/mnt/user-data/uploads/Trial-Arena 1.txt",
+        "/mnt/user-data/uploads/Trial-Arena 2.txt",
+        "/mnt/user-data/uploads/Trial-Arena 3.txt",
+        "/mnt/user-data/uploads/Trial-Arena 4.txt",
+        "/mnt/user-data/uploads/Trial-Arena 5.txt",
+        "/mnt/user-data/uploads/Trial-Arena 6.txt",
+    ]
+    groups = {
+        "Arena 1": "control", "Arena 2": "control", "Arena 3": "control",
+        "Arena 4": "treatment", "Arena 5": "treatment", "Arena 6": "treatment",
+    }
+    pc = resolve_charts(
+        paradigm="epm", columns=EPM_COLUMNS_SAMPLE, raw_files=raw_files,
+        workspace_dir=str(tmp_path), total_subjects=6, n_per_group=3, n_groups=2,
+        groups=groups,
+    )
+    groups_arg = _box_open_arm_groups_arg(pc)
+    assert groups_arg is not None, "legacy arena-key 短键应仍通过子串 fallback 匹配"
+    materialised = json.loads((tmp_path / Path(groups_arg).name).read_text(encoding="utf-8"))
+    assert set(materialised) == {"control", "treatment"}
+    assert len(materialised["control"]) == 3
+    assert len(materialised["treatment"]) == 3
+
+
+def test_groups_finalshape_passthrough(tmp_path):
+    """已是 {group: [paths]} 终态形态 → 直通。"""
+    raw_files = [f"/mnt/user-data/uploads/arena{i}.txt" for i in range(1, 7)]
+    groups = {
+        "control": raw_files[:3],
+        "treatment": raw_files[3:],
+    }
+    pc = resolve_charts(
+        paradigm="epm", columns=EPM_COLUMNS_SAMPLE, raw_files=raw_files,
+        workspace_dir=str(tmp_path), total_subjects=6, n_per_group=3, n_groups=2,
+        groups=groups,
+    )
+    groups_arg = _box_open_arm_groups_arg(pc)
+    assert groups_arg is not None
+    materialised = json.loads((tmp_path / Path(groups_arg).name).read_text(encoding="utf-8"))
+    assert set(materialised["control"]) == set(raw_files[:3])
+    assert set(materialised["treatment"]) == set(raw_files[3:])

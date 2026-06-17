@@ -19,12 +19,12 @@ author: noldus-insight
 
 ## 工作流
 1. read `handoff_code_executor.json` → 拿 paradigm / n_per_group / n_groups / total_subjects
-2. bash `python -m ethoinsight.catalog.resolve --mode charts --paradigm <p> --user-intent "<原话>" ... --output plan_charts.json`
-   - **前置:catalog.resolve 的 `--columns-file` 是必填参数**,先 bash `python -m ethoinsight.parse.dump_headers --input "<raw_files[0]>" --output /mnt/user-data/workspace/columns.json` 产出 columns.json,再把 `--columns-file /mnt/user-data/workspace/columns.json` 传给 resolve。这是 catalog.resolve 自带的标准入口,直接调即可(sandbox 已放行)。
-   - **`--raw-files-json` 必须指向一个 JSON 数组,里面是虚拟路径**(`/mnt/user-data/uploads/xxx.txt`),**不可写宿主机绝对路径**。
-   - raw_files 路径的**单一真源是 `plan_metrics.json.inputs.raw_files`**: read 这个文件,数组**原样**写进 raw_files.json,**不要**从 handoff_code_executor.json 抄(其 inputs 字段历史上有过宿主路径污染),**不要**用 `Path(...).resolve()` / `realpath`。
-   - **若 handoff_code_executor.json.inputs.groups 存在,把它整个 dict 写到 `groups.json` 并加 `--groups-json /mnt/user-data/workspace/groups.json` 参数**;catalog 中 `needs_groups: true` 的 aggregate chart(box/bar 等)依赖该文件做组间对比。
-   - resolve.py 会把这些路径原样写到 `plan_charts.json` 的 `input` 字段,后续脚本被 sandbox guardrail 拦宿主机路径。
+2. 调 `prep_chart_plan` 工具一步生成 plan_charts.json（取代 bash 拼 catalog.resolve）
+   - **uploaded_files（必填）**: 原样取自 `plan_metrics.json.inputs.raw_files`（数组原样传入，**不要**从 handoff_code_executor.json 抄，**不要**用 `Path(...).resolve()` / `realpath`）。
+   - **paradigm（必填）**: 原样取自 `handoff_code_executor.json.paradigm`。
+   - **user_intent / total_subjects / n_per_group / n_groups（可选）**: 从 handoff + 派遣 prompt 原样传。
+   - **column_aliases / groups 不用你传**：工具内部自读 `experiment-context.json`（Gate 1 列语义对齐投影）+ `groups.json`（prep_metric_plan 落盘的分组）。这是取代「bash 手拼 `--column-aliases-file` / `--groups-json`」的确定性入口——session 级横切状态由工具自取，你无从遗漏（红线二正模式 1）。
+   - 工具返回 `plan_summary`（chart_count / fallback_count / skipped_count / chart_ids / column_aliases_applied / groups_applied），据此进入步骤 3 的决策树。
 3. read `plan_charts.json` → charts[] + charts_fallback_available[]
 4. 决策(见 references/fallback-decision-tree.md)
 5. for each entry in plan_charts.json.charts: bash 跑脚本
@@ -43,7 +43,7 @@ author: noldus-insight
 |---|---|
 | bash 预算还剩 ≤ 2 次但 charts 还没跑完 | **立刻**写 handoff_chart_maker.json(status=`partial`),记录 `succeeded_charts[]` / `remaining_charts[]` / `reason="bash budget exhausted"`,present_files 已成功的 png,再输出 `OK` |
 | 某 chart 脚本连续失败 ≥ 2 次 | 记入 failed_charts[] 跳过下一个,**不要继续重试**(LLM 试错只会耗光预算) |
-| catalog.resolve 调用本身失败 | 写 handoff_chart_maker.json(status=`failed`),chart_files=[],failed_charts=[{chart_id:"all", reason:"<resolve error>"}],输出 `OK:` + [gate_signals] |
+| catalog.resolve 调用本身失败 | 写 handoff_chart_maker.json(status=`failed`),chart_files=[],failed_charts=[{chart_id:"all", reason:"<prep_chart_plan error>"}],按返回 hint 处理(file_not_found/unknown_paradigm 等),输出 `OK:` + [gate_signals] |
 | sandbox guardrail 拒绝(host_path_blocked 等) | **不要重试** —— guardrail 反馈消息已说明 root cause(路径错 / 参数错),把消息原样塞到 failed_charts[i].reason,跳过这个 chart |
 | 任何未预期异常 | catch 之,写 handoff status=`failed` + errors=[<traceback summary>],输出 `OK: ` + [gate_signals],**不要让 subagent 静默挂掉** |
 
