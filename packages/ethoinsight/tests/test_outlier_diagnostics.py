@@ -304,3 +304,152 @@ class TestCompareGroupsWithZeroValueSubject:
         zero_diags = [d for d in diags if d["value"] == 0.0]
         assert len(zero_diags) == 1
         assert math.isfinite(zero_diags[0]["deviation_median_ratio"])
+
+
+# ---------------------------------------------------------------------------
+# spec 2026-06-18-data-analyst-thinking-overload：outlier 真名下沉 + deviation 合成
+#
+# data-analyst 曾在 thinking 里逐条把 `subject #i` 映射成真名、把 deviation_median_ratio
+# 翻译成定性串、手算 counterfactual——撑爆 50K 撞 900s 超时。本批坐实这些机械变换已下沉
+# 到统计层：① subject 真名由 compare_groups 经 group_summary[grp][metric]["subjects"] +
+# subject_label_map 翻译预填；② 定性 deviation 串由 compute_outlier_diagnostics 合成；
+# ③ OutlierFinding 所需 5 字段（subject/metric/value/deviation/counterfactual）逐条齐备。
+# ---------------------------------------------------------------------------
+
+
+class TestOutlierDeviationSynthesis:
+    """compute_outlier_diagnostics 每条产出定性 deviation 串（spec §3.2）。
+
+    data-analyst 不再在 thinking 里把 deviation_median_ratio=2.0 翻译成 "2x group median"。
+    """
+
+    def test_deviation_string_median_ratio(self):
+        """≥2× median 离群 → deviation 串含 'x group median'。"""
+        # 中位数 1，值 100 = 100× median
+        diags = compute_outlier_diagnostics({"treatment": [1, 1, 1, 1, 1, 100]})
+        d = {x["value"]: x for x in diags}[100.0]
+        assert isinstance(d["deviation"], str)
+        assert "group median" in d["deviation"]
+
+    def test_deviation_string_extreme_for_zero_value(self):
+        """value==0 且 median≠0 = 极端偏离 → 'extreme deviation'。"""
+        diags = compute_outlier_diagnostics({"treatment": _REAL_TREATMENT_WITH_ZERO})
+        d = {x["value"]: x for x in diags}[0.0]
+        assert "extreme deviation" in d["deviation"]
+
+    def test_deviation_string_includes_sd_when_above_threshold(self):
+        """deviation_sd ≥ 1.5 → deviation 串附 SD 方向描述。"""
+        # 100 远超 1.5 SD
+        diags = compute_outlier_diagnostics({"control": [10, 10, 10, 10, 9, 11, 10, 10, 10, 100]})
+        d = {x["value"]: x for x in diags}[100.0]
+        assert "SD" in d["deviation"]
+        assert "above" in d["deviation"]  # 100 > mean → above
+
+    def test_deviation_string_below_direction(self):
+        """低值离群（value < mean）→ 'below mean'。"""
+        # 低值 0 是极端偏离（median≠0），其余值较高 → value < mean → below
+        diags = compute_outlier_diagnostics({"control": [10, 10, 10, 10, 10, 10, 10, 0.0]})
+        d = {x["value"]: x for x in diags}[0.0]
+        # 0 既是 extreme deviation 又因 value<mean 带 below
+        assert "below" in d["deviation"]
+
+
+def _metrics_result_with_subjects(
+    values_by_group: dict[str, list[float]],
+    subjects_by_group: dict[str, list[str]],
+    metric: str = "m",
+) -> dict:
+    """构造带 subjects 字段的 metrics_result（dispatcher 新形态）。"""
+    group_summary: dict[str, dict] = {}
+    for grp, vals in values_by_group.items():
+        arr = np.array(vals, dtype=float)
+        group_summary[grp] = {
+            metric: {
+                "mean": float(arr.mean()),
+                "std": float(arr.std(ddof=1)) if len(arr) > 1 else 0.0,
+                "n": len(arr),
+                "values": [float(v) for v in arr],
+                "subjects": list(subjects_by_group[grp]),
+            }
+        }
+    return {"group_summary": group_summary}
+
+
+class TestCompareGroupsResolvesRealSubjectNames:
+    """compare_groups 从 group_summary[grp][metric]['subjects'] 取真名 + 经 label_map 翻译（spec §3.1）。"""
+
+    def test_compare_groups_uses_subjects_field_when_present(self):
+        """group_summary metric dict 含 subjects → outlier subject 取自该字段，非 #i 兜底。"""
+        metrics_result = _metrics_result_with_subjects(
+            {"control": [10, 10, 10, 100], "treatment": [20, 20, 20, 20]},
+            {"control": ["Trial 0", "Trial 1", "Trial 2", "Trial 3"], "treatment": ["Trial 4", "Trial 5", "Trial 6", "Trial 7"]},
+        )
+        result = statistics.compare_groups(metrics_result)
+        diags = result["outlier_diagnostics"]
+        subjects = {d["subject"] for d in diags}
+        assert "Trial 3" in subjects  # control 的 100，第 3 位
+        assert not any(s.startswith("subject #") for s in subjects), "有 subjects 字段时不应兜底 subject #i"
+
+    def test_compare_groups_subject_label_map_translates_keys(self):
+        """dispatcher 写的 subjects 是 subject_key（EV19 对象名称）；label_map 翻译成 stem。"""
+        # subject_key 形如 '_1'（EV19 对象名称常为空串派生），label_map 映射到文件 stem
+        metrics_result = _metrics_result_with_subjects(
+            {"control": [10, 10, 10, 100], "treatment": [20, 20, 20, 20]},
+            {"control": ["_0", "_1", "_2", "_3"], "treatment": ["_4", "_5", "_6", "_7"]},
+        )
+        label_map = {
+            "_0": "Raw data-EPM-Xuhui-Trial 0",
+            "_1": "Raw data-EPM-Xuhui-Trial 1",
+            "_2": "Raw data-EPM-Xuhui-Trial 2",
+            "_3": "Raw data-EPM-Xuhui-Trial 3",
+        }
+        result = statistics.compare_groups(metrics_result, subject_label_map=label_map)
+        diags = result["outlier_diagnostics"]
+        subjects = {d["subject"] for d in diags}
+        assert "Raw data-EPM-Xuhui-Trial 3" in subjects
+        assert "_3" not in subjects, "label_map 命中的 key 应被翻译，不残留 subject_key"
+
+    def test_compare_groups_label_map_missing_key_falls_back_to_key(self):
+        """label_map 缺某 key → 保留原 subject_key（降级不阻断，spec §6.3）。"""
+        metrics_result = _metrics_result_with_subjects(
+            {"control": [10, 10, 10, 100], "treatment": [20, 20, 20, 20]},
+            {"control": ["s0", "s1", "s2", "s3"], "treatment": ["s4", "s5", "s6", "s7"]},
+        )
+        # label_map 不含 s3 → 应保留 s3
+        result = statistics.compare_groups(metrics_result, subject_label_map={"s0": "Trial 0"})
+        diags = result["outlier_diagnostics"]
+        subjects = {d["subject"] for d in diags}
+        assert "s3" in subjects  # 降级：保留原 key
+
+    def test_compare_groups_counterfactual_carries_real_subject(self):
+        """counterfactual 串里的 subject 标识随真名更新（data-analyst 原样引用）。"""
+        metrics_result = _metrics_result_with_subjects(
+            {"control": [10, 10, 10, 100], "treatment": [20, 20, 20, 20]},
+            {"control": ["Trial 0", "Trial 1", "Trial 2", "Trial 3"], "treatment": ["Trial 4", "Trial 5", "Trial 6", "Trial 7"]},
+        )
+        result = statistics.compare_groups(metrics_result)
+        diags = result["outlier_diagnostics"]
+        d = {x["value"]: x for x in diags}[100.0]
+        assert "Trial 3" in d["counterfactual"]
+        assert "subject #" not in d["counterfactual"]
+
+
+class TestOutlierEntryAlignsWithOutlierFinding:
+    """每条 outlier_diagnostics 含 OutlierFinding 所需 5 字段，可最小投影直接构造（spec §4.2）。"""
+
+    def test_entry_has_all_outlier_finding_fields(self):
+        metrics_result = _metrics_result_with_subjects(
+            {"control": [10, 10, 10, 100], "treatment": [20, 20, 20, 20]},
+            {"control": ["Trial 0", "Trial 1", "Trial 2", "Trial 3"], "treatment": ["t4", "t5", "t6", "t7"]},
+        )
+        result = statistics.compare_groups(metrics_result)
+        for d in result["outlier_diagnostics"]:
+            # OutlierFinding: subject / metric / value / deviation / counterfactual
+            for key in ("subject", "metric", "value", "deviation", "counterfactual"):
+                assert key in d, f"outlier 条目缺 OutlierFinding 所需字段 {key}"
+            assert isinstance(d["subject"], str)
+            assert isinstance(d["metric"], str)
+            assert isinstance(d["value"], float)
+            assert isinstance(d["deviation"], str)
+            assert d["counterfactual"] is None or isinstance(d["counterfactual"], str)
+

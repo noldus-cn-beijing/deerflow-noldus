@@ -110,7 +110,7 @@ def compute_paradigm_metrics(
         {
             "paradigm": str,
             "per_subject": {subject: {metric: value, ...}, ...},
-            "group_summary": {group: {metric: {"mean", "std", "n", "values"}, ...}, ...},
+            "group_summary": {group: {metric: {"mean", "std", "n", "values", "subjects"}, ...}, ...},
             "timeseries": {metric_name: DataFrame, ...},
             "metadata": {"n_subjects", "n_files", "duration_s", "computed_metrics"},
         }
@@ -207,13 +207,19 @@ def compute_paradigm_metrics(
                     all_metric_names.add(k)
 
         for mname in sorted(all_metric_names):
-            values = [
-                per_subject[s][mname]
-                for s in matched
-                if mname in per_subject[s]
-                and per_subject[s][mname] is not None
-                and isinstance(per_subject[s][mname], (int, float))
-            ]
+            # values 与 subjects 并行收集：同一过滤条件，保证两列表逐位对应、等长。
+            # subjects 是 subject_key（EV19 对象名称，常为空串）——真名美化（文件名 stem）
+            # 由 statistics runner 持有的 subject_label_map 在 compare_groups 层翻译；
+            # dispatcher 内部拿不到文件路径，只保证 subject_key 列表与 values 对齐
+            # （spec 2026-06-18 outlier 真名下沉：消除 data-analyst thinking 里的 subject 映射）。
+            values: list[float] = []
+            pair_subjects: list[str] = []
+            for s in matched:
+                v = per_subject[s].get(mname)
+                if v is None or not isinstance(v, (int, float)):
+                    continue
+                values.append(v)
+                pair_subjects.append(s)
             if values:
                 arr = np.array(values, dtype=float)
                 grp_metrics[mname] = {
@@ -221,6 +227,9 @@ def compute_paradigm_metrics(
                     "std": float(arr.std(ddof=1)) if len(arr) > 1 else 0.0,
                     "n": len(arr),
                     "values": [float(v) for v in arr],
+                    # 与 values 逐位对应的 subject_key 列表；compare_groups 据此把
+                    # compute_outlier_diagnostics 的组内 index 解析回具体 subject。
+                    "subjects": pair_subjects,
                 }
         group_summary[grp_name] = grp_metrics
 
