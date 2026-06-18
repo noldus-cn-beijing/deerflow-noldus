@@ -1,3 +1,20 @@
+# ~~Spec：EPM `open_arm_time_ratio` 分母改为「开臂+闭臂」（排除中央区）~~
+
+> ## ⛔ 此 Spec 前提已撤回，请勿执行
+>
+> **2026-06-18 专家最终裁定（实施过程中多轮更正后落点）**：
+> `open_arm_time_ratio = 开臂帧 / 总帧（含中央区）`——即**当前实现就是正确的**，分母无需改动。
+>
+> 本 spec §1.2 的目标公式 `open/(open+closed)` 已被专家明确否决，理由：
+> - OFT 只有 center 列（无独立外围区列），与 EPM 数据拓扑不同，若「排除中央区」则 OFT 无法对应实现；
+> - 专家最终在「分母=总帧含中央区 vs 臂内分母」的明确二选一中选定前者。
+>
+> **代码（`epm.py:compute_open_arm_time_ratio` 的 `combined.mean()`）、catalog one_liner、skill 文档均无需修改。**
+>
+> 以下原始 spec 内容仅作历史存档。
+
+---
+
 # Spec：EPM `open_arm_time_ratio` 分母改为「开臂+闭臂」（排除中央区）
 
 ## 〇、给实施 agent 的一句话
