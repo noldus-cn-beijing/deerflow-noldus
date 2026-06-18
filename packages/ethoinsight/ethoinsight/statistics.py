@@ -378,6 +378,39 @@ def _nonnan_indices(values: list[float]) -> list[int]:
     return [i for i, v in enumerate(values) if not (v != v)]
 
 
+def _format_outlier_deviation(
+    *,
+    value: float,
+    grp_mean: float,
+    deviation_sd: float,
+    median_ratio_out: float,
+) -> str:
+    """把离群数值判据翻译成 OutlierFinding.deviation 所需的定性描述串。
+
+    spec 2026-06-18 §3.2：data-analyst 直接引用此串，不在 thinking 里把
+    ``deviation_median_ratio=2.0`` 翻译成 ``"2x group median"``。
+
+    Args:
+        value: 该 subject 的原始值。
+        grp_mean: 组均值（定方向：value 高于/低于 mean）。
+        deviation_sd: ``|value-mean|/std``（判据内部真值，非哨兵）。
+        median_ratio_out: median-ratio 判据内部真值（可能 ``inf``，一方为 0 一方非 0）。
+
+    Returns:
+        定性描述，如 ``"2.0x group median"`` / ``"extreme deviation"`` /
+        ``"2.0x group median; 1.6 SD above mean"``。
+    """
+    parts: list[str] = []
+    if math.isinf(median_ratio_out):
+        parts.append("extreme deviation")
+    else:
+        parts.append(f"{median_ratio_out:.1f}x group median")
+    if deviation_sd >= _OUTLIER_SD_THRESHOLD:
+        direction = "above" if value >= grp_mean else "below"
+        parts.append(f"{deviation_sd:.1f} SD {direction} mean")
+    return "; ".join(parts)
+
+
 def compute_outlier_diagnostics(
     group_values: dict[str, list[float]],
     subject_names: dict[str, list[str]] | None = None,
@@ -404,10 +437,12 @@ def compute_outlier_diagnostics(
         每个离群 subject 一条 dict：
         ``{group, subject, value, deviation_sd, deviation_median_ratio,
            group_mean, group_std, group_median, loo_mean, loo_std,
-           counterfactual}``。
+           counterfactual, deviation}``。
         ``counterfactual`` 是预格式化串，如
         ``"control mean 0.2530 → 0.1285 (std 0.3356 → 0.0701) if subject #2 excluded"``，
-        data-analyst 原样引用不重算。
+        data-analyst 原样引用不重算。``deviation`` 是定性描述串（如
+        ``"2.0x group median; 1.6 SD above mean"``，由 ``_format_outlier_deviation``
+        合成），对齐 ``OutlierFinding.deviation`` 字段，data-analyst 直接引用。
 
     Notes:
         - 组内 <2 值时 SD/LOO 无意义，跳过该组（与 compare_groups 的 ``len>=2`` 门一致）。
@@ -444,14 +479,25 @@ def compute_outlier_diagnostics(
             loo_arr = np.delete(arr, i)
             loo_mean = float(loo_arr.mean()) if len(loo_arr) > 0 else grp_mean
             loo_std = float(loo_arr.std(ddof=1)) if len(loo_arr) > 1 else 0.0
-            subject = (
-                grp_subjects[raw_idx]
-                if raw_idx < len(grp_subjects)
-                else f"subject #{raw_idx}"
-            )
+            # 降级兜底（spec 2026-06-18 §6.3）：grp_subjects[raw_idx] 可能是
+            # ① 缺位（index 越界）② 空串/纯空白（EV19 对象名常为空串，label_map 漏翻译时
+            # 原样保留会让 counterfactual 出现 "if  excluded" 空洞）。两种都回退到组内
+            # index 兜底 `subject #i`，保证 subject 永远是可读标识、counterfactual 不空洞。
+            _raw_subject = grp_subjects[raw_idx] if raw_idx < len(grp_subjects) else None
+            subject = _raw_subject.strip() if isinstance(_raw_subject, str) and _raw_subject.strip() else f"subject #{raw_idx}"
             counterfactual = (
                 f"{grp_name} mean {grp_mean:.4f} → {loo_mean:.4f} "
                 f"(std {grp_std:.4f} → {loo_std:.4f}) if {subject} excluded"
+            )
+            # 合成定性 deviation 串（spec 2026-06-18 §3.2）：把数值 deviation_sd /
+            # deviation_median_ratio 翻译成 OutlierFinding.deviation 所需的定性描述，
+            # data-analyst 直接引用不必在 thinking 里把数值翻译成文字（又一个本属机械变换、
+            # 不该进 thinking 的点）。
+            deviation = _format_outlier_deviation(
+                value=value,
+                grp_mean=grp_mean,
+                deviation_sd=deviation_sd,
+                median_ratio_out=ratio,  # 判据内部真值（可能 inf），用于措辞
             )
             diagnostics.append(
                 {
@@ -468,6 +514,7 @@ def compute_outlier_diagnostics(
                     "loo_mean": loo_mean,
                     "loo_std": loo_std,
                     "counterfactual": counterfactual,
+                    "deviation": deviation,
                 }
             )
     return diagnostics
@@ -484,6 +531,7 @@ def compare_groups(
     metrics_to_test: list[str] | None = None,
     alpha: float = 0.05,
     correction: str = "bonferroni",
+    subject_label_map: dict[str, str] | None = None,
 ) -> dict:
     """Run statistical comparisons across groups for all requested metrics.
 
@@ -493,6 +541,12 @@ def compare_groups(
         metrics_to_test: Metric names to test. If None, tests all.
         alpha: Significance level.
         correction: Multiple comparison correction ("bonferroni" or "none").
+        subject_label_map: 可选 ``{subject_key: label}``，把 dispatcher 写进
+            ``group_summary[grp][metric]["subjects"]`` 的 subject_key（EV19 对象名称，
+            常为空串）翻译成人类可读标识（如文件名 stem ``"Trial 3"``）。runner 持有
+            groups.json 文件路径时构造此映射传入；data-analyst 引用 outlier 时看到真名而非
+            ``subject #i``（spec 2026-06-18：消除 thinking 里的 subject 映射黑洞）。缺失的 key
+            保留原 subject_key 不阻断。
 
     Returns:
         {
@@ -541,20 +595,43 @@ def compare_groups(
     outlier_diagnostics: list[dict] = []
 
     for metric_name in sorted(all_metrics):
-        # Gather values per group
+        # Gather values per group —— 同时并行收集与 values 逐位对应的 subjects
+        # （dispatcher group_summary[grp][metric]["subjects"]，subject_key 列表）。
+        # 经 subject_label_map 翻译成真名后传给 compute_outlier_diagnostics，让 outlier
+        # 诊断条目直接写真 subject 标识，data-analyst 不必在 thinking 里反查映射
+        # （spec 2026-06-18 outlier 真名下沉）。
         group_values = {}
+        group_subjects: dict[str, list[str]] = {}
         for grp_name in groups:
             grp = group_summary.get(grp_name, {})
             if metric_name in grp:
-                group_values[grp_name] = grp[metric_name].get("values", [])
+                vals = grp[metric_name].get("values", [])
+                group_values[grp_name] = vals
+                subj = grp[metric_name].get("subjects")
+                if isinstance(subj, list) and len(subj) == len(vals):
+                    group_subjects[grp_name] = subj
+                # subjects 缺失或长度不匹配 → 不传，compute_outlier_diagnostics 兜底 subject #i
 
         valid_groups = {k: v for k, v in group_values.items() if len(v) >= 2}
         if len(valid_groups) < 2:
             continue
 
+        # subject_label_map 应用到 group_subjects（subject_key → 真名），仅对存在的 key 翻译。
+        metric_subject_names: dict[str, list[str]] | None = None
+        if group_subjects:
+            metric_subject_names = {
+                grp: [
+                    (subject_label_map.get(s, s) if subject_label_map else s)
+                    for s in subs
+                ]
+                for grp, subs in group_subjects.items()
+            }
+
         # 离群 + LOO 诊断：用全 group_values（纯函数内部对 <2 值组自行跳过），
         # 与 comparisons 的 valid_groups 门独立，但只在 ≥2 组参与比较时才有意义。
-        metric_outliers = compute_outlier_diagnostics(group_values)
+        metric_outliers = compute_outlier_diagnostics(
+            group_values, subject_names=metric_subject_names
+        )
         for diag in metric_outliers:
             diag["metric"] = metric_name
             outlier_diagnostics.append(diag)

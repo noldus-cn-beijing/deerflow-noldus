@@ -17,6 +17,7 @@ from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 from ethoinsight.parse import parse_batch
 from ethoinsight.scripts._cli import (
     bridge_groups_to_subjects,
+    build_subject_label_map,
     emit_result,
     make_stats_parser,
     parse_parameters,
@@ -45,12 +46,15 @@ def main(argv: list[str] | None = None) -> int:
     # 第三层 bug 修复（spec 2026-06-16）：groups 的成员是文件路径，但 dispatcher
     # 按 parse_batch 的 subject key 匹配（EV19 对象名，常为空串）。用 file_subjects
     # 映射按文件桥接成 subject key，否则 comparisons 在真实数据上必空。
+    subject_label_map = build_subject_label_map(groups, parsed["file_subjects"])
     groups = bridge_groups_to_subjects(groups, parsed["file_subjects"])
     zone_overrides = parse_parameters(args)
     metrics = compute_paradigm_metrics(
         parsed, paradigm="epm", groups=groups, zone_overrides=zone_overrides
     )
-    stats = compare_groups(metrics, metrics_to_test=METRICS_TO_TEST)
+    stats = compare_groups(
+        metrics, metrics_to_test=METRICS_TO_TEST, subject_label_map=subject_label_map
+    )
 
     payload = {"paradigm": "epm", **stats}
     save_output_json(args.output, payload)

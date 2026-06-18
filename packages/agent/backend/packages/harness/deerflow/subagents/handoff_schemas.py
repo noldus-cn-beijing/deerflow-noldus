@@ -228,6 +228,13 @@ class ParameterAuditFinding(BaseModel):
     but data median=5). This is distinct from DataQualityWarning (which flags
     data-level problems); ParameterAuditFinding flags parameter-vs-data mismatches.
 
+    2026-06-18 (spec data-analyst-thinking-overload): data-analyst **不再产出**
+    参数审计。「参数值 vs 数据分布」数值判据行为学上造不出来（依赖装置/帧率/品系现场标定，
+    最懂的人拿 680 页书也产不出），留在判读路径上是纯负担且是 thinking 超时根因之一。
+    本类**保留**：① schema 字段向前兼容（data-analyst 恒传空数组）；② 将来判据以确定性
+    代码（code-executor / 独立 validator）就绪时复用此 schema + present_assumptions 消费方
+    （后者对空数组已 graceful）。model_validator/field_validator 归一逻辑保留供将来复用。
+
     Phase 1.5: model_validator(mode="before") normalises common LLM mistakes
     (used_value=None → "", non-numeric observed_distribution values stripped)
     before strict field validation runs — mirrors DataQualityWarning._normalize_llm_typeros.
@@ -362,16 +369,17 @@ class GateSignals(BaseModel):
     parameter_audit_findings_count: int = Field(
         default=0,
         description=(
-            "Sprint 3 新增。data-analyst 看到的 parameter_audit_findings 总数 "
-            "(critical+warning+info 合计)。lead 据此决定是否在播报模板中提及。"
+            "Sprint 3 新增；2026-06-18 起 data-analyst 不再产出参数审计（判据造不出，"
+            "见 ParameterAuditFinding docstring），此字段恒为 0。保留字段为向前兼容 + "
+            "将来以确定性代码接入时复用。"
         ),
     )
     parameter_audit_critical_count: int = Field(
         default=0,
         description=(
-            "Sprint 3 新增。parameter_audit_findings 中 severity=='critical' 且 "
-            "blocks_downstream=True 的条目数。Sprint 5 manual 模式下 guardrail "
-            "可据此拦截下游 subagent。"
+            "Sprint 3 新增；2026-06-18 起 data-analyst 不再产出参数审计，此字段恒为 0。"
+            "保留字段为向前兼容；Sprint 5 manual 模式 guardrail 将来可据此（非 0 时）"
+            "拦截下游 subagent。"
         ),
     )
     # P2 (spec 2026-06-17-statistics-loud-failure): statistics 子步骤降级信号（三态可机读）。
@@ -687,10 +695,10 @@ class DataAnalystHandoff(BaseModel):
     parameter_audit_findings: list[ParameterAuditFinding] = Field(
         default_factory=list,
         description=(
-            "Sprint 3 新增。data-analyst 比对 MetricStat.parameters_used 与 "
-            "handoff_code_executor 中的 per_subject 数据分布后产出的不匹配清单。"
-            "下游 report-writer 会读此字段写入'数据质量与局限'段；前端 "
-            "QualityWarningBanner 不读这个字段（它只显示 quality_warnings）。"
+            "Sprint 3 新增；2026-06-18 起 data-analyst 不再产出参数审计（判据行为学上造"
+            "不出来，见 ParameterAuditFinding docstring），恒为空数组 []。字段保留为向前兼容 + "
+            "将来以确定性代码（code-executor / 独立 validator）接入时复用。下游 present_assumptions "
+            "对空数组 graceful（不渲染参数审计段）。"
         ),
     )
 

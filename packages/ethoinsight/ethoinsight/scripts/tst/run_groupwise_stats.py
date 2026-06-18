@@ -17,6 +17,7 @@ from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 from ethoinsight.parse import parse_batch
 from ethoinsight.scripts._cli import (
     bridge_groups_to_subjects,
+    build_subject_label_map,
     emit_result,
     make_stats_parser,
     parse_parameters,
@@ -41,12 +42,15 @@ def main(argv: list[str] | None = None) -> int:
 
     parsed = parse_batch(paths)
     # 第三层 bug 修复（spec 2026-06-16）：按文件桥接 groups→subject key（见 _cli.bridge_groups_to_subjects）。
+    subject_label_map = build_subject_label_map(groups, parsed["file_subjects"])
     groups = bridge_groups_to_subjects(groups, parsed["file_subjects"])
     zone_overrides = parse_parameters(args)
     metrics = compute_paradigm_metrics(
         parsed, paradigm="tail_suspension", groups=groups, zone_overrides=zone_overrides
     )
-    stats = compare_groups(metrics, metrics_to_test=METRICS_TO_TEST)
+    stats = compare_groups(
+        metrics, metrics_to_test=METRICS_TO_TEST, subject_label_map=subject_label_map
+    )
 
     payload = {"paradigm": "tail_suspension", **stats}
     save_output_json(args.output, payload)

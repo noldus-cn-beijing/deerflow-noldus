@@ -269,6 +269,37 @@ def bridge_groups_to_subjects(
     return bridged
 
 
+def build_subject_label_map(
+    groups_files: dict[str, list[str]],
+    file_subjects: dict[str, str],
+) -> dict[str, str]:
+    """``{subject_key: file_name_stem}`` —— 把 dispatcher 写进 group_summary 的 subject_key
+    （EV19 对象名称，常为空串/``_1``）映射成人类可读的文件名 stem（如 ``"Trial 3"``）。
+
+    spec 2026-06-18-data-analyst-thinking-overload §3.1：statistics runner 在调
+    ``compare_groups`` 前构造此映射传入，让 outlier 诊断条目直接写真 subject 标识，
+    data-analyst 不必在 thinking 里把 ``subject #i`` 反查成文件名（thinking 黑洞根因之一）。
+
+    Args:
+        groups_files: ``read_groups_json`` 的原始输出（``{group: [file_path, ...]}``），
+            **bridge 之前**的文件路径版——bridge 后文件路径丢失，无法构造 stem。
+        file_subjects: ``parse_batch()["file_subjects"]``（``{file_path: subject_key}``）。
+
+    Returns:
+        ``{subject_key: Path(file_path).stem}``。file_subjects 没覆盖的 subject_key 不出现
+        （compare_groups 对缺失 key 保留原 subject_key 降级，spec §6.3）。
+    """
+    from pathlib import Path
+
+    label_map: dict[str, str] = {}
+    for file_paths in groups_files.values():
+        for fp in file_paths:
+            key = file_subjects.get(fp)
+            if key is not None:
+                label_map[key] = Path(fp).stem
+    return label_map
+
+
 def resolve_per_subject_input(args: argparse.Namespace) -> str:
     """For per-subject plots: return the single trajectory path from args.
 

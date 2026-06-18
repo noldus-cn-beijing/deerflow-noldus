@@ -127,6 +127,25 @@ class TestBuildAssumptionsMarkdown:
         result = _build_assumptions_markdown(None, None, da)
         assert "... and 3 more" in result
 
+    def test_empty_audit_findings_not_rendered(self):
+        """parameter_audit_findings == []（data-analyst 2026-06-18 起恒传）→ 不渲染参数审计段。
+
+        spec §4.5：data-analyst 不再产出参数审计，handoff 里该字段恒为 []。即使同时有
+        quality_warnings（渲染数据质量段），也不得误渲染空的参数审计段。这是 present_assumptions
+        对空数组 graceful 的显式坐实（test_empty_when_all_defaults 传 da=None 不够精确）。
+        """
+        da = {
+            "quality_warnings": [
+                {"severity": "critical", "code": "LOW_N", "message": "n=1", "blocks_downstream": True},
+            ],
+            "parameter_audit_findings": [],  # data-analyst 现恒传空数组
+        }
+        result = _build_assumptions_markdown(None, None, da)
+        # 数据质量段仍渲染（quality_warnings 非空）
+        assert "数据质量" in result
+        # 参数审计段不得渲染（空数组 = 无内容）
+        assert "参数审计" not in result
+
     def test_details_html_structure(self):
         ctx = {"analysis_config_id": "abc123", "parameter_overrides": {"x": 1}}
         result = _build_assumptions_markdown(ctx, None, None)
