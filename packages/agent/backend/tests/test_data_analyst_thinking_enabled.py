@@ -56,16 +56,24 @@ _ALL_BUILTIN_CONFIGS_MODULE = {
 }
 
 
-def test_only_data_analyst_has_thinking_enabled():
-    """仅 data-analyst thinking_enabled=True，其他所有 builtin 为 False。
+def test_no_builtin_has_thinking_enabled():
+    """所有 builtin subagent 的 thinking_enabled 均为 False。
 
-    这条测试就是用来防止未来有人"顺手"把别的也开了。
+    历史：spec 2026-06-03-data-analyst-enable-thinking-spec.md 曾为 data-analyst
+    单独开 thinking（当时唯一开 think 的洞察型 subagent）。**2026-06-18 第四轮 EPM
+    dogfood 推翻该决策**：data-analyst 判读判据已 100% 在 by-experiment skill +
+    outlier 旁路文件里（查表+选择，无现场多步推理），thinking 在此纯属把整套判读
+    在每个 model turn 重演一遍，撞穿 max_tokens=4096 输出预算（与 seal tool_call
+    arguments 共享），导致 ~9 轮空转。data-analyst 已改 model=deepseek-v4-pro-summary
+    （无 thinking），与 code-executor/chart-maker/report-writer 一致。
+
+    这条测试现在防止的是"未来有人又顺手把某个 builtin 的 thinking 开了"。
     """
     for name, cfg in _ALL_BUILTIN_CONFIGS_MODULE.items():
-        if name == "data-analyst":
-            assert cfg.thinking_enabled is True, f"{name} 必须为 True（本轮唯一的洞察型 subagent）"
-        else:
-            assert cfg.thinking_enabled is False, f"{name} 必须为 False（本轮仅 data-analyst 开 think）"
+        assert cfg.thinking_enabled is False, (
+            f"{name} 必须为 False（2026-06-18 起所有 builtin 均不开 thinking；"
+            f"data-analyst 的 thinking 因撞 4096 输出预算空转已撤销）"
+        )
 
 
 def test_builtin_registry_matches_module_constants():
@@ -77,13 +85,29 @@ def test_builtin_registry_matches_module_constants():
     assert registry["report-writer"] is REPORT_WRITER_CONFIG
 
 
-def test_builtin_registry_thinking_enabled_only_data_analyst():
-    """遍历 BUILTIN_SUBAGENTS 注册表断言除 data-analyst 外全部 False。"""
+def test_builtin_registry_no_thinking_enabled():
+    """遍历 BUILTIN_SUBAGENTS 注册表断言所有 builtin thinking_enabled 全 False。
+
+    见 test_no_builtin_has_thinking_enabled 的 docstring：2026-06-18 起 data-analyst
+    的 thinking 已撤销，全部 builtin 走非 thinking 模型。
+    """
     for name, cfg in BUILTIN_SUBAGENTS.items():
-        if name == "data-analyst":
-            assert cfg.thinking_enabled is True, f"registry {name}"
-        else:
-            assert cfg.thinking_enabled is False, f"registry {name}"
+        assert cfg.thinking_enabled is False, (
+            f"registry {name} 必须为 False（2026-06-18 起所有 builtin 均不开 thinking）"
+        )
+
+
+def test_data_analyst_uses_non_thinking_model():
+    """data-analyst 用 deepseek-v4-pro-summary（无 thinking），与三个产出型 subagent 一致。
+
+    根因锚点（2026-06-18 第四轮 EPM dogfood）：原 model="inherit"（v4-pro+thinking）
+    每轮在 thinking 里重演整套判读，撞 4096 输出预算 → seal arguments 被腰斩 → 空转。
+    判读判据全在 skill，无现场推理，换非 thinking 模型后预算全留给 arguments。
+    """
+    assert DATA_ANALYST_CONFIG.model == "deepseek-v4-pro-summary", (
+        f"data-analyst 必须用非 thinking 模型，实际 {DATA_ANALYST_CONFIG.model}"
+    )
+    assert DATA_ANALYST_CONFIG.thinking_enabled is False
 
 
 # ── 4.1(3): executor 传递 config 值给 create_chat_model ─────────────────

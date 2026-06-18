@@ -292,10 +292,21 @@ audit count 恒为 0。
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "bash", "str_replace",
                        "web_search", "web_fetch", "image_search"],
-    model="inherit",
+    # v4-flash（无 thinking），与 code-executor / chart-maker / report-writer 一致。
+    # 根因（2026-06-18 第四轮 EPM dogfood 实证）：原 model="inherit"（v4-pro）+
+    # thinking_enabled=True 下，data-analyst 每个 model turn 在 thinking 里把整套判读
+    # （统计表 + outlier + key_findings/recommendations 草稿）从头重演一遍，撞穿单次
+    # 响应的 max_tokens=4096 输出预算（thinking 与 seal tool_call arguments 共享同一
+    # 预算）→ arguments 被腰斩成残缺 JSON → tool_call 悬空 → SealGate 弹回 → 重演。
+    # 9 轮空转 ~11 分钟，最终靠 max_turns + seal-resume 兜底才跑通（极度浪费）。
+    # 判读判据已 100% 在 skill 里（by-experiment/<paradigm>.md 的混杂排查/解读方向/
+    # 组间口径，outlier counterfactual 由统计层旁路文件预算好），data-analyst 的工作是
+    # 「读成品 → 按 skill 查表 → 挑 2-3 条 → 填结论」，是查表+选择，无现场多步推理——
+    # thinking 在此纯属重演浪费。换 flash 后 4096 预算全留给 arguments，第一轮即可发出
+    # 完整 seal，空转归零。
+    model="deepseek-v4-pro-summary",
     max_turns=12,
     timeout_seconds=600,
-    thinking_enabled=True,
     when_to_use=(
         "适合:\n"
         "- code-executor 刚完成、有 handoff_code_executor.json,要对统计结果做专业解读 / 方法学把关 / 离群诊断\n"
