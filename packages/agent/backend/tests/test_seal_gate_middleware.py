@@ -115,18 +115,57 @@ class TestSealGateMiddleware:
         assert mw.after_model(state, runtime) is not None
         assert mw.after_model(state, runtime) is None
 
-    def test_reminder_count_isolated_per_run(self) -> None:
+    def test_reminder_count_accumulates_across_drifting_runtimes(self) -> None:
+        """Regression for the 2026-06-18 production bug (4th EPM dogfood).
+
+        The OLD code keyed the reminder count on
+        ``getattr(runtime, "run_id", None) or id(runtime)``. In production the
+        ``runtime`` object carries NO ``run_id`` ATTRIBUTE (run_id lives in the
+        FLAT ``runtime.context`` dict), so the key fell back to ``id(runtime)``,
+        which DIFFERS on each after_model invocation within one run. The count
+        never accumulated → cap never tripped → the gate bounced the model
+        every turn (capped only by the outer max_turns), burning ~9 wasted
+        re-judgement turns before seal-resume caught it.
+
+        Here we feed a DIFFERENT runtime object each call (no run_id attr) —
+        exactly what production does — and assert the per-instance counter still
+        reaches the cap. With the old keyed-dict code this looped forever (every
+        call returned a reminder); with the per-instance int it caps at
+        _MAX_REMINDERS.
+        """
         mw = SealGateMiddleware("data-analyst")
         state = _make_state(messages=[AIMessage(content="no seal")])
-        rt_a = _make_runtime("run-a")
-        rt_b = _make_runtime("run-b")
-        # run-a fires twice (capped), run-b independent
-        assert mw.after_model(state, rt_a) is not None
-        assert mw.after_model(state, rt_b) is not None
-        assert mw.after_model(state, rt_a) is not None  # run-a 2nd
-        assert mw.after_model(state, rt_a) is None  # run-a capped
-        assert mw.after_model(state, rt_b) is not None  # run-b still has budget
-        assert mw.after_model(state, rt_b) is None  # run-b capped
+        # Fresh runtime objects WITHOUT a run_id attribute — mirrors prod, where
+        # id(runtime) drifts per turn and run_id is absent as an attribute.
+        results = [mw.after_model(state, object()) for _ in range(5)]
+        # Exactly _MAX_REMINDERS reminders fire, then the gate allows exit.
+        fired = [r for r in results if r is not None]
+        allowed = [r for r in results if r is None]
+        assert len(fired) == 2, f"expected exactly 2 reminders, got {len(fired)}"
+        assert len(allowed) == 3, "after cap, every further call must allow exit"
+        # The cap is hit on the 3rd call and stays allowed thereafter (no relapse).
+        assert results[2] is None and results[3] is None and results[4] is None
+
+    def test_reminder_count_isolated_per_instance(self) -> None:
+        """Per-run isolation is achieved by FRESH instances, not by run-id keying.
+
+        The subagent executor builds a fresh SealGateMiddleware per run
+        (executor.py:_build_middlewares, called per run — same "fresh instance
+        each call" pattern as LoopDetectionMiddleware right above it). So two
+        independent runs get two independent counters automatically; a new
+        instance starts with a full reminder budget regardless of how many
+        reminders a previous run's instance fired.
+        """
+        state = _make_state(messages=[AIMessage(content="no seal")])
+        mw_run_a = SealGateMiddleware("data-analyst")
+        assert mw_run_a.after_model(state, object()) is not None
+        assert mw_run_a.after_model(state, object()) is not None
+        assert mw_run_a.after_model(state, object()) is None  # run-a capped
+        # A fresh instance (= a new run) starts over with a full budget.
+        mw_run_b = SealGateMiddleware("data-analyst")
+        assert mw_run_b.after_model(state, object()) is not None
+        assert mw_run_b.after_model(state, object()) is not None
+        assert mw_run_b.after_model(state, object()) is None  # run-b capped
 
     def test_fail_open_on_missing_messages_key(self) -> None:
         mw = SealGateMiddleware("data-analyst")

@@ -93,17 +93,29 @@ class SealGateMiddleware(AgentMiddleware):
         super().__init__()
         self._subagent_name = subagent_name
         self._seal_tool = _seal_tool_name(subagent_name)
-        self._reminder_counts: dict[str, int] = {}
+        # Per-instance counter. SUBprocess executor builds a FRESH middleware
+        # instance for every subagent run (executor.py:_build_middlewares is
+        # called per run — see the "fresh instance each call" precedent for
+        # LoopDetectionMiddleware right above SealGate), so a plain int is
+        # already per-run isolated. The previous ``{run_id: count}`` dict keyed
+        # on ``getattr(runtime, "run_id", None) or id(runtime)`` was the bug:
+        # ``runtime`` carries no ``run_id`` ATTRIBUTE (run_id lives in the FLAT
+        # ``runtime.context`` dict, not as an attribute — see
+        # _thread_id_from_runtime in experiment_context.py), so it always fell
+        # back to ``id(runtime)``, which DIFFERS across after_model invocations
+        # within one run. The count never accumulated → cap ``>= _MAX_REMINDERS``
+        # never tripped → the gate bounced the model indefinitely (capped only by
+        # the outer max_turns), producing N wasted re-judgement turns before
+        # seal-resume finally caught it. A per-instance int can't drift.
+        self._reminder_count: int = 0
 
     def _get_reminder_count(self, runtime: Runtime) -> int:
-        """Get the reminder count for the current run (per-run isolation)."""
-        key = getattr(runtime, "run_id", None) or id(runtime)
-        return self._reminder_counts.get(str(key), 0)
+        """Get the reminder count for the current run (per-instance isolation)."""
+        return self._reminder_count
 
     def _increment_reminder_count(self, runtime: Runtime) -> None:
         """Increment the reminder count for the current run."""
-        key = str(getattr(runtime, "run_id", None) or id(runtime))
-        self._reminder_counts[key] = self._reminder_counts.get(key, 0) + 1
+        self._reminder_count += 1
 
     @hook_config(can_jump_to=["model"])
     def after_model(self, state: Any, runtime: Runtime) -> dict[str, Any] | None:
