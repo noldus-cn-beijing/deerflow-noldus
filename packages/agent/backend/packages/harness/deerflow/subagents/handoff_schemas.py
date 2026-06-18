@@ -488,9 +488,30 @@ class CodeExecutorHandoff(BaseModel):
             "Populated by code-executor from experiment-context.json."
         ),
     )
-    task_context: TaskContext | None = Field(
+    # task_context 已移除（spec 2026-06-18）：死重量，下游不消费，把主 handoff 顶过
+    # sandbox read_file 50K 截断线。TaskContext 类保留定义供 v1.0 复用，ethoinsight
+    # 4 个 handoff 不再引用。旧 handoff 带 task_context 仍可 parse（extra="allow" 吞掉）。
+    outlier_diagnostics_ref: str | None = Field(
         default=None,
-        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
+        description=(
+            "完整 outlier_diagnostics 拆到旁路文件的虚拟路径（体积控制，spec 2026-06-18）。"
+            "data-analyst 需逐条映射 outlier_findings 时从此路径读。"
+            "无离群时为 None（旁路文件也不写）。"
+        ),
+    )
+    outlier_diagnostics_count: int = Field(
+        default=0,
+        description="离群诊断条目数（摘要，避免下游为拿计数而读旁路文件）。",
+    )
+    output_files_ref: str | None = Field(
+        default=None,
+        description=(
+            "完整 output_files（产物路径表）拆到旁路文件的虚拟路径（audit/lineage 用）。"
+        ),
+    )
+    output_files_count: int = Field(
+        default=0,
+        description="产物文件数（摘要，取代主 handoff 内嵌完整路径列表）。",
     )
     sealed_by: Literal["model", "framework_rebuild", "run_plan"] = Field(
         default="model",
@@ -554,10 +575,6 @@ class ChartMakerHandoff(BaseModel):
     analysis_config_id: str = Field(
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
-    )
-    task_context: TaskContext | None = Field(
-        default=None,
-        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
 
     @model_validator(mode="after")
@@ -660,10 +677,6 @@ class DataAnalystHandoff(BaseModel):
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
     )
-    task_context: TaskContext | None = Field(
-        default=None,
-        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
-    )
     quality_warnings: list[DataQualityWarning] = Field(
         default_factory=list,
         description=(
@@ -714,10 +727,6 @@ class ReportWriterHandoff(BaseModel):
     analysis_config_id: str = Field(
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
-    )
-    task_context: TaskContext | None = Field(
-        default=None,
-        description="任务状态包（seal 工具确定性组装，向后兼容：旧 handoff 为 None）。",
     )
 
     @model_validator(mode="after")

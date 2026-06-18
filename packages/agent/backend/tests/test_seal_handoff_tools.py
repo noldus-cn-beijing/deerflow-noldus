@@ -327,9 +327,14 @@ class TestBuildTaskContextDefensive:
 
 
 class TestSealIntegrationTaskContext:
-    """seal 端集成测试：seal 后落盘 JSON 含 task_context 且值正确."""
+    """seal 端 task_context 行为（spec 2026-06-18：ethoinsight handoff 移除该字段）。
+
+    CodeExecutorHandoff 不再声明 task_context → seal 不注入、落盘 JSON 不含该键。
+    显式提供的 task_context 经 extra="allow" 落入 model_extra 仍可落盘（向前兼容）。
+    """
 
     def test_seal_injects_task_context(self, tmp_path):
+        """CodeExecutorHandoff seal 后**不含** task_context（字段已移除，死重量）。"""
         ws = _make_workspace(tmp_path)
         runtime = _make_runtime(str(ws))
 
@@ -351,18 +356,11 @@ class TestSealIntegrationTaskContext:
         )
 
         data = json.loads((ws / "handoff_code_executor.json").read_text(encoding="utf-8"))
-        tc = data["task_context"]
-        assert tc is not None
-        assert tc["file_changes"] == [
-            "/mnt/user-data/outputs/metrics.json",
-            "/mnt/user-data/outputs/heatmap.png",
-        ]
-        assert "python -m json.tool" in tc["verify_commands"][0]
-        assert "ls" in tc["verify_commands"][1]
-        assert tc["failed_paths"] == ["group B n=1 skipped"]
-        assert tc["pending_items"] == []  # status=completed → 空
+        # task_context 不再注入（字段移除）。
+        assert "task_context" not in data, "CodeExecutorHandoff 不应再含 task_context（spec 2026-06-18 移除）"
 
     def test_seal_partial_status_pending_items_empty(self, tmp_path):
+        """partial 状态 seal 同样不含 task_context（字段移除对所有状态生效）。"""
         ws = _make_workspace(tmp_path)
         runtime = _make_runtime(str(ws))
 
@@ -382,12 +380,10 @@ class TestSealIntegrationTaskContext:
         )
 
         data = json.loads((ws / "handoff_code_executor.json").read_text(encoding="utf-8"))
-        tc = data["task_context"]
-        # 真实 partial 时 pending_items 诚实留空（partial 为统计跳过，errors 恒空）
-        assert tc["pending_items"] == []
+        assert "task_context" not in data
 
     def test_seal_forward_compat_explicit_task_context(self, tmp_path):
-        """显式提供 task_context 时不被覆盖（payload.setdefault 语义）."""
+        """显式提供 task_context 时经 extra="allow" 落盘（向前兼容旧 producer）。"""
         ws = _make_workspace(tmp_path)
         runtime = _make_runtime(str(ws))
 
@@ -405,8 +401,8 @@ class TestSealIntegrationTaskContext:
         )
 
         data = json.loads((ws / "handoff_code_executor.json").read_text(encoding="utf-8"))
+        # 字段已移除但 extra="allow" 保留显式提供的 task_context 落盘（向前兼容审计）。
         tc = data["task_context"]
-        # setdefault 语义：已显式提供 → 不覆盖
         assert tc["file_changes"] == ["/custom/path.txt"]
 
 

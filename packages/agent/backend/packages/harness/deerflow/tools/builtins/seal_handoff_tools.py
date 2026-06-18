@@ -407,9 +407,12 @@ def _seal_handoff_to_workspace(
     # 1. 注入 analysis_config_id (subagent 不用手动传)
     payload.setdefault("analysis_config_id", _read_analysis_config_id(workspace))
 
-    # 1.5. 自动组装 task_context（确定性，subagent 无感知）。
-    # 仅当 payload 未显式提供 task_context 时注入（向前兼容）。
-    payload.setdefault("task_context", _build_task_context(payload))
+    # 1.5. 自动组装 task_context —— 仅当目标 schema 仍声明该字段时注入。
+    # ethoinsight 4 个 handoff 已移除该字段（拆为旁路 lineage，spec 2026-06-18）；
+    # 通用 handoff schema 若仍有该字段则保持组装，向前兼容。task_context 是死重量
+    # （下游不消费），无条件注入会把主 handoff 顶过 sandbox read_file 50K 截断线。
+    if "task_context" in getattr(model_cls, "model_fields", {}):
+        payload.setdefault("task_context", _build_task_context(payload))
 
     # 2. Pydantic 校验
     try:
