@@ -224,3 +224,38 @@ async def test_aafter_agent_delegates_to_super_when_no_sandbox(monkeypatch: pyte
 
     assert result == {"delegated": True}
     assert calls == [(state, runtime)]
+
+
+# ============================================================================
+# 根因回归（2026-06-18 第四轮 EPM dogfood 并行派遣崩溃）：
+# SandboxMiddlewareState.sandbox 必须带 merge_sandbox reducer，使编译出的 sandbox
+# channel 恒为 BinaryOperatorAggregate，不依赖"靠链里别的中间件（SandboxAuditMiddleware
+# 的 ThreadState）碰巧救回"。否则并行派遣两个 subagent 时某 super-step 两个 sandbox 写入
+# 落到 LastValue channel → InvalidUpdateError: "At key 'sandbox': Can receive only one
+# value per step"。
+# 红→绿实证（git stash 验证）：修复前 SandboxMiddlewareState-only → LastValue；修复后
+# → BinaryOperatorAggregate。
+# ============================================================================
+
+
+def test_sandbox_middleware_state_sandbox_has_reducer():
+    """SandboxMiddlewareState.sandbox 必须挂 merge_sandbox（不是裸 LastValue 声明）。
+
+    这是本根因修复的**确定性守卫**：注解直接带 merge_sandbox（pre-fix 无、post-fix 有，
+    git stash 已证 channel 随之 LastValue→BinaryOperatorAggregate），order-independent、
+    不受 create_agent channel 推断在全量测试里被前序状态污染的影响。
+
+    （注：未给本修复加"并发 astream 跑通"的行为测试——简化复现还原不出生产崩溃所需的
+    "lead tool 节点 fan-out 两 subagent、同 super-step 两 sandbox 写"条件，pre-fix 也
+    不炸，故非真 red→green 守卫；channel-type 字符串断言又会被全量污染。结构断言是唯一
+    可靠的回归锚点。）
+    """
+    import typing
+
+    from deerflow.agents.thread_state import merge_sandbox
+    from deerflow.sandbox.middleware import SandboxMiddlewareState
+
+    hints = typing.get_type_hints(SandboxMiddlewareState, include_extras=True)
+    sb = hints["sandbox"]
+    assert hasattr(sb, "__metadata__"), "sandbox 必须是 Annotated（带 reducer），不能裸 NotRequired"
+    assert merge_sandbox in sb.__metadata__, "sandbox 的 reducer 必须是 merge_sandbox（与 ThreadState 一致）"

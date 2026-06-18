@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import replace as dc_replace
-from typing import NotRequired, override
+from typing import Annotated, NotRequired, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
@@ -11,16 +11,30 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
-from deerflow.agents.thread_state import SandboxState, ThreadDataState
+from deerflow.agents.thread_state import SandboxState, ThreadDataState, merge_sandbox
 from deerflow.sandbox import get_sandbox_provider
 
 logger = logging.getLogger(__name__)
 
 
 class SandboxMiddlewareState(AgentState):
-    """Compatible with the `ThreadState` schema."""
+    """Compatible with the `ThreadState` schema.
 
-    sandbox: NotRequired[SandboxState | None]
+    ``sandbox`` MUST carry the same ``merge_sandbox`` reducer as ``ThreadState.sandbox``.
+    根因修复（2026-06-18，第四轮 EPM dogfood 并行派遣崩溃）：原本这里 ``sandbox`` 是裸
+    ``NotRequired[...]``（LastValue，无 reducer）。langchain ``create_agent`` 合并多个
+    中间件的 state_schema 时，channel 类型取决于合并规则——subagent 链里恰好有
+    ``SandboxAuditMiddleware``（用 ``ThreadState``，带 reducer）把 sandbox channel "救"成
+    ``BinaryOperatorAggregate``，所以串行派遣不炸。但这是**偶然**：一旦某 super-step 里有
+    两个 sandbox 写入源（并行派遣两个 subagent 时触发），无 reducer 的声明会让 channel 退化
+    成 LastValue → ``InvalidUpdateError: At key 'sandbox': Can receive only one value per step``。
+    给本字段也挂 ``merge_sandbox``，channel 无论中间件链怎么组合/顺序/并发都恒为
+    ``BinaryOperatorAggregate``，不再依赖"靠别的中间件碰巧救"——这正是 LangGraph 报错
+    本身的建议（"Use an Annotated key to handle multiple values"）。``merge_sandbox`` 对
+    相同 sandbox_id 幂等放行、不同 id 才 fail-closed，语义正确。
+    """
+
+    sandbox: Annotated[NotRequired[SandboxState | None], merge_sandbox]
     thread_data: NotRequired[ThreadDataState | None]
 
 
