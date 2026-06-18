@@ -408,6 +408,11 @@ export function ArtifactFilePreview({
         if (!src || typeof src !== "string") {
           return <img src={src} alt={alt} {...rest} />;
         }
+        // SSOT（2026-06-18）：normalizeArtifactImageSrc 现仅认规范形态
+        // /mnt/user-data/outputs/X.png（后端 seal 统一产出，report.md 图片均如此）。
+        // 非规范 src（裸名 / outputs/X.png 等历史形态）返回 null → 原样渲染暴露，
+        // 不再猜测兜底（spec §2.3）。本 viewer 预览的 markdown 图片同样适用此规范。
+        // 详见 docs/superpowers/specs/2026-06-18-report-image-path-ssot-spec.md。
         const filepath = normalizeArtifactImageSrc(src);
         const imgSrc = filepath
           ? urlOfArtifact({ filepath, threadId })

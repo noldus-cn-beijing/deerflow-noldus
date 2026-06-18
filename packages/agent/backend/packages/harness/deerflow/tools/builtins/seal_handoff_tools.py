@@ -137,14 +137,15 @@ def _resolve_workspace(runtime: Runtime) -> Path:
     return Path(workspace_path)
 
 
-# Regex matching markdown image paths that reference outputs/ but lack the
-# correct virtual prefix. Covers three LLM-written variants:
-#   (outputs/file.png)            — relative, no prefix
-#   (/mnt/user-data/outputs/…)   — absolute virtual, leading slash (invalid for API)
-#   (mnt/user-data/outputs/…)    — already correct, skip
-# Capture group 1 = everything inside the parens after the bad prefix.
+# Regex matching markdown image paths that do NOT use the canonical virtual
+# prefix. Covers three LLM-written variants that must be normalised to canonical:
+#   (outputs/file.png)             — relative, no prefix
+#   (mnt/user-data/outputs/…)     — correct prefix but missing the leading slash
+#   (/mnt/user-data/outputs/…)    — already canonical; matched idempotently
+# The optional ``/?mnt/user-data/`` prefix absorbs both slash-less and slashed
+# forms; the literal ``outputs/`` then matches; capture group 1 = the file name.
 _BAD_IMG_PATH_RE = re.compile(
-    r"\((?:/mnt/user-data/outputs/|outputs/)([^)]+\.(?:png|jpg|jpeg|svg|gif|webp))\)"
+    r"\((?:/?mnt/user-data/)?outputs/([^)]+\.(?:png|jpg|jpeg|svg|gif|webp))\)"
 )
 
 # Regex matching {{img:<basename>}} placeholders in report.md.
@@ -155,11 +156,47 @@ _BAD_IMG_PATH_RE = re.compile(
 _IMG_PLACEHOLDER_RE = re.compile(r"\{\{img:([^}]+)\}\}")
 
 
+# ============================================================================
+# report 图片路径规范形态（SSOT）—— 2026-06-18
+# spec: docs/superpowers/specs/2026-06-18-report-image-path-ssot-spec.md
+#
+# report.md 内图片路径的**唯一规范形态**是带前导斜杠的虚拟绝对路径：
+#   /mnt/user-data/outputs/<name>.<ext>
+#
+# 前导斜杠让前端 ``src.startsWith("/mnt/")`` 判断稳定命中；前端把它原样
+# 交给 artifact API（``/api/threads/{tid}/artifacts/mnt/user-data/outputs/…``），
+# 后端 ``resolve_virtual_path`` 内部 ``lstrip("/")`` 后命中 ``mnt/user-data/`` 前缀。
+#
+# 这是 report 图片路径规范形态的**唯一定义点**——seal 的两个产出点
+# (placeholder 解析 + path normalize) 都调本函数，保证字节一致（SSOT 铁律）。
+# ============================================================================
+_CANONICAL_PREFIX = "/mnt/user-data/outputs/"
+
+
+def _to_canonical_artifact_path(name: str) -> str:
+    """Return the canonical report-image path for *name*.
+
+    规范形态 = ``/mnt/user-data/outputs/<name>``（带前导斜杠）。
+    对已是规范形态（或带多余前导斜杠）的输入幂等归一，不会二次加前缀。
+
+    Args:
+        name: 图片文件名（basename 或已是 ``/mnt/user-data/outputs/…`` 全路径）。
+
+    Returns:
+        带前导斜杠的规范虚拟绝对路径。
+    """
+    stripped = name.lstrip("/")
+    if stripped.startswith("mnt/user-data/outputs/"):
+        return f"/{stripped}"
+    return f"{_CANONICAL_PREFIX}{stripped}"
+
+
 def _load_chart_files_map(workspace: Path) -> dict[str, str]:
-    """Return {basename: full_virtual_path_lstrip_slash} from handoff_chart_maker.json.
+    """Return {basename: canonical_virtual_path} from handoff_chart_maker.json.
 
     Returns empty dict when file absent, unparseable, or chart_files empty.
-    The value has its leading '/' stripped — artifacts API requires no leading slash.
+    The value is the **canonical** form (leading slash) via
+    ``_to_canonical_artifact_path`` — the SSOT for report image paths.
     """
     chart_handoff = workspace / "handoff_chart_maker.json"
     if not chart_handoff.exists():
@@ -172,7 +209,7 @@ def _load_chart_files_map(workspace: Path) -> dict[str, str]:
         result: dict[str, str] = {}
         for f in chart_files:
             if isinstance(f, str):
-                result[Path(f).name] = f.lstrip("/")
+                result[Path(f).name] = _to_canonical_artifact_path(Path(f).name)
         return result
     except Exception:
         return {}
@@ -228,22 +265,25 @@ def _resolve_report_image_placeholders(
 
 
 def _normalize_report_image_paths(report_host_path: Path) -> None:
-    """Rewrite image paths in report.md so they use the canonical virtual prefix.
+    """Rewrite image paths in report.md to the canonical form (SSOT).
 
-    The artifacts API (resolve_thread_virtual_path) requires paths starting with
-    ``mnt/user-data/`` (no leading slash). LLMs often write the relative form
-    ``outputs/file.png`` or the absolute form ``/mnt/user-data/outputs/file.png``,
-    both of which return 400. This function normalises them server-side, so the fix
-    is robust regardless of what the LLM wrote.
+    规范形态 = 带前导斜杠的虚拟绝对路径 ``/mnt/user-data/outputs/<name>.<ext>``
+    （见 ``_to_canonical_artifact_path``）。LLM 常写相对形态 ``outputs/file.png``
+    或缺前导斜杠的 ``mnt/user-data/outputs/file.png``，两者前端
+    ``startsWith("/mnt/")`` 都不命中 → 404。本函数把它们统一到规范形态，
+    这样无论 LLM 写成什么，结果都正确（前端只认这一种）。
 
-    Idempotent: paths already in the correct ``mnt/user-data/outputs/`` form are
-    unchanged. Silently skips if the report file does not exist.
+    幂等：已是规范形态的路径不变。report 文件不存在时静默跳过。
     """
     if not report_host_path.is_file():
         return
     try:
         original = report_host_path.read_text(encoding="utf-8")
-        normalised = _BAD_IMG_PATH_RE.sub(r"(mnt/user-data/outputs/\1)", original)
+        # 替换目标用 canonical helper 拼接，与 _load_chart_files_map 字节一致（SSOT）。
+        normalised = _BAD_IMG_PATH_RE.sub(
+            lambda m: f"({_to_canonical_artifact_path(m.group(1))})",
+            original,
+        )
         if normalised != original:
             report_host_path.write_text(normalised, encoding="utf-8")
             logger.info(
