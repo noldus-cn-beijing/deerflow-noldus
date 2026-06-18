@@ -28,7 +28,40 @@ logger = logging.getLogger(__name__)
 
 # Spec S4 §1.3: per-task 超时（不魔法常数，spec 锁定 120s）+ 进程池大小。
 PER_TASK_TIMEOUT_SECONDS = 120
-MAX_WORKERS = 4
+
+
+def _available_cpus() -> int:
+    """进程**实际被允许使用**的 CPU 核数。
+
+    生产是 elastic（弹性伸缩）容器，目标是「能多快多快」吃满可用核。但
+    ``os.cpu_count()`` 在容器里返回**宿主机物理核数**，不是容器的 cgroup CPU 配额 /
+    CPU affinity——elastic 调度器给容器分 N 核、容器却跑在更大宿主机上时，
+    ``os.cpu_count()`` 会高报，导致 fork 远超配额的进程、上下文切换爆炸甚至 OOM。
+
+    ``os.sched_getaffinity(0)`` 返回当前进程被允许调度到的 CPU 集合（Linux 上尊重
+    cgroup/affinity），是「实际可用核」的正解：dev 8 vCPU → 8；elastic 32 核容器 → 32；
+    本机 48 核无限制 → 48。非 Linux（无 sched_getaffinity）回退 ``os.cpu_count()``。
+    """
+    try:
+        return len(os.sched_getaffinity(0))  # Linux: 尊重 cgroup/affinity
+    except AttributeError:
+        return os.cpu_count() or 4  # 非 Linux 回退
+
+
+# 进程池并行度 = 实际可用核数（不封顶，吃满 elastic 配额）。
+#
+# 回归修复（2026-06-18）：run_metric_plan 工具（commit 63793162, 2026-06-15）出生时把
+# MAX_WORKERS 写死为 4。它之前的 bash 编排模式（ethoinsight-code skill）用
+# `python -m ... & python -m ... & wait` 把同指标不同 subject **全部 `&` 并行**起，
+# 并行度只受可用核限制。工具化（确定性聚合、消除 subprocess 冷启、消除 bash LLM 编排
+# 脆弱）是对的，但 MAX_WORKERS=4 这个保守初始值把并行度从「≈可用核」悄悄降到 4——
+# dev 服务器 8 vCPU 下 140 任务挤 4 worker ≈107s，本可用满 8 核砍半。这是换工具时
+# 漏网的并行度回归。
+#
+# compute 任务是 CPU 密集（xlsx 解析 + 指标计算），可用核数即合理上限；单 worker 峰值
+# ~180MB（dev 16 GiB 下 8 worker ≈1.5GB，余量充足）。不人为封顶，让 elastic 大容器
+# 吃满；_available_cpus() 已尊重 cgroup 配额，不会在小容器上 fork 过多。
+MAX_WORKERS = _available_cpus()
 
 # 测试钩子：注入同步 runner 绕开 ProcessPoolExecutor 的 fork/pickle（spec §4 单测用）。
 # 生产恒为 None → 走进程池。monkeypatch 本变量即可让 _execute_tasks 串行执行。
