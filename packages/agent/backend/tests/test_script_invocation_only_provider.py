@@ -248,6 +248,56 @@ class TestDenyReason:
         assert decision.reasons[0].code == "script_invocation_only.not_a_script_call"
 
 
+class TestParallelPlotScriptsAllowed:
+    """2026-06-18: chart-maker 并行绘图指引落地（spec 2026-06-18-chart-maker-parallel-plotting）。
+
+    guardrail 的 ``_PARALLEL_BASH_PATTERN`` + ``_validate_parallel_bash_content`` 本就放行
+    code-executor 同款的 ``bash -c "python -m ... & ... & wait"`` 形态。chart-maker 的绘图
+    脚本满足同样前提（不同 subject / 不同图 / 输出不同 png / 互不依赖），这些锚点锁定该
+    能力对 chart-maker 同样生效，防止未来收紧 guardrail 时悄悄把并行绘图路径堵死。
+    """
+
+    def test_parallel_plot_scripts_allowed_for_chart_maker(self, provider):
+        decision = provider.evaluate(_req(
+            "bash",
+            command=(
+                'bash -c "'
+                'python -m ethoinsight.scripts.epm.plot_box_open_arm '
+                '--input /mnt/user-data/workspace/s1.xlsx --output /mnt/user-data/outputs/a.png & '
+                'python -m ethoinsight.scripts._common.plot_trajectory '
+                '--input /mnt/user-data/workspace/s2.xlsx --output /mnt/user-data/outputs/b.png & '
+                'wait"'
+            ),
+            agent_id="subagent:chart-maker",
+        ))
+        assert decision.allow
+
+    def test_parallel_plot_scripts_allowed_for_code_executor_too(self, provider):
+        # Whitelisting is agent-agnostic; code-executor passing through is harmless.
+        decision = provider.evaluate(_req(
+            "bash",
+            command=(
+                'bash -c "'
+                'python -m ethoinsight.scripts.oft.compute_center_distance '
+                '--input s1.xlsx --output o1.json & '
+                'python -m ethoinsight.scripts.oft.compute_center_distance '
+                '--input s2.xlsx --output o2.json & '
+                'wait"'
+            ),
+        ))
+        assert decision.allow
+
+    def test_parallel_bash_with_redirect_denied(self, provider):
+        # 坐实 chart-maker / report-writer 的 bundle 指引（``cat x > y``）为何跑不通：
+        # ``>`` 是 _DANGEROUS_META，整批被拦。这是删除 bundle 死指引的根因证据。
+        decision = provider.evaluate(_req(
+            "bash",
+            command='bash -c "cat /mnt/user-data/workspace/handoff_code_executor.json > /mnt/user-data/workspace/cm_context_bundle.txt"',
+            agent_id="subagent:chart-maker",
+        ))
+        assert not decision.allow
+
+
 @pytest.mark.asyncio
 async def test_aevaluate_matches_evaluate(provider):
     req = _req("bash", command="python -c 'help(x)'")
