@@ -193,10 +193,34 @@ def compute_paradigm_metrics(
             }
 
     # Build group summary
+    #
+    # group 成员可能是两种形态之一：
+    #   (a) subject_key（per_subject 的 key，如 EV19 对象名 ""/"_1"…）——statistics
+    #       路径在 compare_groups 内已自行桥接后传入；
+    #   (b) **文件路径**（如 groups.json / chart 脚本传的 /mnt/.../Trial 1.xlsx）——
+    #       这是 box plot / 直调 compute_paradigm_metrics 的常见形态。
+    # per_subject 的 key 永远是 subject_key（b 形态与之零交集 → 旧代码 matched 恒空 →
+    # group_summary={} → 箱线图 "No data"）。parse_batch 返回的 file_subjects
+    # {path: subject_key} 是 file→subject 的权威桥（与 statistics 路径同源，spec
+    # 2026-06-16）。下面对每个 group 成员先按文件路径桥接，桥不到再按 subject_key 直配，
+    # 两形态都正确。
+    file_subjects = parsed_data.get("file_subjects", {}) or {}
+
+    def _to_subject_keys(members: list[str]) -> list[str]:
+        """把 group 成员（文件路径或 subject_key）统一解析为 per_subject 的 key。"""
+        resolved: list[str] = []
+        for m in members:
+            if m in file_subjects:            # 文件路径 → 桥接到 subject_key
+                resolved.append(file_subjects[m])
+            else:                              # 已是 subject_key（或老调用方）
+                resolved.append(m)
+        return resolved
+
     group_summary: dict[str, dict] = {}
     for grp_name, grp_subjects in groups.items():
         grp_metrics: dict[str, dict] = {}
-        matched = [s for s in grp_subjects if s in per_subject]
+        resolved_subjects = _to_subject_keys(grp_subjects)
+        matched = [s for s in resolved_subjects if s in per_subject]
         if not matched:
             continue
         # Collect all scalar metric names

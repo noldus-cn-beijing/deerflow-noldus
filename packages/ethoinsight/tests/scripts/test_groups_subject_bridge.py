@@ -158,19 +158,34 @@ class TestBridgeGroupsToSubjects:
 
 
 class TestComparisonsEmptyWithoutBridgeNonEmptyWith:
-    def test_red_anchor_filepath_groups_yield_empty_comparisons(self, tmp_path: Path):
-        """红锚点：不桥接、直接把文件路径形态的 groups 喂 dispatcher → comparisons 空。
-        这复现修复前 statistics 链在真实数据上的症状。"""
+    def test_dispatcher_self_bridges_filepath_groups(self, tmp_path: Path):
+        """权威契约（2026-06-18 box plot No-data 修复）：dispatcher 自己桥接文件路径 groups。
+
+        历史：本测试原是「红锚点」，断言 raw dispatcher + 文件路径 groups → comparisons
+        **空**——当时 file→subject 桥接只在 statistics 脚本层（bridge_groups_to_subjects）。
+        但 box plot 走 compute_paradigm_metrics 直调这条路从未接桥 → group_summary 空 →
+        箱线图 "No data"。修复把桥接下沉进 dispatcher（用 parsed_data["file_subjects"]），
+        **dispatcher 成为唯一权威桥**，覆盖 box plot / statistics / 任何直调方。
+
+        因此 raw dispatcher + 文件路径 groups 现在**应产出非空** comparisons。脚本层的
+        bridge_groups_to_subjects 保留为幂等兵架（先翻成 subject_key，dispatcher 再桥时
+        因不在 file_subjects 里而直接透传，安全无害）。
+        """
         files = _write_epm_files(tmp_path, 6)
         paths = [str(p) for p in files]
         parsed = parse_batch(paths)
 
-        # groups 成员是文件路径（read_groups_json 反转后的形态）——未桥接。
+        # groups 成员是文件路径（read_groups_json 反转后的形态）——不经脚本层桥接，
+        # 直接喂 dispatcher。dispatcher 现在用 file_subjects 自行桥接。
         filepath_groups = {"control": paths[:3], "treatment": paths[3:]}
         metrics = compute_paradigm_metrics(parsed, paradigm="epm", groups=filepath_groups)
+        # group_summary 非空（旧 bug 这里恒空 → 箱线图 No data 的根因）。
+        assert metrics["group_summary"], (
+            "dispatcher 应用 file_subjects 自桥接文件路径 groups → group_summary 非空"
+        )
         stats = compare_groups(metrics, metrics_to_test=_EPM_METRICS)
-        assert stats.get("comparisons", {}) == {}, (
-            "未桥接时文件路径 groups 应与 subject key 无交集 → comparisons 空"
+        assert stats.get("comparisons", {}), (
+            "dispatcher 自桥接后文件路径 groups 应产出非空 comparisons"
         )
 
     def test_green_bridged_groups_yield_nonempty_comparisons(self, tmp_path: Path):
