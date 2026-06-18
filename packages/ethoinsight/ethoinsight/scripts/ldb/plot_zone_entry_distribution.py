@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 
 from ethoinsight.metrics.ldb import compute_light_entry_count, compute_transition_count
 from ethoinsight.parse import parse_trajectory
-from ethoinsight.scripts._cli import emit_result, make_plot_parser, resolve_per_subject_input
+from ethoinsight.scripts._cli import emit_result, make_plot_parser, parse_parameters, resolve_per_subject_input, select_zone_kwargs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,9 +31,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
+    parameters = parse_parameters(args)  # 与 compute 脚本同源（spec 2026-06-18）
     df = parse_trajectory(path)
-    light_entries = compute_light_entry_count(df) or 0
-    total_transitions = compute_transition_count(df) or 0
+    # 两函数签名不同：compute_light_entry_count 只接 light_zone，
+    # compute_transition_count 接 light_zone + dark_zone。按函数筛 key。
+    light_entries = compute_light_entry_count(df, **select_zone_kwargs(parameters, ["light_zone"])) or 0
+    total_transitions = compute_transition_count(df, **select_zone_kwargs(parameters, ["light_zone", "dark_zone"])) or 0
     dark_entries = max(total_transitions - light_entries, 0)
 
     labels = ["Light zone", "Dark zone"]

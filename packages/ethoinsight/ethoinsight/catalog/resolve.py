@@ -435,6 +435,14 @@ def resolve_charts(
     if column_aliases:
         columns = _apply_aliases(columns, column_aliases)
 
+    # === spec 2026-06-18: 列对齐对 plot 脚本生效 ===
+    # 与 resolve_metrics 路径（L216）同源——复用同一个 _build_zone_aliases_overrides，
+    # 把 column_aliases（HITL 对齐结果）投影成 zone 参数 dict（如 open_arm_zones=['open']），
+    # 经 _chart_to_plan 注入每个 chart entry 的 --parameters-json。plot 脚本 parse_parameters
+    # 后透传给底层 compute_*（per-subject）或 dispatcher zone_overrides（aggregate）。
+    # 单一注入点：plot 脚本只接收+透传，绝不自读 context（避免再造 SSOT 副本）。
+    zone_aliases_overrides = _build_zone_aliases_overrides(column_aliases, cat, {})
+
     charts: list[PlanChart] = []
     skipped: list[PlanSkipped] = []
     for ch in candidate_charts:
@@ -456,6 +464,7 @@ def resolve_charts(
                 ch, raw_files, workspace_dir, paradigm=cat.paradigm,
                 virtual_workspace_dir=virtual_workspace_dir,
                 groups=groups,
+                zone_overrides=zone_aliases_overrides,
             ))
 
     fallback: list[PlanChart] = []
@@ -485,6 +494,7 @@ def resolve_charts(
                     ch, raw_files, workspace_dir, paradigm=cat.paradigm,
                     virtual_workspace_dir=virtual_workspace_dir,
                     groups=groups,
+                    zone_overrides=zone_aliases_overrides,
                 ))
 
     notes: list[str] = []
@@ -943,6 +953,7 @@ def _chart_to_plan(
     virtual_workspace_dir: str | None = None,
     virtual_outputs_dir: str | None = None,       # 1.1: outputs 虚拟路径
     groups: dict[str, Any] | None = None,         # 1.2: optional group labels for aggregate plots
+    zone_overrides: dict[str, Any] | None = None,  # spec 2026-06-18: column_aliases 投影出的 zone 参数
 ) -> list[PlanChart]:
     """Build PlanCharts from a ChartEntry, materializing inputs.json (and optional groups.json).
 
@@ -1047,6 +1058,8 @@ def _chart_to_plan(
         args.extend(["--output", output_path])
         if ch.accepts_paradigm and paradigm:
             args.extend(["--paradigm", paradigm])
+        if zone_overrides:
+            args.extend(["--parameters-json", json.dumps(zone_overrides, ensure_ascii=False, sort_keys=True)])
         plans.append(
             PlanChart(
                 id=ch.id,
@@ -1072,6 +1085,8 @@ def _chart_to_plan(
         args = ["--inputs", inputs_virtual, "--output", output_path]
         if ch.accepts_paradigm and paradigm:
             args.extend(["--paradigm", paradigm])
+        if zone_overrides:
+            args.extend(["--parameters-json", json.dumps(zone_overrides, ensure_ascii=False, sort_keys=True)])
         plans.append(
             PlanChart(
                 id=ch.id,
