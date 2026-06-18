@@ -423,8 +423,12 @@ from deerflow.tools.builtins.seal_handoff_tools import _normalize_report_image_p
 class TestNormalizeReportImagePaths:
     """Server-side normalization of markdown image paths before sealing.
 
-    Artifacts API (resolve_thread_virtual_path) requires mnt/user-data/outputs/…
-    (no leading slash). LLMs write three broken variants; all must become canonical.
+    规范形态（SSOT，2026-06-18）：report.md 内图片路径一律为带前导斜杠的
+    虚拟绝对路径 ``/mnt/user-data/outputs/<name>.png``。前端只认这一种、
+    后端只认这一种，不再有多 case 猜测。详见
+    docs/superpowers/specs/2026-06-18-report-image-path-ssot-spec.md。
+
+    LLM 可能写出无前导斜杠或相对形态；normalize 统一到带前导斜杠的规范形态。
     """
 
     def _run(self, content: str) -> str:
@@ -438,14 +442,20 @@ class TestNormalizeReportImagePaths:
 
     def test_relative_outputs_prefix_fixed(self):
         md = "![Figure 1](outputs/boxplot.png)"
-        assert self._run(md) == "![Figure 1](mnt/user-data/outputs/boxplot.png)"
+        assert self._run(md) == "![Figure 1](/mnt/user-data/outputs/boxplot.png)"
 
-    def test_absolute_virtual_leading_slash_fixed(self):
+    def test_absolute_virtual_leading_slash_canonical(self):
+        # 带前导斜杠是规范形态，保持不变（幂等）
         md = "![Figure 1](/mnt/user-data/outputs/plot_s0.png)"
-        assert self._run(md) == "![Figure 1](mnt/user-data/outputs/plot_s0.png)"
+        assert self._run(md) == md
+
+    def test_no_leading_slash_virtual_fixed(self):
+        # 无前导斜杠的旧形态 → 补上前导斜杠规范形态
+        md = "![Figure 1](mnt/user-data/outputs/plot_s0.png)"
+        assert self._run(md) == "![Figure 1](/mnt/user-data/outputs/plot_s0.png)"
 
     def test_correct_form_unchanged(self):
-        md = "![Figure 1](mnt/user-data/outputs/plot_s0.png)"
+        md = "![Figure 1](/mnt/user-data/outputs/plot_s0.png)"
         assert self._run(md) == md  # idempotent
 
     def test_multiple_images_all_fixed(self):
@@ -455,15 +465,18 @@ class TestNormalizeReportImagePaths:
             "![C](mnt/user-data/outputs/plot_s2.png)\n"
         )
         result = self._run(md)
-        assert result.count("mnt/user-data/outputs/") == 3
-        assert "outputs/plot_s0" not in result.split("mnt/user-data/outputs/")[0]
-        assert "(/mnt/" not in result
+        # 全部归一到带前导斜杠的规范形态
+        assert result == (
+            "![A](/mnt/user-data/outputs/plot_s0.png)\n"
+            "![B](/mnt/user-data/outputs/plot_s1.png)\n"
+            "![C](/mnt/user-data/outputs/plot_s2.png)\n"
+        )
 
     def test_non_image_links_untouched(self):
         md = "[link](outputs/data.csv) and ![img](outputs/chart.png)"
         result = self._run(md)
         assert "(outputs/data.csv)" in result  # non-image link preserved
-        assert "(mnt/user-data/outputs/chart.png)" in result
+        assert "(/mnt/user-data/outputs/chart.png)" in result
 
     def test_missing_file_silently_skipped(self):
         # Must not raise
@@ -516,7 +529,7 @@ class TestResolveReportImagePlaceholders:
         _resolve_report_image_placeholders(report, ws)
 
         result = report.read_text(encoding="utf-8")
-        assert result == "![Figure 1](mnt/user-data/outputs/plot_trajectory_s0.png)"
+        assert result == "![Figure 1](/mnt/user-data/outputs/plot_trajectory_s0.png)"
 
     def test_resolves_multiple_placeholders(self, tmp_path):
         ws = tmp_path / "workspace"
@@ -535,8 +548,8 @@ class TestResolveReportImagePlaceholders:
         _resolve_report_image_placeholders(report, ws)
 
         result = report.read_text(encoding="utf-8")
-        assert "mnt/user-data/outputs/plot_s0.png" in result
-        assert "mnt/user-data/outputs/box_open_arm.png" in result
+        assert "(/mnt/user-data/outputs/plot_s0.png)" in result
+        assert "(/mnt/user-data/outputs/box_open_arm.png)" in result
         assert "{{img:" not in result
 
     def test_unmatched_basename_stub(self, tmp_path):
@@ -606,17 +619,17 @@ class TestResolveReportImagePlaceholders:
         out = tmp_path / "outputs"
         out.mkdir()
         self._make_chart_handoff(ws, ["/mnt/user-data/outputs/plot.png"])
-        # Already has correct path, no placeholder
+        # Already has canonical path (leading slash), no placeholder
         report = self._write_report(
-            out, "![X](mnt/user-data/outputs/plot.png)"
+            out, "![X](/mnt/user-data/outputs/plot.png)"
         )
 
         _resolve_report_image_placeholders(report, ws)
 
         result = report.read_text(encoding="utf-8")
-        assert result == "![X](mnt/user-data/outputs/plot.png)"
+        assert result == "![X](/mnt/user-data/outputs/plot.png)"
 
-    def test_leading_slash_stripped(self, tmp_path):
+    def test_resolves_to_canonical_leading_slash(self, tmp_path):
         ws = tmp_path / "workspace"
         ws.mkdir()
         out = tmp_path / "outputs"
@@ -627,9 +640,8 @@ class TestResolveReportImagePlaceholders:
         _resolve_report_image_placeholders(report, ws)
 
         result = report.read_text(encoding="utf-8")
-        # Value must NOT start with / (artifacts API requires no leading slash)
-        assert "](/mnt/" not in result
-        assert "](mnt/user-data/outputs/plot.png)" in result
+        # 规范形态：带前导斜杠的虚拟绝对路径（前端 startsWith("/mnt/") 命中）
+        assert result == "![X](/mnt/user-data/outputs/plot.png)"
 
     def test_whitespace_in_placeholder(self, tmp_path):
         ws = tmp_path / "workspace"
@@ -642,7 +654,7 @@ class TestResolveReportImagePlaceholders:
         _resolve_report_image_placeholders(report, ws)
 
         result = report.read_text(encoding="utf-8")
-        assert "mnt/user-data/outputs/plot_X.png" in result
+        assert "(/mnt/user-data/outputs/plot_X.png)" in result
 
     def test_mixed_placeholders_and_literal(self, tmp_path):
         ws = tmp_path / "workspace"
@@ -661,7 +673,7 @@ class TestResolveReportImagePlaceholders:
 
         # Layer 1 resolves placeholder
         result = report.read_text(encoding="utf-8")
-        assert "mnt/user-data/outputs/plot_s0.png" in result
+        assert "(/mnt/user-data/outputs/plot_s0.png)" in result
         # Layer 1 does NOT touch literal paths (Layer 2 handles those)
         assert "outputs/legacy_chart.png" in result
         assert "/mnt/user-data/outputs/legacy_abs.png" in result
@@ -711,8 +723,8 @@ class TestLoadChartFilesMap:
         result = _load_chart_files_map(ws)
 
         assert result == {
-            "plot_s0.png": "mnt/user-data/outputs/plot_s0.png",
-            "box_open_arm.png": "mnt/user-data/outputs/box_open_arm.png",
+            "plot_s0.png": "/mnt/user-data/outputs/plot_s0.png",
+            "box_open_arm.png": "/mnt/user-data/outputs/box_open_arm.png",
         }
 
     def test_missing_file_returns_empty(self, tmp_path):
@@ -741,4 +753,4 @@ class TestLoadChartFilesMap:
 
         result = _load_chart_files_map(ws)
 
-        assert result == {"real.png": "mnt/user-data/outputs/real.png"}
+        assert result == {"real.png": "/mnt/user-data/outputs/real.png"}

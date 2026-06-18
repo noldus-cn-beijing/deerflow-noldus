@@ -7,7 +7,7 @@ import {
   MessageResponse,
   type MessageResponseProps,
 } from "@/components/ai-elements/message";
-import { normalizeArtifactImageSrc, resolveArtifactURL } from "@/core/artifacts/utils";
+import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { streamdownPlugins } from "@/core/streamdown";
 import { cn } from "@/lib/utils";
 
@@ -63,21 +63,20 @@ export function MarkdownContent({
           />
         );
       },
-      // Resolve /mnt/… and other artifact paths so markdown images (e.g. from
+      // Resolve /mnt/user-data/… artifact paths so markdown images (e.g. from
       // present_files content, report.md, handoff summaries) get correct URLs
       // instead of raw filesystem paths that 404.
+      //
+      // 规范形态（SSOT，2026-06-18）：report.md 图片 src 一律是
+      // /mnt/user-data/outputs/<name>.png（后端 seal 统一产出）。前端只认这一种：
+      //   - /mnt/user-data/… → artifact API（保留全前缀，后端 resolve_virtual_path 命中）
+      //   - http(s)://        → 外链原样
+      //   - 其余              → 原样渲染让其 404 暴露（响亮失败，不猜测/兜底）
+      // 详见 docs/superpowers/specs/2026-06-18-report-image-path-ssot-spec.md。
       img: (props: ImgHTMLAttributes<HTMLImageElement>) => {
         const src = props.src;
-        if (typeof src === "string" && threadId) {
-          // /mnt/user-data/… → artifact API
-          if (src.startsWith("/mnt/")) {
-            return <img {...props} src={resolveArtifactURL(src, threadId)} />;
-          }
-          // Other virtual paths (outputs/X.png, /user-data/…)
-          const normalized = normalizeArtifactImageSrc(src);
-          if (normalized) {
-            return <img {...props} src={resolveArtifactURL(normalized, threadId)} />;
-          }
+        if (typeof src === "string" && threadId && src.startsWith("/mnt/user-data/")) {
+          return <img {...props} src={resolveArtifactURL(src, threadId)} />;
         }
         return <img {...props} />;
       },

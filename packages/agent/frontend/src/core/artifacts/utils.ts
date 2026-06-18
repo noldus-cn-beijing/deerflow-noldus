@@ -23,49 +23,32 @@ export function extractArtifactsFromThread(thread: AgentThread) {
 }
 
 /**
- * Normalize an image src from report.md into a proper artifact API filepath.
+ * Normalize an image src from report.md into an artifact API filepath.
  *
- * Handles three known src variants produced by the LLM pipeline:
- *   1. Host absolute path: /home/.../threads/<tid>/user-data/outputs/X.png
- *   2. Sandbox virtual path: /mnt/user-data/outputs/X.png
- *   3. Relative path: outputs/X.png or plot_X.png
+ * 规范形态（SSOT，2026-06-18）：report.md 内图片路径一律为带前导斜杠的虚拟
+ * 绝对路径 ``/mnt/user-data/outputs/<name>.png``。后端 seal 的两个产出点
+ * （placeholder 解析 + path normalize）已统一到这一形态，前端只认这一种。
+ * 详见 docs/superpowers/specs/2026-06-18-report-image-path-ssot-spec.md。
  *
- * External URLs (http(s)://) are returned as-is (null = caller should use src directly).
+ * - 规范 src ``/mnt/user-data/…`` → 原样返回（直接交给 resolveArtifactURL，
+ *   拼成 ``/api/threads/{tid}/artifacts/mnt/user-data/…``，后端
+ *   resolve_virtual_path 内部 lstrip 后命中 ``mnt/user-data/`` 前缀）。
+ * - 外链 ``http(s)://`` → 返回 null（调用方应原样使用 src）。
+ * - 其余非规范形态 → 返回 null（响亮失败：调用方原样渲染让其 404 暴露，
+ *   不再猜测/兜底，便于发现 report-writer 写错路径）。
  *
- * Returns a filepath like "/outputs/X.png" suitable for urlOfArtifact(), or null.
+ * 历史 case 2/3/4/5（host 绝对路径 / outputs/ / 裸名 / /outputs/）已删除——
+ * 它们是路径约定漂移之源（spec §2.3）。
  */
 export function normalizeArtifactImageSrc(src: string): string | null {
   if (/^https?:\/\//i.test(src)) return null;
 
-  // Case 1: /mnt/user-data/... → strip /mnt prefix, becomes /user-data/outputs/X.png
-  //         then extract everything after /user-data → /outputs/X.png
+  // 规范形态：/mnt/user-data/… → 原样作为 artifact filepath（带前导斜杠）。
   if (src.startsWith("/mnt/user-data/")) {
-    const rest = src.slice("/mnt/user-data".length); // e.g. /outputs/X.png
-    return rest.startsWith("/") ? rest : `/${rest}`;
-  }
-
-  // Case 2: Host absolute path containing /user-data/outputs/
-  //         e.g. /home/wq/.../threads/<tid>/user-data/outputs/X.png
-  const udIdx = src.indexOf("/user-data/outputs/");
-  if (udIdx !== -1) {
-    return src.slice(udIdx + "/user-data".length); // → /outputs/X.png
-  }
-
-  // Case 3: Relative path starting with outputs/
-  if (src.startsWith("outputs/")) {
-    return `/${src}`;
-  }
-
-  // Case 4: Bare filename like plot_X.png — assume it lives in /outputs/
-  if (!src.startsWith("/") && src.length > 0) {
-    return `/outputs/${src}`;
-  }
-
-  // Case 5: Already a virtual path like /outputs/X.png
-  if (src.startsWith("/outputs/")) {
     return src;
   }
 
+  // 非规范形态：不猜测、不兜底，返回 null 让调用方原样暴露。
   return null;
 }
 
