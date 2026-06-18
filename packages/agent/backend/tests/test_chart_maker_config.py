@@ -61,3 +61,22 @@ def test_chart_maker_system_prompt_workflow():
 def test_chart_maker_has_prep_chart_plan_tool():
     """Spec 3: chart-maker 工具集含 prep_chart_plan（取代 bash 拼 catalog.resolve）。"""
     assert "prep_chart_plan" in CHART_MAKER_CONFIG.tools
+
+
+def test_chart_maker_system_prompt_has_parallel_plot_guidance():
+    """2026-06-18: chart-maker 教会用 code-executor 同款的 bash -c "... & ... & wait" 并行绘图
+    （spec 2026-06-18-chart-maker-parallel-plotting §3.1）。N 张互不依赖的图应 1 turn 跑完，
+    而非 N 个串行 turn。"""
+    p = CHART_MAKER_CONFIG.system_prompt
+    assert "bash -c" in p
+    assert "&" in p
+    assert "wait" in p
+
+
+def test_chart_maker_system_prompt_no_bash_bundle_dead_guidance():
+    """2026-06-18: chart-maker 受 guardrail 限制（bash 仅可 python -m ethoinsight.scripts.*
+    + 文件操作），``bash cat ... > bundle`` 含禁字符 ``>`` 会被 guardrail 直接拦——这条指引
+    从来跑不通、还浪费 turn。必须删掉，改为逐个 read_file。"""
+    p = CHART_MAKER_CONFIG.system_prompt
+    assert "cm_context_bundle" not in p
+    assert "bash cat /mnt/user-data/workspace/handoff" not in p

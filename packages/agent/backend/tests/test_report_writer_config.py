@@ -36,3 +36,12 @@ def test_image_path_uses_full_virtual_prefix_not_relative():
     # (the fragment 'outputs/boxplot' was the canonical example of the broken pattern)
     assert "(outputs/boxplot_mean_nnd.png)" not in p
     assert "(outputs/plot_trajectory_plot_s0.png)" not in p
+
+
+def test_system_prompt_no_bash_bundle_dead_guidance():
+    """2026-06-18: report-writer 的 disallowed_tools 明确含 ``bash``（report_writer.py），
+    它根本没有 bash 工具——``bash cat ... > bundle`` 这条指引是空指令。必须删掉，改逐个
+    read_file（spec 2026-06-18-chart-maker-parallel-plotting §3.2）。"""
+    p = REPORT_WRITER_CONFIG.system_prompt
+    assert "rw_context_bundle" not in p
+    assert "bash cat /mnt/user-data/workspace/handoff" not in p
