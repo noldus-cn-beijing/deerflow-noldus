@@ -124,16 +124,14 @@ class TestParadigmIdentificationGate:
         result = mw.after_model(state, _make_runtime())
         assert result is None
 
-    def test_async_delegates_to_sync(self) -> None:
-        import asyncio
-
+    async def test_async_delegates_to_sync(self) -> None:
         mw = ParadigmIdentificationGateMiddleware()
         ai = AIMessage(content="no identify", tool_calls=[])
         state = _make_state(
             messages=[ai],
             uploaded_files=["/mnt/user-data/uploads/fst.txt"],
         )
-        result = asyncio.get_event_loop().run_until_complete(mw.aafter_model(state, _make_runtime()))
+        result = await mw.aafter_model(state, _make_runtime())
         assert result is not None
         assert result.get("jump_to") == "model"
 

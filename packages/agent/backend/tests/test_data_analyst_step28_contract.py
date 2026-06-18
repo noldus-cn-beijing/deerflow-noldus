@@ -101,16 +101,25 @@ def test_a_f_sections_scoped_to_nonempty_only():
 # ---------------------------------------------------------------------------
 
 def test_nonempty_branch_has_seal_must_fire_preframe():
-    """Before a-f, the non-empty branch must pre-frame 'seal is mandatory, audit is best-effort'."""
+    """Before a-f, the non-empty branch must pre-frame 'seal is mandatory, audit is best-effort'.
+
+    Updated 2026-06-18: the prompt was rewritten to merge the separate
+    'seal 是必达，审计是尽力' sentence into a single consolidated pre-frame
+    (产出/交付合一 refactor, see memory
+    feedback_seal_missing_root_cause_is_react_no_toolcall_exit_gate_not_fallback).
+    The mandatory-seal intent is now expressed by '到点立即带着已有 finding ...
+    进入 step 3 发出 ... tool_call' — locks that intent rather than the old
+    literal phrase so this contract doesn't fight the consolidation.
+    """
     p = _prompt()
 
     # The pre-frame must appear (placed before the a-f scope note)
     assert "进入 a–f 之前先记住" in p
     # Bounded reasoning budget so the audit can't marathon
     assert "本段至多 2-3 轮思考" in p
-    # Positive completion framing reused from the layer-4 fix
-    assert "发出 seal_data_analyst_handoff 的 tool_call" in p
-    assert "seal 是必达，审计是尽力" in p
+    # Mandatory-seal intent: must carry whatever finding exists into step 3
+    assert "到点立即带着已有 finding" in p
+    assert "进入 step 3 发出 seal_data_analyst_handoff 的 tool_call" in p
 
     # The pre-frame must come BEFORE the a-f scope note (ordering matters:
     # the escape hatch has to be read before the marathon, not after).
@@ -141,33 +150,44 @@ def test_nonempty_branch_has_criteria_missing_shortcut():
 # ---------------------------------------------------------------------------
 
 def test_step3_has_positive_tool_call_is_seal_framing():
-    """Step 3 must frame completion as 'issuing the seal tool_call'."""
+    """Step 3 must frame completion as 'issuing the seal tool_call' (产出=交付合一).
+
+    Updated 2026-06-18: the separate '本步骤的完成标志是' / '这一次工具调用本身'
+    phrasings were consolidated into the unified '产出与交付合一' framing (seal
+    refactor — conclusion is first written directly into the seal tool args,
+    no separate write-then-copy step). Locks the consolidated intent.
+    """
     p = _prompt()
 
-    # Exact key phrase from the handoff B.2 text
-    assert "本步骤的完成标志是" in p
-    assert "发出一次 seal_data_analyst_handoff 的 tool_call" in p
+    # Step 3 header: production == issuing the seal tool_call
+    assert "产出分析 = 发出 seal_data_analyst_handoff 的 tool_call" in p
+    # 产出/交付合一 framing
+    assert "产出与交付合一" in p
 
-    # Positive framing: "这一次工具调用本身，就是封存这个动作"
-    assert "这一次工具调用本身" in p
-    # The prompt uses ASCII double-quotes around 封存 in this sentence
-    assert '就是"封存"这个动作' in p
-
-    # Narrative vs reality distinction
-    assert "是叙述，不会落库" in p
-    assert "真正落库靠这一次 tool_call" in p
+    # The "first written directly into tool args" positive framing
+    assert "你的结论第一次成文" in p
+    # This very tool call is both production and persistence
+    assert "这次工具调用本身既是产出也是落库" in p
+    # Hard rule: must go through the seal tool, never write_file
+    assert "严禁直接 write_file 写 handoff_data_analyst.json" in p
 
 
 def test_no_negative_reverse_activation_phrases_remain():
-    """The old negative phrasing '不能只在 thinking 里写封存' must be GONE from the entire prompt."""
+    """The old negative phrasing '不能只在 thinking 里写封存' must be GONE from the entire prompt.
+
+    Updated 2026-06-18: the old positive companion sentence
+    'step 3 会通过发出 seal 工具调用来落库本次分析' was replaced by the
+    consolidated '这次工具调用本身既是产出也是落库' framing. The negative
+    half-sentence must still be absent; the positive anchor is updated.
+    """
     p = _prompt()
 
     # B.3 cleanup: the old negative half-sentence must not exist anywhere
     assert "不能只在 thinking 里写" not in p
     assert "不能只在 thinking" not in p
 
-    # Also verify the new positive version is present (from B.3)
-    assert "step 3 会通过发出 seal 工具调用来落库本次分析" in p
+    # The current positive companion (consolidated 产出/交付合一 framing)
+    assert "这次工具调用本身既是产出也是落库" in p
 
 
 def test_step3_still_includes_field_checklist():

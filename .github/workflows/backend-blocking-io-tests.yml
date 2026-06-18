@@ -48,3 +48,68 @@ jobs:
       - name: Run blocking IO regression tests
         working-directory: packages/agent/backend
         run: uv run pytest tests/blocking_io/ -v --no-header
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Code-invariant guards (invariants #1/#3/#5/#6). Each step is an
+      # independent, named invariant so a failure pinpoints which contract
+      # broke. asyncio_mode=auto is set in pyproject.toml [tool.pytest].
+      # See docs/handoffs/ for the invariant definitions; sync-deerflow.sh
+      # PROTECTED_FILES is the SSOT for invariant #6.
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Invariant #1 - Gateway/lead-agent import without circular import
+        working-directory: packages/agent/backend
+        run: uv run pytest tests/test_gateway_import_no_cycle.py -v --no-header
+
+      - name: Invariant #3 - Harness does not import ethoinsight at top level
+        working-directory: packages/agent/backend
+        run: uv run pytest tests/test_harness_boundary.py -v --no-header
+
+      - name: Invariant #5 - Seal/handoff/subagent regression
+        working-directory: packages/agent/backend
+        run: |
+          uv run pytest \
+            tests/test_seal_gate_middleware.py \
+            tests/test_seal_handoff_tools.py \
+            tests/test_seal_resume.py \
+            tests/test_seal_data_analyst_parameter_audit.py \
+            tests/test_handoff_content_validation.py \
+            tests/test_handoff_emission_validator.py \
+            tests/test_handoff_isolation_provider.py \
+            tests/test_handoff_normalization.py \
+            tests/test_handoff_path_pollution_defense.py \
+            tests/test_handoff_placeholder_injection_middleware.py \
+            tests/test_handoff_schemas.py \
+            tests/test_handoff_strict_mode.py \
+            tests/test_handoff_write_file_guardrail.py \
+            tests/test_chart_maker_config.py \
+            tests/test_chart_maker_handoff_schema.py \
+            tests/test_data_analyst_config.py \
+            tests/test_data_analyst_empty_statistics_seal_rule.py \
+            tests/test_data_analyst_insight_contract.py \
+            tests/test_data_analyst_step28_contract.py \
+            tests/test_data_analyst_thinking_enabled.py \
+            tests/test_executor_handoff_emission.py \
+            tests/test_task_handoff_authorization.py \
+            tests/test_subagent_contracts.py \
+            tests/test_subagent_config_capability.py \
+            tests/test_subagent_executor.py \
+            tests/test_subagent_executor_authorized_paths.py \
+            tests/test_subagent_executor_recursion_limit.py \
+            tests/test_subagent_handoff_isolation_integration.py \
+            tests/test_subagent_language_rule.py \
+            tests/test_subagent_limit_middleware.py \
+            tests/test_subagent_loop_detection.py \
+            tests/test_subagent_prompt_clarity.py \
+            tests/test_subagent_prompt_security.py \
+            tests/test_subagent_prompts_no_catalog_yaml.py \
+            tests/test_subagent_skill_path_rewrite.py \
+            tests/test_subagent_status_contract.py \
+            tests/test_subagent_timeout_config.py \
+            tests/test_subagent_token_collector.py \
+            tests/test_subagent_user_context_propagation.py \
+            -v --no-header
+
+      - name: Invariant #6 - Protected Noldus customizations survive sync
+        working-directory: packages/agent/backend
+        run: uv run pytest tests/test_protected_files_intact.py -v --no-header

@@ -85,13 +85,11 @@ class TestInspectGateGuardrailProvider:
         decision = provider.evaluate(req)
         assert decision.allow is True
 
-    def test_async_delegates_to_sync(self) -> None:
-        import asyncio
-
+    async def test_async_delegates_to_sync(self) -> None:
         provider = InspectGateGuardrailProvider()
         set_inspect_gate_context([], ["fst.txt"])
         req = _make_request("ask_clarification")
-        decision = asyncio.get_event_loop().run_until_complete(provider.aevaluate(req))
+        decision = await provider.aevaluate(req)
         assert decision.allow is False
 
     def test_policy_id_set(self) -> None:

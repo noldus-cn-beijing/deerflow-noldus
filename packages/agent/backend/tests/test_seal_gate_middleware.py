@@ -150,14 +150,10 @@ class TestSealGateMiddleware:
         state = _make_state(messages=[HumanMessage(content="hi")])
         assert mw.after_model(state, _make_runtime()) is None
 
-    def test_async_delegates_to_sync(self) -> None:
-        import asyncio
-
+    async def test_async_delegates_to_sync(self) -> None:
         mw = SealGateMiddleware("chart-maker")
         state = _make_state(messages=[AIMessage(content="charts done")])
-        result = asyncio.get_event_loop().run_until_complete(
-            mw.aafter_model(state, _make_runtime())
-        )
+        result = await mw.aafter_model(state, _make_runtime())
         assert result is not None
         assert result.get("jump_to") == "model"
         assert "seal_chart_maker_handoff" in result["messages"][0].content

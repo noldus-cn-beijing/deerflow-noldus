@@ -10,7 +10,15 @@ def test_chart_maker_config_basic_fields():
     cfg = CHART_MAKER_CONFIG
     assert cfg.name == "chart-maker"
     assert "可视化" in cfg.description or "chart" in cfg.description.lower()
-    assert cfg.model == "inherit"
+    # chart-maker needs a summary-capable model (like code-executor / report-writer),
+    # NOT the inherited lead model — it produces structured chart specs that must be
+    # condensed. Locking "not inherit" rather than a literal model name so this test
+    # doesn't drift every time the summary model is renamed. Contrast: data-analyst /
+    # knowledge-assistant legitimately use model="inherit".
+    assert cfg.model != "inherit", (
+        "chart-maker must use a dedicated summary model (e.g. deepseek-v4-pro-summary), "
+        "not inherit — its output needs summarization"
+    )
 
 
 def test_chart_maker_capability_metadata():

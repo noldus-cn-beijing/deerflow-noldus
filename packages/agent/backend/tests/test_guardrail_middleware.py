@@ -98,10 +98,10 @@ class TestAllowlistProvider:
         decision = provider.evaluate(req)
         assert decision.allow is False
 
-    def test_async_delegates_to_sync(self):
+    async def test_async_delegates_to_sync(self):
         provider = AllowlistProvider(denied_tools=["bash"])
         req = GuardrailRequest(tool_name="bash", tool_input={})
-        decision = asyncio.run(provider.aevaluate(req))
+        decision = await provider.aevaluate(req)
         assert decision.allow is False
 
 
