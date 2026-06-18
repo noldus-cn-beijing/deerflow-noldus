@@ -118,6 +118,22 @@ class TestComputeOutlierDiagnostics:
         )
         assert diags[0]["subject"] == "c3"
 
+    def test_subject_identifier_empty_string_falls_back_to_index(self):
+        """降级兜底（spec §6.3）：subject_names 含空串/纯空白（EV19 对象名常为空串，
+        label_map 漏翻译时原样保留）→ 回退 `subject #i`，避免 counterfactual 出现
+        "if  excluded" 空洞。"""
+        group_values = {"control": [10, 10, 10, 100]}
+        diags = compute_outlier_diagnostics(
+            group_values, subject_names={"control": ["", "  ", "c2", ""]}
+        )
+        assert len(diags) == 1
+        d = diags[0]
+        # 100 在 index 3，对应 subject_names[3]="" → 回退 subject #3
+        assert d["subject"] == "subject #3"
+        # counterfactual 不得出现空洞（"if  excluded"）
+        assert "if  excluded" not in d["counterfactual"]
+        assert "subject #3 excluded" in d["counterfactual"]
+
 
 # ---------------------------------------------------------------------------
 # compare_groups 接线：附加 outlier_diagnostics，不破坏 comparisons schema

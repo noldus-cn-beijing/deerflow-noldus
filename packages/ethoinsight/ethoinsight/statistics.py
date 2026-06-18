@@ -479,11 +479,12 @@ def compute_outlier_diagnostics(
             loo_arr = np.delete(arr, i)
             loo_mean = float(loo_arr.mean()) if len(loo_arr) > 0 else grp_mean
             loo_std = float(loo_arr.std(ddof=1)) if len(loo_arr) > 1 else 0.0
-            subject = (
-                grp_subjects[raw_idx]
-                if raw_idx < len(grp_subjects)
-                else f"subject #{raw_idx}"
-            )
+            # 降级兜底（spec 2026-06-18 §6.3）：grp_subjects[raw_idx] 可能是
+            # ① 缺位（index 越界）② 空串/纯空白（EV19 对象名常为空串，label_map 漏翻译时
+            # 原样保留会让 counterfactual 出现 "if  excluded" 空洞）。两种都回退到组内
+            # index 兜底 `subject #i`，保证 subject 永远是可读标识、counterfactual 不空洞。
+            _raw_subject = grp_subjects[raw_idx] if raw_idx < len(grp_subjects) else None
+            subject = _raw_subject.strip() if isinstance(_raw_subject, str) and _raw_subject.strip() else f"subject #{raw_idx}"
             counterfactual = (
                 f"{grp_name} mean {grp_mean:.4f} → {loo_mean:.4f} "
                 f"(std {grp_std:.4f} → {loo_std:.4f}) if {subject} excluded"
