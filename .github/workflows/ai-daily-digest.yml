@@ -1,9 +1,13 @@
 name: AI Daily Digest → WeCom
 
+# DISABLED 2026-06-18: the `schedule` trigger is removed — the daily cron was
+# failing because NEWAPI_BASE_URL / WECOM_BOT_WEBHOOK secrets were never
+# configured (or expired), so it never successfully posted. For a small team
+# in v0.1 development writing its own commits, an AI daily digest adds little.
+# The job body is preserved below so it can be re-enabled manually once
+# secrets are configured: restore the `schedule` block above and run via
+# workflow_dispatch to verify first.
 on:
-  schedule:
-    # 北京时间每天早上 9:00 = UTC 1:00
-    - cron: '13 1 * * *'
   workflow_dispatch:
     inputs:
       days:

@@ -1,8 +1,14 @@
 name: AI PR Review
 
+# DISABLED 2026-06-18: trigger changed from `on: pull_request` to manual only.
+# It was failing on every push with "workflow file issue" because the job's
+# `if: github.event.pull_request.draft == false` evaluates against a null
+# pull_request on push events. Beyond the trigger bug, an LLM reviewing a
+# truncated 12k-char diff adds little over local `/code-review` and was noise
+# on the Actions page. To re-enable: restore the `pull_request` trigger below
+# AND fix the `if:` to handle push events (or split into a push-only job).
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 permissions:
   pull-requests: write
