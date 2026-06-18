@@ -39,7 +39,11 @@ class TestStatisticalValiditySkipped:
 
 
 class TestTaskContextBackwardCompat:
-    """旧 handoff 无 task_context 字段 → model_validate 不抛、task_context 为 None."""
+    """ethoinsight handoff 不再声明 task_context（spec 2026-06-18 移除死重量）。
+
+    旧测试曾断言 ``handoff.task_context is None``；字段移除后改为断言字段不存在 +
+    旁路引用字段（outlier_diagnostics_* / output_files_*，CodeExecutorHandoff）有默认。
+    """
 
     def test_code_executor_without_task_context(self):
         d = {
@@ -53,7 +57,10 @@ class TestTaskContextBackwardCompat:
 
         handoff = CodeExecutorHandoff.model_validate(d)
         assert handoff.status == "completed"
-        assert handoff.task_context is None
+        assert "task_context" not in CodeExecutorHandoff.model_fields, "task_context 字段应已从 CodeExecutorHandoff 移除"
+        # 旁路引用字段默认值（spec 2026-06-18）。
+        assert handoff.outlier_diagnostics_count == 0
+        assert handoff.outlier_diagnostics_ref is None
 
     def test_data_analyst_without_task_context(self):
         d = {"status": "completed", "analysis_config_id": "deadbeef12345678", "key_findings": ["Treatment group shows significant difference (p=0.03)"]}
@@ -61,7 +68,7 @@ class TestTaskContextBackwardCompat:
 
         handoff = DataAnalystHandoff.model_validate(d)
         assert handoff.status == "completed"
-        assert handoff.task_context is None
+        assert "task_context" not in DataAnalystHandoff.model_fields
 
     def test_chart_maker_without_task_context(self):
         d = {
@@ -75,7 +82,7 @@ class TestTaskContextBackwardCompat:
 
         handoff = ChartMakerHandoff.model_validate(d)
         assert handoff.status == "completed"
-        assert handoff.task_context is None
+        assert "task_context" not in ChartMakerHandoff.model_fields
 
     def test_report_writer_without_task_context(self):
         d = {
@@ -88,11 +95,15 @@ class TestTaskContextBackwardCompat:
 
         handoff = ReportWriterHandoff.model_validate(d)
         assert handoff.status == "completed"
-        assert handoff.task_context is None
+        assert "task_context" not in ReportWriterHandoff.model_fields
 
 
 class TestTaskContextForwardCompat:
-    """新 handoff 带 task_context → model_validate 通过、extra="allow" 保兼容."""
+    """旧 handoff 带 task_context → 新 schema 仍能 parse（extra="allow" 吞进 model_extra）.
+
+    spec 2026-06-18：ethoinsight 4 个 handoff 移除 task_context 字段，但 extra="allow"
+    保证旧 handoff 文件（带 task_context）不抛、可读。
+    """
 
     def test_code_executor_with_task_context(self):
         from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
@@ -110,14 +121,16 @@ class TestTaskContextForwardCompat:
                 "pending_items": [],
             },
         }
+        # 字段已移除，但 extra="allow" 吞掉 task_context 不抛。
         handoff = CodeExecutorHandoff.model_validate(d)
-        assert handoff.task_context is not None
-        assert handoff.task_context.file_changes == ["/mnt/user-data/outputs/metrics.json"]
-        assert handoff.task_context.failed_paths == ["group B n=1 skipped"]
-        assert handoff.task_context.pending_items == []
+        assert handoff.status == "completed"
+        assert "task_context" not in CodeExecutorHandoff.model_fields
+        # 旧 task_context 落入 model_extra（向前兼容审计可追溯）。
+        assert handoff.model_extra is not None
+        assert "task_context" in handoff.model_extra
 
     def test_extra_fields_in_task_context_not_lost(self):
-        """extra="allow" 确保 task_context 里未声明的额外字段也不丢失."""
+        """extra="allow" 确保旧 task_context 子字段随整块落入 model_extra 不丢."""
         from deerflow.subagents.handoff_schemas import CodeExecutorHandoff
 
         d = {
@@ -135,9 +148,10 @@ class TestTaskContextForwardCompat:
             },
         }
         handoff = CodeExecutorHandoff.model_validate(d)
-        assert handoff.task_context is not None
-        # extra="allow" on TaskContext → custom_future_field accessible
-        assert handoff.task_context.file_changes == ["/a.txt"]
+        assert handoff.model_extra is not None
+        tc = handoff.model_extra["task_context"]
+        assert tc["file_changes"] == ["/a.txt"]
+        assert tc["custom_future_field"] == "survives"
 
 
 # ============================================================================

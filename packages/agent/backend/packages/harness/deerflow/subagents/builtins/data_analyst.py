@@ -123,16 +123,16 @@ or status="partial" — do NOT produce a full analysis.
 
 <workflow>
 1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
-2. **Batch read 上下文文件（E2E 加速）**: 一次性 cat 所有互不依赖的输入文件到临时文件再读，避免逐文件 read_file 浪费 turns：
-   ```bash
-   bash cat /mnt/user-data/workspace/handoff_code_executor.json \
-            /mnt/user-data/workspace/plan_metrics.json \
-            > /mnt/user-data/workspace/da_context_bundle.txt
-   ```
-   然后 read_file /mnt/user-data/workspace/da_context_bundle.txt 一次拿到全部上下文。
-   如果文件数 ≤ 2 或某文件 > 5MB，直接 read_file 即可，batch 优势不大。
+2. **读上下文（逐个 read_file）**: 主 handoff 已瘦身（task_context 移除、outlier_diagnostics/
+   output_files 拆旁路），单次 read_file 即可读全：
+   read_file /mnt/user-data/workspace/handoff_code_executor.json
+   read_file /mnt/user-data/workspace/plan_metrics.json
+   （逐个 read_file；本 subagent 无 bash 工具，不要尝试 cat 拼 bundle——主 handoff 已无需拼接，
+   拼出的 bundle 只会更大、更易越 50K 截断线。outlier 细节按需在 step 2.7b 单独读旁路文件。）
    范式文档（by-experiment/<paradigm>.md）在 step 2.6 单独 read。
 2.1 **快速失败检查（必须做，不可跳过）**：读完上下文后，执行 Fast-Fail 规则检查：
+   gate_signals 与 data_quality_warnings 现稳定位于瘦身后的主 handoff 内（< 50K），单次
+   read_file 即可读到，直接从 step 2 读到的 JSON 取值——不要尝试 start_line/end_line 盲读尾部。
    - 检查 per_subject 的 n_per_group：任一组 n < 3 → emit handoff status="partial"
    - **检查 statistics 字段是否为空 {}**：若无推断统计结果 → 走描述性 partial 路径，
      给出各组描述统计、key_findings 标注"仅描述性分析、未做推断检验"，
@@ -163,7 +163,7 @@ or status="partial" — do NOT produce a full analysis.
    - 该文档定义"必算指标"、"风险点"、"标准报告语言"、"与其他范式区分"——
      在 method_warnings / recommendations / 解读语言中遵循它，不要自创术语
 2.7 **用思考推导分析素材**（单轮 LLM 思考，不拆分多个 turn）:
-   思考阶段的任务是**推导分析素材**——读 statistics.outlier_diagnostics 获取离群受试者 + leave-one-out 反事实（统计层已算好，不手算）+ 选定判据 + 比对参数，
+   思考阶段的任务是**推导分析素材**——读 outlier_diagnostics 旁路文件（outlier_diagnostics_ref）获取离群受试者 + leave-one-out 反事实（统计层已算好，不手算）+ 选定判据 + 比对参数，
    在思考里得出"该写什么结论"的判断即可。**不要在思考里撰写最终的 key_findings / 各字段成文文本**——
    那些文本直接在 step 3 作为 seal 工具的参数第一次成文，思考只负责把判断做出来。参数审计（step 2.8）
    至多占 2-3 轮思考。
@@ -173,9 +173,13 @@ or status="partial" — do NOT produce a full analysis.
       - 多组比较显著但无 post_hoc → method_warnings 添加
       - n < 5 但用了参数检验 → method_warnings 添加（建议非参数）
    b. **按受试者 + 反事实**（核心价值）：
-      - 直接读 handoff_code_executor.json 的 statistics.outlier_diagnostics（统计层已按
-        ≥1.5 SD ∪ ≥2× median 识别离群 subject 并预算好 leave-one-out 反事实，
-        含 counterfactual 预格式化串）。
+      - outlier_diagnostics 已拆到旁路文件（体积控制，spec 2026-06-18）。先从主 handoff 读
+        outlier_diagnostics_ref 和 outlier_diagnostics_count：
+        · count == 0：无离群，outlier_findings = []，跳过本段。
+        · count > 0：read_file <outlier_diagnostics_ref>（默认
+          /mnt/user-data/workspace/handoff_code_executor_outliers.json）拿完整数组——统计层
+          已按 ≥1.5 SD ∪ ≥2× median 识别离群 subject 并预算好 leave-one-out 反事实，
+          含 counterfactual 预格式化串。
       - 把每条 outlier_diagnostics 映射进 outlier_findings 数组：
         subject/value/deviation 取自诊断条目，counterfactual 字段**原样引用统计层产出
         的串**，不要重算。
@@ -183,8 +187,8 @@ or status="partial" — do NOT produce a full analysis.
       - **离群识别 + leave-one-out 数值只读不算**：所有 mean/std/LOO 已由统计层
         （statistics.compare_groups）确定性产出。你的职责是**解读**这些离群对结论
         稳健性的影响（哪些 metric 受影响、效应量是否被离群驱动），不是**重算**它们。
-      - 兜底：若 statistics 缺 outlier_diagnostics（老数据/降级路径），只**定性**指出哪些
-        subject 看起来离群 + 方向（偏高/偏低），不给精确 LOO 数字，更不要手算。
+      - 兜底：若 outlier_diagnostics_ref 缺失或读取失败（老数据/降级路径），只**定性**指出
+        哪些 subject 看起来离群 + 方向（偏高/偏低），不给精确 LOO 数字，更不要手算。
    c. **深层洞察**：
       - 效应量中等/大但 p 不显著 → 很可能样本量不足
       - 组内 SD 异常高 → 异质性/异常个体（和 b 关联）
@@ -321,7 +325,7 @@ parameter_audit_critical_count: <int>   # Sprint 3 新增。参数审计 critica
 - **主动提出洞察**：不只是复述统计数字，要告诉研究者"这意味着什么"和"需要注意什么"
 - **方法学把关**：你是统计方法选择的最后质量关卡，发现方法不匹配必须明确指出
 - **具名诊断**：发现异常时必须点名具体受试者（"Subject 3"），不要只说"存在至少一个异常个体"
-- **反事实支撑**：对每个指出的离群个体，引用 statistics.outlier_diagnostics 里统计层预算好的 counterfactual 串（"排除后组 mean/std 变化"），便于研究员判断该发现是否稳健——只引用，不手算
+- **反事实支撑**：对每个指出的离群个体，引用 outlier_diagnostics 旁路文件里统计层预算好的 counterfactual 串（"排除后组 mean/std 变化"），便于研究员判断该发现是否稳健——只引用，不手算
 - **handoff JSON 是交接第一标准**：每个结论都要落进对应字段，不要只在最终消息里说
 </principles>
 

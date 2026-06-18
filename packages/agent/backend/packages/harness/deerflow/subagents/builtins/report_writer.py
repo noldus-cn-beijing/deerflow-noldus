@@ -205,15 +205,12 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 
 <workflow>
 1. **开工前必读输出宪法**: read_file `/mnt/skills/custom/ethoinsight/references/output-constitution.md`
-2. **Batch read 输入文件（E2E 加速）**: 一次性 cat 所有互不依赖的 handoff + 配置文件到临时文件再读，避免逐文件 read_file 浪费 turns：
-   ```bash
-   bash cat /mnt/user-data/workspace/handoff_code_executor.json \
-            /mnt/user-data/workspace/handoff_data_analyst.json \
-            /mnt/user-data/workspace/plan_metrics.json \
-            > /mnt/user-data/workspace/rw_context_bundle.txt
-   ```
-   然后 read_file /mnt/user-data/workspace/rw_context_bundle.txt 一次拿到全部上下文。
-   handoff_planning.json 如存在可追加到 cat 命令中一并读取。
+2. **读输入文件（逐个 read_file）**: 主 handoff 已瘦身，单次 read_file 即可读全：
+   read_file /mnt/user-data/workspace/handoff_code_executor.json
+   read_file /mnt/user-data/workspace/handoff_data_analyst.json
+   read_file /mnt/user-data/workspace/plan_metrics.json
+   （逐个 read_file；本 subagent 无 bash 工具，不要尝试 cat 拼 bundle——拼出的 bundle
+   只会更大、更易越 50K 截断线。handoff_planning.json 如存在可再 read_file 一次。）
    范式文档（by-experiment/<paradigm>.md）在 step 2.5 单独 read。
 2.5 **按范式 read 判读文档**（用其"标准报告语言"作报告术语来源）：
    - 从 handoff 的 paradigm 字段拿 slug

@@ -323,6 +323,13 @@ def run_metric_plan_tool(
     if statistics_payload is not None:
         payload["statistics"] = statistics_payload
 
+    # ---- Step 9.5: 拆旁路（体积控制，spec 2026-06-18）----
+    # outlier_diagnostics（28K）+ output_files 完整路径列表（8.9K）是「大但偶尔需要」
+    # 的细节，把主 handoff 顶过 sandbox read_file 50K 截断线，斩掉尾部 gate_signals /
+    # data_quality_warnings（data-analyst fast-fail 必读）。拆到旁路文件，主 handoff 留
+    # 摘要（count）+ 虚拟路径引用（_ref）。data-analyst 需 outlier 细节时单独读旁路。
+    _slim_payload_into_sidecars(payload, workspace)
+
     try:
         _seal_handoff_to_workspace(CodeExecutorHandoff, "handoff_code_executor.json", payload, workspace)
     except ValueError as e:
@@ -349,6 +356,79 @@ def run_metric_plan_tool(
 # ============================================================================
 # Helpers
 # ============================================================================
+
+
+# Spec 2026-06-18：旁路文件命名 + 主 handoff 内引用字段。
+_OUTLIERS_SIDECAR = "handoff_code_executor_outliers.json"
+_OUTPUTS_SIDECAR = "handoff_code_executor_outputs.json"
+_OUTLIERS_REF = f"/mnt/user-data/workspace/{_OUTLIERS_SIDECAR}"
+_OUTPUTS_REF = f"/mnt/user-data/workspace/{_OUTPUTS_SIDECAR}"
+
+
+def _write_sidecar_json(workspace: Path, filename: str, data: Any) -> None:
+    """原子写旁路 JSON（tmp + rename + chmod 0o644，同 seal 模式）。
+
+    旁路文件不进 seal 的 manifest hash 链（主 handoff 的 hash 已覆盖 _ref 路径字符串）。
+    """
+    import json
+
+    final = workspace / filename
+    tmp = workspace / f"{filename}.tmp"
+    tmp.write_bytes(json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))
+    os.replace(tmp, final)  # POSIX atomic
+    os.chmod(final, 0o644)
+
+
+def _slim_payload_into_sidecars(payload: dict[str, Any], workspace: Path) -> None:
+    """把 outlier_diagnostics + output_files 完整列表从主 handoff 拆到旁路文件。
+
+    就地 mutate ``payload``：移除内嵌大数据，设 *_count + *_ref 摘要字段。空数据不写旁路
+    （守护降级路径：line ~514 的 output_files={"metrics": []} 不产空旁路文件）。
+
+    Spec 2026-06-18 §3.3。旁路 _ref 必须是虚拟路径（/mnt/user-data/workspace/...），
+    data-analyst 在 sandbox 内 read_file 用虚拟路径（schemas._VIRTUAL_USER_DATA_PREFIX）。
+    """
+    # --- outlier_diagnostics: 在 payload["statistics"]["outlier_diagnostics"] ---
+    stats = payload.get("statistics")
+    if isinstance(stats, dict):
+        outliers = stats.get("outlier_diagnostics")
+        if outliers:  # 非空 list 才拆
+            _write_sidecar_json(workspace, _OUTLIERS_SIDECAR, outliers)
+            payload["outlier_diagnostics_count"] = len(outliers)
+            payload["outlier_diagnostics_ref"] = _OUTLIERS_REF
+            # 主 handoff 的 statistics 移除内嵌完整数组（保留 key 为 [] 兼容旧读取方）。
+            stats["outlier_diagnostics"] = []
+        else:
+            payload["outlier_diagnostics_count"] = 0
+            payload["outlier_diagnostics_ref"] = None
+    else:
+        payload.setdefault("outlier_diagnostics_count", 0)
+        payload.setdefault("outlier_diagnostics_ref", None)
+
+    # --- output_files: 完整产物路径列表 ---
+    output_files = payload.get("output_files")
+    if output_files:  # 非空 dict
+        # 统计产物文件数（聚合 metrics 路径列表长度，回退到 dict 内所有 str/list 元素数）。
+        metrics_list = output_files.get("metrics") if isinstance(output_files, dict) else None
+        if isinstance(metrics_list, list):
+            count = len(metrics_list)
+        else:
+            count = sum(
+                len(v) if isinstance(v, list) else (1 if isinstance(v, str) else 0)
+                for v in output_files.values()
+            ) if isinstance(output_files, dict) else 0
+        if count > 0:
+            _write_sidecar_json(workspace, _OUTPUTS_SIDECAR, output_files)
+            payload["output_files_count"] = count
+            payload["output_files_ref"] = _OUTPUTS_REF
+            # 主 handoff 清空 output_files（spec §3.2 默认：清空，无下游 subagent 消费）。
+            payload["output_files"] = {}
+        else:
+            payload.setdefault("output_files_count", 0)
+            payload.setdefault("output_files_ref", None)
+    else:
+        payload.setdefault("output_files_count", 0)
+        payload.setdefault("output_files_ref", None)
 
 
 def _execute_tasks(
