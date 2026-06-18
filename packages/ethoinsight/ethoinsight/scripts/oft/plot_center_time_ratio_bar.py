@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 from ethoinsight.metrics.oft import compute_center_time_ratio
 from ethoinsight.parse import parse_trajectory
-from ethoinsight.scripts._cli import emit_result, make_plot_parser, resolve_per_subject_input
+from ethoinsight.scripts._cli import emit_result, make_plot_parser, parse_parameters, resolve_per_subject_input
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,11 +30,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
+    parameters = parse_parameters(args)  # 与 compute 脚本同源（spec 2026-06-18）
     df = parse_trajectory(path)
     subject = df.attrs.get("subject", "Subject")
-    value = compute_center_time_ratio(df)
+    value = compute_center_time_ratio(df, **parameters)
     if value is None:
-        print("error: could not compute center_time_ratio — no center zone columns", file=sys.stderr)
+        hint = (
+            "（已传 zone 参数仍无值，疑似该 subject 数据无中心区列）"
+            if parameters
+            else "（未收到 zone 对齐参数，疑似 prep_chart_plan 未注入 --parameters-json）"
+        )
+        print(f"error: could not compute center_time_ratio — no center zone columns {hint}", file=sys.stderr)
         return 1
 
     fig, ax = plt.subplots(figsize=(5, 4))

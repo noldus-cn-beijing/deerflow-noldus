@@ -330,12 +330,29 @@ def parse_parameters(args_namespace: argparse.Namespace) -> dict[str, float | in
     return result
 
 
+def select_zone_kwargs(
+    parameters: dict, keys: list[str]
+) -> dict:
+    """从 parse_parameters 的返回 dict 里挑出指定 zone key（缺/空 key 不进 kwargs）。
+
+    spec 2026-06-18：per-subject plot 脚本调多个不同签名的 compute_* 函数时，整份 dict
+    ``**parameters`` 透传会把多余 key 喂给不接受的函数（TypeError）。本 helper 仿 dispatcher
+    ``_zone_kwargs`` 语义——只挑该函数声明的 zone key，缺/空则不传（让底层走自动检测默认）。
+    """
+    return {k: parameters[k] for k in keys if parameters.get(k)}
+
+
 def make_plot_parser(
     description: str, *, supports_groups: bool = False
 ) -> argparse.ArgumentParser:
     """Argparse for ``plot_*.py``.
 
     Single-file plots use ``--input``; aggregated plots use ``--inputs`` + optional ``--groups``.
+
+    ``--parameters-json`` 与 compute/stats 脚本对称（复用 ``parse_parameters``），
+    由 catalog.resolve 把 column_aliases 对齐出的 zone 参数透传进来 → per-subject plot
+    透传给底层 compute_* 函数、aggregate plot 透传给 dispatcher 的 zone_overrides
+    （spec 2026-06-18：列对齐对 plot 脚本生效，修 chart-maker「open arm 不存在」）。
     """
     ap = argparse.ArgumentParser(description=description)
     group = ap.add_mutually_exclusive_group(required=True)
@@ -352,6 +369,15 @@ def make_plot_parser(
             help="Path to a JSON file mapping group_name -> [subject_name, ...]",
         )
     ap.add_argument("--output", required=True, help="Path to write the PNG plot")
+    ap.add_argument(
+        "--parameters-json",
+        default="{}",
+        help=(
+            "JSON dict of zone column overrides (e.g. open_arm_zones, center_zone). "
+            "Empty dict means use metric-function autodiscovery defaults. "
+            "Populated by catalog.resolve from column_aliases (HITL column semantics)."
+        ),
+    )
     return ap
 
 

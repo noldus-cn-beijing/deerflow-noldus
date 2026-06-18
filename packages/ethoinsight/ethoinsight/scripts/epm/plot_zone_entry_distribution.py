@@ -23,7 +23,7 @@ from ethoinsight.metrics.epm import (
     compute_total_entry_count,
 )
 from ethoinsight.parse import parse_trajectory
-from ethoinsight.scripts._cli import emit_result, make_plot_parser, resolve_per_subject_input
+from ethoinsight.scripts._cli import emit_result, make_plot_parser, parse_parameters, resolve_per_subject_input, select_zone_kwargs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -34,9 +34,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
+    parameters = parse_parameters(args)  # 与 compute 脚本同源（spec 2026-06-18）
     df = parse_trajectory(path)
-    open_entries = compute_open_arm_entry_count(df) or 0
-    total_entries = compute_total_entry_count(df) or 0
+    # 两函数签名不同：compute_open_arm_entry_count 只接 open_arm_zones，
+    # compute_total_entry_count 接 open_arm_zones + closed_arm_zones。按函数筛 key。
+    open_entries = compute_open_arm_entry_count(df, **select_zone_kwargs(parameters, ["open_arm_zones"])) or 0
+    total_entries = compute_total_entry_count(df, **select_zone_kwargs(parameters, ["open_arm_zones", "closed_arm_zones"])) or 0
     closed_entries = max(total_entries - open_entries, 0)
 
     labels = ["Open arms", "Closed arms"]

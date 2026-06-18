@@ -11,7 +11,7 @@ import sys
 from ethoinsight.charts import bar_chart
 from ethoinsight.metrics.dispatcher import compute_paradigm_metrics
 from ethoinsight.parse import parse_batch
-from ethoinsight.scripts._cli import emit_result, make_plot_parser, read_groups_json, read_inputs_json
+from ethoinsight.scripts._cli import emit_result, make_plot_parser, parse_parameters, read_groups_json, read_inputs_json
 
 METRICS_TO_PLOT = ["light_time_ratio", "transition_count", "light_latency"]
 
@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     paths = read_inputs_json(args.inputs)
     groups = read_groups_json(args.groups) if args.groups else None
     parsed = parse_batch(paths)
-    metrics = compute_paradigm_metrics(parsed, paradigm="light_dark", groups=groups)
+    metrics = compute_paradigm_metrics(parsed, paradigm="light_dark", groups=groups, zone_overrides=parse_parameters(args) or None)
     output_path = bar_chart(metrics, metrics_to_plot=METRICS_TO_PLOT, output_path=args.output)
     emit_result({"plot": "bar_light", "path": output_path, "metrics": METRICS_TO_PLOT})
     return 0

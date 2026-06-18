@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 
 from ethoinsight.metrics.oft import compute_center_entry_count, compute_center_time
 from ethoinsight.parse import parse_trajectory
-from ethoinsight.scripts._cli import emit_result, make_plot_parser, resolve_per_subject_input
+from ethoinsight.scripts._cli import emit_result, make_plot_parser, parse_parameters, resolve_per_subject_input
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,9 +31,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
+    parameters = parse_parameters(args)  # 与 compute 脚本同源（spec 2026-06-18）
     df = parse_trajectory(path)
-    entries = compute_center_entry_count(df) or 0
-    seconds = compute_center_time(df) or 0.0
+    entries = compute_center_entry_count(df, **parameters) or 0
+    seconds = compute_center_time(df, **parameters) or 0.0
 
     fig, ax_left = plt.subplots(figsize=(5, 4))
     ax_left.bar(["Entry count"], [entries], color="#4C9F70", edgecolor="black", linewidth=0.5, width=0.5)
