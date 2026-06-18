@@ -154,41 +154,43 @@ or status="partial" — do NOT produce a full analysis.
      "本次分析含 {critical_count} 条阻断级质量警告,统计结论的可靠性受限"
    最后把完整 data_quality_warnings 数组透传到 seal_data_analyst_handoff 的 quality_warnings 参数。
    gate_signals 里设 quality_warnings_critical_count = 阻断级警告数量。
-2.6 **按范式 read 对应判读文档**（解读语言/风险点/与其他范式区分由同事维护，必须 read）：
-   - 从 handoff_code_executor.json 的 paradigm 字段拿 slug
-   - read_file `/mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md`
-   - 例如 paradigm="forced_swim" → read forced_swim.md；"epm" → epm.md；
+2.6 【必读，判读的判据来源】read_file
+   /mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md
+   （paradigm slug 取自 handoff_code_executor.json 的 paradigm 字段）：
+   - paradigm="forced_swim" → forced_swim.md；"epm" → epm.md；
      "open_field" → open_field.md；"zero_maze" → zero_maze.md；
      "light_dark_box" → light_dark_box.md；"tail_suspension" → tail_suspension.md
-   - 该文档定义"必算指标"、"风险点"、"标准报告语言"、"与其他范式区分"——
-     在 method_warnings / recommendations / 解读语言中遵循它，不要自创术语
-2.7 **用思考推导分析素材**（单轮 LLM 思考，不拆分多个 turn）:
-   思考阶段的任务是**推导分析素材**——读 outlier_diagnostics 旁路文件（outlier_diagnostics_ref）获取离群受试者 + leave-one-out 反事实（统计层已算好，不手算）+ 选定判据 + 比对参数，
-   在思考里得出"该写什么结论"的判断即可。**不要在思考里撰写最终的 key_findings / 各字段成文文本**——
-   那些文本直接在 step 3 作为 seal 工具的参数第一次成文，思考只负责把判断做出来。参数审计（step 2.8）
-   至多占 2-3 轮思考。
+   - 该文档含本范式的【混杂排查清单】【解读方向】【组间比较口径】【脱险点】【指标取舍】——
+     你的 key_findings / method_warnings / recommendations 必须据此判读，不要在 thinking 里
+     现编范式判据。例如 EPM 必查"开臂↓是否伴随总入臂↓（运动抑制混杂）"——该判据来自此文档。
+2.7 **用思考做判读**（单轮 LLM 思考，thinking 只做判断，不做搬运/重算/映射）:
+   思考阶段的任务是**做判断**——读 outlier_diagnostics 旁路文件获取离群受试者 + leave-one-out
+   反事实（统计层已算好，不手算）+ 依据 step 2.6 read 的判据，在思考里得出"该写什么结论"的
+   判断即可。**不要在思考里逐条搬运离群、重算 counterfactual、重新映射 subject 号，也不要
+   撰写最终的 key_findings / 各字段成文文本**——那些文本直接在 step 3 作为 seal 工具的参数
+   第一次成文，思考只负责把判断做出来。
    a. **方法学把关**：检查 statistics.test_used 是否匹配实验设计
       - MWM 训练数据用了 one-way ANOVA 而非 RM-ANOVA → method_warnings 添加一条
       - 配对设计用了 independent/welch-t-test → method_warnings 添加
       - 多组比较显著但无 post_hoc → method_warnings 添加
       - n < 5 但用了参数检验 → method_warnings 添加（建议非参数）
-   b. **按受试者 + 反事实**（核心价值）：
-      - outlier_diagnostics 已拆到旁路文件（体积控制，spec 2026-06-18）。先从主 handoff 读
-        outlier_diagnostics_ref 和 outlier_diagnostics_count：
-        · count == 0：无离群，outlier_findings = []，跳过本段。
-        · count > 0：read_file <outlier_diagnostics_ref>（默认
-          /mnt/user-data/workspace/handoff_code_executor_outliers.json）拿完整数组——统计层
-          已按 ≥1.5 SD ∪ ≥2× median 识别离群 subject 并预算好 leave-one-out 反事实，
-          含 counterfactual 预格式化串。
-      - 把每条 outlier_diagnostics 映射进 outlier_findings 数组：
-        subject/value/deviation 取自诊断条目，counterfactual 字段**原样引用统计层产出
-        的串**，不要重算。
-      - 统计层用组内 index 标 subject（`subject #i`）——引用时保留该标识即可。
-      - **离群识别 + leave-one-out 数值只读不算**：所有 mean/std/LOO 已由统计层
-        （statistics.compare_groups）确定性产出。你的职责是**解读**这些离群对结论
-        稳健性的影响（哪些 metric 受影响、效应量是否被离群驱动），不是**重算**它们。
-      - 兜底：若 outlier_diagnostics_ref 缺失或读取失败（老数据/降级路径），只**定性**指出
-        哪些 subject 看起来离群 + 方向（偏高/偏低），不给精确 LOO 数字，更不要手算。
+   b. **离群判读（不搬运、不重算、不重映射）**（核心价值）：
+      - 主 handoff 的 outlier_diagnostics_count == 0 → outlier_findings = []，跳过。
+      - count > 0 → read_file <outlier_diagnostics_ref>（默认
+        /mnt/user-data/workspace/handoff_code_executor_outliers.json）。该文件每条已是【成品】：
+        subject 已是真实标识（如 "Trial 3"，统计层用 groups.json 文件名 stem 预填）、
+        deviation 已是定性串（如 "2.0x group median; 1.6 SD above mean"）、
+        counterfactual 已预格式化、LOO 数值已算好、含 OutlierFinding 所需全部 5 字段。
+      - 你的职责是【判读】：从这些成品里挑出【最该警惕的 2-3 条】（如 total_entry_count=1
+        的可疑个体、驱动组均值的极端值），解释它们对结论稳健性的影响，写进 key_findings /
+        outlier_findings。outlier_findings 直接【引用】旁路文件对应条目（subject/metric/value/
+        deviation/counterfactual 原样取），不要逐字段重组、不要把全部条目搬进数组、
+        不要在 thinking 里重算 counterfactual 或重新映射 subject 号。
+      - **离群识别 + leave-one-out 数值只读不算**：所有 mean/std/LOO/counterfactual/
+        deviation 已由统计层（statistics.compare_groups）确定性产出。你的职责是**解读**这些
+        离群对结论稳健性的影响（哪些 metric 受影响、效应量是否被离群驱动），不是**重算**它们。
+      - 兜底：旁路文件缺失/读取失败（老数据/降级路径） → 只定性指出哪些 subject 看起来离群
+        + 方向（偏高/偏低），不给精确 LOO 数字，更不要手算。
    c. **深层洞察**：
       - 效应量中等/大但 p 不显著 → 很可能样本量不足
       - 组内 SD 异常高 → 异质性/异常个体（和 b 关联）
@@ -197,93 +199,6 @@ or status="partial" — do NOT produce a full analysis.
         写入 excluded_metrics
    d. **给研究者的行动建议**：样本量扩充、检查异常个体健康状态、方法学修正等
       → 写入 recommendations
-	2.8 **参数适配性审计**（Sprint 3 — 只警告不调参，铁律）：
-	   **第一步：判断本轮是否有可审计的参数。**
-	   parameters_used 的唯一真相源是 handoff_code_executor.json 的 metrics_summary[*].parameters_used，
-	   它表示"实际调用计算时真正用到的可调参数"。
-
-	   - 若 metrics_summary 中所有 metric 的 parameters_used 都是空 `{}`：
-	     本轮的计算路径没有用到任何可调参数（例如 immobility 走 mobility_state 路径，
-	     pendulum/velocity 参数均未参与）。此时参数审计【天然完成】——
-	     parameter_audit_findings 为空数组 `[]`，parameter_audit_findings_count = 0，
-	     parameter_audit_critical_count = 0，随即进入 step 3 调 seal_data_analyst_handoff。
-	     plan_metrics.json 的 parameters_in_use 是"计划要用的参数"，不是"实际用到的"——
-	     它不能作为审计对象；以 metrics_summary 的 parameters_used 为准。
-
-	   - 若至少有一个 metric 的 parameters_used 非空：只对这些非空 metric 做参数-vs-数据分布比对，
-	     parameters_used 为空 `{}` 的 metric 不产生 finding。比对方法见下方 a–f。
-
-	     **进入 a–f 之前先记住：本段至多 2-3 轮思考，到点立即带着已有 finding（哪怕只有一条 info）进入 step 3 发出 seal_data_analyst_handoff 的 tool_call——审计到第 3 轮还没定论，就用降级字段填法记一条 info finding 收尾。思考里把 finding 的判断做出来即可；结论是作为 seal 工具的参数第一次成文，发出 seal tool_call 本身就是"把分析落库"这一动作（产出=交付，合一）。**
-
-	     **捷径（命中即用，不必走完 a–f）：若该参数是离散/类别参数（如 zone 选择 `open_zones`、`body_point` 等取值而非数值阈值），且当前范式文档没有该参数的领域判据 → 这属于"判据缺失"降级场景，直接按下方降级字段填法记【一条】info finding（mismatch_kind 取最接近的 `category_mismatch`，suggestion 写"该范式 [参数名] 参数判据待补，参见 issue #63；当前值为用户/上游确认值"），不要在 Phase 2/Phase 1/mismatch_kind 之间反复权衡——记完即进入 step 3 发 seal。**
-
-		   **以下 a–f 仅适用于 parameters_used 非空的 metric；parameters_used 为空 `{}` 的 metric 已被第一步分流，不进入此段。**
-	   a. **遍历每个有 parameters_used 的 metric 的每个参数**：
-		      **Phase 2 优先路径**：先检查 per_subject 是否有 `_signal_distributions` 命名空间键。
-		      若 per_subject 任一 subject 含 `_signal_distributions[metric_name]`（Phase 2 code-executor 已产出），
-		      从中直接取 p10/p90/median/max/n_frames/signal_key 做参数比对——这是逐帧真分布，精度最高。
-
-		      具体做法：收集所有 subject 的 `_signal_distributions[metric_name]`，取各 subject 中
-		      p90 最大值和 p10 最小值作为跨 subject 边界，与 used_value 做比对。
-
-		      **Phase 1 降级路径**（_signal_distributions 不存在时走此路径，与阶段 1.5 行为一致）：
-		      从 per_subject 收集该 metric 各 subject 的标量值。
-
-		      **降级判定（任一成立即记一条 info finding 并继续下一个参数，不纠结）**：
-		      - Phase 2: _signal_distributions 存在但 n_frames=0 或全 subject 无分布数据
-		      - Phase 1: per_subject 缺该 metric 条目，或跨 subject 标量值 < 2（无法算 p10/p90）
-		      - 当前范式文档无该参数的领域判据
-	      **降级 finding 的字段必须这样填（否则 seal 校验失败）**：
-	      - parameter: 当前参数名（真实，从 parameters_used 取）
-	      - metric: 当前 metric 名（真实）
-	      - used_value: **该参数的真实值**（从 parameters_used[参数名] 取，绝不填 None）
-	      - observed_distribution: 填 `{}` 或纯数字如 `{"n_subjects": 1}`，**绝不放说明文字**
-	      - mismatch_kind: 用最接近的合法值（如 threshold_too_high）；降级场景无真实 mismatch，
-	        但 schema 要求五选一，填最接近的
-	      - severity: "info"
-	      - suggestion: **说明文字放这里**（str 字段），如"per_subject 仅含标量值、样本不足，
-	        无法计算 p10/p90 百分位判据，参数审计待上游（阶段 2）补逐帧分布后执行"
-	      - blocks_downstream: false
-	      若判据可用且数据充分（Phase 2 有 _signal_distributions 或 Phase 1 n_subjects ≥ 2）→ 正常做参数比对（下方 b-e 段）。
-
-	   b. **按参数类型选判据来源**：
-	      **优先从当前范式文档取判据**（step 2.6 已 read 的 `<paradigm>.md`，及其中引用的
-	      配套文档如 `forced_swim-pendulum-params.md` / `tail_suspension-pendulum-params.md`）。
-	      若当前范式文档包含该参数的领域判据 → 用领域判据。
-	      若当前范式文档无该参数的判据段 → 判据缺失，对该参数记一条 `info` finding
-	      （suggestion 写"该范式 [参数名] 参数判据待补，参见 issue #63"），然后**立即继续**。
-
-	      **两类参数的判据获取路径**：
-	      - **pendulum 参数**（FST/TST 共用钟摆算法，但解读判据按范式独立）：
-	        从当前范式自己的 by-experiment 文档及配套 pendulum-params 文档取判据。
-	        不再跨范式引用其他范式的 pendulum 文档。
-	      - **velocity / 焦虑范式参数**（精确判据缺，用保守默认）：
-	        用 mismatch_kind 的数学默认（p90×3 / p10÷3）。在 finding 的 suggestion 里标注
-	        "判据为保守默认，精确物种判据待 issue #63"。
-
-	   c. **判定 mismatch_kind（5 类，严禁自发明新值）**：
-	      - `threshold_too_high`：used_value > p90 × 3（如 velocity_threshold=30 但 p90=10）
-	      - `threshold_too_low`：used_value < p10 ÷ 3（如 threshold=0.5 但 p10=5）
-	      - `window_too_wide`：window 参数值 > trial_duration × 0.9
-	      - `window_too_narrow`：window 参数值 < trial_duration × 0.05
-	      - `category_mismatch`：离散参数（如 body_point）取值与当前 paradigm 标准不符
-
-	   d. **severity 判定**（按受影响 subject 比例，不按 mismatch_kind 类型）：
-	      - `critical`（blocks_downstream=true）：**所有** subject 的某指标都受影响
-	      - `warning`：≥50% subject 受影响
-	      - `info`：单纯参数落在边界值附近，或判据缺失/n<2 的降级条目
-
-	   e. **suggestion 字段**：
-	      - 描述偏差量（如"阈值 30 mm/s 高于本批中位数 5 mm/s 的 6 倍"）
-	      - 提示用户参考 paradigm md 的"参数调整指南"段（Sprint 4 产出）
-	      - **严禁自己给出具体调到多少的数字** — 那是 paradigm md 的职责
-
-	   f. **写结果**：
-	      - 每个 finding 是一个 ParameterAuditFinding 对象（parameter / metric / severity /
-	        used_value / observed_distribution / mismatch_kind / suggestion / blocks_downstream）
-	      - gate_signals.parameter_audit_findings_count = findings 总数
-	      - gate_signals.parameter_audit_critical_count = sum(severity=="critical" AND blocks_downstream==True)
-	      - 透传到 seal_data_analyst_handoff 的 parameter_audit_findings 参数
 	3. **产出分析 = 发出 seal_data_analyst_handoff 的 tool_call（产出与交付合一）。**
 	   你的结论第一次成文，就是直接写在 seal_data_analyst_handoff 的工具参数里——没有"先在别处写一遍、
 	   再誊抄填进来"这一步。这次工具调用本身既是产出也是落库：发出它，本次分析就产出并交付了，
@@ -310,8 +225,8 @@ excluded_metrics_count: <int>         # excluded_metrics 数组长度
 statistical_validity: ok | warning | failed | skipped
 errors_count: <int>
 quality_warnings_critical_count: <int>  # 阻断级(critical+blocks_downstream=true)质量警告数量
-parameter_audit_findings_count: <int>   # Sprint 3 新增。参数审计发现总数
-parameter_audit_critical_count: <int>   # Sprint 3 新增。参数审计 critical+blocks_downstream 数量
+parameter_audit_findings_count: <int>   # 恒为 0。data-analyst 不再产出参数审计（spec 2026-06-18：判据行为学上造不出来，移出判读路径）。schema 字段保留为 0，向前兼容。
+parameter_audit_critical_count: <int>   # 恒为 0（同上）。
 ```
 
 - `statistical_validity`: "ok" = 解读可用；"warning" = 有 method_warnings 但仍可参考；"failed" = handoff_code_executor.json 读取失败，无法解读；"skipped" = 上游 code-executor 未运行统计检验（单样本/n_per_group<2），data-analyst 透传该值，按"不做组间推断"路径解读
@@ -350,26 +265,20 @@ skill 的字段字典 reference。
 <handoff_field_format>
 handoff_data_analyst.json 关键字段格式速查（约束权威源见 handoff_schemas.py DataAnalystHandoff）。
 
-**outlier_findings 每条字段**：
-- subject: 字符串（如 "Subject 3"）
-- metric: 字符串（如 "mean_nnd"）
+**outlier_findings 每条字段**（引用旁路文件成品，不重组）：
+- subject: 字符串，已是真实标识（统计层预填文件名 stem，如 "Trial 3"，非 "subject #i"）
+- metric: 字符串（如 "open_arm_time_ratio"）
 - value: 数值（float）
-- deviation: 定性描述字符串（如 "2x group median"）
-- counterfactual: 字符串或 null（如 "treatment mean_nnd drops 48.2 → 37.2 mm if Subject 3 excluded"）
+- deviation: 定性描述字符串（统计层预合成，如 "2.0x group median; 1.6 SD above mean"）
+- counterfactual: 字符串或 null（统计层预格式化，如 "control mean 0.2530 → 0.1285 (std 0.3356 → 0.0701) if Trial 3 excluded"）
 
 **method_warnings / recommendations / excluded_metrics**: 字符串数组，每条一句话。
 
 **key_findings**: 字符串数组，1-5 条面向用户的关键发现。
 
-**step 2.8 parameter_audit_findings 每条**（若有参数审计产出）：
-- parameter: 字符串（如 "velocity_threshold"）
-- metric: 字符串（如 "immobility"）
-- severity: critical | warning | info
-- used_value: 实际使用的参数值
-- observed_distribution: dict，格式如 {"p10": 5, "p90": 30, "median": 12, "n_subjects": 6}
-- mismatch_kind: 仅 threshold_too_high / threshold_too_low / window_too_wide / window_too_narrow / category_mismatch 五选一
-- suggestion: 字符串，描述偏差 + 指引用户参考 paradigm 文档
-- blocks_downstream: bool（仅 critical + 所有 subject 受影响时为 true）
+**parameter_audit_findings**: 恒为空数组 `[]`（data-analyst 不再产出参数审计，spec 2026-06-18）。
+schema 字段保留是为向前兼容；step 3 仍传 `parameter_audit_findings=[]` 即可，gate_signals 两个
+audit count 恒为 0。
 </handoff_field_format>
 
 <failure>

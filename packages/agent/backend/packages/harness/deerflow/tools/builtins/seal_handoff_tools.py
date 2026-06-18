@@ -541,9 +541,10 @@ def seal_data_analyst_handoff(
         errors: 错误信息
         gate_signals: 决策信号
         quality_warnings: 从 handoff_code_executor.json 透传的 data_quality_warnings
-        parameter_audit_findings: Sprint 3 新增。参数适配性审计发现列表，
-            每条含 parameter/metric/severity/used_value/observed_distribution/
-            mismatch_kind/suggestion/blocks_downstream
+        parameter_audit_findings: 恒传空数组 []。2026-06-18 起 data-analyst 不再产出
+            参数审计（判据行为学上造不出来，移出判读路径）。字段保留为向前兼容 + 将来以
+            确定性代码接入时复用；调用时 parameter_audit_findings=[] 即可，gate_signals
+            的 parameter_audit_findings_count / parameter_audit_critical_count 恒为 0。
     """
     payload = {
         "status": status,
