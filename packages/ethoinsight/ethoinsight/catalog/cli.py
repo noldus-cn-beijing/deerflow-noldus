@@ -101,6 +101,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--column-aliases-file", default=None,
                    help="JSON file mapping {raw_or_normalized column → catalog concept} "
                         "(Sprint 1 列语义对齐). Remaps user-named zone columns before resolve.")
+    p.add_argument("--context-file", default=None,
+                   help="Path to experiment-context.json (host-side). "
+                        "Spec 4 (P4) §2.2 横切状态兜底: when --column-aliases-file / "
+                        "--overrides-file are NOT given, column_aliases / parameter_overrides "
+                        "are read from this context so a caller that forgets to pass them "
+                        "explicitly does NOT silently regress to 'no alignment'. Explicit "
+                        "--column-aliases-file / --overrides-file still take precedence.")
     p.add_argument("--overrides-file", default=None,
                    help="Optional JSON file with parameter overrides (Sprint 2b). "
                         "Content must be a JSON dict, e.g. "
@@ -117,6 +124,25 @@ def _emit_error(code: str, message: str, details: dict | None = None) -> int:
     payload = {"code": code, "message": message, "details": details or {}}
     print(json.dumps(payload, ensure_ascii=False), file=sys.stderr)
     return 1
+
+
+def _load_context_fallback(context_file: str | None) -> dict | None:
+    """Spec 4 (P4) §2.2 — read experiment-context.json for横切状态兜底.
+
+    Returns the parsed context dict, or None when ``context_file`` is not given
+    or unreadable (never raises — fallback is best-effort). Callers use this to
+    source ``column_aliases`` / ``parameter_overrides`` when the caller forgot
+    to pass ``--column-aliases-file`` / ``--overrides-file`` explicitly, so a
+    forgotten flag regresses loudly to the right alignment instead of silently
+    to 'no alignment'.
+    """
+    if not context_file:
+        return None
+    try:
+        data = json.loads(Path(context_file).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -200,6 +226,15 @@ def main(argv: list[str] | None = None) -> int:
             )
         overrides = overrides_data
 
+    # Spec 4 (P4) §2.2 横切状态兜底: --overrides-file 未传时从 experiment-context.json 的
+    # parameter_overrides 兜底，避免调用方忘传 flag 静默退化成「无覆盖」。
+    if not overrides and not args.overrides_file:
+        ctx = _load_context_fallback(args.context_file)
+        if ctx:
+            ctx_overrides = ctx.get("parameter_overrides")
+            if isinstance(ctx_overrides, dict):
+                overrides = ctx_overrides
+
     # === Sprint 2b: load common catalog for shared_parameters ===
     common_catalog = None
     try:
@@ -230,6 +265,15 @@ def main(argv: list[str] | None = None) -> int:
                 {"path": args.column_aliases_file},
             )
         column_aliases = aliases_data
+
+    # Spec 4 (P4) §2.2 横切状态兜底: --column-aliases-file 未传时从 experiment-context.json 的
+    # column_aliases 兜底，避免调用方忘传 flag 静默退化成「无对齐」（自定义分析区列仍 columns_missing）。
+    if column_aliases is None and not getattr(args, "column_aliases_file", None):
+        ctx = _load_context_fallback(args.context_file)
+        if ctx:
+            ctx_aliases = ctx.get("column_aliases")
+            if isinstance(ctx_aliases, dict):
+                column_aliases = ctx_aliases
 
     if args.mode == "charts":
         # charts mode: resolve_charts → plan_charts.json
