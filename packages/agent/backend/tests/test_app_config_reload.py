@@ -216,6 +216,44 @@ def test_get_app_config_reloads_when_file_changes(tmp_path, monkeypatch):
         reset_app_config()
 
 
+def test_get_app_config_reloads_when_content_changes_without_mtime_or_size(tmp_path, monkeypatch):
+    """Reload must trigger on the content digest alone.
+
+    The cache signature is (mtime, size, sha256). This pins both mtime and size
+    so only the sha256 differs — the exact case a mtime-only cache would miss.
+    Guards the content-signature mechanism added in sync e418d729 against a
+    regression back to mtime-only invalidation. The two model names are the same
+    length so the YAML serialization keeps an identical byte size.
+    """
+    config_path = tmp_path / "config.yaml"
+    extensions_path = tmp_path / "extensions_config.json"
+    _write_extensions_config(extensions_path)
+    _write_config(config_path, model_name="model-aaa", supports_thinking=False)
+
+    monkeypatch.setenv("DEER_FLOW_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("DEER_FLOW_EXTENSIONS_CONFIG_PATH", str(extensions_path))
+    reset_app_config()
+
+    try:
+        initial = get_app_config()
+        assert initial.models[0].name == "model-aaa"
+        pinned_mtime = config_path.stat().st_mtime
+        pinned_size = config_path.stat().st_size
+
+        # Rewrite with different content but identical byte size, then restore
+        # the original mtime so neither mtime nor size changes.
+        _write_config(config_path, model_name="model-bbb", supports_thinking=False)
+        os.utime(config_path, (pinned_mtime, pinned_mtime))
+        assert config_path.stat().st_mtime == pinned_mtime
+        assert config_path.stat().st_size == pinned_size
+
+        reloaded = get_app_config()
+        assert reloaded.models[0].name == "model-bbb"
+        assert reloaded is not initial
+    finally:
+        reset_app_config()
+
+
 def test_get_app_config_reloads_when_config_path_changes(tmp_path, monkeypatch):
     config_a = tmp_path / "config-a.yaml"
     config_b = tmp_path / "config-b.yaml"
