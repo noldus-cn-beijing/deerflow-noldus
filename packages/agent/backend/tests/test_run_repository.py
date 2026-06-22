@@ -3,10 +3,7 @@
 Uses a temp SQLite DB to test ORM-backed CRUD operations.
 """
 
-import re
-
 import pytest
-from sqlalchemy.dialects import postgresql
 
 from deerflow.persistence.run import RunRepository
 
@@ -320,4 +317,3 @@ class TestRunRepository:
             "by_caller": {"lead_agent": 0, "subagent": 0, "middleware": 0},
         }
         assert len(captured) == 1
-
