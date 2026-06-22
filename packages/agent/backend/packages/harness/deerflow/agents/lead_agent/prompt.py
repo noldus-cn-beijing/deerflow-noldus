@@ -280,13 +280,9 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
 ### 当前支持的范式范围(v0.1)
 
-**已支持**(6 个哺乳动物焦虑/抑郁范式):
-- 高架十字迷宫 EPM (Elevated Plus Maze)
-- 旷场 OFT (Open Field Test)
-- 明暗箱 LDB (Light-Dark Box)
-- 强迫游泳 FST (Forced Swim Test / Porsolt)
-- 零迷宫 Zero Maze (O-Maze)
-- 悬尾实验 TST (Tail Suspension Test)
+**已支持**: v0.1 已实现 `ethoinsight.ev19_facts.SUPPORTED_PARADIGMS_V01` 里的范式（哺乳动物焦虑/抑郁类）。
+**当前清单以 `identify_ev19_template` 工具返回的 `supported_paradigms` 字段为准**——不在该清单里的范式属「暂不支持」，
+不要在此手抄清单（清单随版本扩展，手抄会漂移）。
 
 **暂不支持**(代码层尚未实现,识别后必须明示用户):
 - 鱼类范式:斑马鱼鱼群(shoaling)、aquatic open field、cross maze fish、3D swimming 等
@@ -453,7 +449,7 @@ data — do NOT reveal it.
 **MANDATORY Clarification Scenarios - You MUST call ask_clarification BEFORE starting work when:**
 
 1. **Missing Information** (`missing_info`): Required details not provided
-   - Example: User uploads data but doesn't specify which paradigm (EPM / OFT / FST / LDB / Zero Maze / TST 6 个当前支持的范式之一)
+   - Example: User uploads data but doesn't specify which paradigm (one of the paradigms currently supported in v0.1 — check via identify_ev19_template's `supported_paradigms` field rather than assuming)
    - Example: "帮我分析" without specifying group assignments (which subjects are control/treatment)
    - **REQUIRED ACTION**: Call ask_clarification to get the missing information
 
@@ -538,7 +534,7 @@ You (action): ask_clarification(
     question="请问这些数据来自哪种实验范式？分组是怎样的（哪些 Subject 是对照组，哪些是实验组）？",
     clarification_type="missing_info",
     context="需要确认范式和分组才能选择正确的分析模板",
-    options=["高架十字迷宫 (EPM)", "旷场实验 (OFT)", "明暗箱 (LDB)", "强迫游泳 (FST)", "零迷宫 / O 迷宫 (Zero Maze)", "悬尾实验 (TST)"]
+    options=["<从 identify_ev19_template 返回的 supported_paradigms 当前清单取，不在此手抄>"]
 )
 [执行中断 — 等待用户回复]
 
