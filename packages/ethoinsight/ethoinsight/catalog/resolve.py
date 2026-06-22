@@ -922,10 +922,21 @@ def _filter_charts_by_user_intent(charts: list[ChartEntry], user_intent: str | N
     Multi-keyword intents (e.g. "箱线图、轨迹图、时序图") accumulate matches across all hits.
     Filter is *additive*: when no keyword matches, all charts pass through (no-op). This keeps
     the legacy behaviour for ASKVIZ "A. 画图" choices that don't pin a specific chart type.
+
+    **Open-ended markers ("等" / "之类" / "包括" / "such as" / "etc")**: when the intent names a
+    chart type but qualifies it as a non-exhaustive example (e.g. "箱线图/小提琴图**等**"), the
+    chart-type keyword is treated as a *hint, not a hard constraint* — all charts pass through.
+    Hard-filtering on "box" in that case would silently cut every other chart (dogfood 2026-06-18:
+    EPM 6 charts → 1 because the dispatch prompt paraphrased an open intent as "箱线图/小提琴图等").
     """
     if not user_intent:
         return list(charts)
     intent_lower = user_intent.lower()
+
+    # Open-ended markers: the named chart type is an *example*, not the whole ask. Don't hard-filter.
+    open_ended_markers = ("等", "之类", "包括", "诸如", "such as", "etc", "e.g", "for example", "including")
+    is_open_ended = any(m in user_intent or m in intent_lower for m in open_ended_markers)
+
     # Each rule maps {keyword fragments} -> {id substrings to match}.
     rules: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
         (("箱线图", "box plot", "box-plot"), ("box",)),
@@ -940,6 +951,9 @@ def _filter_charts_by_user_intent(charts: list[ChartEntry], user_intent: str | N
         if any(kw in user_intent or kw in intent_lower for kw in keywords):
             wanted_id_fragments.update(id_fragments)
     if not wanted_id_fragments:
+        return list(charts)
+    if is_open_ended:
+        # Keyword present but open-ended → keep all charts (the type is a priority hint only).
         return list(charts)
     filtered = [ch for ch in charts if any(frag in ch.id for frag in wanted_id_fragments)]
     # Don't strip everything to zero — if the intent maps to nothing in this paradigm's catalog,

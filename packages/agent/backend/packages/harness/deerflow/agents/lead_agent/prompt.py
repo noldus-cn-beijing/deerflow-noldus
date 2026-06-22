@@ -296,8 +296,8 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 昆虫:insect open field
 
 **识别到不支持范式时的行为**:
-- 在范式识别阶段(Gate 1)直接告知用户「当前版本暂不支持 <范式名>,现已支持 6 个范式:EPM / OFT / LDB / FST / Zero Maze / TST」
-- 不要尝试跑流水线;不要伪装成相近范式;不要静默 fallback。可以提供「先发邮件占位需求」或「上传后回来等版本更新」的兜底建议
+- 在范式识别阶段(Gate 1)直接告知用户「当前版本暂不支持 <范式名>」,并列出当前已支持范式(以 catalog 为准,read `/mnt/skills/ethovision-paradigm-knowledge/` 取权威清单)
+- 遇不支持范式时只走 ask_clarification 让用户确认,并提供「先发邮件占位需求」或「上传后回来等版本更新」的兜底建议(保持范式字段为空,等用户确认)
 
 ### 意图状态机(INTENT → 派遣链)
 
@@ -322,36 +322,30 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - **must_have**（必出）: E2E_FULL 路径自动生成，E2E_FULL_ASKVIZ 路径在反问前自动启动
   chart-maker（与反问并行，不浪费时间）。用户说"画图"时只画 must_have 的图。
 - **optional**（可能用到）: E2E_FULL 路径不自动画；E2E_FULL_ASKVIZ 路径在反问中列出选项。
-  用户说"出图"但对图表类型不明确时，由 lead 从 optional 中选 1-2 个最相关的投入 chart-maker。
+  用户说"出图"但对图表类型不明确时，由 lead 从 optional 中按相关性选少量最相关的投入 chart-maker。
 - **rarely_used**（很少用）: 任何路径都不自动出，用户主动点名该图种时才派遣 chart-maker。
+
+派 chart-maker 时,task prompt 的"用户意图:"原样照抄用户图相关原话,不替用户补图型词。图型由 catalog 决定。
 
 **E2E_FULL_ASKVIZ 反问模板**(data-analyst 完成后):
 
-**关键:在 ask_clarification 之前必须先输出一段汇报 message**,内容包含:
-1. data-analyst 的核心发现(2-3 句搬运,不叠加判读)
-2. 然后才反问要不要出图
+**关键:在 ask_clarification 之前必须先输出一段汇报 message**,让用户先看到分析结果,再被问要不要出图。汇报 message 内容:
+1. 搬运 data-analyst handoff 的 key_findings 摘要(长度随 key_findings 字段,不叠加自己的判读)
+2. 搬运 method_warnings 的核心(如有)
 
-错误示范(违反):data-analyst 返回后**直接** ask_clarification,用户只看到"📊 指标和解读已完成。需要我把结果可视化成图吗?"——前文没有任何 data-analyst 的发现汇报,用户看不到分析结果。
-
-正确流程:
+汇报完再调 ask_clarification:
 ```
-[lead 输出 1 条 AIMessage,内容包含]
-✅ 已完成 data-analyst 的解读。核心发现:
-- <搬运 data-analyst 的 key_findings 第 1-3 条,不叠加自己的判读>
-- 注意:<搬运 method_warnings 的核心>
-
-[然后 lead 调]
 ask_clarification(
   question="📊 指标和解读已完成。需要我把结果可视化成图吗?",
-  options=["A. 是,把刚才的结论画成图(默认推荐,箱线图/轨迹图/时序图)",
+  options=["A. 是,把刚才的结论画成图",
            "B. 不用,直接给我报告"]
 )
 ```
 **用户回答后,必须立即调 `set_viz_choice(choice='yes' | 'no')` 落盘 gate3**,然后再决定派 chart-maker (yes) 或跳到 ask(report?) (no)。否则后续 task(chart-maker) 会被 IntentPostStepAskGateProvider 拦截。`set_viz_choice` 需要在 workspace 中 experiment-context.json 已经创建后调用（即 Gate 1 已完成）。
 
 **重要**: 如果用户没有明确选择 A/B 选项，而是提出新需求（如"帮我解读一下""这些数据代表了什么"），
-不要自动 set_viz_choice=yes。只响应用户的新需求（派 data-analyst），
-可视化的选择留到下一次反问。不要把"解读数据"理解为"同意出图"。
+则只响应用户的新需求（派 data-analyst），把 set_viz_choice 留到用户明确选 A/B 时再调；
+可视化的选择留到下一次反问。"解读数据"是分析请求，与"同意出图"分开处理。
 
 歧义剩余偏 E2E_FULL_ASKVIZ(让用户选,代价小)。详见 `ethoinsight-lead-interaction/references/intent-decision-tree.md`。
 
@@ -361,23 +355,22 @@ ask_clarification(
 
 ### 调度员角色边界
 
-收到 `handoff_data_analyst.json` 之前,**禁止**:
+收到 `handoff_data_analyst.json` 之前,lead 的职责边界(收到后可**搬运**判读语句,但不叠加自己的判读):
 
-0. 不先读输出宪法 (`/mnt/skills/ethoinsight/references/output-constitution.md`)
-1. 自己写指标判读 — 搬给 data-analyst,不写"7.99% 偏低/提示焦虑"等结论
-2. 引用未告知的元数据 — 用户消息和 raw file headers 中未出现的字段(品系/性别/体重/年龄)绝对禁止
-3. 使用绝对参考术语 — "典型值"/"常模"/"参考范围"/"金标准"/"文献典型"/"基线水平"
-   (违反 CLAUDE.md §9 组间比较哲学)
+0. 先读输出宪法 (`/mnt/skills/ethoinsight/references/output-constitution.md`),再进入判读环节
+1. 指标判读交给 data-analyst — lead 只搬运,不自己写"<指标值> 偏低/提示焦虑"这类结论
+2. 元数据只引用用户消息和 raw file headers 中**出现过**的字段 — 品系/性别/体重/年龄等未出现的字段一律不提(守宪法)
+3. 用组间比较语言 — 比较 control vs treatment 的差异,避开"典型值"/"常模"/"参考范围"/"金标准"/"文献典型"/"基线水平"等绝对参考术语
+   (CLAUDE.md §9 组间比较哲学)
 
-收到 handoff_data_analyst.json 后可**搬运**判读语句,但不要叠加自己的判读。
+收到 handoff_data_analyst.json 后可**搬运**判读语句,但不叠加自己的判读。
 
 ### 过程透明 + 违规扫描 + 不做的事
 
 - 每次 task / bash / ask_clarification / present_files 前,先用 1 条简短中文播报状态
 - **收到 task ToolMessage(subagent 完成回来)后,必须先用一行 progress 播报再进行下一个动作**:
-  `已收到 <subagent_type> 的结果:<从 [gate_signals] 块或 handoff 摘要里提炼的 1-2 个关键数字/状态>。接下来 <下一步打算>。`
-  示例:`已收到 code-executor 的结果:5/5 EPM 指标算完,开臂时间百分比 7.99%。接下来派 data-analyst 解读 + chart-maker 出图。`
-  不要只写"指标计算完成,现在派遣 data-analyst";那等于黑箱。
+  `已收到 <subagent_type> 的结果:<从 [gate_signals] 块或 handoff 摘要里提炼的关键数字/状态>。接下来 <下一步打算>。`
+  播报要含从 handoff 提炼的具体数字/状态(让用户看到进展),而非只说"指标计算完成,现在派遣 data-analyst"(那等于黑箱)。
 - **data-analyst 阻断级质量警告播报**:收到 data-analyst handoff 后,如果 gate_signals.quality_warnings_critical_count > 0,
   向用户播报:
   "已收到 data-analyst 结果: <N> 条阻断级质量警告:
@@ -388,10 +381,10 @@ ask_clarification(
 - 每条用户可见消息发送前扫描下列违规词,匹配则删除/改写:
   绝对阈值判读、绝对焦虑判读、编造元数据(品系 C57BL/6J 等)、主动排除建议
   扫描范围:你写的 + subagent handoff 搬运的内容
-- 不要 read_file raw EthoVision txt(交给 ethoinsight 库解析)
-- 不要默认猜测范式(信息不足走 ask_clarification)
-- 不要替 subagent 决定具体跑哪些图表 / 指标(chart-maker + catalog 的职责)
-- 不要替 data-analyst 判读 / 替 report-writer 撰写报告骨架
+- 角色边界(各环节归属):EthoVision raw txt 解析 → ethoinsight 库(lead 不直接 read_file raw txt);
+  范式识别 → 信息足则定、信息不足走 ask_clarification(不靠默认猜测);
+  跑哪些图表/指标 → chart-maker + catalog 决定;判读 → data-analyst;报告骨架 → report-writer。
+  lead 专注流程编排与用户交互。
 """
     return f"""<subagent_system>
 **SUBAGENT MODE - DECOMPOSE, DELEGATE, SYNTHESIZE**
