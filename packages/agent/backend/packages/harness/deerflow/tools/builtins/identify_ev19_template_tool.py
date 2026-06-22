@@ -590,23 +590,29 @@ def identify_ev19_template_tool(
         })
 
     # Step 8: build evidence
+    # zone_info 直接整体引用 _detect_zone_config 的产物（6 字段），与落盘
+    # template_candidates.json 的 zone_info 同源同构——内存 evidence 与落盘双写一致
+    # （spec 2026-06-22 §6.4）：lead 当次用内存 evidence，evidence 被 summarize
+    # 截断后用落盘，两者不会漂移。
     evidence = {
         "paradigm_key": paradigm_key,
         "filename_hint": filename_hint,
         "subject": subject_hint,
-        "zone_info": {
-            "has_zone_columns": zone_info["has_zone_columns"],
-            "has_novobj_columns": zone_info["has_novobj_columns"],
-            "has_suspect_zone_columns": zone_info.get("has_suspect_zone_columns", False),
-            "suspect_columns": zone_info.get("suspect_columns", []),
-        },
+        "zone_info": zone_info,
         "columns": columns[:20],  # first 20 columns for reference
     }
 
     # Step 9: determine status and build response
     if not candidates:
-        # Write ok status to overwrite any stale ambiguous state from a prior run
-        _write_template_candidates(real_workspace, {"status": "unknown", "paradigm_key": paradigm_key})
+        # Write ok status to overwrite any stale ambiguous state from a prior run.
+        # zone_info 一并沉淀（spec 2026-06-22）：花 parse_header 成本检测出的列信号
+        # 不只在内存 evidence 里，落盘 template_candidates.json 也要带，供 lead 后续
+        # 带依据反问、guardrail、将来下游在 ToolMessage evidence 被截断后使用。
+        _write_template_candidates(real_workspace, {
+            "status": "unknown",
+            "paradigm_key": paradigm_key,
+            "zone_info": zone_info,
+        })
         return {
             "status": "unknown",
             "evidence": evidence,
@@ -620,6 +626,7 @@ def identify_ev19_template_tool(
             "status": "ok",
             "paradigm_key": paradigm_key,
             "ev19_template": candidates[0]["template_id"],
+            "zone_info": zone_info,
         })
         domain_summary = ""
         if by_experiment_md:
@@ -645,6 +652,7 @@ def identify_ev19_template_tool(
         "paradigm_key": paradigm_key,
         "candidates": candidates,
         "clarification_question": _build_clarification_question(paradigm_key or "unknown", candidates, evidence),
+        "zone_info": zone_info,
     })
 
     return {
