@@ -391,6 +391,147 @@ def _build_task_context(payload: dict[str, Any]) -> dict[str, Any]:
     return tc
 
 
+# ============================================================================
+# chart-maker 封存对账 —— spec 2026-06-22
+#   根因 A：failed_charts[].reason 是 LLM free-text，可伪造（prod 实测对 plan 里
+#     没 skip 的 box_open_arm 编 "missing columns"，被 plan_charts.json.skipped=[]
+#     证伪）。用 plan 的 skipped[] 机读真相订正。
+#   根因 B：status=completed 但 plan 内 aggregate 图未全部落盘 → 现有 validator
+#     只看 chart_files 非空（trajectory 在），放行了。对账 plan 的 aggregate 图
+#     集合 ⊆ outputs/ 实际 png，缺口非空且 completed → 响亮拒绝。
+# 单一注入点：_seal_handoff_to_workspace 在 model_cls is ChartMakerHandoff 时调用，
+#   覆盖 seal_chart_maker_handoff 工具与 executor auto-seal 兜底两条路径。
+# ============================================================================
+
+
+def _load_plan_charts(workspace: Path) -> dict[str, Any] | None:
+    """读 {workspace}/plan_charts.json；缺文件/不可解析返回 None（不 crash）。"""
+    plan_path = workspace / "plan_charts.json"
+    if not plan_path.exists():
+        return None
+    try:
+        data = json.loads(plan_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        logger.warning("chart-maker seal: plan_charts.json unreadable, skip reconciliation")
+    return None
+
+
+def _outputs_dir_for(workspace: Path) -> Path:
+    """outputs/ 是 workspace 的兄弟目录（同 _resolve_workspace 推导）。"""
+    return workspace.parent / "outputs"
+
+
+def _reconcile_chart_maker_payload(
+    payload: dict[str, Any],
+    workspace: Path,
+) -> None:
+    """封存前对 chart-maker payload 做确定性对账（spec 2026-06-22）。
+
+    机读真相来源：plan_charts.json（resolver 真实 skip 列表 + 计划要画的图）+
+    outputs/ 文件系统（实际落盘的 png）。LLM 自述的 failed_charts[].reason 不可信。
+
+    2.1（订正伪造 reason）：对每条 failed_charts，
+        - chart_id 在 plan.skipped[] → 用 plan 的真实 detail 覆盖 LLM 自述；
+        - chart_id 不在 plan.skipped[] → resolver 没 skip 它，这是「执行/未执行」
+          失败，reason 规整为机读形态 "resolved in plan but not rendered"，LLM
+          原文作为引用保留（绝不保留它编的 "missing columns" 当权威 reason）。
+
+    2.2（堵漏执行）：planned_aggregate（plan 内 output_mode=="aggregate" 的图
+        basename 集）- rendered（outputs/ 实际 *.png basename 集）= missing。
+        status==completed 且 missing 非空 → 抛 ValueError（响亮拒绝，让 chart-maker
+        补画；与 _completed_requires_core_output 同风格）。
+
+    per_subject 图（被 chart_budget 截断的）不进此门：只对账 aggregate。
+
+    鲁棒性：plan_charts.json 不存在 → 跳过对账、原样封存（spec 2.1 实现要点）。
+    任何读盘异常 → warning + 跳过对账，绝不让 seal 因读不到 plan 而 crash。
+
+    Args:
+        payload: 待封存的 chart-maker handoff payload（in-place 修订 failed_charts）。
+        workspace: host-side workspace 目录。
+
+    Raises:
+        ValueError: status==completed 且 plan 内 aggregate 图有未落盘者。
+    """
+    plan = _load_plan_charts(workspace)
+    if plan is None:
+        # 极端早退：无 plan 可对账 → 不订正 reason、不做完整性校验，原样封存。
+        return
+
+    # --- 2.1：用 plan.skipped[] 订正 failed_charts[].reason ---
+    skipped_by_id: dict[str, str] = {}
+    for s in plan.get("skipped") or []:
+        if isinstance(s, dict) and s.get("id"):
+            # detail 比 reason 信息更全（含缺失列名等）；回落 reason。
+            skipped_by_id[str(s["id"])] = str(
+                s.get("detail") or s.get("reason") or "skipped by resolver"
+            )
+
+    failed_charts = payload.get("failed_charts") or []
+    reconciled: list[dict[str, str]] = []
+    for fc in failed_charts:
+        if not isinstance(fc, dict):
+            # 防御性：非 dict 条目（schema 不会产，但 extra="allow" 下理论可能）规整化。
+            reconciled.append({"chart_id": "?", "reason": str(fc)})
+            continue
+        chart_id = str(fc.get("chart_id", ""))
+        llm_reason = str(fc.get("reason", ""))
+        if chart_id in skipped_by_id:
+            # plan 证实的真 skip → 用机读真相覆盖 LLM 自述。
+            new_reason = skipped_by_id[chart_id]
+        else:
+            # plan 里没 skip 它 → 是「执行/未执行」失败，不是「resolve 失败」。
+            # 规整为机读形态，LLM 原文作引用（堵 "missing columns" 类脑补当权威）。
+            new_reason = (
+                f"resolved in plan but not rendered before seal "
+                f"(likely max_turns/early-exit); chart-maker note: {llm_reason!r}"
+            )
+            logger.warning(
+                "chart-maker seal: failed_charts[%r] reason订正——plan.skipped=[] "
+                "未含此 id，LLM 自述 %r 疑似伪造，规整为机读形态",
+                chart_id,
+                llm_reason,
+            )
+        reconciled.append({"chart_id": chart_id, "reason": new_reason})
+    payload["failed_charts"] = reconciled
+
+    # --- 2.2：completed 时对账 plan 内 aggregate 图全部落盘 ---
+    if payload.get("status") != "completed":
+        return
+
+    planned_aggregate: set[str] = set()
+    for c in plan.get("charts") or []:
+        if not isinstance(c, dict):
+            continue
+        # output_mode=="aggregate" 是组间对比 must_have（box/bar），必须画。
+        # per_subject 图被 chart_budget 截断是合法的（remaining_charts 指纹），豁免。
+        if c.get("output_mode") == "aggregate":
+            output = c.get("output")
+            if isinstance(output, str) and output:
+                planned_aggregate.add(Path(output).name)
+
+    if not planned_aggregate:
+        return  # plan 里没 aggregate 图 → 无完整性约束可对账。
+
+    outputs_dir = _outputs_dir_for(workspace)
+    rendered: set[str] = set()
+    if outputs_dir.exists():
+        rendered = {p.name for p in outputs_dir.glob("*.png")}
+
+    missing_aggregate = planned_aggregate - rendered
+    if missing_aggregate:
+        missing_sorted = sorted(missing_aggregate)
+        raise ValueError(
+            f"status='completed' but plan-charts aggregate 图未全部落盘: "
+            f"{missing_sorted}. 这些是组间对比 must_have 图（output_mode=aggregate），"
+            f"plan_charts.json 声明了但 outputs/ 里没有对应 png——把缺的 aggregate "
+            f"图画完再 completed，或确实失败则 status=partial 并在 failed_charts "
+            f"写真实原因。注意 per_subject 截断不在此门内（remaining_charts 留痕）。"
+        )
+
+
 def _seal_handoff_to_workspace(
     model_cls: type,
     filename: str,
@@ -413,6 +554,12 @@ def _seal_handoff_to_workspace(
     # （下游不消费），无条件注入会把主 handoff 顶过 sandbox read_file 50K 截断线。
     if "task_context" in getattr(model_cls, "model_fields", {}):
         payload.setdefault("task_context", _build_task_context(payload))
+
+    # 1.6. chart-maker 封存对账（spec 2026-06-22）：堵伪造 failed_charts reason +
+    #      堵 plan 内 aggregate 图漏画却标 completed。仅在 chart-maker 时触发，
+    #      不影响其余 3 个 handoff。覆盖 seal 工具与 auto-seal 两条路径（单一注入点）。
+    if model_cls is ChartMakerHandoff:
+        _reconcile_chart_maker_payload(payload, workspace)
 
     # 2. Pydantic 校验
     try:

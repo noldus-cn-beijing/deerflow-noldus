@@ -145,6 +145,10 @@ handoff_chart_maker.json 关键字段格式速查（约束权威源见 handoff_s
 - 无图时 chart_files=[] 且 failed_charts 写原因
 
 **failed_charts 每条**：{"chart_id": "...", "reason": "简短失败原因"}
+- reason 只填你**当次执行脚本实际看到的 stderr 摘要**（如 traceback 关键行）。
+- 封存工具会用 plan_charts.json 的真实 skip 信息（resolver 机读真相）订正 reason：
+  你写的 reason 若与 plan 状态矛盾（plan 里没 skip 它、args 完备）会被规整为机读形态，
+  原文仅作引用保留。所以 reason 务必源于本次脚本的 stderr，而非对"为什么没图"的猜测。
 
 **remaining_charts 每条（P5 预算降级指纹）**：{"chart_id": "...", "reason": "chart_budget_truncated"}。
 来自 plan_summary.budget_remaining_ids——chart_budget 把 per_subject 个体图截断时，被挤掉的图 id 列表。非空时透传，让 lead/用户知道还能画更多个体图。无截断时为 []。
