@@ -1531,6 +1531,7 @@ def metric_metadata_to_dict(pm: PlanMetrics) -> dict:
 def select_charts_by_priority(
     charts: list[PlanChart],
     budget: int | None = None,
+    group_of: dict[int, str] | None = None,
 ) -> tuple[list[PlanChart], list[PlanChart]]:
     """按图类型定优先级选图（spec 2026-06-17-chart-budget-by-type）。
 
@@ -1541,16 +1542,19 @@ def select_charts_by_priority(
 
     1. **aggregate 图全留**（box/bar/rose/zone_distribution 等组间对比，通常 ≤ 5 张，
        是分析核心），不受预算限制。
-    2. **per_subject 图受预算限制**：aggregate 画完后用剩余预算画**代表性子集**——
-       subject_index=0 的全部 per_subject 图优先（每组首个 subject 各一张），再
-       subject_index=1，以此类推轮转，直到预算耗尽。
+    2. **per_subject 图受预算限制**：aggregate 画完后用剩余预算画**代表性子集**：
+       - ``group_of`` 给定（subject_index→组名）时，**按组轮转**：每组首个 subject
+         的全部图先入选，再每组第二个，以此类推——保证子集对每组都有代表
+         （dogfood 实证 bug thread 339512dd：前 N 个 subject 同组时，纯 subject_index
+         排序会让子集偏向排在前面的组，treatment 一张图都摊不到）。
+       - ``group_of`` 为 None（无分组信息）时退回旧行为：纯按 subject_index 升序轮转。
     3. budget=None 表示不限制（全画），remaining=[]。
 
     返回 ``(selected, remaining)``：
     - ``selected`` 内部顺序：aggregate 在前（chart-maker 按数组顺序执行时 aggregate 先跑），
       per_subject 代表子集在后。
     - ``remaining`` 是被预算截断的 per_subject 图（降级指纹，红线一：挤掉要留痕）。
-    - 稳定性：相同输入恒定相同输出（按 ``(id, subject_index, script)`` 排序，无随机性）。
+    - 稳定性：相同输入恒定相同输出（排序键无随机性）。
     """
     if budget is None or budget <= 0:
         return list(charts), []
@@ -1564,8 +1568,29 @@ def select_charts_by_priority(
     # per_subject 预算 = 总预算 - aggregate 占用（floor 0，aggregate 超预算时全画 aggregate）。
     per_subject_budget = max(0, budget - len(aggregate))
 
-    # 稳定排序：subject_index 升序轮转 → 每组首个 subject 各一张（spec「代表性子集」）。
-    ordered = sorted(per_subject, key=lambda c: (c.subject_index, c.id, c.script))
+    if group_of:
+        # 组内排名：每组的 subject_index 升序排位（control 的 idx 0→rank 0, idx 1→rank 1...；
+        # treatment 的 idx 7→rank 0, idx 8→rank 1...）。按 (组内排名, 组名, id, script) 排序
+        # → 各组首个 subject 各类图先入选，再各组第二个，轮转。组名进键保证确定性。
+        rank_within_group: dict[int, int] = {}
+        for grp in {group_of.get(c.subject_index) for c in per_subject}:
+            members = sorted({c.subject_index for c in per_subject if group_of.get(c.subject_index) == grp})
+            for rank, idx in enumerate(members):
+                rank_within_group[idx] = rank
+
+        def _key(c: PlanChart) -> tuple:
+            return (
+                rank_within_group.get(c.subject_index, c.subject_index),
+                str(group_of.get(c.subject_index, "")),
+                c.id,
+                c.script,
+            )
+
+        ordered = sorted(per_subject, key=_key)
+    else:
+        # 无分组信息：纯 subject_index 升序轮转（向后兼容，老 thread 行为不变）。
+        ordered = sorted(per_subject, key=lambda c: (c.subject_index, c.id, c.script))
+
     selected_per_subject = ordered[:per_subject_budget]
     remaining_per_subject = ordered[per_subject_budget:]
 

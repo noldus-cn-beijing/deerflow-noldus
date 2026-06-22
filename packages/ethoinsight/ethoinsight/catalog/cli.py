@@ -302,7 +302,17 @@ def main(argv: list[str] | None = None) -> int:
         # P5: 按类型定优先级选图。aggregate 全画优先；per_subject 用剩余预算取代表性子集。
         # 不传 --chart-budget 时全画（select 返回原样，remaining=[]）。
         if args.chart_budget is not None:
-            selected, remaining = select_charts_by_priority(pc.charts, budget=args.chart_budget)
+            # subject_index→组名映射（subject_index = raw_files 0-based 序号），传入后
+            # 代表性子集按组轮转——避免前 N 个 subject 同组时子集偏向一组。groups 为空时
+            # 传 None 退回旧的纯 subject_index 排序。
+            group_of: dict[int, str] | None = None
+            if groups:
+                group_of = {
+                    idx: str(groups[f])
+                    for idx, f in enumerate(raw_files)
+                    if f in groups
+                } or None
+            selected, remaining = select_charts_by_priority(pc.charts, budget=args.chart_budget, group_of=group_of)
             pc.charts = selected
             pc.charts_budget_remaining = remaining
             if remaining:

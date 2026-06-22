@@ -237,7 +237,20 @@ def prep_chart_plan_tool(
     # P5 (spec 2026-06-17): 按图类型定优先级选图。aggregate 全画优先；
     # per_subject 用剩余预算取代表性子集。chart_budget=None 时全画。
     if chart_budget is not None:
-        selected, remaining = select_charts_by_priority(pc.charts, budget=chart_budget)
+        # subject_index→组名映射：subject_index 是 raw_files 的 0-based 序号
+        # （见 resolve.py per_subject 展开 `for idx, raw_file in enumerate(raw_files)`）。
+        # 传给 select_charts_by_priority 后代表性子集按组轮转，避免「前 N 个 subject
+        # 同组 → 子集偏向一组」（dogfood thread 339512dd：前 7 个全 control，
+        # budget=8 取 idx 0/1 → treatment 一张图都没有）。groups_dict 为空时传 None
+        # 退回旧的纯 subject_index 排序。
+        group_of: dict[int, str] | None = None
+        if groups_dict:
+            group_of = {
+                idx: str(groups_dict[f])
+                for idx, f in enumerate(uploaded_files)
+                if f in groups_dict
+            } or None
+        selected, remaining = select_charts_by_priority(pc.charts, budget=chart_budget, group_of=group_of)
         pc.charts = selected
         pc.charts_budget_remaining = remaining
         if remaining:
