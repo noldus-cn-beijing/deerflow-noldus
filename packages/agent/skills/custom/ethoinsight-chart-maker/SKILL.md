@@ -30,8 +30,9 @@ author: noldus-insight
 4. 决策(见 references/fallback-decision-tree.md)
 5. for each entry in plan_charts.json.charts（全部执行，已预算筛过）: bash 跑脚本
    - 用 `python -m <entry.script> <entry.args 拼接>` 形式调用
-   - **entry.args 永远是 `--inputs <inputs.json>` + 可能 `--groups <groups.json>` + `--output <png>` + 可能 `--paradigm`** —— resolve 已物化对应 JSON 文件到 workspace,**不要自己拼 `--input` 单文件形式**(脚本不再接受单文件 `--input` 之外的 fallback)
-   - **不要自己拼 paradigm 前缀或追加 --paradigm 参数**——entry.script 和 entry.args 已经是 resolve 阶段按 catalog yaml `accepts_paradigm` 字段拼好的
+   - **`entry.args` 是一个完整的字符串数组，整体逐项拼接执行——保持每一项原样、顺序不变、一项不漏。** resolve 阶段已按 catalog 把这条命令的全部参数填好（`--inputs <inputs.json>` + 可选 `--groups <groups.json>` + `--output <png>` + 可选 `--paradigm` + **可选 `--parameters-json '{...}'`（zone 列对齐参数，FewZones 自定义分析区如 open/closed 的图靠它定位列，丢了脚本会算不出值、退出码 1、不出图）**）。你只需把 `entry.args` 数组拼成命令行，**不增不减不重构**。
+   - **重跑某张图时，仍从 `plan_charts.json` 该 entry 的 `args` 取完整命令重拼**（不要凭记忆手敲一条"更简洁"的命令——那样最容易漏掉 `--parameters-json`，正是 dogfood thread 339512dd 里 bar 图第二批失败、靠第三次重试才救活的根因）。
+   - entry.script 和 entry.args 已经是 resolve 阶段按 catalog yaml `accepts_paradigm` 字段拼好的——`--paradigm` 该不该带 resolve 已决定，照 `args` 执行即可。
 6. write `handoff_chart_maker.json`(**任何退出路径都必须先写**,见下面"失败硬规范")。若 `charts_budget_remaining[]` 非空 → 透传进 handoff 的 `remaining_charts[]`（降级指纹，红线一）。
 7. `present_files(<生成的 png 列表>)`
 8. 输出 `OK: <N> charts generated\n[gate_signals]\n...`

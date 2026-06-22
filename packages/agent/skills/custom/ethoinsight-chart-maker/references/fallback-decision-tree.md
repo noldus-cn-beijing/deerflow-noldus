@@ -25,7 +25,9 @@ write handoff_chart_maker.json status="failed"; let lead 反问用户
 1. **aggregate 图全画**（`plan_charts.json.charts[]` 里 `output_mode=="aggregate"` 的，
    box/bar/rose 等组间对比，通常 ≤ 5 张，分析核心）—— 不受预算挤占。
 2. **per_subject 图按代表性子集画**（`output_mode=="per_subject"` 的，trajectory/heatmap
-   个体图）—— 用剩余预算画**每组首个 subject 各一张**（subject_index=0 优先），而非全 N 张。
+   个体图）—— 用剩余预算画**每组首个 subject 各一张**（有分组信息时按组轮转：各组首个
+   subject 的各类图先画完，再各组第二个，保证子集对每组都有代表；无分组信息时退回
+   subject_index 升序），而非全 N 张。
 
 **这层优先级已由 `catalog.resolve --chart-budget <N>` 在 plan 阶段确定性完成**：
 resolve 会把"aggregate 全画 + per_subject 代表子集"写进 `plan_charts.json.charts[]`，

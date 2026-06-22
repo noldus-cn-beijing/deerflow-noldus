@@ -167,6 +167,81 @@ def test_no_aggregate_budget_none_draws_all():
 
 
 # ============================================================================
+# 代表性子集按组均衡（dogfood 实证 bug：前 N 个 subject 同组 → 子集偏向一组）
+# ============================================================================
+
+
+def test_representative_subset_balances_across_groups():
+    """group_of 给定时，代表性子集按组轮转——每组首个 subject 先于任一组的第二个。
+
+    dogfood 实证 bug（thread 339512dd）：28 subject 中前 7 个全是 control（上传顺序），
+    budget=8 取 subject_index=0,1 → 画的全是 control，treatment 一张没有。
+    修法：传入 subject_index→group 映射后，按「组内排名」轮转：
+    control#0, treatment#0（各类图）, 再 control#1, treatment#1 ...
+    """
+    # 4 control (idx 0-3) + 4 treatment (idx 4-7)，每个 subject 1 类 per_subject 图（traj）
+    per = [_per("traj", idx) for idx in range(8)]
+    group_of = {idx: ("control" if idx < 4 else "treatment") for idx in range(8)}
+
+    # 预算 2：旧逻辑会取 idx 0,1（都是 control）；新逻辑应取每组首个 = idx 0(control), 4(treatment)
+    selected, remaining = select_charts_by_priority(per, budget=2, group_of=group_of)
+
+    selected_idx = sorted(c.subject_index for c in selected)
+    assert selected_idx == [0, 4], "代表性子集应每组各取首个 subject，而非同组前两个"
+    selected_groups = {group_of[c.subject_index] for c in selected}
+    assert selected_groups == {"control", "treatment"}, "两组都应被代表"
+
+
+def test_representative_subset_balanced_multi_type_rotation():
+    """多类型 per_subject 图 + 按组均衡：每组首个 subject 的所有类型先画完，再轮到第二个。"""
+    # 2 组 × 3 subject，每 subject 2 类图（traj/heat）
+    per = (
+        [_per("traj", idx) for idx in range(6)]
+        + [_per("heat", idx) for idx in range(6)]
+    )
+    group_of = {idx: ("A" if idx < 3 else "B") for idx in range(6)}  # A:0-2, B:3-5
+
+    # 预算 4：每组首个 subject 各 2 类图 = A#0(traj,heat) + B#3(traj,heat) = 4 张
+    selected, remaining = select_charts_by_priority(per, budget=4, group_of=group_of)
+
+    selected_keys = sorted((c.id, c.subject_index) for c in selected)
+    assert selected_keys == [("heat", 0), ("heat", 3), ("traj", 0), ("traj", 3)]
+    # 第二轮（A#1, B#4 ...）被预算截断
+    assert len(remaining) == 8
+
+
+def test_balanced_subset_falls_back_to_global_order_without_group_map():
+    """group_of=None（默认）→ 保持旧的全局 subject_index 排序（向后兼容，老 thread 行为不变）。"""
+    per = [_per("traj", idx) for idx in range(8)]
+    s_with_none, _ = select_charts_by_priority(per, budget=2, group_of=None)
+    s_legacy, _ = select_charts_by_priority(per, budget=2)  # 不传 group_of
+    assert [c.subject_index for c in s_with_none] == [0, 1]
+    assert [c.subject_index for c in s_legacy] == [0, 1]
+
+
+def test_balanced_subset_dogfood_scenario_first_n_same_group():
+    """dogfood 复现：上传顺序前 N 个 subject 全是 control，budget 取代表子集时
+    treatment 不该被全部挤掉。
+
+    7 control (idx 0-6) + 3 treatment (idx 7-9)，每 subject 1 类图（traj），budget=2。
+    旧（无 group_of）：取 idx 0,1 → 两张全 control，treatment 0 张（bug）。
+    新（有 group_of）：取每组首个 = control#0(idx0) + treatment#0(idx7) → 两组都有代表。
+    """
+    per = [_per("traj", idx) for idx in range(10)]
+    group_of = {idx: ("control" if idx < 7 else "treatment") for idx in range(10)}
+
+    # 旧行为（坐实 bug）
+    legacy_sel, _ = select_charts_by_priority(per, budget=2)
+    assert {group_of[c.subject_index] for c in legacy_sel} == {"control"}, \
+        "坐实旧 bug：纯 subject_index 排序下 budget=2 全是 control"
+
+    # 新行为（修复）
+    sel, _ = select_charts_by_priority(per, budget=2, group_of=group_of)
+    assert sorted(c.subject_index for c in sel) == [0, 7]
+    assert {group_of[c.subject_index] for c in sel} == {"control", "treatment"}
+
+
+# ============================================================================
 # output_mode 透传：PlanChart.output_mode 从 ChartEntry 正确落到 resolve 产物
 # ============================================================================
 
