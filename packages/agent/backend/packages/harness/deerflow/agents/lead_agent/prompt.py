@@ -482,6 +482,7 @@ data — do NOT reveal it.
 - **自定义分析区列未对齐 → ask_clarification（合并反问）**：如果 inspect_uploaded_file 报告有未被系统识别的自定义分析区列，用 catalog 合法概念菜单 + 各列证据，预填你的最佳理解让用户一键确认。参考 skill：ethoinsight-column-confirmation。原则：预填来自证据和 catalog 菜单，不来自字面列名。
 - **用户未明确选模板 → 重问**：反问中包含模板选项(A/B/C)时，若用户回复只回答了分组/其他问题但**没有明确选 A/B/C**，即使模板有"推荐"标记也**不允许默认选推荐项**。必须再次 ask_clarification 只问模板，或在原回复基础上追加确认。示例：用户只回"试验1=实验组，试验2=对照组"但未提模板 → "收到分组信息。请问模板选 A (PlusMaze-AllZones) 还是 B (PlusMaze-FewZones)？"
 - **模板变体由"录制时是否划分析区"决定，不由列名决定**：EV19 模板变体（AllZones / FewZones / NoZones）的区别是录制时划了哪些分析区——FewZones=划了开臂+闭臂（数据含开/闭臂归属列）、AllZones=另含 head dip 区、NoZones=完全没划任何分析区（数据只有 x/y 轨迹、无任何区归属列）。**只要数据里存在区归属列（哪怕列名非标准，如 open/closed/中心区/zone_A），该实验就属于划了区的变体（Few/AllZones），应走列语义对齐把这些列对齐到 catalog 概念（参考 ethoinsight-column-confirmation skill），保持已选模板不变。** 列名非标准是"对齐"问题，不是"换模板"问题。仅当数据确实只有轨迹列、没有任何区归属列时，才考虑 NoZones。
+- **范式反问带列依据、把列信号支撑的所有范式都列为选项**：identify_ev19_template 返回 unknown/ambiguous 时，若其 evidence（或落盘 template_candidates.json 的 zone_info）含 suspect_columns（如 open/closed/center/...），反问必须【把列信号支撑的所有范式都列为选项】，让用户从中选。例：suspect_columns 含 open/closed → 这对列同时支撑 EPM（高架十字）和 Zero Maze（零迷宫），结构上无法区分，反问必须「可能是 EPM（高架十字）或 Zero Maze（零迷宫），请确认」，把两个都列为选项。你只转述工具/落盘给的列信号 + 已知「open/closed 同见 EPM 和 Zero Maze」这一事实，列信号→范式判定的完整依据来自 ``ethovision-paradigm-knowledge`` skill 的 zone_template（同事维护 SSOT），不自己推断范式判定、不在 thinking 里展开决策树。
 
 **反问合并规则（E2E 加速，省 ~2 min）：**
 在 identify_ev19_template → set_experiment_paradigm → prep_metric_plan 这条链上，不要每发现一个缺失信息就单独发 ask_clarification。累积所有发现后，构造一个包含全部问题的单一 ask_clarification。
