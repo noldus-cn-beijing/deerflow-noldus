@@ -460,11 +460,14 @@ def resolve_charts(
             )
             continue
         if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
+            # spec 2026-06-22: 按该 chart.requires_columns 声明的 zone 概念裁剪 zone_overrides，
+            # 避免给签名严格的 compute 函数（只收 open_arm_zones）塞它不认识的 closed_arm_zones → TypeError。
+            chart_zone_overrides = _filter_zone_overrides_for_chart(ch, zone_aliases_overrides, cat)
             charts.extend(_chart_to_plan(
                 ch, raw_files, workspace_dir, paradigm=cat.paradigm,
                 virtual_workspace_dir=virtual_workspace_dir,
                 groups=groups,
-                zone_overrides=zone_aliases_overrides,
+                zone_overrides=chart_zone_overrides,
             ))
 
     fallback: list[PlanChart] = []
@@ -490,11 +493,13 @@ def resolve_charts(
                 )
                 continue
             if _evaluate_when(ch.when, n_per_group=n_per_group, n_groups=n_groups, total_subjects=total_subjects, total_duration_seconds=total_duration_seconds):
+                # spec 2026-06-22: fallback 路径同主路径走裁剪（守两条路径一致）。
+                chart_zone_overrides = _filter_zone_overrides_for_chart(ch, zone_aliases_overrides, cat)
                 fallback.extend(_chart_to_plan(
                     ch, raw_files, workspace_dir, paradigm=cat.paradigm,
                     virtual_workspace_dir=virtual_workspace_dir,
                     groups=groups,
-                    zone_overrides=zone_aliases_overrides,
+                    zone_overrides=chart_zone_overrides,
                 ))
 
     notes: list[str] = []
@@ -737,6 +742,60 @@ def _build_zone_aliases_overrides(
         overrides[param_name] = cols if wrap_list else cols[0]
 
     return overrides
+
+
+def _filter_zone_overrides_for_chart(
+    ch: ChartEntry,
+    zone_overrides: dict[str, Any],
+    cat: Catalog,
+) -> dict[str, Any]:
+    """按 chart.requires_columns 声明的 zone 概念，把全局 zone_overrides 裁剪到该图子集。
+
+    spec 2026-06-22：`resolve_charts` 拿到的 `zone_aliases_overrides` 是全范式 zone 参数并集
+    （如 EPM 同时含 open_arm_zones + closed_arm_zones），无条件注入每张图。底层 compute 函数
+    签名严格的图（compute_open_arm_time_ratio 只收 open_arm_zones）被塞了它不认识的
+    closed_arm_zones → TypeError。chart 的 requires_columns 里 in_zone_<concept>_* glob 就是
+    该图用到的 zone 概念的权威声明（loader 已校验），按它裁剪即可，不需新建 chart↔metric 映射。
+
+    匹配复用 _build_zone_aliases_overrides 的同一套归一化（守 SSOT）：
+    对每个可注入 concept_key（resolved_zone_concepts 中 binding 非空），用
+    _concept_matches_pattern(concept_key, pat) 检查它是否命中 chart 任一 requires_columns
+    pattern（与 _build_zone_aliases_overrides Step 3 同一匹配函数，三层归一化）。
+    命中即放行其 binding.param。
+
+    - chart 没声明任何 in_zone_* 概念（如 trajectory/heatmap）→ 返回 {}（不注入 --parameters-json）
+    - chart 声明 in_zone_open_arms_* → 命中 concept=open_arms → 留 open_arm_zones
+    - chart 声明 in_zone*（OFT/ZM 宽通配，无具体 concept）→ 匹配不到任何具体 concept，
+      视为「未明确排除任何 zone」→ 不裁剪，返回原 zone_overrides（避免回归：OFT/ZM chart
+      本来就靠全量注入工作，硬裁到空会让 center_zone/closed_zones 注入消失）
+    - zone_overrides 为空（无 column_aliases）→ 直接返回 {}
+    """
+    if not zone_overrides:
+        return {}
+    # (concept_key → param)，仅 binding 非空的可注入概念（border 等无注入点的跳过）
+    concept_to_param: dict[str, str] = {
+        key: rc.binding.param
+        for key, rc in cat.resolved_zone_concepts.items()
+        if rc.binding is not None
+    }
+    if not concept_to_param:
+        return {}
+    chart_patterns = _flatten_requires_columns(getattr(ch, "requires_columns", []))
+    # 仅 in_zone* glob 才表达 zone 概念依赖（坐标列/Direction 等不算）
+    zone_patterns = [p for p in chart_patterns if p.startswith("in_zone") and "*" in p]
+    if not zone_patterns:
+        return {}
+    # 宽通配（in_zone* 无具体 concept keyword）无法据 chart 裁剪 → 不裁剪，守旧行为
+    if all(_extract_concept_keyword(p) is None for p in zone_patterns):
+        return dict(zone_overrides)
+    # 用 _concept_matches_pattern 双向匹配 concept_key ↔ chart pattern（复用注入端同一归一化）
+    allowed_params: set[str] = set()
+    for concept_key, param in concept_to_param.items():
+        if any(_concept_matches_pattern(concept_key, pat) for pat in zone_patterns):
+            allowed_params.add(param)
+    if not allowed_params:
+        return {}
+    return {k: v for k, v in zone_overrides.items() if k in allowed_params}
 
 
 def _extract_concept_keyword(pat: str) -> str | None:
