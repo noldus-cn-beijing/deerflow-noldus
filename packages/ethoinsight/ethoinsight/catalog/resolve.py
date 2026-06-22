@@ -1500,6 +1500,34 @@ def plan_metrics_to_dict(pm: PlanMetrics) -> dict:
     }
 
 
+def metric_metadata_to_dict(pm: PlanMetrics) -> dict:
+    """去重的展示/判读元数据投影（按 metric id 一条）。
+
+    spec 2026-06-22-metric-metadata-sidecar：plan_metrics.json 的 metrics[] 按 subject
+    重复（EPM 28 subject × 5 metric = 140 条，133K），report-writer / data-analyst 只需
+    展示+判读元数据（5 条），啃施工文件会撑爆 thinking 撞 turn 超时。本函数生成去重投影，
+    落盘为 _metric_metadata.json 供 subagent 单次 read + 按 id 直查。
+
+    守 SSOT：元数据 SSOT 仍是 catalog（MetricEntry 字段），plan_metrics.json 是 catalog 的
+    施工投影，本函数是 plan 的去重元数据投影（投影的投影）。去重源是 pm.metrics（resolve 后
+    实际包含的 metric），反映 plan 真实集合（plan 会因列缺失 skip metric，旁路同步 skip），
+    不是 catalog 全集。
+    """
+    metrics_meta: dict[str, dict] = {}
+    for m in pm.metrics:
+        if m.id in metrics_meta:
+            continue  # 去重，取首个（所有同 id 行元数据一致）
+        metrics_meta[m.id] = {
+            "display_name_zh": m.display_name_zh,
+            "unit_zh": m.unit_zh,
+            "one_liner": m.one_liner,
+            "output_unit": m.output_unit,
+            "direction_for_anxiety": m.direction_for_anxiety,
+            "statistical_default": m.statistical_default,
+        }
+    return {"paradigm": pm.paradigm, "metrics": metrics_meta}
+
+
 def select_charts_by_priority(
     charts: list[PlanChart],
     budget: int | None = None,

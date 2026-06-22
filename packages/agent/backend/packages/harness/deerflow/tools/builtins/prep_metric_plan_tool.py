@@ -135,7 +135,12 @@ def prep_metric_plan_tool(
     # importable (agent stack / middleware / other tools) without ethoinsight
     # installed. The package is only required when this tool actually runs.
     from ethoinsight.catalog.loader import load_common_catalog
-    from ethoinsight.catalog.resolve import ResolveError, plan_metrics_to_dict, resolve_metrics
+    from ethoinsight.catalog.resolve import (
+        ResolveError,
+        metric_metadata_to_dict,
+        plan_metrics_to_dict,
+        resolve_metrics,
+    )
     from ethoinsight.parse._core import detect_ethovision, parse_header
 
     # Step 1.5: expand multi-sheet XLSX files into individual sheet entries.
@@ -317,6 +322,21 @@ def prep_metric_plan_tool(
             "parse_failed",
             f"Failed to write plan_metrics.json: {e}",
         )
+
+    # Step 6.1: 写去重元数据旁路文件 _metric_metadata.json（spec 2026-06-22-metric-metadata-sidecar）。
+    # plan_metrics.json 的 metrics[] 按 subject 重复（28×5=140 条，133K），report-writer /
+    # data-analyst 只需展示+判读元数据（5 条）。旁路是 plan 的去重元数据投影，与主 plan 同源同次
+    # 写避免漂移；SSOT 仍是 catalog，旁路是只读投影。几 KB，subagent 单次 read + 按 id 直查，
+    # 不再啃 133K 施工文件撑爆 thinking。
+    metadata_path = Path(real_workspace_path) / "_metric_metadata.json"
+    try:
+        metadata_path.write_text(
+            json.dumps(metric_metadata_to_dict(plan), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        # 旁路写入失败不阻断主流程——report-writer/data-analyst 有 metric id 兜底（spec §2.5）。
+        logger.warning("Failed to write _metric_metadata.json (non-critical): %s", e)
 
     # Step 6.5: lineage — write overrides file when overrides exist (Sprint 4.5)
     if parameter_overrides:
