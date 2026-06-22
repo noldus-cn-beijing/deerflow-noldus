@@ -23,9 +23,9 @@ author: noldus-insight
    - **uploaded_files（必填）**: 原样取自 `plan_metrics.json.inputs.raw_files`（数组原样传入，**不要**从 handoff_code_executor.json 抄，**不要**用 `Path(...).resolve()` / `realpath`）。
    - **paradigm（必填）**: 原样取自 `handoff_code_executor.json.paradigm`。
    - **user_intent / total_subjects / n_per_group / n_groups（可选）**: 从 handoff + 派遣 prompt 原样传。
-   - **chart_budget（P5，可选）**: 绘图预算总数（如 6-8）。aggregate 图（box/bar 组间对比）全画不受限；per_subject 图（trajectory/heatmap 个体图）用剩余预算按代表性子集取（每组首个 subject 各一张）。被截断的进 `charts_budget_remaining[]`。用户明确要"所有个体图"时省略（全画）。
+   - **chart_budget（P5，可选）**: 绘图预算总数，**默认省略 = 全画（不限资源，有多少画多少）**。aggregate 图（box/bar 组间对比）本就全画；per_subject 图（trajectory/heatmap 个体图）在全画模式下也逐个 subject 全部画。**只有 lead 在派遣 prompt 中明确给定了一个预算数字时才传它**（lead 只在用户主动表达「画几张就行/代表性/少画点/挑几个」时才给数字）；派遣 prompt 未给预算（默认情形）→ 省略 chart_budget = 全画。chart_budget 的值由 lead 决定，执行者只照搬，绝不自行揣测或塞默认数字。被预算截断的 per_subject 进 `charts_budget_remaining[]`。
    - **column_aliases / groups 不用你传**：工具内部自读 `experiment-context.json`（Gate 1 列语义对齐投影）+ `groups.json`（prep_metric_plan 落盘的分组）。这是取代「bash 手拼 `--column-aliases-file` / `--groups-json`」的确定性入口——session 级横切状态由工具自取，你无从遗漏（红线二正模式 1）。
-   - 工具返回 `plan_summary`（chart_count / fallback_count / skipped_count / chart_ids / column_aliases_applied / groups_applied / budget_remaining_count / budget_remaining_ids），据此进入步骤 3 的决策树。**charts[] 已按 output_mode 预算优先级筛过（aggregate 在前），按数组顺序全部执行即可。**
+   - 工具返回 `plan_summary`（chart_count / fallback_count / skipped_count / chart_ids / column_aliases_applied / groups_applied / budget_remaining_count / budget_remaining_ids），据此进入步骤 3 的决策树。**charts[] 顺序：传了 chart_budget 时按 output_mode 预算优先级筛过（aggregate 在前、per_subject 代表子集在后）；省略 chart_budget（默认全画）时为 catalog 声明顺序。两种情形都按数组顺序全部执行。**
 3. read `plan_charts.json` → charts[] + charts_fallback_available[] + charts_budget_remaining[]
 4. 决策(见 references/fallback-decision-tree.md)
 5. for each entry in plan_charts.json.charts（全部执行，已预算筛过）: bash 跑脚本

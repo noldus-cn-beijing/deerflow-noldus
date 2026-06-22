@@ -323,6 +323,14 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
 派 chart-maker 时,task prompt 的"用户意图:"原样照抄用户图相关原话,不替用户补图型词。图型由 catalog 决定。
 
+**画图预算策略（不限资源，默认全画）**：
+- 用户说要图就**全画**。派 chart-maker 的 task prompt 写明「省略 chart_budget（全画，逐个 subject 全部画，不按子集截断）」，
+  对应 `prep_chart_plan(...)` 不传 `chart_budget`。
+- **只有用户原话主动表达**「画几张就行/代表性/少画点/挑几个/省点时间」时，才在 task prompt 给定一个 chart_budget 数字
+  （如 `chart_budget=8`）并说明「用户要代表性子集，传 chart_budget=<N>」。
+- chart_budget 的值由 lead 决定，chart-maker 只照搬，绝不自行揣测或塞默认数字。
+- 「画多少」是用户的决策：用户说要图就全画，用户主动要少画才传预算。lead 不主动反问「全画 vs 子集」把决策抛回给用户。
+
 **E2E_FULL_ASKVIZ 反问模板**(data-analyst 完成后):
 
 **关键:在 ask_clarification 之前必须先输出一段汇报 message**,让用户先看到分析结果,再被问要不要出图。汇报 message 内容:
