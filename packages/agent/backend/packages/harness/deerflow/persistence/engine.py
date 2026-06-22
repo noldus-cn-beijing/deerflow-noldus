@@ -10,6 +10,7 @@ None and fall back to in-memory implementations.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -70,19 +71,17 @@ async def init_engine(
         echo: Echo SQL to log.
         pool_size: Postgres connection pool size.
         sqlite_dir: Directory to create for SQLite (ensured to exist).
-
-    Idempotency:
-        Once the engine has been initialized, subsequent calls are a no-op.
-        get_local_provider() in app.gateway.deps calls init_engine_from_config
-        on every authenticated request (including from langgraph_auth.authenticate
-        running inside the ASGI event loop). Without this guard each call would
-        re-run os.makedirs() and rebuild the SQLAlchemy engine — the former
-        trips langgraph's blockbuster middleware (os.mkdir is on its blocklist),
-        the latter leaks engines on every request. Returning early once the
-        engine exists fixes both problems.
     """
     global _engine, _session_factory
 
+    # Idempotency guard: once the engine has been initialized, subsequent calls
+    # are a no-op. get_local_provider() in app.gateway.deps calls
+    # init_engine_from_config on every authenticated request (including from
+    # langgraph_auth.authenticate running inside the ASGI event loop). Without
+    # this guard each call would re-run os.makedirs() and rebuild the SQLAlchemy
+    # engine — the former trips langgraph's blockbuster middleware (os.mkdir is
+    # on its blocklist), the latter leaks engines on every request. Returning
+    # early once the engine exists fixes both problems.
     if _engine is not None:
         return
 
@@ -95,21 +94,25 @@ async def init_engine(
             import asyncpg  # noqa: F401
         except ImportError:
             raise ImportError(
-                "database.backend is set to 'postgres' but asyncpg is not installed.\nInstall it with:\n    uv sync --all-packages --extra postgres\nOr switch to backend: sqlite in config.yaml for single-node deployment."
+                "database.backend is set to 'postgres' but asyncpg is not installed.\n"
+                "Install it with:\n"
+                "    cd backend && uv sync --all-packages --extra postgres\n"
+                "On the next `make dev` the postgres extra is auto-detected from\n"
+                "config.yaml (database.backend: postgres) and reinstalled, so it\n"
+                "will not be wiped again. Set UV_EXTRAS=postgres in .env to opt in\n"
+                "explicitly. Or switch to backend: sqlite in config.yaml for\n"
+                "single-node deployment."
             ) from None
 
     if backend == "sqlite":
-        import asyncio
         import os
 
         from sqlalchemy import event
 
-        # os.makedirs is a blocking syscall (calls mkdir, which langgraph_api's
-        # blockbuster middleware flags when invoked on the ASGI event loop).
-        # init_engine is reachable from an ASGI handler (auth runs it on first
-        # use), so we always run the directory creation in a worker thread.
-        # The thread offload itself takes microseconds; the idempotency guard
-        # above ensures this only ever runs once per process.
+        # Offload the directory creation: ``init_engine`` runs on the FastAPI
+        # lifespan event loop, and a sync ``os.makedirs`` (a stat + mkdir
+        # syscall) blocks it during startup. Mirrors the #1912 fix for the
+        # checkpointer's ``ensure_sqlite_parent_dir``.
         await asyncio.to_thread(os.makedirs, sqlite_dir or ".", exist_ok=True)
         _engine = create_async_engine(url, echo=echo, json_serializer=_json_serializer)
 

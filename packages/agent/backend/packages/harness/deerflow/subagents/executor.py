@@ -3,6 +3,7 @@
 import asyncio
 import atexit
 import logging
+import os
 import threading
 import uuid
 from collections.abc import Callable, Coroutine
@@ -26,6 +27,7 @@ from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
 from deerflow.subagents.handoff_schemas import ChartMakerHandoff, CodeExecutorHandoff, ReportWriterHandoff
 from deerflow.subagents.token_collector import SubagentTokenCollector
+from deerflow.tracing import build_tracing_callbacks, inject_langfuse_metadata
 
 if TYPE_CHECKING:
     from deerflow.tools.builtins.tool_search import DeferredToolSetup
@@ -580,7 +582,7 @@ class SubagentResult:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     ai_messages: list[dict[str, Any]] | None = None
-    token_usage_records: list[dict[str, int | str]] = field(default_factory=list)
+    token_usage_records: list[dict[str, int | str | None]] = field(default_factory=list)
     usage_reported: bool = False
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
     _state_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
@@ -598,7 +600,7 @@ class SubagentResult:
         error: str | None = None,
         completed_at: datetime | None = None,
         ai_messages: list[dict[str, Any]] | None = None,
-        token_usage_records: list[dict[str, int | str]] | None = None,
+        token_usage_records: list[dict[str, int | str | None]] | None = None,
     ) -> bool:
         """Set a terminal status exactly once (CAS — first writer wins).
 
@@ -843,6 +845,11 @@ class SubagentExecutor:
         thread_data: ThreadDataState | None = None,
         thread_id: str | None = None,
         trace_id: str | None = None,
+        user_id: str | None = None,
+        user_role: str | None = None,
+        oauth_provider: str | None = None,
+        oauth_id: str | None = None,
+        run_id: str | None = None,
         authorized_handoff_paths: set[str] | None = None,
         app_config=None,
     ):
@@ -856,6 +863,14 @@ class SubagentExecutor:
             thread_data: Thread data from parent agent.
             thread_id: Thread ID for sandbox operations.
             trace_id: Trace ID from parent for distributed tracing.
+            user_id: User ID captured from the parent tool's runtime context.
+                When None, the tracing layer falls back to DEFAULT_USER_ID.
+            user_role: Authenticated user's role, propagated so GuardrailMiddleware
+                on the subagent can apply role-aware policy to delegated calls.
+            oauth_provider: External identity provider, when authenticated via SSO.
+            oauth_id: Subject id at the external identity provider.
+            run_id: Parent run id, so delegated guardrail decisions attribute to
+                the same run as the lead agent.
             authorized_handoff_paths: Set of absolute workspace paths the
                 subagent is authorized to read via read_file. Populated by
                 task_tool from {{handoff://<name>}} placeholders in the lead's
@@ -873,6 +888,12 @@ class SubagentExecutor:
         self.thread_id = thread_id
         # Generate trace_id if not provided (for top-level calls)
         self.trace_id = trace_id or str(uuid.uuid4())[:8]
+        self.user_id = user_id
+        # Guardrail attribution propagated from the parent runtime context.
+        self.user_role = user_role
+        self.oauth_provider = oauth_provider
+        self.oauth_id = oauth_id
+        self.run_id = run_id
         self.authorized_handoff_paths = authorized_handoff_paths or set()
         self.app_config = app_config
 
@@ -960,7 +981,9 @@ class SubagentExecutor:
         """
         model_name = _get_model_name(self.config, self.parent_model)
         # 按 subagent config 决定是否开 think：洞察型 subagent（data-analyst）开，执行型关
-        model = create_chat_model(name=model_name, thinking_enabled=self.config.thinking_enabled)
+        # attach_tracing=False：tracing 改由下方 graph-level callbacks 注入，避免 model 级
+        # 回调与 graph 级回调双重计数 trace（与 lead agent 模式对齐）。
+        model = create_chat_model(name=model_name, thinking_enabled=self.config.thinking_enabled, attach_tracing=False)
 
         middlewares = self._build_middlewares(deferred_setup=deferred_setup)
         self._last_middlewares = middlewares
@@ -1186,10 +1209,48 @@ class SubagentExecutor:
                 "callbacks": [collector],
                 "tags": [collector_caller],
             }
+
+            # Inject tracing callbacks at the graph level so a single subagent run
+            # produces one trace with all node / LLM / tool calls as child spans.
+            # Mirrors the lead agent pattern: graph-level tracing paired with
+            # attach_tracing=False on the model avoids double-counted traces.
+            tracing_callbacks = build_tracing_callbacks()
+            if tracing_callbacks:
+                existing_callbacks = list(run_config.get("callbacks") or [])
+                run_config["callbacks"] = [*existing_callbacks, *tracing_callbacks]
+
+            # Normalize subagent name for tracing so it matches the lead-agent
+            # naming shape (lowercase, hyphens only).
+            if self.config.name:
+                normalized_name = self.config.name.strip().lower().replace("_", "-")
+                assistant_id = f"subagent:{normalized_name}"
+            else:
+                assistant_id = "subagent"
+
+            # Inject Langfuse trace-attribute metadata so the subagent trace
+            # links to the parent thread and carries the correct session/user IDs.
+            inject_langfuse_metadata(
+                run_config,
+                thread_id=self.thread_id,
+                user_id=self.user_id,
+                assistant_id=assistant_id,
+                model_name=_get_model_name(self.config, self.parent_model),
+                environment=os.environ.get("DEER_FLOW_ENV") or os.environ.get("ENVIRONMENT"),
+            )
+
             context = {}
             if self.thread_id:
                 run_config["configurable"] = {"thread_id": self.thread_id}
                 context["thread_id"] = self.thread_id
+            # Propagate guardrail attribution so delegated tool calls are
+            # evaluated with the parent run's identity (role-aware policy,
+            # audit). user_id reuses the resolved tracing id.
+            context["user_id"] = self.user_id
+            context["user_role"] = self.user_role
+            context["oauth_provider"] = self.oauth_provider
+            context["oauth_id"] = self.oauth_id
+            context["run_id"] = self.run_id
+            context["is_subagent"] = True
 
             logger.info(
                 f"[trace={self.trace_id}] Subagent {self.config.name} starting async execution with max_turns={self.config.max_turns} (recursion_limit={recursion_limit}, middlewares={len(middlewares) if middlewares is not None else 'unknown'})"

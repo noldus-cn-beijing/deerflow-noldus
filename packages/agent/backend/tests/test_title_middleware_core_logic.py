@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.constants import TAG_NOSTREAM
 
 from deerflow.agents.middlewares import title_middleware as title_middleware_module
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
@@ -96,7 +97,7 @@ class TestTitleMiddlewareCoreLogic:
         model.ainvoke.assert_awaited_once()
         assert model.ainvoke.await_args.kwargs["config"] == {
             "run_name": "title_agent",
-            "tags": ["middleware:title"],
+            "tags": ["middleware:title", TAG_NOSTREAM],
         }
 
     def test_generate_title_uses_explicit_app_config_without_global_config(self, monkeypatch):
