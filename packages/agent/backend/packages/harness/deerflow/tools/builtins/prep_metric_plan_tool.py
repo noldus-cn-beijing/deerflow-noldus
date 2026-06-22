@@ -89,12 +89,14 @@ def prep_metric_plan_tool(
                       PlanMetric(N 文件 × M 指标 = N×M 个调用)。单文件场景传单元素 list。
                       **请把当前 <uploaded_files> 里所有相关数据文件全传进来**,
                       不要只传第 1 个,否则其余 subject 在分析中会被静默丢失。
-      paradigm: 范式 canonical key（学术名）, v0.1 仅支持以下 5 个:
-                'epm' / 'open_field' / 'forced_swim' / 'light_dark_box' / 'zero_maze'
-                （filename-style 缩写如 'oft'/'fst'/'ldb' 也接受，向后兼容）
-                其他 paradigm_key (如 'shoaling'/'tail_suspension'/'morris_water_maze' 等)
-                会在 catalog.resolve 阶段报错; lead 应在 identify_ev19_template 看到
-                status=unsupported 时就反问用户, 不要走到这一步
+      paradigm: 范式 canonical key（学术名）。v0.1 支持的范式以
+                `ethoinsight.ev19_facts.SUPPORTED_PARADIGMS_V01` 为准（权威清单），
+                调用方应通过 `identify_ev19_template` 工具返回的 `supported_paradigms`
+                字段获取当前清单，而非在此处手抄。常见 key 形如 'epm' / 'open_field'
+                等（filename-style 缩写如 'oft'/'fst'/'ldb' 也接受，向后兼容）。
+                不在 SUPPORTED_PARADIGMS_V01 里的 paradigm_key 会在 catalog.resolve
+                阶段报错; lead 应在 identify_ev19_template 看到 status=unsupported 时
+                就反问用户, 不要走到这一步
       groups: 可选的 subject -> group_name 映射。当用户已经在 ask_clarification 中说清分组(如"第一个是实验组，第二个是对照组")，lead 必须把它翻译成 dict 传进来。dict 的 key 必须是 uploaded_files 列表中的某个文件路径(普通多文件直接用文件路径；FST 多 sheet 用 sheet-suffixed virtual path 如 "/mnt/.../foo.xlsx::轨迹-Arena 1-Subject 1")，value 是 group_name 字符串(如 "treatment" / "control" / "vehicle")。详见 ethoinsight-grouping skill 的 references/lead-translates-answer.md。传入后会写入 /mnt/user-data/workspace/groups.json 并在 plan_metrics.json 的 inputs.groups_file 字段记录路径，下游 code-executor 据此进行分组聚合统计，避免 code-executor 看不到分组幻觉脚本去探测 drug 列。None = 无分组信息(单组分析，或 lead 还没收集到分组)。
 
     Returns:

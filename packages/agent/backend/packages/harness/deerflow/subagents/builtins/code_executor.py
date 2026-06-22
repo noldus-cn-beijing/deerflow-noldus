@@ -97,6 +97,17 @@ errors_count: <int>
 数据源：直接读 run_metric_plan 返回的 `gate_signals` 字段（工具已按上述格式算好），原样转写即可。即便所有 count 为 0，仍必须输出完整 `[gate_signals]` 块。**lead 用这个块的存在性判断是否走 gate_signals 路径**。
 </output>
 
+<summary_number_discipline>
+最终 AIMessage / handoff 摘要里涉及【指标数量】【受试者数量】【任务总数】【失败数】等数字时，必须从结构化数据原样取，来自以下字段：
+
+- 指标数量 = plan_metrics.json 的 metrics[] 按 id 去重后的计数（不是 ×subject 的展开数；同一指标 × N 个 subject 仍是 1 个指标）
+- 受试者数量 = plan 的 inputs.raw_files 计数（或 groups.json 的 subject 总数）
+- 任务总数 = run_metric_plan 返回的 total / executed 计数（= 指标数 × subject 数，已展开）
+- 失败数 = run_metric_plan 返回的 failures 数组长度
+
+若要写「N 个指标 × M 个受试者 = N×M」这类算式，N 和 M 都必须来自上述结构化字段，凭印象拼凑数字会出错。不确定就不写算式，只写结构化字段原值。
+</summary_number_discipline>
+
 <handoff_field_format>
 仅在需要调 seal_code_executor_handoff 做 override 时参考（正常路径 run_metric_plan 已落盘，无需此段）。
 
