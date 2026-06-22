@@ -126,9 +126,11 @@ or status="partial" — do NOT produce a full analysis.
 2. **读上下文（逐个 read_file）**: 主 handoff 已瘦身（task_context 移除、outlier_diagnostics/
    output_files 拆旁路），单次 read_file 即可读全：
    read_file /mnt/user-data/workspace/handoff_code_executor.json
-   read_file /mnt/user-data/workspace/plan_metrics.json
+   read_file /mnt/user-data/workspace/_metric_metadata.json
    （逐个 read_file；本 subagent 无 bash 工具，不要尝试 cat 拼 bundle——主 handoff 已无需拼接，
-   拼出的 bundle 只会更大、更易越 50K 截断线。outlier 细节按需在 step 2.7b 单独读旁路文件。）
+   拼出的 bundle 只会更大、更易越 50K 截断线。判读元数据从 _metric_metadata.json 按 id 直查，
+   不读 plan_metrics.json——它是 code-executor 的施工文件，按 subject 重复 140 条，啃它会撑爆
+   turn。outlier 细节按需在 step 2.7b 单独读旁路文件。）
    范式文档（by-experiment/<paradigm>.md）在 step 2.6 单独 read。
 2.1 **快速失败检查（必须做，不可跳过）**：读完上下文后，执行 Fast-Fail 规则检查：
    gate_signals 与 data_quality_warnings 现稳定位于瘦身后的主 handoff 内（< 50K），单次
@@ -246,21 +248,35 @@ parameter_audit_critical_count: <int>   # 恒为 0（同上）。
 
 ## 指标元数据查询
 
-每个指标的判读字段已由 lead 在派遣前 resolve 到 plan_metrics.json,从那里取:
+每个指标的判读字段在去重元数据文件里（按 metric id 一条，已去重，几 KB）：
 
 read_file:
-    /mnt/user-data/workspace/plan_metrics.json
+    /mnt/user-data/workspace/_metric_metadata.json
 
-按 metric id 在 `metrics[]` 数组中匹配,读取以下字段:
+按 metric id 直接查 `metrics[id]`，读取：
 - direction_for_anxiety: "lower_is_anxious" / "higher_is_anxious" / null
 - statistical_default: "groupwise_compare" / "paired_compare"
+- output_unit: 输出单位语义（ratio / count / 物理单位）
 
-多 subject 场景下同一 metric id 会出现多次(subject_index 区分),判读字段在所有
-同 id 行上一致,取首个即可。
+这是一次性 read + 按 id 直查，不是在数组里扫匹配。
 
-**不要尝试 read catalog YAML 文件** — 它在 Python 包内,sandbox 不暴露给 subagent。
-plan_metrics.json 已经包含 subagent 需要的全部字段;详见 ethoinsight-metric-catalog
-skill 的字段字典 reference。
+`_metric_metadata.json` 是 plan 的去重元数据投影（5 条而非 140 条）。判读元数据从这里取；
+plan_metrics.json 是 code-executor 的施工文件（按 subject 重复 140 条，133K），判读元数据
+已在旁路去重——read plan_metrics.json 取判读字段会撑爆 turn。不要尝试 read catalog YAML
+文件——它在 Python 包内，sandbox 不暴露。
+
+<thinking_discipline>
+thinking 只用来做判断（审核统计方法 / 判读 / 排查混杂），不用来在文件里扫匹配、估算行号、
+分段读。元数据查询是一次性 read _metric_metadata.json + 按 id 直查，不是遍历。若发现自己在
+估算「这 metric 在文件第几行」，立即停——你读错文件了，判读元数据在 _metric_metadata.json
+（去重，按 id 直查）。
+</thinking_discipline>
+
+<metadata_fallback>
+若 `_metric_metadata.json` 缺失（老 plan / 降级路径未生成）或查不到某 metric id：判读时按
+metric id 字面理解，并在 method_warnings 注明「判读元数据未就绪，方向判断待确认」。
+**不回退去 read plan_metrics.json 取判读字段**——那会重新触发 thinking 过载（133K 施工文件）。
+</metadata_fallback>
 
 <handoff_field_format>
 handoff_data_analyst.json 关键字段格式速查（约束权威源见 handoff_schemas.py DataAnalystHandoff）。
