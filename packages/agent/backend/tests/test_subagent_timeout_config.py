@@ -82,7 +82,7 @@ class TestSubagentOverrideConfig:
 class TestSubagentsAppConfigDefaults:
     def test_default_timeout(self):
         config = SubagentsAppConfig()
-        assert config.timeout_seconds == 900
+        assert config.timeout_seconds == 1800
 
     def test_default_max_turns_override_is_none(self):
         config = SubagentsAppConfig()
@@ -214,7 +214,7 @@ class TestLoadSubagentsConfig:
     def test_load_empty_dict_uses_defaults(self):
         load_subagents_config_from_dict({})
         cfg = get_subagents_app_config()
-        assert cfg.timeout_seconds == 900
+        assert cfg.timeout_seconds == 1800
         assert cfg.max_turns is None
         assert cfg.agents == {}
 

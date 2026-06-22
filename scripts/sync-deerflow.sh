@@ -84,6 +84,10 @@ PROTECTED_FILES=(
     "agents/memory/prompt.py"
     # app_config.py — handoff_strict_mode 字段（experiment_context 依赖 + /tmp/disable_strict_handoff 开关）
     "config/app_config.py"
+    # 6-22 教训（sync e418d729 review）：engine.py 不在旧清单但有 Noldus idempotent guard
+    # （if _engine is not None: return）—— get_local_provider 每请求调 init_engine_from_config，
+    # 无 guard 会重跑 os.makedirs 触发 langgraph blockbuster 500。全量合入上游版会洗掉 guard。
+    "persistence/engine.py"
 )
 
 # ---- 颜色 ----

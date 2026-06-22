@@ -347,6 +347,13 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
     # LoopDetectionMiddleware — append the instance created earlier
     middlewares.append(loop_detection)
 
+    # TokenBudgetMiddleware — enforce per-run token limits
+    token_budget_config = get_app_config().token_budget
+    if token_budget_config.enabled:
+        from deerflow.agents.middlewares.token_budget_middleware import TokenBudgetMiddleware
+
+        middlewares.append(TokenBudgetMiddleware.from_config(token_budget_config))
+
     # ThinkTagMiddleware — route inline <think>...</think> content from
     # assistant text into additional_kwargs.reasoning_content so the frontend
     # renders it in a collapsible Reasoning block rather than the main bubble.

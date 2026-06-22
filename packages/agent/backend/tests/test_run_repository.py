@@ -3,10 +3,7 @@
 Uses a temp SQLite DB to test ORM-backed CRUD operations.
 """
 
-import re
-
 import pytest
-from sqlalchemy.dialects import postgresql
 
 from deerflow.persistence.run import RunRepository
 
@@ -284,6 +281,12 @@ class TestRunRepository:
 
     @pytest.mark.anyio
     async def test_aggregate_tokens_by_thread_reuses_shared_model_name_expression(self):
+        """Empty thread aggregates to all-zero totals, no model buckets, single query.
+
+        Upstream #3645 removed the ``GROUP BY coalesce(model_name)`` shape —
+        by_model reduction now happens in Python from each row's per-model JSON
+        column, so there is no longer a GROUP BY / aggregate function in the
+        SQL to pin. Only the result shape + single-query invariant remain."""
         captured = []
 
         class FakeResult:
@@ -314,15 +317,3 @@ class TestRunRepository:
             "by_caller": {"lead_agent": 0, "subagent": 0, "middleware": 0},
         }
         assert len(captured) == 1
-
-        stmt = captured[0]
-        compiled_sql = str(stmt.compile(dialect=postgresql.dialect()))
-        select_sql, group_by_sql = compiled_sql.split(" GROUP BY ", maxsplit=1)
-        model_expr_pattern = r"coalesce\(runs\.model_name, %\(([^)]+)\)s\)"
-
-        select_match = re.search(model_expr_pattern + r" AS model", select_sql)
-        group_by_match = re.fullmatch(model_expr_pattern, group_by_sql.strip())
-
-        assert select_match is not None
-        assert group_by_match is not None
-        assert select_match.group(1) == group_by_match.group(1)

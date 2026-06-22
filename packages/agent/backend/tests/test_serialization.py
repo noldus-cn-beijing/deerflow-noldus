@@ -104,7 +104,9 @@ def test_serialize_channel_values_strips_pregel_keys():
     assert "title" in result
     assert "__pregel_tasks" not in result
     assert "__pregel_resuming" not in result
-    assert "__interrupt__" not in result
+    # __interrupt__ is deliberately preserved (upstream c81ab268): stripping it
+    # would drop the interrupt state the frontend/runtime relies on.
+    assert "__interrupt__" in result
 
 
 def test_serialize_channel_values_serializes_objects():
