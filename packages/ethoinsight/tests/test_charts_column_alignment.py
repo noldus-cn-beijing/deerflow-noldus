@@ -160,7 +160,12 @@ def test_make_plot_parser_defaults_to_empty_parameters():
 
 def test_resolve_charts_injects_zone_params_into_per_subject_plot(tmp_path):
     """EPM column_aliases {open: open_arms} → per_subject chart entry.args 含
-    --parameters-json 且反序列化后是 open_arm_zones=['open']。"""
+    --parameters-json。
+
+    spec 2026-06-22：open_arm_time_ratio_bar 只声明 requires_columns=in_zone_open_arms_*
+    （只要 open 概念），裁剪后 --parameters-json **只含** open_arm_zones，**不含**
+    closed_arm_zones（避免 compute_open_arm_time_ratio 收到 closed_arm_zones → TypeError）。
+    """
     pc = resolve_charts(
         paradigm="epm",
         columns=["open", "closed", "trial_time", "x_center", "y_center"],
@@ -176,11 +181,19 @@ def test_resolve_charts_injects_zone_params_into_per_subject_plot(tmp_path):
     idx = args.index("--parameters-json")
     payload = json.loads(args[idx + 1])
     assert payload.get("open_arm_zones") == ["open"], f"open_arm_zones 投影错: {payload}"
-    assert payload.get("closed_arm_zones") == ["closed"], f"closed_arm_zones 投影错: {payload}"
+    # spec 2026-06-22 裁剪：bar 只要 open，不该收到 closed_arm_zones
+    assert "closed_arm_zones" not in payload, (
+        f"open_arm_time_ratio_bar 不该收 closed_arm_zones（底层 compute 只收 open_arm_zones）: {payload}"
+    )
 
 
 def test_resolve_charts_injects_zone_params_into_aggregate_plot(tmp_path):
-    """aggregate chart（box_open_arm, needs_groups）同样注入 --parameters-json。"""
+    """aggregate chart（box_open_arm, needs_groups）同样注入 --parameters-json。
+
+    spec 2026-06-22：box_open_arm 只声明 requires_columns=in_zone_open_arms_*（只要 open），
+    裁剪后只收 open_arm_zones、不收 closed_arm_zones（dogfood 里它「碰巧没炸」是因底层签名
+    宽容，但裁剪后它也只该收 open）。
+    """
     pc = resolve_charts(
         paradigm="epm",
         columns=["open", "closed", "trial_time", "x_center", "y_center"],
@@ -195,7 +208,9 @@ def test_resolve_charts_injects_zone_params_into_aggregate_plot(tmp_path):
     args = box[0].args
     assert "--parameters-json" in args
     idx = args.index("--parameters-json")
-    assert json.loads(args[idx + 1])["open_arm_zones"] == ["open"]
+    payload = json.loads(args[idx + 1])
+    assert payload["open_arm_zones"] == ["open"]
+    assert "closed_arm_zones" not in payload, f"box_open_arm 只声明 open 概念: {payload}"
 
 
 def test_resolve_charts_no_aliases_no_parameters_json(tmp_path):
