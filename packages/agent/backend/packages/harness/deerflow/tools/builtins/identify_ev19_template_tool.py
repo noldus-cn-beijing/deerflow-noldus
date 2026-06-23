@@ -597,6 +597,15 @@ def identify_ev19_template_tool(
     candidates: list[dict] = []
     target_ids = filtered_ids if filtered_ids else candidate_ids
 
+    # 确定性排序：推荐项恒在最前（→ 字母 A），其余按 template_id 字典序。
+    # 修同输入两轮 A/B 对调（ETHO-8）。experiment_recs 来自 by-experiment 推荐，
+    # 是稳定集合；据它把推荐项提到首位，保证「推荐项 = A」跨调用一致。
+    # 守约束：不改 EV19_TEMPLATE_PARADIGM_MAP、不改过滤逻辑、不改返回契约，只改顺序。
+    target_ids = sorted(
+        target_ids,
+        key=lambda t: (t not in experiment_recs, t),
+    )
+
     for tid in target_ids:
         from ethoinsight.ev19_facts import get_template_facts
 
