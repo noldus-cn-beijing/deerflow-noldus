@@ -14,6 +14,21 @@
 
 ---
 
+## ‼️ 2026-06-23 重大修正：data-analyst 漏 seal 有第二个更严重的变体 = seal args 撞 max_tokens=4096 被腰斩
+
+> 另一 agent 用 playwright 端到端 + `repro-data-analyst.py` **独立复现 data-analyst subagent**（看到 lead thread 看不到的内部 turn），逐字节锁定一个**比本 spec 原判断更严重的变体**。**data-analyst 治本的权威 spec = `docs/superpowers/specs/2026-06-23-data-analyst-seal-stepwise-fill-template-spec.md`（分步填模板）；完整取证见 `docs/problems/2026-06-23-data-analyst-seal-args-truncation-discussion.md`**（本节只摘要 + 划清边界）。memory `feedback_etho1_real_root_cause_is_seal_args_truncated_by_max_tokens_4096`。
+>
+> **两个结局是同一故障在不同数据规模下的表现（不矛盾，治本点正交）**：
+> - **本 spec 原判断（prod e6ea7946，重试 7 步成功）对 prod 那次成立**：seal args **较短没撞墙**，是真·偶发收尾漏 call，补一轮即好——SealGate/after_agent 对这类有效。
+> - **本地 28-subject EPM（连续 2 次 FAILED）是更严重变体**：5 条详尽 key_findings 把 seal args 撑到 char 1178/2142 **撞 `max_tokens=4096` 墙** → 腰斩成未终止 JSON → LangChain 判 `invalid_tool_calls` → 不执行 → SealGate 催回 → **再产再腰斩**（count=1→2 铁证）→ FAILED → lead 降级跳过判读 = **判读层功能性失效**。
+>
+> **对本 spec 的边界修正**：
+> 1. **本 spec（SealGate after_agent 升级）只对 report-writer/chart-maker 负责**（产物可重建，§2.1 成立）。
+> 2. **data-analyst 的治本不在本 spec** —— SealGate L1 催回 / after_agent 对 args 腰斩**全无效**（催回后再腰斩）。data-analyst 走 **forensics spec §四：首选提 `max_tokens` 4096→8192**（args 截断是确定性预算问题，可根治）。本 spec 下文 §2.0 / §2.2 关于 data-analyst 的内容**以 forensics spec 为准**，此处保留仅为说明边界。
+> 3. 这是 **06-18 PR#161「换 flash」的镜像残留**：换 flash 没消根因（单 turn 4096 < 判读+seal 体积），只把载体从 thinking-truncation 换成 args-truncation。
+
+---
+
 ## 〇、给实施 agent 的一句话
 
 现状有 **4 层防线**（[`seal_gate_middleware.py`](../../../packages/agent/backend/packages/harness/deerflow/agents/middlewares/seal_gate_middleware.py) L1 + [`executor.py:1400-1444`](../../../packages/agent/backend/packages/harness/deerflow/subagents/executor.py#L1400) L2/L3/L4）：
