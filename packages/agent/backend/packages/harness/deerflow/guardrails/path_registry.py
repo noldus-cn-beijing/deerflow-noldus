@@ -28,12 +28,18 @@ class Step:
         prerequisites: Explicit subagent prerequisites for dispatch steps (prompt-side
                        hyphenated names). Only these handoff files are checked — NOT all
                        preceding dispatch steps. Empty tuple = no subagent prerequisites.
+        requires_options: ask steps only — whether this question is a structured
+                          choice that MUST carry quick-pick ``options`` in
+                          ask_clarification (viz/report/four_choice 是/否选择题).
+                          Open clarifications (clarify) stay False. Defaults False,
+                          so dispatch steps are unaffected (向后兼容).
     """
 
     kind: StepKind
     target: str
     condition: str | None = None
     prerequisites: tuple[str, ...] = ()
+    requires_options: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -49,19 +55,19 @@ PATHS: dict[str, list[Step]] = {
     "E2E_FULL_ASKVIZ": [
         Step("dispatch", "code-executor"),
         Step("dispatch", "data-analyst", prerequisites=("code-executor",)),
-        Step("ask", "viz"),
+        Step("ask", "viz", requires_options=True),
         Step("dispatch", "chart-maker", condition="viz==yes", prerequisites=("code-executor",)),
-        Step("ask", "report"),
+        Step("ask", "report", requires_options=True),
     ],
     "E2E_FULL": [
         Step("dispatch", "code-executor"),
         Step("dispatch", "data-analyst", prerequisites=("code-executor",)),
         Step("dispatch", "chart-maker", prerequisites=("code-executor",)),
-        Step("ask", "report"),
+        Step("ask", "report", requires_options=True),
     ],
     "E2E_MIN": [
         Step("dispatch", "code-executor"),
-        Step("ask", "four_choice"),
+        Step("ask", "four_choice", requires_options=True),
     ],
     "CHART": [Step("dispatch", "chart-maker")],
     "REPORT": [Step("dispatch", "report-writer")],
@@ -71,6 +77,64 @@ PATHS: dict[str, list[Step]] = {
 }
 
 VALID_INTENTS = frozenset(PATHS.keys())
+
+
+# ---------------------------------------------------------------------------
+# §1.0 pending-ask helper — shared by IntentPostStepAskGateProvider and
+#       AskClarificationOptionsProvider so the "which ask step is next" logic
+#       lives in exactly one place (SSOT).
+# ---------------------------------------------------------------------------
+from collections.abc import Callable  # noqa: E402  (late import to keep dataclass block clean)
+
+
+def next_pending_ask_step(
+    steps: list[Step],
+    gate_completed: list[str],
+    handoff_exists: Callable[[str], bool],
+) -> Step | None:
+    """Return the first ask step whose preceding dispatch is done but gate unacknowledged.
+
+    Args:
+        steps: Ordered path steps for one INTENT.
+        gate_completed: List of gate_* tokens already acknowledged.
+        handoff_exists: Predicate — returns True if the given dispatch target's
+                        handoff file is present on disk (caller provides the check,
+                        keeping this function free of filesystem I/O).
+
+    Returns:
+        The first pending ask Step, or None when all ask steps are satisfied.
+    """
+    for i, step in enumerate(steps):
+        if step.kind != "ask":
+            continue
+        # "clarify" has no gate — it is always pending when we reach it, but
+        # since requires_options is False it won't trigger the options guardrail.
+        if step.target == "clarify":
+            return step
+
+        gate_name = ASK_GATE_MAP.get(step.target)
+        if not gate_name:
+            continue
+
+        # Already acknowledged → move to next ask step
+        if gate_name in gate_completed:
+            continue
+
+        # Check nearest preceding dispatch to decide if this ask step is active.
+        immediate_dispatch_done = True
+        for j in range(i - 1, -1, -1):
+            prev = steps[j]
+            if prev.kind == "dispatch":
+                immediate_dispatch_done = handoff_exists(prev.target)
+                break
+
+        if not immediate_dispatch_done:
+            # Preceding dispatch not yet done — ask step not yet active
+            continue
+
+        return step
+
+    return None
 
 
 # ---------------------------------------------------------------------------

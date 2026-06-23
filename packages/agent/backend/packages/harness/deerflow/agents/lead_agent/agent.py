@@ -416,6 +416,18 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
             fail_closed=guardrails_cfg.fail_closed,
         ))
 
+        # W20b: AskClarificationOptions — 强制结构化反问带 options 快捷选项（ETHO-9）
+        # 依赖 IntentPostStepAskGateBridge 已设置的 _lead_messages/_lead_workspace contextvar，
+        # 所以必须在 IntentPostStepAskGateBridge 之后注册。
+        from deerflow.guardrails.ask_clarification_options_provider import (
+            AskClarificationOptionsProvider,
+        )
+
+        middlewares.append(GuardrailMiddleware(
+            provider=AskClarificationOptionsProvider(),
+            fail_closed=guardrails_cfg.fail_closed,
+        ))
+
         # W19 (relocated): Inject {{handoff://X}} placeholders into task() prompts
         # BEFORE the W18 guardrail evaluates them. Without this middleware, lead
         # tasks that omit the placeholder are unconditionally denied by the W18
