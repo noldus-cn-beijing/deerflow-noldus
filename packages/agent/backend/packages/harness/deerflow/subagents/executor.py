@@ -298,7 +298,12 @@ _AUTO_SEALABLE: dict[str, str] = {
 }
 
 
-def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | None) -> bool:
+def _attempt_auto_seal_from_artifacts(
+    subagent_name: str,
+    workspace_path: str | None,
+    *,
+    sealed_by: str | None = None,
+) -> bool:
     """seal-resume 失败后的确定性兜底。返回 True=已 auto-seal，False=无法兜底（维持 FAILED）。
 
     report-writer / chart-maker: handoff 核心字段（report_path / chart_files）
@@ -318,6 +323,11 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
         subagent_name: SubagentConfig.name, e.g. "report-writer".
         workspace_path: Host-side workspace dir from thread_data["workspace_path"].
             None when ThreadDataMiddleware didn't set it.
+        sealed_by: ETHO-1 可观测性标记（spec 2026-06-23 §2.3）。report-writer /
+            chart-maker 的 handoff 携带此字段记录兜底来源——executor L3 路径传
+            "executor_artifacts"，SealGate after_agent 路径传 "after_agent_artifacts"。
+            None 时 report-writer/chart-maker 不写 sealed_by（向前兼容旧调用）。
+            code-executor 分支固定 "framework_rebuild"，不受此参数影响。
 
     Returns:
         True  -> handoff 已确定性构造并写入 workspace。
@@ -369,6 +379,8 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
                 ],
                 "gate_signals": None,
             }
+            if sealed_by is not None:
+                payload["sealed_by"] = sealed_by
             _seal_handoff_to_workspace(
                 ReportWriterHandoff, handoff_filename, payload, ws,
             )
@@ -402,6 +414,8 @@ def _attempt_auto_seal_from_artifacts(subagent_name: str, workspace_path: str | 
                 "failed_charts": [],
                 "gate_signals": None,
             }
+            if sealed_by is not None:
+                payload["sealed_by"] = sealed_by
             _seal_handoff_to_workspace(
                 ChartMakerHandoff, handoff_filename, payload, ws,
             )
@@ -1424,7 +1438,7 @@ class SubagentExecutor:
                 # 仅对"handoff 核心字段可从产出文件机械推导"的 subagent（report-writer/
                 # chart-maker）生效；code-executor/data-analyst 的认知产物无法重建，跳过。
                 _auto_sealed = _attempt_auto_seal_from_artifacts(
-                    self.config.name, _workspace,
+                    self.config.name, _workspace, sealed_by="executor_artifacts",
                 )
                 if _auto_sealed:
                     logger.warning(

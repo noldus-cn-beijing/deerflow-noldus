@@ -584,6 +584,17 @@ class ChartMakerHandoff(BaseModel):
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
     )
+    sealed_by: Literal["model", "after_agent_artifacts", "executor_artifacts"] = Field(
+        default="model",
+        description=(
+            "Handoff 来源标记（ETHO-1 spec 2026-06-23 §2.3 可观测性）。"
+            "model = chart-maker 自行调 seal 工具封存（正常路径）；"
+            "after_agent_artifacts = SealGate after_agent 在终止点从 plot_*.png "
+            "确定性兜底（堵 L1 reminder-cap 放行口，消除 Task failed 中间态）；"
+            "executor_artifacts = executor L3 在 seal-resume 失败后从产物重建。"
+            "后两者触发率上升 = 上游 L1 在退化的信号，必须可观测。"
+        ),
+    )
 
     @model_validator(mode="after")
     def _completed_requires_core_output(self):
@@ -735,6 +746,17 @@ class ReportWriterHandoff(BaseModel):
     analysis_config_id: str = Field(
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
+    )
+    sealed_by: Literal["model", "after_agent_artifacts", "executor_artifacts"] = Field(
+        default="model",
+        description=(
+            "Handoff 来源标记（ETHO-1 spec 2026-06-23 §2.3 可观测性）。"
+            "model = report-writer 自行调 seal 工具封存（正常路径）；"
+            "after_agent_artifacts = SealGate after_agent 在终止点从 outputs/report.md "
+            "确定性兜底（堵 L1 reminder-cap 放行口，消除 Task failed 中间态）；"
+            "executor_artifacts = executor L3 在 seal-resume 失败后从产物重建。"
+            "后两者触发率上升 = 上游 L1 在退化的信号，必须可观测。"
+        ),
     )
 
     @model_validator(mode="after")
