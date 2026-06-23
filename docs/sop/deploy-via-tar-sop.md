@@ -128,33 +128,59 @@ DEPLOY_TAG=v0.1.0 make deploy-tar
 
 ## 3.5 数据库 schema 迁移 (⚠️ 加了新列/新表的版本必看)
 
-**部署链不自动跑 alembic。** `make deploy-tar` 只做 `docker load` + `docker compose up -d`;生产 `gateway` 容器启动命令里**没有** `alembic upgrade head`。
+> **2026-06-22 起:`make deploy-tar` 已自动跑迁移**(见下「自动迁移」)。本节保留是为了
+> ① 理解原理 ② 手动补迁移(老部署、首次接入、自动步骤被跳过时)③ 排障。
 
 应用启动时只跑 `Base.metadata.create_all`,它是 **create-if-not-exists**:
 - **全新表** → 建表时带上所有列(含新列),没问题。
-- **已存在的表**(如 `feedback`、`threads_meta`、`runs`)→ **不会补新列**。代码一旦查/写新列就会 `sqlite3.OperationalError: no such column: ...`。
+- **已存在的表**(如 `feedback`、`threads_meta`、`runs`)→ **不会补新列**。代码一旦查/写新列就会 `sqlite3.OperationalError: no such column: ...`(典型:`runs.token_usage_by_model` 缺失 → `/chats/new` 每次 500;`feedback.paradigm` 缺失 → 反馈/prior_corrections 报错)。
 
-> ECS 上 `feedback` 表自训练飞轮上线后一直有历史数据(见 CLAUDE.md 飞轮条),属于"已存在的表"。
+> ECS 上 `runs`/`feedback` 等表早有历史数据,属于"已存在的表"。生产真实库是 checkpointer 与 app 共用的 `${DEER_FLOW_HOME}/data/deerflow.db`(容器内 `/app/backend/.deer-flow/data/deerflow.db`),**不是** `alembic.ini` 里硬编码的 `./data/deerflow.db`。
 
-### 何时需要手动迁移
+### 自动迁移(默认,无需手动操作)
 
-本次部署的代码**给已存在的表加了列/约束**时(典型信号:`persistence/*/model.py` 改了 `mapped_column`,且 `migrations/versions/` 下有新 revision 文件)。新表、纯逻辑改动无需迁移。
+`scripts/deploy-via-tar.sh` 在 `docker load` 之后、`docker compose up` **之前**,会用刚加载的 gateway 镜像跑一次 `scripts/run-db-migrations.sh`(镜像里自带 alembic + 迁移文件;脚本随部署 rsync 到 `$DEPLOY_PATH/scripts/` 并 bind-mount 进容器),对宿主持久化的真实库执行迁移:
 
-**已知需要迁移的版本**:
-- **S8 feedback `paradigm` 列**(`20260601_1500_feedback_paradigm.py`):给已有 `feedback` 表加 `paradigm`。不跑 → 提交反馈 + lead 查 prior_corrections 全部 500/报错。
+```
+→ Running DB migrations (alembic) inside gateway image before service start
+✓ DB migrations applied (or already up to date)
+```
 
-### 操作(部署后,在 ECS 上跑一次)
+- **幂等**:已在 head 则空跑;只应用未执行的 revision。
+- **自动 stamp 老库**:生产库历史上靠 `create_all` 建表、**没有 `alembic_version` 表**。脚本会按"已存在哪些迁移加的列"探测真实 schema 停在哪个 revision,先 `alembic stamp <该 revision>` 补上版本表,再 `upgrade head`。**这样补一次后版本链就接上了,以后 sync 加列自动 `upgrade head` 即可。**
+- **失败即中止部署**:迁移失败会 `exit 1`,**不启动新容器**——宁可旧代码(可用)继续跑,也不让新代码撞未迁移的库。这时看报错按下面「手动补迁移」排查。
 
-⚠️ **不要直接 `alembic upgrade head`,也不要靠 `-x sqlalchemy.url=`**:
-- `alembic.ini` 里 `sqlalchemy.url` 硬编码成 `./data/deerflow.db`,**不是**生产真实 DB。真实库是 checkpointer 与 app 共用的 `${DEER_FLOW_HOME}/data/deerflow.db`(容器内 `/app/backend/.deer-flow/data/deerflow.db`)。
-- 本仓库的 `env.py` 用 `config.get_main_option("sqlalchemy.url")` 取 url,**既不读 `-x` 参数也不读环境变量**,所以 `alembic -x sqlalchemy.url=...` 会被无视、仍迁错库。
+> ⚠️ 千万别绕过自动步骤后直接 `alembic upgrade head`:生产库没有 `alembic_version` 表,直接 upgrade 会从最早的 revision 重放、撞上 `create_all` 已建好的列报 `duplicate column`。必须先 stamp(脚本已自动处理)。
 
-正确做法:用内联 Python 调 `command.upgrade` 并 `set_main_option` 显式覆盖真实 url(下面这段已实测可用):
+### 手动补迁移(老部署 / 自动步骤被跳过 / 排障)
+
+把脚本拷进运行中的 gateway 容器再跑(它会先备份再迁移;`docker cp` 比 `exec -v` 可靠——`exec` 不支持临时挂卷):
 
 ```bash
 ssh eth-ecs
-cd /opt/ethoinsight/docker
+# 1) 确保本地脚本已推到 ECS(老部署可能没有)
+#    rsync -avz scripts/run-db-migrations.sh eth-ecs:/opt/ethoinsight/scripts/
+# 2) 拷进容器并执行
+docker cp /opt/ethoinsight/scripts/run-db-migrations.sh deer-flow-gateway:/app/scripts/run-db-migrations.sh
+docker compose -p deer-flow exec gateway sh -c \
+  "chmod +x /app/scripts/run-db-migrations.sh && /app/scripts/run-db-migrations.sh"
+```
 
+若服务已停(或想在不影响旧容器的前提下迁移),用一次性容器 `run --rm`(支持 `-v` 挂卷):
+
+```bash
+cd /opt/ethoinsight/docker
+docker compose -p deer-flow run --rm --no-deps \
+  -v /opt/ethoinsight/scripts/run-db-migrations.sh:/app/scripts/run-db-migrations.sh:ro \
+  --entrypoint sh gateway \
+  -c "chmod +x /app/scripts/run-db-migrations.sh && /app/scripts/run-db-migrations.sh"
+```
+
+脚本输出会显示走了哪条路径(`upgrade head` / `Legacy DB detected ... stamp <rev>`)并在结尾校验 `alembic_version = 20260622_1700`(当前 head)。
+
+**最后兜底**(脚本不可用时,内联 Python——⚠️ 仅当库**已有** `alembic_version` 表时可直接 upgrade;否则先 stamp):
+
+```bash
 docker compose -p deer-flow exec gateway sh -c 'cd /app/backend && PYTHONPATH=. uv run python - <<PY
 from alembic.config import Config
 from alembic import command
@@ -165,28 +191,25 @@ url = get_app_config().database.app_sqlalchemy_url   # 真实库,与运行时同
 cfg = Config(f"{mig}/alembic.ini")
 cfg.set_main_option("script_location", mig)
 cfg.set_main_option("sqlalchemy.url", url)
-print("current:")
-command.current(cfg)
-print(f"upgrading head on: {url}")
+command.current(cfg)              # 先看停在哪;若空 → 该库无 version 表,需先 command.stamp(cfg, "<baseline>")
 command.upgrade(cfg, "head")
 print("done")
 PY'
 ```
 
-> **兜底**(取 url 的 import 路径与版本不符时):把上面 `url = ...` 那行换成写死的真实路径
-> `url = "sqlite+aiosqlite:////app/backend/.deer-flow/data/deerflow.db"`
-> (sqlite 绝对路径是 **4 个斜杠**:`sqlite+aiosqlite:////app/...`)
+> 取 url 的 import 路径若与版本不符,把 `url = ...` 换成写死路径 `url = "sqlite+aiosqlite:////app/backend/.deer-flow/data/deerflow.db"`(sqlite 绝对路径是 **4 个斜杠**)。
+> baseline 怎么定:看真实 schema 已有哪些迁移加的列——有 `runs.token_usage_by_model` → 已在 head;只有 `feedback.paradigm` → `20260601_1500`;只有 `feedback.verdict` → `20260512_1200`;都没有 → `base`。`run-db-migrations.sh` 已把这套探测自动化,优先用它。
 
-校验列已加(以 `feedback.paradigm` 为例):
+校验列已加:
 
 ```bash
 docker compose -p deer-flow exec gateway sh -c \
-  "uv run python -c \"import sqlite3; print([r[1] for r in sqlite3.connect('/app/backend/.deer-flow/data/deerflow.db').execute('PRAGMA table_info(feedback)')])\""
-# 输出应含 'paradigm'
+  "uv run python -c \"import sqlite3,os; db='/app/backend/.deer-flow/data/deerflow.db'; print('runs:', [r[1] for r in sqlite3.connect(db).execute('PRAGMA table_info(runs)')])\""
+# 输出应含 'token_usage_by_model'
 ```
 
 > alembic env.py 已 scope 到 deerflow 自己的表,**不碰 LangGraph checkpointer 表**(两者共用同一 .db 文件,但 checkpointer schema 由 LangGraph 自管)。
-> 迁移用 `op.batch_alter_table`(SQLite ALTER 必需),`add_column(nullable=True)`,历史行新列留 NULL,不破坏老数据。重复跑只执行未应用的 revision(`command.current` 先看停在哪)。
+> 迁移用 `op.batch_alter_table`(SQLite ALTER 必需),`add_column(nullable=True)`,历史行新列留 NULL,不破坏老数据。
 
 ### 回滚时
 

@@ -243,6 +243,25 @@ harness 模块图存在**已知导入环**（证据：`backend/tests/conftest.py
 - 重要会话结束后在 `docs/handoffs/` 写交接文档（文件名 `YYYY-MM-DD-<topic>-handoff.md`）
 - **写 handoff 时判断**：本次会话是否让某个 feature track 到达了 checkpoint（完成/阶段切换/阻塞解除）？如果是，在 handoff 末尾加 `## milestone 建议` 段，列出应创建/更新的 milestone 和关键摘要。下一 agent 读到后执行。用户也可随时说"为 XX 写 milestone"手动触发
 
+### ⚠️ 改 harness / prompt / 控制流前的三大病理自检
+
+来自 HarnessX 报告（arXiv 2606.14249，把 harness 改动形式化成符号空间的 RL，三个 RL 病理在改 harness 时复现）。**每次改 prompt / middleware / guardrail / 控制流前，过一遍这三问**——它们廉价、命中我们反复踩的坑：
+
+1. **Reward hacking（奖励黑客）**：这个改动会不会让 LLM 学会"糊弄验收"而非真完成？
+   - 我们踩过：chart-maker 曾**伪造 failed reason 抄旧 handoff**（产出一个能通过校验的失败叙述，而非真画图）。
+   - 防法：验收看**真产物**不看 LLM 自述；兜底机制配**触发率可观测**（`sealed_by` 标记等），别让"学会依赖兜底"藏在全绿下。
+
+2. **Catastrophic forgetting（灾难性遗忘）**：修 A 会不会悄悄回归 B？
+   - 我们踩过：sync 时改一处 prompt **削弱了别处约束伞句**；`385f8989` 改 SSOT 一处**漏同步三处镜像文案**（PR#175 补的 drift）。
+   - 防法：改共享组件（prompt 段 / Step dataclass / PATHS）先 **grep 所有消费者**，全量跑回归（seesaw：不回归已通过的），别只跑新测试。
+
+3. **Under-exploration（探索不足）**：我是不是又在**只改 prompt 逃避结构改动**？
+   - 我们踩过：seal 漏调**改了 4 次 prompt 打地鼠**才终于上 SealGateMiddleware（结构改动）。
+   - **关键警告（HarnessX §6.6 Telecom 实证）**：累加 reminder/提醒规则会**亚阈值耦合致崩**（连加 5 条 reminder→第 6 条把合规率 100% 打回 80%，且 per-task 回归检测发现不了）。**别再用"加一条提醒 prompt"修反复漏调的问题——改终止条件/加确定性门（结构），不加规则。**
+   - 反向自检：但**不是所有问题都该上结构门**——若结构层已正确（如工具已全量扫描），缺的只是 prompt 指引硬度，那 prompt 修法是对的（ETHO-5 即此类）。判据：**结构缺失→上门；结构已对、只缺指引→改 prompt**。
+
+> 配套原则：**用确定性结构约束行为，不用 prompt 规则**（"LLM 提议，确定性门定生死"）。我们的确定性门 = DeerFlow 的 `GuardrailProvider` / `SealGateMiddleware` / `path_registry.PATHS` / Pydantic schema。详见 memory `reference_harnessx_report_and_etho_spec_application`。
+
 ## 重要注意事项
 
 1. **skills/custom/ 是项目定制 skill 的目录** — ethoinsight 系列定制 skill **在 git 中**（上一任交接文档误标为 gitignored，实际并非如此）。**权威清单以 `packages/agent/skills/custom/` 目录 + `extensions_config.json` 的 `skills` 段为准**（不在此处手工枚举以免漂移）。当前含 `ethoinsight` / `ethoinsight-code` / `ethoinsight-charts` / `ethoinsight-chart-maker` / `ethoinsight-grouping` / `ethoinsight-metric-catalog` / `ethoinsight-lead-interaction` / `ethovision-paradigm-knowledge` / **`ethoinsight-column-confirmation`（新增 — EV19 自定义分析区列的 HITL 列语义对齐，见 [milestone](docs/milestone/column-semantics-alignment.md)）** 等。新增 skill 须三件一起：① 建文件 ② extensions_config 注册 ③ lead prompt 加触发/read 指引。

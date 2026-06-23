@@ -183,6 +183,26 @@ issue 创建于 2026-05-25，当时的链路存在**三个级联 bug**，已在 
 1. **前端默认折叠激进**：`message-group.tsx:59-61` 的 `showLastThinking` 初始值绑定 `isLoading`——subagent 步骤结束 / 回看历史时（isLoading=false）默认折叠；叠加 `ai-elements/reasoning.tsx:82-93` 流式结束后 `setTimeout` 自动 `setIsOpen(false)`。reasoning「流式时可见、一结束就收」是用户「过度隐藏」的直接体感。缓解：subagent 最近一步 reasoning 默认展开、放宽 auto-close。
 2. **后端 prompt 自相矛盾**：`lead_agent/prompt.py:580` `<response_style>` 段 `Action-Oriented: Focus on delivering results, not explaining processes`（专注结果不解释过程）**主动鼓励藏过程**，与 `prompt.py:652`（thinking 对用户可见、须用用户语言）矛盾。deepseek 本就倾向把面向用户的话写进 `<think>`，line 580 进一步强化 → 用户连进度反馈都看不到。缓解：改写 line 580 为正面指令（「对关键决策点和进度节点给出简短可见说明，不要把面向用户的反馈写进 thinking」），形成「正文给反馈 + thinking 给推理」双通道（守 memory `feedback_skill_describing_tool_output_enables_hallucination`：deepseek 用正面提示）。
 
+### D-3：subagent 输出可见但 think 看不到，等待时以为卡住（[#158](https://github.com/noldus-cn-beijing/noldus-insight/issues/158)，babysit 监控新发现 2026-06-18）
+
+> 与 #82 同族（前端可见性），但聚焦 subagent 卡片的展开/折叠架构。
+
+**问题描述**：用户能看到 subagent 输出，但看不到 subagent 的 think/reasoning。等 data-analyst 这类 subagent 时，前端无可见进度，用户以为卡住。诉求：不用手动展开「子代理」就能看到 subagent 输出，且能打开折叠 tab 看 think，同时 lead/subagent 的输出和 think 要可区分。
+
+**根因**：subagent 卡片折叠状态 `subtask-card.tsx:56` —— `const [collapsed, setCollapsed] = useState(task.status !== "in_progress")`：**仅 subagent 运行中（in_progress）默认展开，完成（completed）即默认折叠**。subagent 的输出 `task.result`（line 149-155）和 reasoning（嵌套 `ChainOfThoughtContent` line 158-189）都在卡片内，折叠后用户看不到。运行中虽展开，但 reasoning 在嵌套折叠区，用户分不清「这是在跑」还是「卡住」。
+
+与 #82 / `message-group.tsx:59` 同模式：**运行时展开、完成后折叠**，subagent 卡片更激进（连输出都藏在折叠卡里）。
+
+**建议**：(a) subagent 完成后仍默认展示输出摘要（`task.result` 首行 line 132-134 已有 summary，应常驻可见而非折叠）；(b) reasoning 用独立可折叠 tab（默认收起但显式有「查看思考」入口），与输出区分；(c) 运行中给明确的「正在思考…」进度态（区别于卡住）。lead/subagent 用角色徽章区分（subtask-card 已有，保持）。
+
+### D-4：subagent 输出/reasoning 不跟随用户交互语言（[#159](https://github.com/noldus-cn-beijing/noldus-insight/issues/159)，babysit 监控新发现 2026-06-18）
+
+**问题描述**：用户说中文时 subagent 的输出和 reasoning 仍是英文；说英文时偶尔出现中文。
+
+**根因**：subagent prompt **有**语言锁定指引（如 `data_analyst.py:13-20` `<语言>` 段，明确「输出语言必须与用户语言一致；lead 会在 prompt 开头声明语言；未声明则从任务描述推断」）。lead prompt（`prompt.py:655-660`）也要求 lead 派 subagent 时「在 prompt 开头明确声明用户语言」。**但这是两层都靠 LLM 自觉执行，无 harness 强制注入**——`subagents/executor.py` 派发时不注入语言（grep `language/语言` 无注入逻辑）。当 lead 忘了写语言声明句（deepseek 抖动），subagent 回退到「从任务描述推断」，而任务描述常含英文术语/字段名 → subagent 误判用英文输出；reasoning 更易脱缰（deepseek R1 推理默认英文）。
+
+**建议**（治本，强制注入）：lead 的 thread 已锁定用户语言（`prompt.py:648-652` 的首条消息语言检测），应在 `subagents/executor.py` 派发 subagent 时**自动把用户语言注入 subagent 的 system/human prompt 前缀**，而非依赖 lead 手写。这样不依赖 LLM 自觉，从结构上保证 subagent 语言跟随用户（守 memory `feedback_seal_missing_root_cause_is_react_no_toolcall_exit_gate_not_fallback` 思路：靠 prompt 提醒=打地鼠，harness 结构性注入才治本）。
+
 ---
 
 ## 聚类 E — xlsx in_zone 列匹配 + chart-maker 重试（[#152](https://github.com/noldus-cn-beijing/noldus-insight/issues/152)，babysit 监控新发现 2026-06-17）
