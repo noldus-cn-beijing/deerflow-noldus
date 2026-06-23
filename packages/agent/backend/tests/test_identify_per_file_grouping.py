@@ -415,6 +415,9 @@ class TestPromptGroupingContract:
         assert "per_file_grouping" in prompt_text, (
             "lead_agent prompt must reference per_file_grouping"
         )
-        assert "优先用" in prompt_text, (
-            "prompt must contain positive instruction to use per_file_grouping first"
+        # ETHO-5 (2026-06-23): grouping upgraded from soft "优先用" suggestion to a
+        # hard constraint that the determination MUST cover all uploaded files.
+        # Assert the hard-constraint phrasing rather than the obsolete soft string.
+        assert ("必须基于全部" in prompt_text or "覆盖全部文件" in prompt_text), (
+            "prompt must hard-require grouping over ALL files' per_file_grouping (ETHO-5)"
         )
