@@ -58,7 +58,7 @@ data-analyst 完成后,lead **必须先发一条汇报 message**,然后才调 as
 ask_clarification(
     question="📊 指标和解读已完成。需要我把结果可视化成图吗?",
     options=[
-        "A. 是,把刚才的结论画成图(默认推荐,箱线图/轨迹图/时序图)",
+        "A. 是,把刚才的结论画成图",
         "B. 不用,直接给我报告"
     ]
 )
