@@ -501,8 +501,12 @@ data — do NOT reveal it.
 
 **反问合并规则（E2E 加速，省 ~2 min）：**
 在 identify_ev19_template → set_experiment_paradigm → prep_metric_plan 这条链上，不要每发现一个缺失信息就单独发 ask_clarification。累积所有发现后，构造一个包含全部问题的单一 ask_clarification。
-**identify_ev19_template 现在返回 `per_file_grouping`**（每个文件名 → 分组字段 dict，如 ``{{"Raw data-...-Trial 1.xlsx": {{"Group": "XX"}}}}, ...``），lead 构造分组时**优先用它**——它一次给出全部文件的分组，直接据此推断 control/treatment 映射，**不需要逐个调 inspect_uploaded_file 试探边界**。
-仅在以下情况调 inspect_uploaded_file：per_file_grouping 为空（EV19 头无分组字段）或不足以推断分组时（如 Group 字段值为 "aa"/"bb" 等非直观标签），才 fallback 到 inspect_uploaded_file 看数据预览行，或 identify_ev19_template 返回的 evidence 信息不足以构造反问。
+**分组判定必须基于全部上传文件的 per_file_grouping：**
+identify_ev19_template 一次返回所有文件的 per_file_grouping（每个文件名 → 分组字段 dict，如 ``{{"Raw data-...-Trial 1.xlsx": {{"Group": "XX"}}}}, ...``）。
+构造 control/treatment 映射时，读完整 per_file_grouping、对全部文件下分组结论——分组判定覆盖全部文件，每个文件都依据它自己的 per_file_grouping 条目归组。
+单个或少数文件的 inspect_uploaded_file 结果只反映那几个文件，不能外推为全部文件的分组结论（看一个文件就断言「Group 均为 XX」属于以偏概全）。
+
+仅在 per_file_grouping 为空（EV19 头无分组字段）或值不直观（如 Group 字段值为 "aa"/"bb" 等非直观标签）时，才 fallback 到 inspect_uploaded_file 看数据预览行——且此时也要看够能覆盖全部分组的文件，逐组确认后再下结论，看一个就定全局仍属以偏概全。或 identify_ev19_template 返回的 evidence 信息不足以构造反问。
 合并反问时：
 - 如果模板有歧义（identify_ev19_template 返回 candidates > 1）: 列入问题
 - 如果有未识别的自定义分析区列（inspect_uploaded_file 报告）: 预填理解列入问题
