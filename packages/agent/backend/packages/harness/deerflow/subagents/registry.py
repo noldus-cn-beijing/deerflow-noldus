@@ -150,6 +150,15 @@ def get_subagent_names(*, app_config: Any | None = None) -> list[str]:
 def get_available_subagent_names(*, app_config: Any | None = None) -> list[str]:
     """Get subagent names that should be exposed to the active runtime.
 
+    Structural invariant (guarded by tests/test_subagent_registry_self_consistency.py):
+    every name returned here MUST satisfy ``get_subagent_config(name) is not None`` —
+    i.e. the schema-validation set (baked into ``_SubagentLiteral`` at task_tool module
+    load) must stay equal to the dispatchable set. Otherwise a name could pass the
+    Pydantic enum check yet fail at runtime's ``get_subagent_config is None`` fallback,
+    reproducing the "schema-allowed-but-runtime-rejected" mismatch. Today this holds
+    because ``BUILTIN_SUBAGENTS`` has no ``bash`` entry and ``custom_agents`` is
+    controlled; the regression test will go red if a future change breaks it.
+
     Returns:
         List of subagent names visible to the current sandbox configuration.
     """
