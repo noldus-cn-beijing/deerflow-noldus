@@ -245,11 +245,20 @@ def _validate_handoff_emitted(
             # JSON 即放行。partial 不在本次放宽范围（partial=部分成功，仍要求核心字段非空）。
             if isinstance(parsed, dict) and parsed.get("status") == "failed":
                 return None
+            # status=in_progress（data-analyst 分步填模板，spec 2026-06-23-...-fill-template）
+            # = harness 预置的「未封口」态，**不是交付物**。data-analyst 终止时仍是 in_progress
+            # 说明它没走完 finalize → 判 FAILED/降级（§3.5 守卫 + §六.R1 崩溃诚实不 auto-seal）。
+            # 这里 fall through 到「核心字段空」诊断（in_progress 模板 key_findings 恒空）→
+            # 走 seal-resume 催 finalize → 仍 in_progress → FAILED。诊断措辞见下方。
             missing = content_check(parsed) if isinstance(parsed, dict) else "handoff is not a JSON object"
             if missing is None:
                 return None  # 文件存在 + 核心字段非空 → 通过
-            # 文件存在但核心字段空 → 返回诊断（fall through to diagnostic below）
-            seal_tool = f"seal_{subagent_name.replace('-', '_')}_handoff"
+            # 文件存在但核心字段空 → 返回诊断（fall through to diagnostic below）。
+            # data-analyst 用 finalize 封口（非旧 seal），诊断里催对的工具。
+            if subagent_name == "data-analyst":
+                seal_tool = "finalize_data_analyst_handoff"
+            else:
+                seal_tool = f"seal_{subagent_name.replace('-', '_')}_handoff"
             return (
                 f"Subagent '{subagent_name}' sealed '{expected_filename}' but its "
                 f"core content is incomplete: {missing}. The handoff exists but is "
@@ -1073,6 +1082,52 @@ class SubagentExecutor:
 
         return state, final_tools, deferred_setup
 
+    def _preset_handoff_template_if_needed(self) -> None:
+        """data-analyst 派遣前纯 Python 预置 in_progress 空 handoff 模板（spec
+        2026-06-23-data-analyst-seal-stepwise-fill-template §二 结构 1）。
+
+        只对 data-analyst 生效（唯一把大段 LLM 判读当 seal args 一次性吐、撞
+        max_tokens 狭颈的 subagent；另三个 subagent 不命中）。预置走
+        ``seal_handoff_tools.preset_data_analyst_template_to_workspace`` 纯函数：
+        Pydantic 校验合法 in_progress 模板 → 原子写。无 LLM、无 max_tokens，
+        确定性 100% 成功。
+
+        - **预置失败 = 派遣失败**（grill 问题 1）：模板写失败（磁盘满/权限/
+          workspace_path 缺）→ 抛异常 → 上层 _aexecute 的 try/except 捕获 →
+          result.try_set_terminal(FAILED)。绝不放行让 subagent 自己生成——
+          后续 fill 会找不到模板。
+        - **幂等覆盖**：每次派遣无条件覆盖（无论 workspace 已有上次的
+          in_progress FAILED 残留，还是终态模板）。
+        - 把「模板已就绪」写进初始上下文：在已 build 的 state messages 里
+          追加一条 HumanMessage 提示 data-analyst 逐字段 fill（省 agent 第一轮
+          探查）。本方法只对 data-analyst 调，故无条件追加。
+
+        无 workspace_path（旧 thread / dev 路径）→ 静默跳过（fail-open，与
+        _validate_handoff_emitted 的 workspace 缺失策略一致，不阻断非 ethoinsight
+        部署）。
+        """
+        if self.config.name != "data-analyst":
+            return
+        if not isinstance(self.thread_data, dict):
+            return
+        workspace_path = self.thread_data.get("workspace_path")
+        if not workspace_path:
+            logger.warning(
+                "[trace=%s] data-analyst preset skipped: no workspace_path",
+                self.trace_id,
+            )
+            return
+        # 惰性 import（守 import 环铁律：executor 顶层 import seal_handoff_tools
+        # 会闭成导入环，CLAUDE.md harness 闭环教训）。
+        from deerflow.tools.builtins.seal_handoff_tools import preset_data_analyst_template_to_workspace
+
+        written = preset_data_analyst_template_to_workspace(Path(workspace_path))
+        logger.info(
+            "[trace=%s] data-analyst: preset in_progress handoff template at %s",
+            self.trace_id,
+            written,
+        )
+
     async def _attempt_seal_resume(
         self,
         agent,
@@ -1090,7 +1145,14 @@ class SubagentExecutor:
 
         ROBUSTNESS: 绝不抛异常。补轮失败 → 返回 None → 外层走 5.7 FAILED 兜底。
         """
-        seal_tool = f"seal_{self.config.name.replace('-', '_')}_handoff"
+        # data-analyst 的唯一封口入口是 finalize_data_analyst_handoff（spec
+        # 2026-06-23-data-analyst-seal-stepwise-fill-template §三 #9 R2 隐藏耦合点）。
+        # 旧 seal_data_analyst_handoff 已从 data-analyst 工具集移除，补轮催它会永远
+        # 失败——必须催 finalize。其余 subagent 仍催 seal_<name>_handoff。
+        if self.config.name == "data-analyst":
+            seal_tool = "finalize_data_analyst_handoff"
+        else:
+            seal_tool = f"seal_{self.config.name.replace('-', '_')}_handoff"
         # 补轮 prompt 措辞（grill 2026-05-29 锁定）：用 HumanMessage 追加（不是第二个
         # SystemMessage——dashscope/create_agent 不接受中途插第二条 SystemMessage，见
         # executor.py:567 已踩坑规避）。措辞保持下方现状即可：它已是"指令 + 终结步骤"
@@ -1197,6 +1259,14 @@ class SubagentExecutor:
             state, final_tools, deferred_setup = self._build_initial_state(task)
             agent = self._create_agent(final_tools, deferred_setup=deferred_setup)
             middlewares = getattr(self, "_last_middlewares", None)
+
+            # data-analyst 分步填模板（spec 2026-06-23-data-analyst-seal-stepwise-
+            # fill-template §二 结构 1）：派遣前纯 Python 预置合法 in_progress 空
+            # handoff 模板。这样判读不再一次塞进 seal args（与 reasoning_tokens 共享
+            # max_tokens 撞腰斩），改为 fill_* 逐字段填 → finalize 封口。预置是纯代码、
+            # 无 max_tokens、确定性 100% 成功；预置失败 = 派遣失败（响亮报错、终止，
+            # 绝不进入「subagent 起了但没模板」的半残态）。幂等覆盖（每次派遣无条件覆盖）。
+            self._preset_handoff_template_if_needed()
 
             # Token collector for subagent LLM calls — records flow into
             # SubagentResult.token_usage_records and are reported to the

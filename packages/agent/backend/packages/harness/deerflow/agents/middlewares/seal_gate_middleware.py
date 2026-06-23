@@ -108,6 +108,32 @@ def _seal_in_history(messages: list, seal_tool: str) -> bool:
     return False
 
 
+def _da_handoff_is_terminal(state: Any) -> bool:
+    """data-analyst handoff 是否已封口成终态（spec §二 结构 4）。
+
+    读 workspace/handoff_data_analyst.json 的 status：completed/partial/failed =
+    已封口（finalize 已落盘）；in_progress 或读不到 = 未 seal。任何异常 → False
+    （fail-open，让 L1 reminder 继续催，绝不误判已 seal）。
+    """
+    try:
+        from deerflow.agents.middlewares.experiment_context import resolve_workspace_from_state
+
+        workspace = resolve_workspace_from_state(state if isinstance(state, dict) else {})
+        if not workspace:
+            return False
+        import json
+        from pathlib import Path
+
+        path = Path(workspace) / "handoff_data_analyst.json"
+        if not path.exists():
+            return False
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return isinstance(data, dict) and data.get("status") in {"completed", "partial", "failed"}
+    except Exception:
+        logger.debug("SealGateMiddleware: _da_handoff_is_terminal read failed, fail-open", exc_info=True)
+        return False
+
+
 class SealGateMiddleware(AgentMiddleware):
     """after_model gate that forces ``seal_<name>_handoff`` before the subagent can exit.
 
@@ -121,7 +147,15 @@ class SealGateMiddleware(AgentMiddleware):
     def __init__(self, subagent_name: str) -> None:
         super().__init__()
         self._subagent_name = subagent_name
-        self._seal_tool = _seal_tool_name(subagent_name)
+        # data-analyst 的唯一封口入口是 finalize_data_analyst_handoff（spec
+        # 2026-06-23-data-analyst-seal-stepwise-fill-template §二 结构 4）。它不再
+        # 一次性吐 seal args（撞 max_tokens 狭颈），改为 fill_* 逐字段填 → finalize
+        # 封口。SealGate 对 data-analyst 认 finalize/终态而非旧 seal。其余 subagent
+        # 仍认 seal_<name>_handoff。
+        if subagent_name == "data-analyst":
+            self._seal_tool = "finalize_data_analyst_handoff"
+        else:
+            self._seal_tool = _seal_tool_name(subagent_name)
         # Per-instance counter. SUBprocess executor builds a FRESH middleware
         # instance for every subagent run (executor.py:_build_middlewares is
         # called per run — see the "fresh instance each call" precedent for
@@ -263,6 +297,13 @@ class SealGateMiddleware(AgentMiddleware):
 
         # 2/3. seal already being called or already called in history → allow
         if _seal_in_history(messages, self._seal_tool):
+            return None
+
+        # 2b. data-analyst 额外认 workspace 文件终态为已 seal（spec §二 结构 4）。
+        # finalize 把 status 从 in_progress 改成 completed/partial/failed 并落盘；
+        # 若 ToolMessage 因任何边缘情况没在 history 里（如被截断），workspace 文件
+        # 的终态仍是「已封口」的权威证据。in_progress → 未 seal，继续催回（催 finalize）。
+        if self._subagent_name == "data-analyst" and _da_handoff_is_terminal(state):
             return None
 
         # 5. Reminder cap reached → allow; existing seal-resume + 5.7 FAILED catch it

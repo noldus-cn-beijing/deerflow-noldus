@@ -163,6 +163,12 @@ def _load_quality_warnings(state: AgentState) -> list[dict] | None:
     if not isinstance(data, dict):
         return None
 
+    # status=in_progress = harness 预置的「未封口」data-analyst 模板（spec
+    # 2026-06-23-data-analyst-seal-stepwise-fill-template §3.5），**不是交付物**——
+    # 不得消费它的字段（quality_warnings 恒空）。返回 None = 当「未交付/未读到」处理。
+    if data.get("status") == "in_progress":
+        return None
+
     warnings = data.get("quality_warnings")
     if not isinstance(warnings, list):
         return None

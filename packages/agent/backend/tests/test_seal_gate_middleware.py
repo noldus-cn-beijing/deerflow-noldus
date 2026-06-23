@@ -63,25 +63,28 @@ class TestSealGateMiddleware:
         assert len(result.get("messages", [])) == 1
         msg = result["messages"][0]
         assert isinstance(msg, HumanMessage)
-        assert "seal_data_analyst_handoff" in msg.content
+        # data-analyst 的封口入口是 finalize（spec 2026-06-23-data-analyst-seal-stepwise-fill-template）
+        assert "finalize_data_analyst_handoff" in msg.content
         assert msg.additional_kwargs.get("hide_from_ui") is True
 
     def test_allow_last_ai_has_seal_tool_call(self) -> None:
+        # data-analyst 封口入口 = finalize（spec 2026-06-23-...-fill-template）
         mw = SealGateMiddleware("data-analyst")
         ai = AIMessage(
             content="",
-            tool_calls=[{"name": "seal_data_analyst_handoff", "args": {}, "id": "tc1"}],
+            tool_calls=[{"name": "finalize_data_analyst_handoff", "args": {}, "id": "tc1"}],
         )
         state = _make_state(messages=[ai])
         assert mw.after_model(state, _make_runtime()) is None
 
     def test_allow_history_has_seal_tool_message(self) -> None:
+        # data-analyst 封口入口 = finalize（spec 2026-06-23-...-fill-template）
         mw = SealGateMiddleware("data-analyst")
         ai = AIMessage(
             content="",
-            tool_calls=[{"name": "seal_data_analyst_handoff", "args": {}, "id": "tc1"}],
+            tool_calls=[{"name": "finalize_data_analyst_handoff", "args": {}, "id": "tc1"}],
         )
-        tm = ToolMessage(content="ok", tool_call_id="tc1", name="seal_data_analyst_handoff")
+        tm = ToolMessage(content="ok", tool_call_id="tc1", name="finalize_data_analyst_handoff")
         # Last AIMessage is pure text (wants to end), but seal already happened.
         state = _make_state(messages=[ai, tm, AIMessage(content="done")])
         assert mw.after_model(state, _make_runtime()) is None

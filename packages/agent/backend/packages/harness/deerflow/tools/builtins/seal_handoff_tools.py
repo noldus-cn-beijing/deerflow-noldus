@@ -20,7 +20,7 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from langchain.tools import tool
 from pydantic import ValidationError
@@ -706,6 +706,325 @@ def seal_data_analyst_handoff(
         "parameter_audit_findings": parameter_audit_findings or [],
     }
     return _seal_handoff(DataAnalystHandoff, "handoff_data_analyst.json", payload, runtime)
+
+
+# ============================================================================
+# data-analyst 分步填模板（产物 + 封口）—— spec
+# 2026-06-23-data-analyst-seal-stepwise-fill-template
+#
+# 根因：data-analyst 的判读是唯一「LLM 当场生成、直接当 seal tool_call args 一次性
+# 吐出」的内容；它与 reasoning_tokens 共享单次响应 max_tokens，flash 默认产
+# 3300-4096 reasoning → args 被挤穿腰斩成未终止 JSON → invalid_tool_calls →
+# handoff 永不落盘 → FAILED → lead 降级跳过专业判读。
+#
+# 根治（与其他三个 subagent 的「先变落盘产物、seal 只封口记元数据」心智模型对齐）：
+#   harness 预置合法 in_progress 空模板（_preset_data_analyst_template，纯 Python、
+#       无 LLM、无 max_tokens，确定性 100% 成功）
+#   → data-analyst 用 fill_* 工具逐字段填（每次 args 天然小，绕过狭颈）
+#   → finalize 确定性 gate 判核心字段填足才改 status=completed/partial/failed。
+#
+# 全程工具签名粒度 + 确定性 gate，零新 prompt 规则（守 HarnessX Telecom 禁令）。
+# ============================================================================
+
+_DATA_ANALYST_HANDOFF_FILENAME = "handoff_data_analyst.json"
+
+# DataAnalystHandoff 的 list[str] 字段（工具 A）。
+_DATA_ANALYST_TEXT_LIST_FIELDS = (
+    "key_findings",
+    "excluded_metrics",
+    "method_warnings",
+    "recommendations",
+    "errors",
+)
+
+# DataAnalystHandoff 的 list[dict] 字段（工具 B）。每条 dict 工具内按 field 选
+# OutlierFinding / DataQualityWarning 子模型校验。
+_DATA_ANALYST_RECORD_LIST_FIELDS = ("outlier_findings", "quality_warnings")
+
+
+def _data_analyst_record_model(field: str) -> type:
+    """Return the Pydantic sub-model for a record-list field (lazy, no top-level cycle)."""
+    from deerflow.subagents.handoff_schemas import DataQualityWarning, OutlierFinding
+
+    if field == "outlier_findings":
+        return OutlierFinding
+    if field == "quality_warnings":
+        return DataQualityWarning
+    raise ValueError(f"unknown data-analyst record-list field: {field}")
+
+
+def preset_data_analyst_template_to_workspace(workspace: Path, *, config_id: str | None = None) -> str:
+    """预置合法 in_progress 空 handoff 模板到 workspace（纯 Python、无 LLM）。
+
+    spec §二 结构 1：executor 派遣 data-analyst 前（agent 跑之前）用本函数生成
+    ``handoff_data_analyst.json``：``status="in_progress"`` + 所有字段空默认 +
+    运行时填 ``analysis_config_id``（从 experiment-context.json 读，缺则 "PENDING"）。
+
+    - **幂等覆盖**（grill 问题 1）：每次派遣无条件覆盖——无论 workspace 已有上次的
+      in_progress（FAILED 残留，覆盖防污染）还是终态模板（新分析，覆盖重置），原子写
+      保证不留半新半旧。
+    - Pydantic 先校验模板合法（status Literal 已含 in_progress）→ 原子写（tmp+rename）。
+    - 不放静态文件：analysis_config_id + 路径都是 per-thread 运行时值。
+
+    Args:
+        workspace: host-side workspace 目录。
+        config_id: 可选 analysis_config_id；None 时从 experiment-context.json 读。
+
+    Returns:
+        写盘路径的字符串。
+
+    Raises:
+        ValueError: Pydantic 校验失败（不应发生——in_progress + 空默认合法）。
+        OSError: 磁盘满/权限/workspace 不可写（响亮报错，让 executor 终止派遣）。
+    """
+    resolved_config_id = config_id if config_id is not None else _read_analysis_config_id(workspace)
+    payload: dict[str, Any] = {
+        "status": "in_progress",
+        "key_findings": [],
+        "outlier_findings": [],
+        "excluded_metrics": [],
+        "method_warnings": [],
+        "recommendations": [],
+        "errors": [],
+        "gate_signals": None,
+        "analysis_config_id": resolved_config_id,
+        "quality_warnings": [],
+        "parameter_audit_findings": [],
+        "sealed_by": "preset",
+    }
+    # Pydantic 校验模板合法（防 schema 漂移写坏 in_progress 模板）。
+    handoff = DataAnalystHandoff(**payload)
+    final_path = workspace / _DATA_ANALYST_HANDOFF_FILENAME
+    tmp_path = workspace / f"{_DATA_ANALYST_HANDOFF_FILENAME}.tmp"
+    json_bytes = handoff.model_dump_json(indent=2, exclude_none=False).encode("utf-8")
+    tmp_path.write_bytes(json_bytes)
+    os.rename(tmp_path, final_path)  # POSIX atomic
+    os.chmod(final_path, 0o644)
+    return str(final_path)
+
+
+def _load_da_payload(workspace: Path) -> dict[str, Any]:
+    """读 handoff_data_analyst.json。不存在/不可解析 → 抛 ValueError（让 fill 失败回响亮）。"""
+    path = workspace / _DATA_ANALYST_HANDOFF_FILENAME
+    if not path.exists():
+        raise ValueError(
+            "data-analyst template not found in workspace. The harness should have "
+            "pre-populated an in_progress template before dispatching the subagent. "
+            "This indicates a dispatch-path bug — the preset step failed silently or "
+            "did not run."
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"handoff_data_analyst.json is unreadable/invalid JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError("handoff_data_analyst.json is not a JSON object")
+    return data
+
+
+def _write_da_payload(workspace: Path, payload: dict[str, Any]) -> None:
+    """整体 DataAnalystHandoff 重校验 → 原子重写。校验失败抛 ValueError（回响亮给 LLM）。"""
+    try:
+        handoff = DataAnalystHandoff(**payload)
+    except ValidationError as e:
+        raise ValueError(
+            f"data-analyst handoff validation failed after fill: {e}. "
+            f"Check field names/types against DataAnalystHandoff schema."
+        ) from e
+    final_path = workspace / _DATA_ANALYST_HANDOFF_FILENAME
+    tmp_path = workspace / f"{_DATA_ANALYST_HANDOFF_FILENAME}.tmp"
+    json_bytes = handoff.model_dump_json(indent=2, exclude_none=False).encode("utf-8")
+    tmp_path.write_bytes(json_bytes)
+    os.rename(tmp_path, final_path)
+    os.chmod(final_path, 0o644)
+
+
+def _da_progress(workspace: Path) -> str:
+    """读回刚写的 payload，返回极简 JSON 进度（字段填充计数）。"""
+    try:
+        data = _load_da_payload(workspace)
+    except Exception:  # noqa: BLE001 — 进度是 best-effort，绝不让它盖过 fill 主结果
+        return '{"status":"in_progress","progress":"unreadable"}'
+    counts = {
+        f: len(data.get(f) or []) for f in _DATA_ANALYST_TEXT_LIST_FIELDS + _DATA_ANALYST_RECORD_LIST_FIELDS
+    }
+    gs = data.get("gate_signals")
+    return json.dumps(
+        {
+            "status": data.get("status"),
+            "sealed_by": data.get("sealed_by"),
+            "key_findings": counts["key_findings"],
+            "outlier_findings": counts["outlier_findings"],
+            "method_warnings": counts["method_warnings"],
+            "recommendations": counts["recommendations"],
+            "quality_warnings": counts["quality_warnings"],
+            "gate_signals_set": bool(gs),
+        },
+        ensure_ascii=False,
+    )
+
+
+@tool("fill_data_analyst_text_list", parse_docstring=True)
+def fill_data_analyst_text_list(
+    field: Literal[
+        "key_findings",
+        "excluded_metrics",
+        "method_warnings",
+        "recommendations",
+        "errors",
+    ],
+    mode: Literal["set", "append"],
+    value: list[str],
+    runtime: Runtime = None,
+) -> str:
+    """逐字段填 data-analyst handoff 的 list[str] 字段（每次 args 天然小，绕过 max_tokens 狭颈）。
+
+    harness 已在 workspace 预置合法 in_progress 空模板（status="in_progress"）。
+    本工具读模板 → 填/追加该字段 → 整体 DataAnalystHandoff 重校验（保持 in_progress 合法）
+    → 原子重写 → 返回极简 JSON 进度。
+
+    Args:
+        field: 要填的字段名。key_findings=1-5 条核心发现；excluded_metrics=被排除指标；
+            method_warnings=方法学警告；recommendations=给研究者的建议；errors=非致命错误。
+        mode: "set"=用 value 整体覆盖该字段（一次填一个字段完整内容）；"append"=把 value
+            追加到该字段末尾（兜底超长字段，分多次 append）。
+        value: 字符串列表。
+    """
+    workspace = _resolve_workspace(runtime)
+    payload = _load_da_payload(workspace)
+    current = payload.get(field) or []
+    if not isinstance(current, list):
+        current = []
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ValueError(f"fill_data_analyst_text_list: value must be list[str], got {type(value).__name__}")
+    if mode == "set":
+        payload[field] = list(value)
+    elif mode == "append":
+        payload[field] = [*current, *value]
+    else:  # 被 Literal 拦住，防御性
+        raise ValueError(f"fill_data_analyst_text_list: unknown mode {mode!r}")
+    _write_da_payload(workspace, payload)
+    return f"OK: filled {field} ({mode}, {len(payload[field])} items). progress={_da_progress(workspace)}"
+
+
+@tool("fill_data_analyst_record_list", parse_docstring=True)
+def fill_data_analyst_record_list(
+    field: Literal["outlier_findings", "quality_warnings"],
+    mode: Literal["set", "append"],
+    value: list[dict],
+    runtime: Runtime = None,
+) -> str:
+    """逐字段填 data-analyst handoff 的 list[dict] 字段（outlier_findings / quality_warnings）。
+
+    工具内按 field 选 OutlierFinding / DataQualityWarning 子模型校验每条 dict，再整体
+    DataAnalystHandoff 重校验 → 原子重写 → 返回极简 JSON 进度。
+
+    Args:
+        field: "outlier_findings"=按受试者的离群诊断（每条含 subject/metric/value/deviation/
+            counterfactual）；"quality_warnings"=从 handoff_code_executor.json 透传的
+            data_quality_warnings（每条含 severity/code/message/evidence/blocks_downstream 等）。
+        mode: "set"=整体覆盖；"append"=追加（兜底超长字段）。
+        value: dict 列表，每条 dict 的字段须匹配对应子模型（OutlierFinding / DataQualityWarning）。
+    """
+    workspace = _resolve_workspace(runtime)
+    payload = _load_da_payload(workspace)
+    sub_model = _data_analyst_record_model(field)
+    # 逐条用子模型校验 → 规整成 dict（拿子模型的默认/校验）。校验失败抛 ValueError 回响亮。
+    validated: list[dict[str, Any]] = []
+    if not isinstance(value, list):
+        raise ValueError(f"fill_data_analyst_record_list: value must be list[dict], got {type(value).__name__}")
+    for i, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"fill_data_analyst_record_list: value[{i}] must be a dict for {field} ({sub_model.__name__}), "
+                f"got {type(item).__name__}"
+            )
+        try:
+            validated.append(sub_model(**item).model_dump())
+        except ValidationError as e:
+            raise ValueError(
+                f"fill_data_analyst_record_list: value[{i}] failed {sub_model.__name__} validation: {e}"
+            ) from e
+    current = payload.get(field) or []
+    if not isinstance(current, list):
+        current = []
+    if mode == "set":
+        payload[field] = validated
+    elif mode == "append":
+        payload[field] = [*current, *validated]
+    else:  # 防御性
+        raise ValueError(f"fill_data_analyst_record_list: unknown mode {mode!r}")
+    _write_da_payload(workspace, payload)
+    return f"OK: filled {field} ({mode}, {len(payload[field])} items). progress={_da_progress(workspace)}"
+
+
+@tool("fill_data_analyst_gate_signals", parse_docstring=True)
+def fill_data_analyst_gate_signals(value: dict, runtime: Runtime = None) -> str:
+    """一次整体填 data-analyst handoff 的 gate_signals（GateSignals 单 dict，无 append 语义）。
+
+    字段不多、一次装得下；不分次补子键留口（否则每次重传整 dict、args 可能变大）。
+    工具内用 GateSignals 子模型校验 → 整体 DataAnalystHandoff 重校验 → 原子重写。
+
+    Args:
+        value: GateSignals dict，字段如 statistical_validity / data_quality /
+            quality_warnings_critical_count / statistics_status 等（详见 GateSignals schema）。
+    """
+    workspace = _resolve_workspace(runtime)
+    payload = _load_da_payload(workspace)
+    from deerflow.subagents.handoff_schemas import GateSignals
+
+    if not isinstance(value, dict):
+        raise ValueError(f"fill_data_analyst_gate_signals: value must be a dict, got {type(value).__name__}")
+    try:
+        payload["gate_signals"] = GateSignals(**value).model_dump()
+    except ValidationError as e:
+        raise ValueError(f"fill_data_analyst_gate_signals: GateSignals validation failed: {e}") from e
+    _write_da_payload(workspace, payload)
+    return f"OK: filled gate_signals. progress={_da_progress(workspace)}"
+
+
+@tool("finalize_data_analyst_handoff", parse_docstring=True)
+def finalize_data_analyst_handoff(
+    final_status: Literal["completed", "partial", "failed"],
+    runtime: Runtime = None,
+) -> str:
+    """唯一能把 data-analyst handoff 的 status 从 in_progress 改成终态的封口入口（确定性 gate）。
+
+    读模板 → 改 status=final_status + sealed_by="finalize" → 整体 DataAnalystHandoff
+    重校验（**让 _completed_requires_core_output validator 自然触发**，绝不自己写
+    key_findings 判空——守 SSOT，memory feedback_single_source_of_truth）→ 写
+    manifest(sealed_by="finalize") → 返回 OK。gate 拒绝时抛 ValueError（LangChain 转
+    error ToolMessage 引导补 fill）。
+
+    final_status=completed → 必须 key_findings 非空（既有 validator 触发）；
+    partial/failed 不要求 key_findings 非空（fast-fail 路径合法）。
+
+    Args:
+        final_status: 终态。completed=判读完成且 key_findings 已填；partial=fast-fail/
+            描述性路径（如 n<3、statistics 空）；failed=无法判读（handoff 读取失败等）。
+    """
+    workspace = _resolve_workspace(runtime)
+    payload = _load_da_payload(workspace)
+    payload["status"] = final_status
+    payload["sealed_by"] = "finalize"
+    # 整体重校验让 _completed_requires_core_output validator 自然触发（守 SSOT）。
+    # 校验失败（如 completed 但 key_findings 空）→ ValueError → error ToolMessage 引导补 fill。
+    _write_da_payload(workspace, payload)
+    # 写 manifest，sealed_by="finalize" 可观测（spec §七）。
+    sha256 = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    _update_manifest(
+        workspace,
+        _DATA_ANALYST_HANDOFF_FILENAME,
+        sha256,
+        payload.get("analysis_config_id", _read_analysis_config_id(workspace)),
+    )
+    return (
+        f"OK: finalized handoff_data_analyst.json "
+        f"(status={final_status}, sealed_by=finalize, sha256={sha256[:12]}...). "
+        f"progress={_da_progress(workspace)}"
+    )
 
 
 @tool("seal_chart_maker_handoff", parse_docstring=True)

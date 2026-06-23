@@ -7,6 +7,10 @@ from .present_assumptions import present_assumptions_tool
 from .present_file_tool import present_file_tool
 from .run_metric_plan_tool import run_metric_plan_tool
 from .seal_handoff_tools import (
+    fill_data_analyst_gate_signals,
+    fill_data_analyst_record_list,
+    fill_data_analyst_text_list,
+    finalize_data_analyst_handoff,
     seal_chart_maker_handoff,
     seal_code_executor_handoff,
     seal_data_analyst_handoff,
@@ -34,4 +38,8 @@ __all__ = [
     "seal_data_analyst_handoff",
     "seal_chart_maker_handoff",
     "seal_report_writer_handoff",
+    "fill_data_analyst_text_list",
+    "fill_data_analyst_record_list",
+    "fill_data_analyst_gate_signals",
+    "finalize_data_analyst_handoff",
 ]

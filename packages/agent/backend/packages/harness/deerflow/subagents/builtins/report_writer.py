@@ -224,6 +224,10 @@ report.md（markdown 报告）本身不是 JSON，那里用什么引号都 OK。
 2. **读输入文件（逐个 read_file）**: 主 handoff 已瘦身，单次 read_file 即可读全：
    read_file /mnt/user-data/workspace/handoff_code_executor.json
    read_file /mnt/user-data/workspace/handoff_data_analyst.json
+   （若 handoff_data_analyst.json 的 status="in_progress" = data-analyst 未走完封口、
+   **不是交付物**——当它不存在处理，key_findings/quality_warnings 等字段一律不消费，
+   报告里只基于 handoff_code_executor.json 的数值。spec 2026-06-23-data-analyst-seal-
+   stepwise-fill-template §3.5。）
    read_file /mnt/user-data/workspace/_metric_metadata.json
    （逐个 read_file；本 subagent 无 bash 工具，不要尝试 cat 拼 bundle——拼出的 bundle
    只会更大、更易越 50K 截断线。handoff_planning.json 如存在可再 read_file 一次。

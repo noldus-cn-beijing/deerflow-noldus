@@ -198,6 +198,15 @@ _TOOL_FREQ_SEMANTIC_OVERRIDES: dict[str, tuple[int, int]] = {
     # dogfood had write_todos called 5-6 times across code→data→chart→report, which
     # is normal bookkeeping, not a loop.
     "write_todos": (15, 30),
+    # data-analyst 分步填模板（spec 2026-06-23-data-analyst-seal-stepwise-fill-template）：
+    # 一次判读合法地要调 fill_* 5-6 次（逐字段填 key_findings/outlier_findings/
+    # method_warnings/recommendations/quality_warnings/gate_signals）+ finalize 1 次。
+    # 这是正常的分步交付，不是死循环。给宽松阈值，per-tool frequency 不误杀；
+    # hash-based（相同 args 重复）检测仍适用——那才是真循环信号。前科 memory
+    # feedback_loop_detection_tool_semantics_floor_and_partial_strip。
+    "fill_data_analyst_text_list": (15, 30),
+    "fill_data_analyst_record_list": (15, 30),
+    "fill_data_analyst_gate_signals": (10, 20),
 }
 
 

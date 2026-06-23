@@ -83,8 +83,8 @@ or status="partial" — do NOT produce a full analysis.
 1a. **statistics 为空时**：若 handoff_code_executor.json 的 statistics 字段为空 {}
    （本次无推断统计结果，如单组分析、统计脚本被 plan skip 或运行失败），
    走**描述性**判读路径：给出各组均值/中位数/SD/离群观察（仅描述，不做组间检验），
-   在 key_findings 标注"仅描述性分析、未做推断检验"，emit handoff status="partial"，
-   **立即调用 seal_data_analyst_handoff 落库**（把描述性判读直接作为 seal 参数发出）。给出描述性判读后用描述结果填 seal 参数即可，
+   在 key_findings 标注"仅描述性分析、未做推断检验"，
+   **走填模板流程交付（见 step 3）：fill key_findings 后调 finalize(final_status="partial")**。
    统计字段（如 test_used/p_value/效应量）留空或标注"无推断统计"。组间检验、
    leave-one-out、组 mean/std 一律只读 statistics.json 的现成产出——手算既不可靠
    又会耗尽推理预算，这些数值都由统计层（compare_groups）确定性产出。
@@ -138,12 +138,12 @@ or status="partial" — do NOT produce a full analysis.
    - 检查 per_subject 的 n_per_group：任一组 n < 3 → emit handoff status="partial"
    - **检查 statistics 字段是否为空 {}**：若无推断统计结果 → 走描述性 partial 路径，
      给出各组描述统计、key_findings 标注"仅描述性分析、未做推断检验"，
-     **立即调 seal_data_analyst_handoff**（见 fast_fail 规则 1a；不要手算组间检验）
+     **走填模板流程交付（step 3：fill key_findings → finalize final_status="partial"）**（见 fast_fail 规则 1a；不要手算组间检验）
    - 检查 data_quality_warnings 中的 METRIC_VALIDATION 条目：
      若 severity="critical" 且 code="METRIC_VALIDATION" 的条目覆盖了所有已计算指标 → status="failed"
    - 检查 gate_signals 中 quality_warnings_critical_count：若指示不可恢复的数据质量门失败 → status="failed"
-   **若任何硬失败触发**：直接调 seal_data_analyst_handoff 写入 status="partial"/"failed"，
-   在 key_findings 和 errors 中说明原因，跳过 step 2.5–2.8 的全部解释工作。
+   **若任何硬失败触发**：走填模板流程交付（step 3）：fill key_findings + errors 说明原因后
+   finalize(final_status="partial"/"failed")，跳过 step 2.5–2.8 的全部解释工作。
    **若没有硬失败**：继续 step 2.5。
 2.5 **读 quality warnings**: 遍历 handoff_code_executor.json 的 data_quality_warnings:
    - severity=critical AND blocks_downstream=true → method_warnings 前置一条:
@@ -154,7 +154,7 @@ or status="partial" — do NOT produce a full analysis.
      "[提示 {code}] {message}"
    key_findings 首条若有阻断级警告,必须明示:
      "本次分析含 {critical_count} 条阻断级质量警告,统计结论的可靠性受限"
-   最后把完整 data_quality_warnings 数组透传到 seal_data_analyst_handoff 的 quality_warnings 参数。
+   最后把完整 data_quality_warnings 数组用 fill_data_analyst_record_list(field="quality_warnings", mode="set", value=<数组>) 填入模板。
    gate_signals 里设 quality_warnings_critical_count = 阻断级警告数量。
 2.6 【必读，判读的判据来源】read_file
    /mnt/skills/custom/ethovision-paradigm-knowledge/references/by-experiment/<paradigm>.md
@@ -201,15 +201,32 @@ or status="partial" — do NOT produce a full analysis.
         写入 excluded_metrics
    d. **给研究者的行动建议**：样本量扩充、检查异常个体健康状态、方法学修正等
       → 写入 recommendations
-	3. **产出分析 = 发出 seal_data_analyst_handoff 的 tool_call（产出与交付合一）。**
-	   你的结论第一次成文，就是直接写在 seal_data_analyst_handoff 的工具参数里——没有"先在别处写一遍、
-	   再誊抄填进来"这一步。这次工具调用本身既是产出也是落库：发出它，本次分析就产出并交付了，
-	   它也是本次任务的最后一步，发出后任务即完成。把 step 2 推导出的判断直接作为参数发出即可。
-	   调 seal_data_analyst_handoff tool，传入 status/key_findings/outlier_findings/excluded_metrics/
-	   method_warnings/recommendations/errors/gate_signals/quality_warnings/parameter_audit_findings，
-	   工具会自动写入 /mnt/user-data/workspace/handoff_data_analyst.json 并落 manifest hash。
-	   **严禁直接 write_file 写 handoff_data_analyst.json，必须走本 tool。**
-	   如果没有相应发现，用空数组 `[]`，不要省略字段
+	3. **产出与交付 = 分步填模板（每次只填一个字段 → 封口）。**
+	   harness 已在 workspace 预置好合法的 in_progress 空 handoff 模板
+	   （/mnt/user-data/workspace/handoff_data_analyst.json，status="in_progress"）——
+	   你**不需要**先在别处成文再誊抄。把 step 2 推导出的判断**逐字段**填进预置模板，
+	   每次工具调用只填一个字段（args 天然小），最后用 finalize 封口。
+	   交付动作 = 以下工具序列（每个工具自动原子写回同一模板）：
+	   - `fill_data_analyst_text_list(field="key_findings", mode="set", value=[...])` ——
+	     核心发现 1-5 条。**这是判读的主产物，每次只传这个字段，args 很小，绝不腰斩。**
+	   - `fill_data_analyst_record_list(field="outlier_findings", mode="set", value=[...])` ——
+	     按受试者的离群诊断（每条引用旁路成品：subject/metric/value/deviation/counterfactual）。
+	   - `fill_data_analyst_text_list(field="excluded_metrics"/"method_warnings"/"recommendations"/"errors", mode="set", value=[...])` ——
+	     按字段逐个填。某字段内容超长（如多条 recommendations）可用 mode="append" 分多次追加。
+	   - `fill_data_analyst_record_list(field="quality_warnings", mode="set", value=[...])` ——
+	     从 handoff_code_executor.json 透传的 data_quality_warnings（见 step 2.5）。
+	   - `fill_data_analyst_gate_signals(value={...})` —— gate_signals 一次整体填
+	     （statistical_validity / quality_warnings_critical_count / statistics_status 等）。
+	   全部填完后，**最后一步**调：
+	   - `finalize_data_analyst_handoff(final_status="completed")` ——
+	     确定性封口：把 status 从 in_progress 改成终态、sealed_by="finalize"、落 manifest hash。
+	     final_status=completed 时 gate 会校验 key_findings 非空（守核心产物）；若 gate 拒绝
+	     （报 key_findings 空），先 fill key_findings 再 finalize。
+	   **没有相应发现用空数组 `[]`（默认值已是空，可不填该字段）。parameter_audit_findings
+	   恒空、无 fill 入口（不产出）。**
+	   **严禁直接 write_file 写 handoff_data_analyst.json，必须走 fill_* + finalize。**
+	   **fast-fail 路径**（n<3 / statistics 空 / 全 critical）可只 fill(key_findings, set) +
+	   finalize(final_status="partial"/"failed") 两步即交付（不强制填满所有字段）。
 4. 最终 AIMessage：用自然语言写 2-3 段关键发现摘要给 lead agent，重点是 key_findings
    和最重要的 outlier_findings；不要复述 handoff JSON 的全部字段
 </workflow>
@@ -307,7 +324,11 @@ audit count 恒为 0。
     tools=None,  # 继承所有工具（包括 noldus-kb MCP），通过 disallowed_tools 过滤
     disallowed_tools=["task", "ask_clarification", "present_files",
                        "bash", "str_replace",
-                       "web_search", "web_fetch", "image_search"],
+                       "web_search", "web_fetch", "image_search",
+                       # 旧的一次性 seal 已移除（spec 2026-06-23-data-analyst-seal-stepwise-
+                       # fill-template）：它把大段判读塞进 args 撞 max_tokens 狭颈腰斩。
+                       # 改走 fill_* 逐字段填 + finalize 封口（已在工具集，不在 denylist）。
+                       "seal_data_analyst_handoff"],
     # v4-flash（无 thinking），与 code-executor / chart-maker / report-writer 一致。
     # 根因（2026-06-18 第四轮 EPM dogfood 实证）：原 model="inherit"（v4-pro）+
     # thinking_enabled=True 下，data-analyst 每个 model turn 在 thinking 里把整套判读
@@ -321,7 +342,12 @@ audit count 恒为 0。
     # thinking 在此纯属重演浪费。换 flash 后 4096 预算全留给 arguments，第一轮即可发出
     # 完整 seal，空转归零。
     model="deepseek-v4-pro-summary",
-    max_turns=12,
+    # 分步填模板流程 turn 数估算（spec 2026-06-23 §三 #7）：read 上下文 ~2 +
+    # fill ×5-6（key_findings/outlier_findings/method_warnings/recommendations/
+    # quality_warnings/gate_signals）+ finalize 1 ≈ 8-10，纯 append 分次会超。
+    # 用 18 作临时上限（repro 改造成走 fill/finalize 路径后实测真实 turn 数 ×1.5
+    # 余量再回填，spec 不拍死数字）。比旧 12（一次性 seal 路径）高，因多步 fill。
+    max_turns=18,
     timeout_seconds=600,
     when_to_use=(
         "适合:\n"

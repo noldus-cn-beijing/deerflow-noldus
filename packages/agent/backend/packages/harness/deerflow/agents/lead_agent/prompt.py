@@ -388,6 +388,8 @@ ask_clarification(
 
 收到 handoff_data_analyst.json 后可**搬运**判读语句,但不叠加自己的判读。
 
+> 若 `handoff_data_analyst.json` 的 `status="in_progress"` = data-analyst 未走完封口、**不是交付物**(spec 2026-06-23-data-analyst-seal-stepwise-fill-template §3.5)——当它不存在处理,不搬运其 key_findings/quality_warnings 等字段,改判 data-analyst 未交付(可重派或走降级)。
+
 ### 过程透明 + 违规扫描 + 不做的事
 
 - 每次 task / bash / ask_clarification / present_files 前,先用 1 条简短中文播报状态

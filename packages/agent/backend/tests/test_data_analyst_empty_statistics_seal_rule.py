@@ -61,12 +61,17 @@ def test_prompt_has_empty_statistics_rule() -> None:
     )
 
 
-def test_prompt_directs_immediate_seal() -> None:
-    """#6b：prompt 含"立即调 seal_data_analyst_handoff"（封存是终止动作）。"""
+def test_prompt_directs_immediate_finalize() -> None:
+    """#6b：statistics 空时走 fill + finalize(partial) 封存（spec 2026-06-23-...-fill-template）。
+
+    旧规则"立即调 seal_data_analyst_handoff"已移除（seal args 撞 max_tokens 狭颈），
+    改为 fill key_findings → finalize(final_status="partial")。
+    """
     text = _prompt()
-    assert "立即调用 seal_data_analyst_handoff" in text or (
-        "立即" in text and "seal_data_analyst_handoff" in text
-    ), "#6b 规则缺失：应指示 statistics 空时立即调 seal"
+    assert "finalize" in text and "partial" in text, (
+        "#6b 规则缺失：应指示 statistics 空时 fill key_findings 后 finalize(partial)"
+    )
+    assert "seal_data_analyst_handoff" not in text, "旧一次性 seal 引用应已移除"
 
 
 def test_prompt_forbids_manual_recomputation() -> None:

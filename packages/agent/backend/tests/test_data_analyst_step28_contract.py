@@ -1,10 +1,9 @@
-"""data-analyst step 3 positive seal framing 契约测试。
+"""data-analyst step 3 分步填模板（产物 + 封口）契约测试。
 
-2026-06-18（spec data-analyst-thinking-overload）：step 2.8 参数适配性审计整段已从
-data-analyst prompt 删除（判据行为学上造不出来，是 thinking 超时根因之一）。原锁定
-step 2.8 措辞的 7 个测试随之移除——step 2.8 已不存在的反向契约见
-``test_data_analyst_thinking_diet.py``。本文件只保留 **step 3 产出/交付合一** 的正面
-framing 契约（与参数审计无关、step 3 在删 2.8 后仍成立）。
+2026-06-23（spec data-analyst-seal-stepwise-fill-template）：step 3 从旧的「产出与交付
+合一 = 一次性发出 seal_data_analyst_handoff tool_call」反转为「分步填模板」——判读不再
+塞进 seal args（与 reasoning_tokens 共享 max_tokens 撞腰斩），改为 fill_* 逐字段填 +
+finalize 封口。本文件锁定新 step 3 的正面 framing 契约。
 """
 
 from __future__ import annotations
@@ -48,60 +47,54 @@ def _prompt() -> str:
 # step 3 positive framing — completion = issuing the seal tool_call (产出=交付合一)
 # ---------------------------------------------------------------------------
 
-def test_step3_has_positive_tool_call_is_seal_framing():
-    """Step 3 must frame completion as 'issuing the seal tool_call' (产出=交付合一).
+def test_step3_uses_stepwise_fill_template_flow():
+    """Step 3 = 分步填模板（产物 + 封口），不再是旧的一次性 seal（spec 2026-06-23）。
 
-    Updated 2026-06-18: the separate '本步骤的完成标志是' / '这一次工具调用本身'
-    phrasings were consolidated into the unified '产出与交付合一' framing (seal
-    refactor — conclusion is first written directly into the seal tool args,
-    no separate write-then-copy step). Locks the consolidated intent.
+    旧「产出分析 = 发出 seal_data_analyst_handoff 的 tool_call（产出与交付合一）」已移除
+    （seal args 撞 max_tokens 狭颈腰斩）。新流程：harness 预置 in_progress 模板 → fill_*
+    逐字段填 → finalize 封口。
     """
     p = _prompt()
 
-    # Step 3 header: production == issuing the seal tool_call
-    assert "产出分析 = 发出 seal_data_analyst_handoff 的 tool_call" in p
-    # 产出/交付合一 framing
-    assert "产出与交付合一" in p
+    # 旧「产出与交付合一」措辞必须消失
+    assert "产出与交付合一" not in p
+    assert "发出 seal_data_analyst_handoff 的 tool_call" not in p
 
-    # The "first written directly into tool args" positive framing
-    assert "你的结论第一次成文" in p
-    # This very tool call is both production and persistence
-    assert "这次工具调用本身既是产出也是落库" in p
-    # Hard rule: must go through the seal tool, never write_file
+    # 新流程核心：分步填模板 + finalize 封口
+    assert "分步填模板" in p
+    assert "fill_data_analyst_text_list" in p
+    assert "finalize_data_analyst_handoff" in p
+    # 模板已预置（省 agent 第一轮探查）
+    assert "in_progress" in p
+    # Hard rule: must go through fill_* + finalize, never write_file
     assert "严禁直接 write_file 写 handoff_data_analyst.json" in p
 
 
-def test_no_negative_reverse_activation_phrases_remain():
-    """The old negative phrasing '不能只在 thinking 里写封存' must be GONE from the entire prompt.
+def test_old_produce_deliver_merged_phrasing_gone():
+    """旧「产出与交付合一」「这次工具调用本身既是产出也是落库」措辞必须消失（spec 2026-06-23）。
 
-    Updated 2026-06-18: the old positive companion sentence
-    'step 3 会通过发出 seal 工具调用来落库本次分析' was replaced by the
-    consolidated '这次工具调用本身既是产出也是落库' framing. The negative
-    half-sentence must still be absent; the positive anchor is updated.
+    新流程的交付动作是 fill_* + finalize 序列，不再用「产出/交付合一」framing。
     """
     p = _prompt()
-
-    # B.3 cleanup: the old negative half-sentence must not exist anywhere
-    assert "不能只在 thinking 里写" not in p
-    assert "不能只在 thinking" not in p
-
-    # The current positive companion (consolidated 产出/交付合一 framing)
-    assert "这次工具调用本身既是产出也是落库" in p
+    assert "产出与交付合一" not in p
+    assert "这次工具调用本身既是产出也是落库" not in p
+    assert "你的结论第一次成文" not in p
 
 
-def test_step3_still_includes_field_checklist():
-    """Step 3 must still list all required handoff fields (field completeness guard).
+def test_step3_lists_fill_tools_and_finalize():
+    """Step 3 lists the fill_* tools + finalize as the delivery sequence (spec 2026-06-23).
 
-    Note (2026-06-18): step 2.8 removed, but step 3 still passes parameter_audit_findings
-    as an empty array (schema field retained for forward compat). The field checklist
-    therefore still names it — data-analyst must emit the field, just always [].
+    旧 step 3 的「字段清单」（status/key_findings/.../parameter_audit_findings）随一次性
+    seal 一起移除；新 step 3 列的是 fill_* 工具序列 + finalize。空数组兜底语义保留（默认值
+    已空、可不填该字段）。
     """
     p = _prompt()
-
-    # Field list preserved (parameter_audit_findings still in the list, emitted as [])
-    assert "status/key_findings/outlier_findings/excluded_metrics/" in p
-    assert "method_warnings/recommendations/errors/gate_signals/quality_warnings/parameter_audit_findings" in p
-
-    # Empty-array fallback preserved
-    assert "如果没有相应发现，用空数组" in p
-    assert "不要省略字段" in p
+    # fill 工具序列
+    assert "fill_data_analyst_text_list" in p
+    assert "fill_data_analyst_record_list" in p
+    assert "fill_data_analyst_gate_signals" in p
+    assert "finalize_data_analyst_handoff" in p
+    # 空数组兜底语义保留
+    assert "空数组" in p or "[]" in p
+    # parameter_audit_findings 无 fill 入口（恒空、不产出）——旧清单措辞已移除
+    assert "status/key_findings/outlier_findings/excluded_metrics/" not in p

@@ -666,7 +666,13 @@ class DataAnalystHandoff(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    status: Literal["completed", "partial", "failed"]
+    # in_progress = 分步填模板流程中 harness 预置的「未封口」态（spec
+    # 2026-06-23-data-analyst-seal-stepwise-fill-template）。data-analyst 的判读
+    # 不再一次塞进 seal args（与 reasoning_tokens 共享 max_tokens 撞腰斩），
+    # 改为 harness 预置 in_progress 空模板 → fill_* 逐字段填 → finalize 封口
+    # 改 completed/partial/failed。**in_progress 不是交付物**：下游读到 in_progress
+    # 必须当「未交付」，不得消费字段内容（守 §3.5）。
+    status: Literal["in_progress", "completed", "partial", "failed"]
     key_findings: list[str] = Field(
         default_factory=list,
         description="1-5 bullet findings surfaced to the user.",
@@ -710,6 +716,18 @@ class DataAnalystHandoff(BaseModel):
             "不出来，见 ParameterAuditFinding docstring），恒为空数组 []。字段保留为向前兼容 + "
             "将来以确定性代码（code-executor / 独立 validator）接入时复用。下游 present_assumptions "
             "对空数组 graceful（不渲染参数审计段）。"
+        ),
+    )
+    sealed_by: Literal["finalize", "preset"] = Field(
+        default="preset",
+        description=(
+            "Handoff 来源标记（spec 2026-06-23-data-analyst-seal-stepwise-fill-template "
+            "§七 可观测性）。preset = harness 预置的 in_progress 空模板（纯 Python，"
+            "无 LLM，dispatch 时落盘）；finalize = data-analyst 调 finalize_data_analyst_"
+            "handoff 把 status 改成终态封口（唯一能把 status 从 in_progress 改出去的入口）。"
+            "fill_* 工具改字段但**不**改 sealed_by（保持 preset，因仍可能 in_progress）。"
+            "finalize 触发率 = 分步填模板流程被正确走完的信号；in_progress 崩溃进 FAILED "
+            "= 降级，二者均可观测。"
         ),
     )
 

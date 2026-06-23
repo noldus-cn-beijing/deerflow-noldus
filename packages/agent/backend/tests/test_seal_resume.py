@@ -476,18 +476,18 @@ class TestSealResumePrompt:
         assert isinstance(last_msg, HumanMessage)
         prompt_text = last_msg.content
 
-        # Must contain seal tool name
-        assert "seal_data_analyst_handoff" in prompt_text
+        # data-analyst 补轮催 finalize（spec 2026-06-23-data-analyst-seal-stepwise-fill-template §三 #9）
+        assert "finalize_data_analyst_handoff" in prompt_text
         # Must NOT contain negative activation words (CLAUDE.md §6)
         for word in ["不要", "禁止", "忘记", "别忘了", "不能", "务必不要"]:
             assert word not in prompt_text, f"Prompt contains negative activation word: {word}"
 
     def test_resume_prompt_correct_seal_tool_name(self, tmp_path: Path):
-        """data-analyst → 'seal_data_analyst_handoff'; chart-maker → 'seal_chart_maker_handoff'."""
+        """data-analyst → finalize（spec 2026-06-23-...-fill-template §三 #9）; 其余 → seal_<name>_handoff."""
         mod = _get_real_executor()
 
         for name, expected_tool in [
-            ("data-analyst", "seal_data_analyst_handoff"),
+            ("data-analyst", "finalize_data_analyst_handoff"),
             ("chart-maker", "seal_chart_maker_handoff"),
             ("code-executor", "seal_code_executor_handoff"),
             ("report-writer", "seal_report_writer_handoff"),
