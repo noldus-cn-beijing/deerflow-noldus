@@ -242,6 +242,17 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
 {other_section}
 
+### 工具来源对齐:shell 与批量扫描的正确入口
+
+- **Shell 是调度员自己的 `bash` tool,与 subagent 是两类东西**。
+  `task(subagent_type=...)` 的合法取值就是上方 Capability-Exposure 列出的 EthoInsight 专员
+  (以及 general-purpose),其中没有名为 `bash` 的 subagent 类型——
+  需要命令行操作时直接调你自己的 `bash` tool,这是 lead 本地工具,不经 `task(...)` 派遣。
+- **批量扫描全部上传文件的分组,入口是 `identify_ev19_template`**。
+  该字段(`per_file_grouping`)的完整用法、何时据此推断 control/treatment 映射、
+  何时改用 `inspect_uploaded_file`,以上方「范式识别」段为唯一来源——
+  调度员在此只需记住「批量入口 = `identify_ev19_template`,一次覆盖全部文件」。
+
 ### 派遣硬约束(违反会被 Guardrail 拦截)
 
 1. **第一个非 read_file tool call 之前必须输出 `[intent] <INTENT>` 行**
