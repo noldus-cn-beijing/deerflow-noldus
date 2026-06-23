@@ -257,7 +257,7 @@ def test_askviz_viz_gate_is_byte_identical(tmp_path):
     # The exact legacy message
     expected = (
         "请改调 ask_clarification(question='📊 指标和解读已完成。需要我把结果可视化成图吗?', "
-        "options=['A. 是,把刚才的结论画成图(默认推荐,箱线图/轨迹图/时序图)', "
+        "options=['A. 是,把刚才的结论画成图', "
         "'B. 不用,直接给我报告'])，因为 INTENT=E2E_FULL_ASKVIZ 要求 data-analyst 完成后 "
         "先反问用户是否需要图表；用户回答后再调 set_viz_choice(choice='yes'|'no') "
         "落盘 gate3，之后才能派 chart-maker（或跳过直接派 report-writer）。"
