@@ -80,6 +80,25 @@ VALID_INTENTS = frozenset(PATHS.keys())
 
 
 # ---------------------------------------------------------------------------
+# §1.4 出图意向触发词 SSOT —— prompt「复合语义判定」段与
+#       IntentClassificationGuardrailProvider（ETHO-7 子改动 A）共享。
+#
+# ETHO-7 子改动 A：E2E_FULL（跳出图反问）需对话里有用户明确出图意向，否则应声明
+# E2E_FULL_ASKVIZ（先问再画）。本清单是「用户明确要图」的机器可检测判据，
+# 把「该不该出现出图决策点」从 lead LLM 自由裁量变成可检测规则
+# （HarnessX §7.1：类型化结构让错误可检测）。
+#
+# prompt.py 的「复合语义判定」自然语言段是同一事实的人类可读描述；改词改这里，
+# 两处保持一致（feedback_single_source_of_truth：结构化判据只存一份）。
+# ---------------------------------------------------------------------------
+VIZ_INTENT_KEYWORDS: tuple[str, ...] = (
+    "画", "图", "可视化", "画出来", "画一下", "展示", "用图说",
+    "表", "表格", "列出来", "一览表", "箱线", "轨迹", "趋势", "热图",
+    "出图", "画图", "plot",
+)
+
+
+# ---------------------------------------------------------------------------
 # §1.0 pending-ask helper — shared by IntentPostStepAskGateProvider and
 #       AskClarificationOptionsProvider so the "which ask step is next" logic
 #       lives in exactly one place (SSOT).

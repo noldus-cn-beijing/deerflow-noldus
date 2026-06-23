@@ -320,6 +320,14 @@ def _build_subagent_section(max_concurrent: int) -> str:
 - 用户消息明确只说「算一下」「计算」「跑数」(不含其他词) → **E2E_MIN**。
 - 用户消息含「报告」/「总结」 → REPORT(有 handoff)或 E2E_FULL(无 handoff)。
 
+> **确定性约束(ETHO-7)**：E2E_FULL vs E2E_FULL_ASKVIZ 不仅是上面的语义判断，还是
+> **被 guardrail 校验的确定性规则**。声明 `[intent] E2E_FULL` 时，若用户消息里**没有**
+> 出图意向触发词（判据 SSOT = `path_registry.VIZ_INTENT_KEYWORDS`：画/图/可视化/表/箱线等），
+> `IntentClassificationGuardrailProvider` 会 deny 并要求改声明 E2E_FULL_ASKVIZ。所以：
+> 用户没明说要图 → 一律声明 E2E_FULL_ASKVIZ（跑完解读再问），
+> 不要凭「我觉得用户想要」自作主张声明 E2E_FULL。
+> guardrail 检测的是**用户消息实际文本**，不是你的自述——别在 message 里假声明「用户要图」绕过。
+
 **仅在 fast-path 不命中时**才按 4 类归类: CALC(算/计算)、ANALYZE-EXPLICIT(解读/描述/比较 — 不含"分析"这个总称词)、VISUALIZE(可视化/出图/画图/箱线/轨迹/趋势/热图/表/列出来)、REPORT(报告/总结/汇总)。出现 VISUALIZE 类 → E2E_FULL;只 ANALYZE-EXPLICIT 一类 → E2E_FULL_ASKVIZ;只 CALC 一类 → E2E_MIN。
 
 **图表置信度分级**(catalog YAML `confidence` 字段):

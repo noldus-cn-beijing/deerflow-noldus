@@ -170,6 +170,14 @@ class IntentPostStepAskGateProvider:
         if not isinstance(gate_completed, list):
             gate_completed = []
 
+        # ETHO-7 子改动 B：ask 顺序/合并强制。复用 PATHS 声明的 ask 顺序：若某
+        # 后置 ask gate 已落盘，而它之前某 ask gate 未落盘（且后者前置 dispatch 已完成），
+        # 说明 lead 把分开的两个 ask 点合并/乱序了 → deny。这稳定决策点顺序（viz 恒在 report 前）。
+        # 注意：必须先于「按 target 跳步检测」，因为乱序本身就是更上游的违规。
+        order_violation = self._detect_ask_order_violation(steps, gate_completed, workspace, intent)
+        if order_violation is not None:
+            return order_violation
+
         # Check each ask step before the target dispatch
         for i in range(target_idx):
             step = steps[i]
@@ -222,6 +230,82 @@ class IntentPostStepAskGateProvider:
             return self._deny_ask_step(intent, ask_key, subagent_type)
 
         return GuardrailDecision(allow=True)
+
+    def _detect_ask_order_violation(
+        self,
+        steps: list,
+        gate_completed: list[str],
+        workspace: str,
+        intent: str,
+    ) -> GuardrailDecision | None:
+        """ETHO-7 子改动 B：检测 ask 步骤乱序/合并。
+
+        遍历 PATHS 声明的 ask 顺序，若发现「后置 ask gate 已落盘」而「它之前的某个
+        ask gate 未落盘、且后者前置 dispatch 已完成」→ 乱序违规，deny。
+
+        守边界（§2.3）：用户一次性回答多个问题（前后 ask gate 都已落盘）不算违规 ——
+        只在「后置已落盘、前置未落盘」这种真乱序时触发。
+
+        复用 ASK_GATE_MAP + 同款「最近前置 dispatch handoff 是否存在」检查，不新增机制。
+        """
+        # 收集本路径所有 ask 步骤的 (idx, ask_key, gate_name)
+        ask_steps: list[tuple[int, str, str]] = []
+        for i, step in enumerate(steps):
+            if step.kind != "ask":
+                continue
+            if step.target == "clarify":
+                continue
+            gate_name = ASK_GATE_MAP.get(step.target)
+            if gate_name:
+                ask_steps.append((i, step.target, gate_name))
+
+        for later_pos in range(len(ask_steps)):
+            later_idx, later_key, later_gate = ask_steps[later_pos]
+            if later_gate not in gate_completed:
+                continue  # 后置 ask 还没落盘，不构成乱序
+
+            # 后置已落盘 → 它之前的所有 ask gate 都应该已落盘
+            for earlier_pos in range(later_pos):
+                earlier_idx, earlier_key, earlier_gate = ask_steps[earlier_pos]
+                if earlier_gate in gate_completed:
+                    continue  # 前置也已落盘，正常
+
+                # 前置 ask 未落盘。只有当它的前置 dispatch 已完成时才判定违规
+                # （前置 dispatch 没完成时，该 ask 点还没激活，谈不上乱序）。
+                if not self._preceding_dispatch_done(steps, earlier_idx, workspace):
+                    continue
+
+                # 同批 race：若当前 AIMessage 已含前置 ask 的 gate-setter，
+                # 视为 in-flight 落盘，不判乱序（与跳步检测的 race fix 对齐）。
+                setter_tool = ASK_GATE_SETTER_TOOL.get(earlier_key)
+                if setter_tool and setter_tool in _current_batch_tool_names(_lead_messages.get()):
+                    continue
+
+                return GuardrailDecision(
+                    allow=False,
+                    reasons=[GuardrailReason(
+                        code="ethoinsight.ask_order_violation",
+                        message=(
+                            f"按 {intent} 路径声明的 ask 顺序，ask({later_key}?) 在 ask({earlier_key}?) 之后，"
+                            f"但 {later_gate} 已落盘而 {earlier_gate} 未落盘 —— "
+                            f"不能跳过前置 ask({earlier_key}?) 先完成后置 ask({later_key}?)。"
+                            f"请先把前置 ask({earlier_key}?) 反问用户并落盘 {earlier_gate}，"
+                            f"再继续后续步骤（viz 恒在 report 前，不可合并/乱序）。"
+                        ),
+                    )],
+                    policy_id="intent_post_step_ask_gate",
+                )
+        return None
+
+    @staticmethod
+    def _preceding_dispatch_done(steps: list, ask_idx: int, workspace: str) -> bool:
+        """ask_idx 这一步的最近前置 dispatch 的 handoff 是否已落盘。"""
+        for j in range(ask_idx - 1, -1, -1):
+            prev = steps[j]
+            if prev.kind == "dispatch":
+                handoff_name = to_handoff_name(prev.target)
+                return (Path(workspace) / f"handoff_{handoff_name}.json").exists()
+        return True  # 没有前置 dispatch（ask 是路径首步）→ 视为已就绪
 
     def _deny_ask_step(self, intent: str, ask_key: str, target: str) -> GuardrailDecision:
         """Generate deny for skipping an ask step. Viz uses the legacy message."""
