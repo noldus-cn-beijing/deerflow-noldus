@@ -36,6 +36,18 @@ This is L1 (the structural gate), NOT a fallback: a fallback would seal from dis
 files *after* the agent ended (admits the miss, cleans up). This gate intercepts
 *before* the agent ends and refuses to let it end — the miss cannot occur. See spec
 §0 for the L1-vs-fallback distinction.
+
+ETHO-1 upgrade (spec 2026-06-23): L1 has a release valve — after ``_MAX_REMINDERS``
+nudges the gate allows exit (rule 5), so a model that stubbornly ends on pure text
+still slips through. For MECHANICALLY RECONSTRUCTABLE producers (report-writer /
+chart-maker) the new ``after_agent`` hook closes that valve: at the termination
+point it runs a deterministic auto-seal from the output files (reusing
+``executor._attempt_auto_seal_from_artifacts``). Side-effect only — no
+``can_jump_to`` (after_agent runs post-termination and physically cannot jump).
+This eliminates the ``Task failed`` intermediate state + a wasted lead-retry round.
+Cognitive producers (data-analyst) are deliberately skipped: after_agent can
+neither jump nor fabricate an interpretation, so their miss stays an observable
+degradation handled by L1 + L2 (seal-resume) + L4 (lead retry).
 """
 
 from __future__ import annotations
@@ -54,6 +66,23 @@ logger = logging.getLogger(__name__)
 # delivers in one tool (structurally cannot miss seal — verified across many
 # dogfoods). bash / general-purpose / knowledge-assistant have no seal contract.
 _REQUIRES_SEAL: frozenset[str] = frozenset({"data-analyst", "chart-maker", "report-writer"})
+
+# Subagents whose handoff core fields are MECHANICALLY RECONSTRUCTABLE from
+# output files (report.md / plot_*.png). For these, the ``after_agent`` hook can
+# run a deterministic auto-seal at the termination point — closing the L1
+# reminder-cap release valve and eliminating the ``Task failed`` intermediate
+# state the user would otherwise see.
+#
+# Subset of _REQUIRES_SEAL:
+# - report-writer / chart-maker: core fields (report_path / chart_files) derive
+#   deterministically from outputs/ files (executor._attempt_auto_seal_from_artifacts).
+# - data-analyst: interpretation is a COGNITIVE product with no file source —
+#   fabricating it would be reward-hacking (worse than the miss). Deliberately
+#   absent: its seal-miss remains an observable degradation handled by
+#   L1 (after_model nudge) + L2 (seal-resume) + L4 (lead retry). See spec §2.2.
+# - code-executor: structurally produce-and-deliver (run_metric_plan), excluded
+#   from _REQUIRES_SEAL already; not auto-sealed here.
+_RECONSTRUCTABLE: frozenset[str] = frozenset({"report-writer", "chart-maker"})
 
 _MAX_REMINDERS = 2
 
@@ -130,6 +159,86 @@ class SealGateMiddleware(AgentMiddleware):
     async def aafter_model(self, state: Any, runtime: Runtime) -> dict[str, Any] | None:
         """Async version — delegates to sync."""
         return self.after_model(state, runtime)
+
+    # ------------------------------------------------------------------
+    # after_agent — termination-point deterministic auto-seal (spec 2026-06-23
+    # ETHO-1). Side-effect ONLY: no ``can_jump_to`` (after_agent runs AFTER the
+    # agent has decided to terminate and physically cannot jump back to model —
+    # see spec §1.4 physical-boundary finding). It only fixes the L1 reminder-
+    # cap release valve for RECONSTRUCTABLE producers.
+    # ------------------------------------------------------------------
+    def after_agent(self, state: Any, runtime: Runtime) -> dict[str, Any] | None:
+        """Termination-point auto-seal for mechanically-reconstructable producers.
+
+        For report-writer / chart-maker that reach the termination point without
+        having called seal (L1 reminders exhausted via the release valve, or the
+        model simply ended on pure text past the cap), reconstruct the handoff
+        deterministically from the output files. This eliminates the
+        ``Task failed`` intermediate state + a wasted lead-retry round that the
+        executor's L3 path (which only runs AFTER L2 seal-resume fails and
+        AFTER the FAILED error surfaces to lead) would otherwise impose.
+
+        Cognitive producers (data-analyst) and non-seal subagents are skipped:
+        after_agent can neither jump nor fabricate an interpretation.
+
+        ROBUSTNESS: never raises. Any exception (bad workspace, auto-seal
+        failure, missing artifacts) → return None and let the executor's L3/L4
+        paths be the final arbiter (spec §2.1 "after_agent 是兜底不是主路").
+        """
+        try:
+            return self._after_agent_check(state, runtime)
+        except Exception:
+            logger.debug(
+                "SealGateMiddleware.after_agent: check failed, fail-open",
+                exc_info=True,
+            )
+            return None
+
+    async def aafter_agent(self, state: Any, runtime: Runtime) -> dict[str, Any] | None:
+        """Async version — delegates to sync (pure side-effect, no awaits)."""
+        return self.after_agent(state, runtime)
+
+    def _after_agent_check(self, state: Any, runtime: Runtime) -> dict[str, Any] | None:
+        # 1. Only reconstructable producers get the termination-point auto-seal.
+        #    data-analyst (cognitive) and non-seal subagents pass through.
+        if self._subagent_name not in _RECONSTRUCTABLE:
+            return None
+
+        messages = state.get("messages", []) if hasattr(state, "get") else []
+        # 2. Already sealed → nothing to do (don't re-seal / overwrite).
+        if _seal_in_history(messages, self._seal_tool):
+            return None
+
+        # 3. Resolve the host-side workspace from thread_data (set by
+        #    ThreadDataMiddleware; present in subagent state per executor
+        #    _build_initial_state). Reuse the experiment_context helper to stay
+        #    consistent with how every other middleware resolves workspace.
+        from deerflow.agents.middlewares.experiment_context import resolve_workspace_from_state
+
+        workspace = resolve_workspace_from_state(state if isinstance(state, dict) else {})
+        if not workspace:
+            # No workspace → cannot reconstruct; let executor L3/L4 handle it.
+            return None
+
+        # 4. Deterministic auto-seal at the termination point. Lazy import:
+        #    seal_gate_middleware must NOT top-level import executor (closes a
+        #    harness import cycle → Gateway startup ImportError; CLAUDE.md
+        #    import-ring rule). stamp sealed_by so the fallback trigger rate is
+        #    observable (HarnessX trace richness; spec §2.3).
+        from deerflow.subagents.executor import _attempt_auto_seal_from_artifacts
+
+        sealed = _attempt_auto_seal_from_artifacts(
+            self._subagent_name, workspace, sealed_by="after_agent_artifacts",
+        )
+        if sealed:
+            logger.warning(
+                "[seal_gate] after_agent auto-sealed %s from artifacts (sealed_by="
+                "after_agent_artifacts); L1 reminders did not recover the seal in-run",
+                self._subagent_name,
+            )
+        # Side-effect only — never jump. sealed or not, executor L3/L4 remain the
+        # final arbiter.
+        return None
 
     def _check(self, state: Any, runtime: Runtime) -> dict[str, Any] | None:
         # 1. Not a seal-requiring subagent → not our concern
