@@ -1,8 +1,9 @@
 """Tests for SealGateMiddleware (L1 structural seal gate, spec 2026-06-16).
 
 Covers the after_model gating logic that forces seal_<name>_handoff before a
-seal-requiring subagent (data-analyst / chart-maker / report-writer) can exit on a
-pure-text AIMessage. Mirrors the test shape of test_paradigm_identification_gate.py.
+seal-requiring subagent (data-analyst / report-writer) can exit on a
+pure-text AIMessage. chart-maker was moved out (spec 2026-06-24: run_chart_plan
+produces-and-delivers in one tool). Mirrors the test shape of test_paradigm_identification_gate.py.
 
 Cases (spec §5.1):
   - red→green core: last AIMessage no tool_call + no seal ToolMessage + data-analyst
@@ -49,8 +50,10 @@ class TestSealGateMiddleware:
 
     def test_requires_seal_set(self) -> None:
         assert "data-analyst" in _REQUIRES_SEAL
-        assert "chart-maker" in _REQUIRES_SEAL
         assert "report-writer" in _REQUIRES_SEAL
+        # chart-maker moved out (spec 2026-06-24): run_chart_plan produces-and-delivers
+        # in one tool, structurally cannot miss seal — same exclusion as code-executor.
+        assert "chart-maker" not in _REQUIRES_SEAL
         assert "code-executor" not in _REQUIRES_SEAL
 
     def test_core_red_green_data_analyst_pure_text_injects_reminder(self) -> None:
@@ -193,12 +196,15 @@ class TestSealGateMiddleware:
         assert mw.after_model(state, _make_runtime()) is None
 
     async def test_async_delegates_to_sync(self) -> None:
-        mw = SealGateMiddleware("chart-maker")
-        state = _make_state(messages=[AIMessage(content="charts done")])
+        # Use report-writer (still seal-gated) to verify async delegates to sync.
+        # chart-maker moved out of _REQUIRES_SEAL (spec 2026-06-24, run_chart_plan
+        # produces-and-delivers) so it no longer exercises this gate.
+        mw = SealGateMiddleware("report-writer")
+        state = _make_state(messages=[AIMessage(content="report written")])
         result = await mw.aafter_model(state, _make_runtime())
         assert result is not None
         assert result.get("jump_to") == "model"
-        assert "seal_chart_maker_handoff" in result["messages"][0].content
+        assert "seal_report_writer_handoff" in result["messages"][0].content
 
     def test_report_writer_gated(self) -> None:
         mw = SealGateMiddleware("report-writer")

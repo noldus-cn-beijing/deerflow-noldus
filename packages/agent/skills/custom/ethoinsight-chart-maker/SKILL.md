@@ -2,7 +2,8 @@
 name: ethoinsight-chart-maker
 description: >
   chart-maker subagent 的执行工作流手册（how-to-execute）。
-  包含：bash 调用模板、fallback 决策树、handoff schema、用户意图模糊时的处理。
+  包含：run_chart_plan 调用模板、fallback 决策树、handoff schema、用户意图模糊时的处理。
+  画图执行经 run_chart_plan 工具（进程内并行、核磁盘落盘、确定性封存 handoff）——不在工具外手拼 bash python -m。
   图种知识（图种 → 适用场景，what-to-pick）见姐妹 skill `ethoinsight-charts`。
   Use when chart-maker receives a visualization task with handoff_code_executor.json.
 version: 1.0.0
@@ -27,27 +28,25 @@ author: noldus-insight
    - **column_aliases / groups 不用你传**：工具内部自读 `experiment-context.json`（Gate 1 列语义对齐投影）+ `groups.json`（prep_metric_plan 落盘的分组）。这是取代「bash 手拼 `--column-aliases-file` / `--groups-json`」的确定性入口——session 级横切状态由工具自取，你无从遗漏（红线二正模式 1）。
    - 工具返回 `plan_summary`（chart_count / fallback_count / skipped_count / chart_ids / column_aliases_applied / groups_applied / budget_remaining_count / budget_remaining_ids），据此进入步骤 3 的决策树。**charts[] 顺序：传了 chart_budget 时按 output_mode 预算优先级筛过（aggregate 在前、per_subject 代表子集在后）；省略 chart_budget（默认全画）时为 catalog 声明顺序。两种情形都按数组顺序全部执行。**
 3. read `plan_charts.json` → charts[] + charts_fallback_available[] + charts_budget_remaining[]
-4. 决策(见 references/fallback-decision-tree.md)
-5. for each entry in plan_charts.json.charts（全部执行，已预算筛过）: bash 跑脚本
-   - 用 `python -m <entry.script> <entry.args 拼接>` 形式调用
-   - **`entry.args` 是一个完整的字符串数组，整体逐项拼接执行——保持每一项原样、顺序不变、一项不漏。** resolve 阶段已按 catalog 把这条命令的全部参数填好（`--inputs <inputs.json>` + 可选 `--groups <groups.json>` + `--output <png>` + 可选 `--paradigm` + **可选 `--parameters-json '{...}'`（zone 列对齐参数，FewZones 自定义分析区如 open/closed 的图靠它定位列，丢了脚本会算不出值、退出码 1、不出图）**）。你只需把 `entry.args` 数组拼成命令行，**不增不减不重构**。
-   - **重跑某张图时，仍从 `plan_charts.json` 该 entry 的 `args` 取完整命令重拼**（不要凭记忆手敲一条"更简洁"的命令——那样最容易漏掉 `--parameters-json`，正是 dogfood thread 339512dd 里 bar 图第二批失败、靠第三次重试才救活的根因）。
-   - entry.script 和 entry.args 已经是 resolve 阶段按 catalog yaml `accepts_paradigm` 字段拼好的——`--paradigm` 该不该带 resolve 已决定，照 `args` 执行即可。
-6. write `handoff_chart_maker.json`(**任何退出路径都必须先写**,见下面"失败硬规范")。若 `charts_budget_remaining[]` 非空 → 透传进 handoff 的 `remaining_charts[]`（降级指纹，红线一）。
-7. `present_files(<生成的 png 列表>)`
-8. 输出 `OK: <N> charts generated\n[gate_signals]\n...`
+4. 决策(见 references/fallback-decision-tree.md)——决策只决定「该不该让这些图进 plan」，不决定「怎么画」（画图由 run_chart_plan 工具确定性执行）。
+5. 调 `run_chart_plan` 一次画完全部图（产出+交付合一，对标 code-executor 的 run_metric_plan）。
+   - 调 `run_chart_plan(plan_path="/mnt/user-data/workspace/plan_charts.json")`——工具内 ProcessPoolExecutor 进程内并行跑 charts[] 全部绘图脚本，逐个核 output png 真落盘（磁盘真相），自动封存 handoff_chart_maker.json（sealed_by="run_plan"）。**零 bash 画图、零 args 重拼、零 LLM 自报产物**。
+   - 重跑子集（如用户追加某张图）传 `only_chart_ids=["box_open_arm"]`；遇失败想快速停传 `on_error="abort"`。默认全画 + continue。
+   - **画图全走 run_chart_plan**——args 由工具透传自 plan_charts.json 的 entry.args（resolve 阶段已按 catalog 拼好完整 argv，含 `--parameters-json`），彻底消除 dogfood thread 339512dd 那种手拼漏 `--parameters-json` 致 bar 图失败、靠重试才救活的脆弱。
+6. run_chart_plan 内部已 seal handoff（**不要再调 seal_chart_maker_handoff**）。run_chart_plan 自动透传 plan.charts_budget_remaining 进 handoff.remaining_charts（P5 降级指纹，红线一）。
+7. `present_files(<run_chart_plan 落盘的 png 列表>)`
+8. 输出 `OK: charts written\n[gate_signals]\n...`（charts_generated / failed_charts / chart_files 直接引用 run_chart_plan 返回的 gate_signals）
 
-## 失败硬规范(2026-05-26 加)
+## 失败硬规范(2026-06-24 改：执行确定性化，画图全走 run_chart_plan)
 
-任何提前退出都必须先写 `handoff_chart_maker.json`,把已生成的图 / 失败原因 / 错误 trace 持久化,否则 lead 拿不到上下文会困惑。
+任何退出路径都由 run_chart_plan 工具落盘 handoff_chart_maker.json（status/failed_charts/remaining_charts 由工具据磁盘+脚本 stderr 机读构造）。
 
 | 触发条件 | 处理 |
 |---|---|
-| bash 预算还剩 ≤ 2 次但 charts 还没跑完 | **立刻**写 handoff_chart_maker.json(status=`partial`),记录 `succeeded_charts[]` / `remaining_charts[]` / `reason="bash budget exhausted"`,present_files 已成功的 png,再输出 `OK` |
-| 某 chart 脚本连续失败 ≥ 2 次 | 记入 failed_charts[] 跳过下一个,**不要继续重试**(LLM 试错只会耗光预算) |
-| catalog.resolve 调用本身失败 | 写 handoff_chart_maker.json(status=`failed`),chart_files=[],failed_charts=[{chart_id:"all", reason:"<prep_chart_plan error>"}],按返回 hint 处理(file_not_found/unknown_paradigm 等),输出 `OK:` + [gate_signals] |
-| sandbox guardrail 拒绝(host_path_blocked 等) | **不要重试** —— guardrail 反馈消息已说明 root cause(路径错 / 参数错),把消息原样塞到 failed_charts[i].reason,跳过这个 chart |
-| 任何未预期异常 | catch 之,写 handoff status=`failed` + errors=[<traceback summary>],输出 `OK: ` + [gate_signals],**不要让 subagent 静默挂掉** |
+| run_chart_plan 返回 status=partial | 工具已落盘 handoff（含 failed_charts）；据返回的 failures 把 chart_id + reason（机读真相）据实汇报给 lead，present_files 已成功的 png，输出 `OK` |
+| run_chart_plan 返回 status=failed | 工具已落盘 handoff（chart_files=[]）；把全部失败 chart 汇报给 lead，输出 `OK:` + [gate_signals] |
+| run_chart_plan 返回 error_code（如 plan_missing / empty_plan） | 工具已落盘 failed handoff；按 message 处理（缺 plan 时先补 prep_chart_plan），向 lead 报错说明原因 |
+| chart_budget 截断 per_subject 图 | run_chart_plan 自动从 plan.charts_budget_remaining 透传进 handoff.remaining_charts[]（红线一：预算挤掉产出要留痕），无需你手填 |
 
 ## 用户语义解析(细节见 references/user-intent-parsing.md)
 

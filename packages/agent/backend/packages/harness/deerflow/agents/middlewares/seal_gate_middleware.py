@@ -39,15 +39,14 @@ files *after* the agent ended (admits the miss, cleans up). This gate intercepts
 
 ETHO-1 upgrade (spec 2026-06-23): L1 has a release valve — after ``_MAX_REMINDERS``
 nudges the gate allows exit (rule 5), so a model that stubbornly ends on pure text
-still slips through. For MECHANICALLY RECONSTRUCTABLE producers (report-writer /
-chart-maker) the new ``after_agent`` hook closes that valve: at the termination
-point it runs a deterministic auto-seal from the output files (reusing
+still slips through. For MECHANICALLY RECONSTRUCTABLE producers (report-writer) the
+new ``after_agent`` hook closes that valve: at the termination point it runs a
+deterministic auto-seal from the output files (reusing
 ``executor._attempt_auto_seal_from_artifacts``). Side-effect only — no
 ``can_jump_to`` (after_agent runs post-termination and physically cannot jump).
 This eliminates the ``Task failed`` intermediate state + a wasted lead-retry round.
-Cognitive producers (data-analyst) are deliberately skipped: after_agent can
-neither jump nor fabricate an interpretation, so their miss stays an observable
-degradation handled by L1 + L2 (seal-resume) + L4 (lead retry).
+Cognitive producers (data-analyst) and structurally-merged producers (chart-maker,
+whose run_chart_plan produces-and-delivers in one tool) are deliberately skipped.
 """
 
 from __future__ import annotations
@@ -62,10 +61,11 @@ from langgraph.runtime import Runtime
 logger = logging.getLogger(__name__)
 
 # Subagents whose only physical exit is a seal_<name>_handoff tool call.
-# code-executor is intentionally excluded: run_metric_plan already produces-and-
-# delivers in one tool (structurally cannot miss seal — verified across many
-# dogfoods). bash / general-purpose / knowledge-assistant have no seal contract.
-_REQUIRES_SEAL: frozenset[str] = frozenset({"data-analyst", "chart-maker", "report-writer"})
+# code-executor / chart-maker are intentionally excluded: run_metric_plan / run_chart_plan
+# already produces-and-delivers in one tool (structurally cannot miss seal — verified across
+# many dogfoods; chart-maker aligned 2026-06-24). bash / general-purpose / knowledge-assistant
+# have no seal contract.
+_REQUIRES_SEAL: frozenset[str] = frozenset({"data-analyst", "report-writer"})
 
 # Subagents whose handoff core fields are MECHANICALLY RECONSTRUCTABLE from
 # output files (report.md / plot_*.png). For these, the ``after_agent`` hook can
@@ -74,15 +74,15 @@ _REQUIRES_SEAL: frozenset[str] = frozenset({"data-analyst", "chart-maker", "repo
 # state the user would otherwise see.
 #
 # Subset of _REQUIRES_SEAL:
-# - report-writer / chart-maker: core fields (report_path / chart_files) derive
-#   deterministically from outputs/ files (executor._attempt_auto_seal_from_artifacts).
+# - report-writer: core fields (report_path) derive deterministically from outputs/ files
+#   (executor._attempt_auto_seal_from_artifacts).
 # - data-analyst: interpretation is a COGNITIVE product with no file source —
 #   fabricating it would be reward-hacking (worse than the miss). Deliberately
 #   absent: its seal-miss remains an observable degradation handled by
 #   L1 (after_model nudge) + L2 (seal-resume) + L4 (lead retry). See spec §2.2.
-# - code-executor: structurally produce-and-deliver (run_metric_plan), excluded
-#   from _REQUIRES_SEAL already; not auto-sealed here.
-_RECONSTRUCTABLE: frozenset[str] = frozenset({"report-writer", "chart-maker"})
+# - chart-maker: structurally produce-and-deliver (run_chart_plan), excluded from
+#   _REQUIRES_SEAL already; not auto-sealed here.
+_RECONSTRUCTABLE: frozenset[str] = frozenset({"report-writer"})
 
 _MAX_REMINDERS = 2
 
@@ -204,7 +204,7 @@ class SealGateMiddleware(AgentMiddleware):
     def after_agent(self, state: Any, runtime: Runtime) -> dict[str, Any] | None:
         """Termination-point auto-seal for mechanically-reconstructable producers.
 
-        For report-writer / chart-maker that reach the termination point without
+        For report-writer that reaches the termination point without
         having called seal (L1 reminders exhausted via the release valve, or the
         model simply ended on pure text past the cap), reconstruct the handoff
         deterministically from the output files. This eliminates the

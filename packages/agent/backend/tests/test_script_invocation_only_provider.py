@@ -249,12 +249,13 @@ class TestDenyReason:
 
 
 class TestParallelPlotScriptsAllowed:
-    """2026-06-18: chart-maker 并行绘图指引落地（spec 2026-06-18-chart-maker-parallel-plotting）。
+    """2026-06-18: 并行绘图 guardrail 锚点（spec 2026-06-18-chart-maker-parallel-plotting）。
 
-    guardrail 的 ``_PARALLEL_BASH_PATTERN`` + ``_validate_parallel_bash_content`` 本就放行
-    code-executor 同款的 ``bash -c "python -m ... & ... & wait"`` 形态。chart-maker 的绘图
-    脚本满足同样前提（不同 subject / 不同图 / 输出不同 png / 互不依赖），这些锚点锁定该
-    能力对 chart-maker 同样生效，防止未来收紧 guardrail 时悄悄把并行绘图路径堵死。
+    guardrail 的 ``_PARALLEL_BASH_PATTERN`` + ``_validate_parallel_bash_content`` 放行
+    code-executor 同款的 ``bash -c "python -m ... & ... & wait"`` 形态。
+    2026-06-24 起 chart-maker 画图改走 run_chart_plan 工具（进程内 importlib，不经 bash），
+    但该 guardrail 规则仍为 code-executor（run_metric_plan 预先并行）/ 其他 agent 生效。
+    这些锚点锁定该 guardrail 能力未被收紧堵死——chart-maker 不再走这条路不代表规则该删。
     """
 
     def test_parallel_plot_scripts_allowed_for_chart_maker(self, provider):

@@ -584,15 +584,17 @@ class ChartMakerHandoff(BaseModel):
         default="PENDING",
         description="Inherited from CodeExecutorHandoff via seal tool.",
     )
-    sealed_by: Literal["model", "after_agent_artifacts", "executor_artifacts"] = Field(
+    sealed_by: Literal["model", "after_agent_artifacts", "executor_artifacts", "run_plan"] = Field(
         default="model",
         description=(
             "Handoff 来源标记（ETHO-1 spec 2026-06-23 §2.3 可观测性）。"
             "model = chart-maker 自行调 seal 工具封存（正常路径）；"
             "after_agent_artifacts = SealGate after_agent 在终止点从 plot_*.png "
             "确定性兜底（堵 L1 reminder-cap 放行口，消除 Task failed 中间态）；"
-            "executor_artifacts = executor L3 在 seal-resume 失败后从产物重建。"
-            "后两者触发率上升 = 上游 L1 在退化的信号，必须可观测。"
+            "executor_artifacts = executor L3 在 seal-resume 失败后从产物重建；"
+            "run_plan = 确定性工具 run_chart_plan 产出+交付合一（chart_files 经工具核磁盘，"
+            "对齐 code-executor 的 run_metric_plan 范式）。"
+            "后三者触发率上升 = 上游 L1 在退化的信号，必须可观测。"
         ),
     )
 

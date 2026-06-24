@@ -1,15 +1,17 @@
-"""chart-maker SKILL.md 内容契约：防止「逐字拼接 entry.args」纪律 + `--parameters-json`
-说明被未来编辑悄悄删掉。
+"""chart-maker SKILL.md 内容契约：锁住「画图走 run_chart_plan、args 从 plan 透传」的结构保证 +
+``--parameters-json`` 说明不被未来编辑悄悄删掉。
 
 背景（dogfood thread 339512dd）：chart-maker 重跑批次时重构命令、漏掉
 ``--parameters-json``，导致需 zone 列对齐参数的图（如 EPM open_arm_time_ratio_bar）
-``compute`` 返回 None、退出码 1、不出图，靠第三次单独重试才救活。根因是 SKILL.md
+``compute`` 返回 None、退出码 1、不出图，靠第三次单独重试才救活。根因是旧 SKILL.md
 第 5 步描述 entry.args 时只枚举了 ``--inputs/--groups/--output/--paradigm``，**漏列
 ``--parameters-json``**，诱导 LLM 重构命令时丢参。
 
-修法是把 args 描述改成「整体逐字拼接、不增不减不重构」并显式点名 ``--parameters-json``。
-这些断言锁住那段纪律文字（数据层「resolve 是否真注入 --parameters-json」由
-packages/ethoinsight/tests/test_chart_zone_overrides_filtered.py 守，两层互补）。
+2026-06-24 起画图改走 run_chart_plan 工具：args 由工具从 plan_charts.json entry.args
+逐字透传（零重拼），dogfood 339512dd 从「prompt 纪律防漏」升级为「结构不可能漏」。
+SKILL.md 仍显式点名 ``--parameters-json`` + 说明 args 透传自 plan，守这条结构保证。
+数据层「resolve 是否真注入 --parameters-json」由
+packages/ethoinsight/tests/test_chart_zone_overrides_filtered.py 守，两层互补。
 """
 from __future__ import annotations
 
@@ -39,12 +41,17 @@ def test_skill_mentions_parameters_json_in_args():
     )
 
 
-def test_skill_has_verbatim_splice_rule():
-    """必须有「逐字拼接 entry.args、不增不减不重构」的正面纪律。"""
+def test_skill_run_chart_plan_passes_args_from_plan():
+    """2026-06-24：画图改走 run_chart_plan，args 由工具从 plan_charts.json entry.args 透传——
+    LLM 不再手拼命令，dogfood 339512dd（手拼漏 --parameters-json 致 bar 图失败）从「prompt 纪律」
+    降级为「结构不可能」（工具零重拼）。SKILL.md 必须显式说明 args 透传自 plan，守这条结构保证。
+    """
     md = _skill_md()
-    # 正面指令关键词（deepseek 正面提示：描述想要的行为，而非「不要丢参数」）
-    assert "逐项" in md or "逐字" in md, "SKILL.md 缺「逐项/逐字拼接 entry.args」纪律"
-    assert "不增不减不重构" in md, "SKILL.md 缺「不增不减不重构」的 args 拼接铁律"
+    assert "run_chart_plan" in md, "SKILL.md 必须教画图走 run_chart_plan 工具"
+    # args 透传自 plan 的结构保证（取代旧的「逐字拼接」LLM 纪律）。
+    assert "entry.args" in md or "args 由工具透传" in md, (
+        "SKILL.md 必须说明 args 由 run_chart_plan 从 plan 透传（零重拼、零漏参）"
+    )
 
 
 def test_skill_warns_against_reconstructing_command_on_rerun():

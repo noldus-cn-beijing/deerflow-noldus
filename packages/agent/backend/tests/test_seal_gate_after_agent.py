@@ -1,6 +1,6 @@
 """Spec 2026-06-23 ETHO-1 — SealGate after_agent fallback for reconstructable artifacts.
 
-When a seal-requiring subagent (report-writer / chart-maker) terminates without
+When a seal-requiring subagent (report-writer) terminates without
 calling seal_<name>_handoff AND the handoff's core fields are mechanically
 reconstructable from output files, the SealGate ``after_agent`` hook performs a
 deterministic auto-seal at the termination point. This closes the L1 reminder-cap
@@ -126,7 +126,10 @@ def _runtime() -> MagicMock:
 # ===================================================================
 
 class TestAfterAgentAutoSealsReconstructable:
-    """report-writer / chart-maker miss + artifacts present → after_agent auto-seals."""
+    """report-writer miss + artifacts present → after_agent auto-seals.
+
+    (chart-maker moved out of _RECONSTRUCTABLE on 2026-06-24: run_chart_plan is
+    produce-and-deliver, so its seal path is the deterministic tool, not this fallback.)"""
 
     def test_report_writer_auto_seals_on_miss(self, tmp_path: Path, monkeypatch):
         """report-writer: outputs/report.md exists, no seal in history → after_agent
@@ -156,29 +159,23 @@ class TestAfterAgentAutoSealsReconstructable:
         assert payload["status"] == "completed"
         assert payload["report_path"] == "/mnt/user-data/outputs/report.md"
 
-    def test_chart_maker_auto_seals_on_miss(self, tmp_path: Path):
-        """chart-maker: outputs/plot_*.png exist, no seal → after_agent auto-seals."""
+    def test_chart_maker_not_auto_sealed_after_run_chart_plan(self, tmp_path: Path):
+        """chart-maker moved out of _RECONSTRUCTABLE (spec 2026-06-24): run_chart_plan
+        produces-and-delivers in one tool, so after_agent must NOT auto-seal it —
+        the deterministic tool is the seal path, not the artifact-glob fallback.
+        """
         mw = _get_mw()
         ws, out = _mk_thread(tmp_path)
         (out / "plot_epm_open_arm.png").write_bytes(b"\x89PNG fake")
-        # chart-maker schema requires paradigm; auto-seal reads it from
-        # handoff_code_executor.json if present. Seed one so the payload validates.
-        (Path(ws) / "handoff_code_executor.json").write_text(
-            json.dumps({"paradigm": "epm"}), encoding="utf-8",
-        )
 
         gate = mw.SealGateMiddleware("chart-maker")
         state = _state_with_workspace(
             messages=[AIMessage(content="图表已生成")], workspace=ws,
         )
         result = gate.after_agent(state, _runtime())
+        # No jump, no auto-seal (chart-maker excluded like code-executor).
         assert result is None
-
-        handoff = Path(ws) / "handoff_chart_maker.json"
-        assert handoff.exists()
-        payload = json.loads(handoff.read_text(encoding="utf-8"))
-        assert payload["status"] == "completed"
-        assert any("plot_epm_open_arm.png" in p for p in payload["chart_files"])
+        assert not (Path(ws) / "handoff_chart_maker.json").exists()
 
 
 # ===================================================================
@@ -201,12 +198,14 @@ class TestAfterAgentSkipsCognitiveProducers:
         assert not (Path(ws) / "handoff_data_analyst.json").exists()
 
     def test_code_executor_not_in_reconstructable_set(self):
-        """code-executor is structurally excluded (run_metric_plan is produce-and-deliver)."""
+        """code-executor + chart-maker are structurally excluded (run_metric_plan /
+        run_chart_plan are produce-and-deliver — spec 2026-06-24)."""
         mw = _get_mw()
         assert "code-executor" not in mw._RECONSTRUCTABLE
         assert "data-analyst" not in mw._RECONSTRUCTABLE
-        # Only the two mechanically-reconstructable producers.
-        assert set(mw._RECONSTRUCTABLE) == {"report-writer", "chart-maker"}
+        assert "chart-maker" not in mw._RECONSTRUCTABLE
+        # Only report-writer remains mechanically-reconstructable.
+        assert set(mw._RECONSTRUCTABLE) == {"report-writer"}
 
 
 # ===================================================================
@@ -320,22 +319,20 @@ class TestSealedByRecorded:
         )
         assert payload.get("sealed_by") == "after_agent_artifacts"
 
-    def test_chart_maker_sealed_by_after_agent_artifacts(self, tmp_path: Path):
+    def test_chart_maker_not_auto_sealed_after_run_chart_plan(self, tmp_path: Path):
+        """chart-maker moved out of _RECONSTRUCTABLE (spec 2026-06-24): run_chart_plan
+        seals deterministically, so after_agent must NOT auto-seal it. The
+        after_agent_artifacts sealed_by path is now report-writer-only."""
         mw = _get_mw()
         ws, out = _mk_thread(tmp_path)
         (out / "plot_x.png").write_bytes(b"\x89PNG fake")
-        (Path(ws) / "handoff_code_executor.json").write_text(
-            json.dumps({"paradigm": "epm"}), encoding="utf-8",
-        )
         gate = mw.SealGateMiddleware("chart-maker")
         state = _state_with_workspace(
             messages=[AIMessage(content="done")], workspace=ws,
         )
         gate.after_agent(state, _runtime())
-        payload = json.loads(
-            (Path(ws) / "handoff_chart_maker.json").read_text(encoding="utf-8"),
-        )
-        assert payload.get("sealed_by") == "after_agent_artifacts"
+        # No auto-seal → no handoff file written by after_agent.
+        assert not (Path(ws) / "handoff_chart_maker.json").exists()
 
 
 # ===================================================================
