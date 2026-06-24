@@ -41,7 +41,7 @@ from deerflow.agents.middlewares.training_data_middleware import TrainingDataMid
 from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config, validate_agent_name
-from deerflow.config.app_config import get_app_config
+from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.guardrails.middleware import GuardrailMiddleware
 from deerflow.models import create_chat_model
@@ -267,7 +267,16 @@ def _filter_lead_tools(tools: list, excluded: frozenset[str]) -> list:
     return [t for t in tools if t.name not in excluded]
 
 
-def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None, *, deferred_setup=None):
+def build_middlewares(
+    config: RunnableConfig,
+    model_name: str | None,
+    agent_name: str | None = None,
+    custom_middlewares: list[AgentMiddleware] | None = None,
+    *,
+    available_skills: set[str] | None = None,
+    app_config: AppConfig | None = None,
+    deferred_setup=None,
+):
     """Build the lead-agent middleware chain based on runtime configuration.
 
     Public entry point for the lead agent's full middleware composition. Used by
@@ -279,17 +288,22 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
         model_name: Resolved runtime model name; gates vision-only middleware.
         agent_name: If provided, MemoryMiddleware will use per-agent memory storage.
         custom_middlewares: Optional list of custom middlewares to inject into the chain.
+        available_skills: Reserved for upstream parity (skill-boot middleware). Accepted
+            here so ``DeerFlowClient`` can thread the lead agent's enabled-skill set
+            without breaking the local middleware chain; currently unused locally.
+        app_config: Explicit AppConfig; falls back to ``get_app_config()`` when omitted.
         deferred_setup: Optional deferred-MCP-tool setup that attaches
             ``DeferredToolFilterMiddleware`` when ``tool_search`` is enabled.
 
     Returns:
         List of middleware instances.
     """
-    middlewares = build_lead_runtime_middlewares(app_config=get_app_config(), lazy_init=True)
+    resolved_app_config = app_config or get_app_config()
+    middlewares = build_lead_runtime_middlewares(app_config=resolved_app_config, lazy_init=True)
 
     # LoopDetectionMiddleware — detect and break repetitive tool call loops.
     # Created early so it can be passed to summarization middleware for reset-on-compact.
-    loop_detection = LoopDetectionMiddleware.from_config(get_app_config().loop_detection)
+    loop_detection = LoopDetectionMiddleware.from_config(resolved_app_config.loop_detection)
 
     # Add summarization middleware if enabled
     summarization_middleware = _create_summarization_middleware()
@@ -304,7 +318,7 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
         middlewares.append(todo_list_middleware)
 
     # Add TokenUsageMiddleware when token_usage tracking is enabled
-    if get_app_config().token_usage.enabled:
+    if resolved_app_config.token_usage.enabled:
         middlewares.append(TokenUsageMiddleware())
 
     # Add TitleMiddleware
@@ -320,8 +334,7 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
 
     # Add ViewImageMiddleware only if the current model supports vision.
     # Use the resolved runtime model_name from make_lead_agent to avoid stale config values.
-    app_config = get_app_config()
-    model_config = app_config.get_model_config(model_name) if model_name else None
+    model_config = resolved_app_config.get_model_config(model_name) if model_name else None
     if model_config is not None and model_config.supports_vision:
         middlewares.append(ViewImageMiddleware())
 
@@ -355,7 +368,7 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
     middlewares.append(loop_detection)
 
     # TokenBudgetMiddleware — enforce per-run token limits
-    token_budget_config = get_app_config().token_budget
+    token_budget_config = resolved_app_config.token_budget
     if token_budget_config.enabled:
         from deerflow.agents.middlewares.token_budget_middleware import TokenBudgetMiddleware
 
@@ -658,8 +671,15 @@ def make_lead_agent(config: RunnableConfig):
         return create_agent(
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False),
             tools=final_tools,
-            middleware=build_middlewares(config, model_name=model_name, deferred_setup=setup),
-            system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"]), thread_id=thread_id, deferred_names=setup.deferred_names),
+            middleware=build_middlewares(config, model_name=model_name, app_config=app_config, deferred_setup=setup),
+            system_prompt=apply_prompt_template(
+                subagent_enabled=subagent_enabled,
+                max_concurrent_subagents=max_concurrent_subagents,
+                available_skills=set(["bootstrap"]),
+                app_config=app_config,
+                thread_id=thread_id,
+                deferred_names=setup.deferred_names,
+            ),
             state_schema=ThreadState,
         )
 
@@ -690,12 +710,13 @@ def make_lead_agent(config: RunnableConfig):
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, attach_tracing=False),
         tools=final_tools,
-        middleware=build_middlewares(config, model_name=model_name, agent_name=agent_name, deferred_setup=setup),
+        middleware=build_middlewares(config, model_name=model_name, agent_name=agent_name, app_config=app_config, deferred_setup=setup),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
             agent_name=agent_name,
             available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None,
+            app_config=app_config,
             paradigm=lead_paradigm,
             user_id=lead_user_id,
             thread_id=thread_id,

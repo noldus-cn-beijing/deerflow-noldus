@@ -27,7 +27,7 @@ def test_build_subagent_section_contains_noldus_agents(monkeypatch) -> None:
     monkeypatch.setattr(
         prompt_module,
         "get_available_subagent_names",
-        lambda: ["code-executor", "data-analyst", "report-writer", "knowledge-assistant"],
+        lambda **kwargs: ["code-executor", "data-analyst", "report-writer", "knowledge-assistant"],
     )
 
     section = prompt_module._build_subagent_section(3)
@@ -43,7 +43,7 @@ def test_build_subagent_section_contains_dispatch_rules(monkeypatch) -> None:
     monkeypatch.setattr(
         prompt_module,
         "get_available_subagent_names",
-        lambda: ["code-executor", "data-analyst", "report-writer", "knowledge-assistant"],
+        lambda **kwargs: ["code-executor", "data-analyst", "report-writer", "knowledge-assistant"],
     )
 
     section = prompt_module._build_subagent_section(3)

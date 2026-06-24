@@ -261,6 +261,7 @@ class DeerFlowClient:
                 max_concurrent_subagents=max_concurrent_subagents,
                 agent_name=self._agent_name,
                 available_skills=self._available_skills,
+                app_config=self._app_config,
                 deferred_names=deferred_setup.deferred_names,
             ),
             "state_schema": ThreadState,

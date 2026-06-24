@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 _ENABLED_SKILLS_REFRESH_WAIT_TIMEOUT_SECONDS = 5.0
 _enabled_skills_lock = threading.Lock()
 _enabled_skills_cache: list[Skill] | None = None
+# Per-AppConfig cache: enabled-skills lists keyed by id(app_config) so request-scoped
+# config injection still resolves skill paths from the matching config without
+# rescanning storage on every agent factory call (mirrors upstream parity).
+_enabled_skills_by_config_cache: dict[int, tuple[object, list[Skill]]] = {}
 _enabled_skills_refresh_active = False
 _enabled_skills_refresh_version = 0
 _enabled_skills_refresh_event = threading.Event()
@@ -84,6 +88,7 @@ def _invalidate_enabled_skills_cache() -> threading.Event:
     _get_cached_skills_prompt_section.cache_clear()
     with _enabled_skills_lock:
         _enabled_skills_cache = None
+        _enabled_skills_by_config_cache.clear()
         _enabled_skills_refresh_version += 1
         _enabled_skills_refresh_event.clear()
         if _enabled_skills_refresh_active:
@@ -123,6 +128,47 @@ def _get_enabled_skills():
 
     logger.warning("Skills cache not ready after %.1fs, returning empty", _ENABLED_SKILLS_REFRESH_WAIT_TIMEOUT_SECONDS)
     return []
+
+
+def get_cached_enabled_skills() -> list[Skill]:
+    """Return the cached enabled-skills list, kicking off a background refresh on miss.
+
+    Safe to call from request paths: never blocks on disk I/O. Returns an empty
+    list on cache miss; the next call will see the warmed result.
+    """
+    with _enabled_skills_lock:
+        cached = _enabled_skills_cache
+
+    if cached is not None:
+        return list(cached)
+
+    _ensure_enabled_skills_cache()
+    return []
+
+
+def get_enabled_skills_for_config(app_config: AppConfig | None = None) -> list[Skill]:
+    """Return enabled skills using the caller's config source.
+
+    When a concrete ``app_config`` is supplied, cache the loaded skills by that
+    config object's identity so request-scoped config injection still resolves
+    skill paths from the matching config without rescanning storage on every
+    agent factory call.
+    """
+    if app_config is None:
+        return _get_enabled_skills()
+
+    cache_key = id(app_config)
+    with _enabled_skills_lock:
+        cached = _enabled_skills_by_config_cache.get(cache_key)
+        if cached is not None:
+            cached_config, cached_skills = cached
+            if cached_config is app_config:
+                return list(cached_skills)
+
+    skills = list(get_or_new_skill_storage(app_config=app_config).load_skills(enabled_only=True))
+    with _enabled_skills_lock:
+        _enabled_skills_by_config_cache[cache_key] = (app_config, skills)
+    return list(skills)
 
 
 def _skill_mutability_label(category: str) -> str:
@@ -178,7 +224,37 @@ Skip simple one-off tasks.
 """
 
 
-def _build_subagent_section(max_concurrent: int) -> str:
+def _build_available_subagents_description(available_names: list[str], bash_available: bool, *, app_config: AppConfig | None = None) -> str:
+    """Dynamically build subagent type descriptions from registry.
+
+    Mirrors Codex's pattern where agent_type_description is dynamically generated
+    from all registered roles, so the LLM knows about every available type.
+    """
+    # Built-in descriptions (kept for backward compatibility with existing prompt quality)
+    builtin_descriptions = {
+        "general-purpose": "For ANY non-trivial task - web research, code exploration, file operations, analysis, etc.",
+        "bash": (
+            "For command execution (git, build, test, deploy operations)" if bash_available else "Not available in the current sandbox configuration. Use direct file/web tools or switch to AioSandboxProvider for isolated shell access."
+        ),
+    }
+
+    # Lazy import moved outside loop to avoid repeated import overhead
+    from deerflow.subagents.registry import get_subagent_config
+
+    lines = []
+    for name in available_names:
+        if name in builtin_descriptions:
+            lines.append(f"- **{name}**: {builtin_descriptions[name]}")
+        else:
+            config = get_subagent_config(name, app_config=app_config)
+            if config is not None:
+                desc = config.description.split("\n")[0].strip()  # First line only for brevity
+                lines.append(f"- **{name}**: {desc}")
+
+    return "\n".join(lines)
+
+
+def _build_subagent_section(max_concurrent: int, *, app_config: AppConfig | None = None) -> str:
     """Build the subagent system prompt section.
 
     W16(2026-05-18): 瘦身后只渲染 SubagentConfig.capability 字段
@@ -188,6 +264,8 @@ def _build_subagent_section(max_concurrent: int) -> str:
 
     Args:
         max_concurrent: Maximum number of concurrent subagent calls allowed per response.
+        app_config: Explicit application config. When provided, the available-subagent
+            list is resolved from this config instead of the global config singleton.
 
     Returns:
         Formatted subagent section string (capability-exposure 模式).
@@ -196,7 +274,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
     from deerflow.subagents.config import format_subagent_capability
 
     n = max_concurrent
-    available_names = set(get_available_subagent_names())
+    available_names = set(get_available_subagent_names(app_config=app_config))
 
     # 按 EthoInsight 流水线顺序渲染 capability 块
     noldus_order = ["code-executor", "data-analyst", "chart-maker", "report-writer", "knowledge-assistant"]
@@ -727,7 +805,7 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 """
 
 
-def _get_memory_context(agent_name: str | None = None) -> str:
+def _get_memory_context(agent_name: str | None = None, *, app_config: AppConfig | None = None) -> str:
     """Get memory context for injection into system prompt.
 
     Resolves the current user from the request-scoped ContextVar so each
@@ -736,16 +814,22 @@ def _get_memory_context(agent_name: str | None = None) -> str:
 
     Args:
         agent_name: If provided, loads per-agent memory. If None, loads global memory.
+        app_config: Explicit application config. When provided, memory options
+            are read from this value instead of the global config singleton.
 
     Returns:
         Formatted memory context string wrapped in XML tags, or empty string if disabled.
     """
     try:
         from deerflow.agents.memory import format_memory_for_injection, get_memory_data
-        from deerflow.config.memory_config import get_memory_config
         from deerflow.runtime.user_context import get_current_user
 
-        config = get_memory_config()
+        if app_config is None:
+            from deerflow.config.memory_config import get_memory_config
+
+            config = get_memory_config()
+        else:
+            config = app_config.memory
         if not config.enabled or not config.injection_enabled:
             return ""
 
@@ -942,7 +1026,7 @@ You have access to skills that provide optimized workflows for specific tasks. E
 
 def get_skills_prompt_section(available_skills: set[str] | None = None, *, app_config: AppConfig | None = None) -> str:
     """Generate the skills prompt section with available skills list."""
-    skills = _get_enabled_skills()
+    skills = get_enabled_skills_for_config(app_config)
 
     try:
         from deerflow.config import get_app_config
@@ -968,6 +1052,27 @@ def get_skills_prompt_section(available_skills: set[str] | None = None, *, app_c
     return _get_cached_skills_prompt_section(skill_signature, available_key, container_base_path, skill_evolution_section)
 
 
+def _build_self_update_section(agent_name: str | None) -> str:
+    """Prompt block that teaches the custom agent to persist self-updates via update_agent."""
+    if not agent_name:
+        return ""
+    return f"""<self_update>
+You are running as the custom agent **{agent_name}** with a persisted SOUL.md and config.yaml.
+
+When the user asks you to update your own description, personality, behaviour, skill set, tool groups, or default model,
+you MUST persist the change with the `update_agent` tool. Do NOT use `bash`, `write_file`, or any sandbox tool to edit
+SOUL.md or config.yaml — those write into a temporary sandbox/tool workspace and the changes will be lost on the next turn.
+
+Rules:
+- Always pass the FULL replacement text for `soul` (no patch semantics). Start from your current SOUL above and apply the user's edits.
+- Only pass the fields that should change. Omit the others to preserve them.
+- Never pass literal strings like `"null"`, `"none"`, or `"undefined"` for unchanged fields.
+- Pass `skills=[]` to disable all skills, or omit `skills` to keep the existing whitelist.
+- After `update_agent` returns successfully, tell the user the change is persisted and will take effect on the next turn.
+</self_update>
+"""
+
+
 def get_agent_soul(agent_name: str | None) -> str:
     # Append SOUL.md (agent personality) if present
     soul = load_agent_soul(agent_name)
@@ -976,15 +1081,19 @@ def get_agent_soul(agent_name: str | None) -> str:
     return ""
 
 
-def _build_acp_section() -> str:
+def _build_acp_section(*, app_config: AppConfig | None = None) -> str:
     """Build the ACP agent prompt section, only if ACP agents are configured."""
-    try:
-        from deerflow.config.acp_config import get_acp_agents
+    if app_config is None:
+        try:
+            from deerflow.config.acp_config import get_acp_agents
 
-        agents = get_acp_agents()
-        if not agents:
+            agents = get_acp_agents()
+        except Exception:
             return ""
-    except Exception:
+    else:
+        agents = getattr(app_config, "acp_agents", {}) or {}
+
+    if not agents:
         return ""
 
     return (
@@ -996,15 +1105,20 @@ def _build_acp_section() -> str:
     )
 
 
-def _build_custom_mounts_section() -> str:
+def _build_custom_mounts_section(*, app_config: AppConfig | None = None) -> str:
     """Build a prompt section for explicitly configured sandbox mounts."""
-    try:
-        from deerflow.config import get_app_config
+    if app_config is None:
+        try:
+            from deerflow.config import get_app_config
 
-        mounts = get_app_config().sandbox.mounts or []
-    except Exception:
-        logger.exception("Failed to load configured sandbox mounts for the lead-agent prompt")
-        return ""
+            config = get_app_config()
+        except Exception:
+            logger.exception("Failed to load configured sandbox mounts for the lead-agent prompt")
+            return ""
+    else:
+        config = app_config
+
+    mounts = config.sandbox.mounts or []
 
     if not mounts:
         return ""
@@ -1055,13 +1169,14 @@ def apply_prompt_template(
     *,
     agent_name: str | None = None,
     available_skills: set[str] | None = None,
+    app_config: AppConfig | None = None,
     paradigm: str | None = None,
     user_id: str | None = None,
     thread_id: str | None = None,
     deferred_names: frozenset[str] = frozenset(),
 ) -> str:
     # Get memory context
-    memory_context = _get_memory_context(agent_name)
+    memory_context = _get_memory_context(agent_name, app_config=app_config)
 
     # Sprint 8: prior-corrections context for the current paradigm (caller-resolved).
     prior_corrections_context = _get_prior_corrections_context(paradigm=paradigm, user_id=user_id)
@@ -1071,9 +1186,12 @@ def apply_prompt_template(
 
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
-    subagent_section = _build_subagent_section(n) if subagent_enabled else ""
+    subagent_section = _build_subagent_section(n, app_config=app_config) if subagent_enabled else ""
 
     # Check if Noldus custom subagents are available
+    # NOTE: this is a Noldus-only check (upstream apply_prompt_template has no equivalent).
+    # It intentionally resolves from the registered subagents rather than threading app_config,
+    # so a caller-supplied app_config without a .subagents section cannot crash it.
     available_names = get_available_subagent_names()
     has_noldus_agents = bool({"code-executor", "data-analyst", "report-writer", "knowledge-assistant"} & set(available_names))
 
@@ -1156,14 +1274,14 @@ def apply_prompt_template(
 </orchestration_guide>"""
 
     # Get skills section
-    skills_section = get_skills_prompt_section(available_skills)
+    skills_section = get_skills_prompt_section(available_skills, app_config=app_config)
 
     # Get deferred tools section (tool_search)
     deferred_tools_section = get_deferred_tools_prompt_section(deferred_names=deferred_names)
 
     # Build ACP agent section only if ACP agents are configured
-    acp_section = _build_acp_section()
-    custom_mounts_section = _build_custom_mounts_section()
+    acp_section = _build_acp_section(app_config=app_config)
+    custom_mounts_section = _build_custom_mounts_section(app_config=app_config)
     acp_and_mounts_section = "\n".join(section for section in (acp_section, custom_mounts_section) if section)
 
     # Format the prompt with dynamic skills and memory

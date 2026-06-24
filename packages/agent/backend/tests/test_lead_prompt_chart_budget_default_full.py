@@ -19,7 +19,7 @@ def _render_prompt() -> str:
     把所有外部依赖 stub 掉，让 has_noldus_agents=True，从而 noldus_rules 段被渲染。
     """
     # has_noldus_agents 由 get_available_subagent_names() 决定 —— 返回含 noldus agent。
-    prompt_module.get_available_subagent_names = lambda: [  # type: ignore[assignment]
+    prompt_module.get_available_subagent_names = lambda **kw: [  # type: ignore[assignment]
         "code-executor",
         "data-analyst",
         "chart-maker",
@@ -38,8 +38,8 @@ def _render_prompt() -> str:
     prompt_module._get_app_config = lambda: config  # type: ignore[assignment]
     prompt_module._get_enabled_skills = lambda: []  # type: ignore[assignment]
     prompt_module.get_deferred_tools_prompt_section = lambda **kw: ""  # type: ignore[assignment]
-    prompt_module._build_acp_section = lambda: ""  # type: ignore[assignment]
-    prompt_module._get_memory_context = lambda agent_name=None: ""  # type: ignore[assignment]
+    prompt_module._build_acp_section = lambda **kw: ""  # type: ignore[assignment]
+    prompt_module._get_memory_context = lambda agent_name=None, **kw: ""  # type: ignore[assignment]
     prompt_module._get_prior_corrections_context = lambda paradigm=None, user_id=None: ""  # type: ignore[assignment]
     prompt_module._get_resolved_facts_context = lambda thread_id=None, agent_name=None, user_id=None: ""  # type: ignore[assignment]
     prompt_module.get_agent_soul = lambda agent_name=None: ""  # type: ignore[assignment]
