@@ -136,6 +136,7 @@ def finalize_data_analyst_handoff(
   - SKILL.md（`skills/custom/ethoinsight/`）同改（三指令源对齐）。
   - `max_turns` 12 → **待 repro 实测定**（read 模板 1 + fill ~5-6 + finalize 1 ≈ 8-12，纯 append 会超；用 repro 实测真实 turn 数 ×1.5 余量后填，不在 spec 拍死数字）。**依赖顺序（grill 问题 4，防搞反）**：max_turns 必须在 **T-repro 改造成走新 fill/finalize 路径之后**实测（repro 现在跑旧流程，turn 数不可用）；实测定值前用 **18 作临时上限**。
   - 从 data-analyst 工具集**移除** `seal_data_analyst_handoff`、**加入** 3 个 fill + 1 个 finalize（旧 seal 工具代码保留——别的 subagent 不用它但纯函数共用，决议 discussion §四待定 1 选 A）。
+- **⚠️ 工具装配链（三处缺一不可，#187 实施漏第三处致生产 100% FAILED，2026-06-24 dogfood 坐实）**：新工具要让 data-analyst 真拿到，必须三处都注册——① `seal_handoff_tools.py` 写 `@tool` 定义；② `tools/builtins/__init__.py` import + `__all__` 导出；③ **`tools/tools.py` 的 import 段 + `BUILTIN_TOOLS` 列表注册**（data-analyst `tools=None` 继承 `BUILTIN_TOOLS − disallowed_tools`，工具不进 BUILTIN_TOOLS = subagent 看不到 = 旧 seal 又被 disallowed = 无工具写 handoff = 确定性 FAILED）。#187 做了①②漏③，单元测试全绿但生产全败。验收必须断言「fill/finalize 真在 `BUILTIN_TOOLS` 且在 data-analyst 可见工具集（BUILTIN_TOOLS − disallowed）」（见 §四 T12/T13）。这是「skill 文件 ≠ subagent 能用」装配纪律的工具版（CLAUDE.md 第 1 条精神）。
 - `loop_detection_middleware.py:_TOOL_FREQ_SEMANTIC_OVERRIDES`（L196）加 `fill_data_analyst_text_list`/`fill_data_analyst_record_list`/`fill_data_analyst_gate_signals` lenient（多次 fill 不被 per-tool frequency 误杀；前科 memory `feedback_loop_detection_tool_semantics_floor_and_partial_strip`）。
 - `_attempt_seal_resume`（`executor.py:1076`）：data-analyst 的补轮 `seal_tool` 名换成 `finalize_data_analyst_handoff`（**隐藏耦合点**，§六.Q-resume）。
 
@@ -184,6 +185,8 @@ def finalize_data_analyst_handoff(
 9. **T-contract**：prompt 契约（importlib 读被测 data_analyst.py 源）断言 system_prompt 含填模板流程、不含旧"产出交付合一/立即 seal"措辞。
 10. **T-resume**：data-analyst 补轮 seal_tool 名 = finalize_data_analyst_handoff。
 11. **T-repro（回归基线）**：`repro-data-analyst.py` 入库 `scripts/forensics/`，改造为走 fill/finalize 路径，断言 **args 不再 invalid_tool_calls、handoff finalize 落盘、key_findings ≥3 含三项 judgment（混杂排查/效应量/离群）**。
+12. **T12 装配链注册（#187 漏的、生产 100% FAILED 的那条）**：断言 fill/finalize 4 工具真在 `tools.py:BUILTIN_TOOLS`（不止有 `@tool` 定义 + `__init__` 导出）。已加入 `test_da_seal_stepwise_fill.py::TestDataAnalystPromptContract::test_fill_finalize_registered_in_builtin_tools`。
+13. **T13 data-analyst 可见工具集**：断言 `BUILTIN_TOOLS − DATA_ANALYST_CONFIG.disallowed_tools` 含 fill/finalize（端到端装配，直击 dogfood 复现的「LLM 调 fill 但工具不在集」死路）。已加入 `test_data_analyst_visible_toolset_includes_fill_finalize`。
 
 ---
 

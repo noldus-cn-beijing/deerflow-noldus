@@ -9,6 +9,10 @@ from deerflow.reflection import resolve_variable
 from deerflow.sandbox.security import is_host_bash_allowed
 from deerflow.tools.builtins import (
     ask_clarification_tool,
+    fill_data_analyst_gate_signals,
+    fill_data_analyst_record_list,
+    fill_data_analyst_text_list,
+    finalize_data_analyst_handoff,
     identify_ev19_template_tool,
     inspect_uploaded_file_tool,
     prep_chart_plan_tool,
@@ -41,6 +45,10 @@ BUILTIN_TOOLS = [
     seal_data_analyst_handoff,
     seal_chart_maker_handoff,
     seal_report_writer_handoff,
+    fill_data_analyst_text_list,
+    fill_data_analyst_record_list,
+    fill_data_analyst_gate_signals,
+    finalize_data_analyst_handoff,
 ]
 
 SUBAGENT_TOOLS = [

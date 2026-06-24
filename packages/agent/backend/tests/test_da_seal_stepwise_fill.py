@@ -389,6 +389,50 @@ class TestDataAnalystPromptContract:
 
         assert "seal_data_analyst_handoff" in DATA_ANALYST_CONFIG.disallowed_tools
 
+    def test_fill_finalize_registered_in_builtin_tools(self):
+        """装配回归（#187 漏注册 bug）：fill/finalize 必须在 BUILTIN_TOOLS 注册表里。
+
+        #187 在 seal_handoff_tools.py 定义了 4 个工具、builtins/__init__.py 导出了，
+        但漏在 tools.py 的 BUILTIN_TOOLS 注册 → data-analyst (tools=None 继承
+        BUILTIN_TOOLS − disallowed) 拿不到 fill/finalize → 旧 seal 又被 disallowed →
+        无任何能写 handoff 的工具 → 生产 100% FAILED + lead 降级。
+        定义/导出/prompt/SealGate 的单元测试都绿，唯独这条装配链没测 → bug 溜过去。
+        本测试守「凡 data-analyst 流程依赖的 fill/finalize 工具，都必须真在 BUILTIN_TOOLS」。
+        """
+        from deerflow.tools.tools import BUILTIN_TOOLS
+
+        names = {getattr(t, "name", None) for t in BUILTIN_TOOLS}
+        for required in (
+            "fill_data_analyst_text_list",
+            "fill_data_analyst_record_list",
+            "fill_data_analyst_gate_signals",
+            "finalize_data_analyst_handoff",
+        ):
+            assert required in names, (
+                f"{required} 定义在 seal_handoff_tools.py 但未注册到 tools.py:BUILTIN_TOOLS "
+                f"→ data-analyst 拿不到 → 无工具写 handoff → 确定性 FAILED"
+            )
+
+    def test_data_analyst_visible_toolset_includes_fill_finalize(self):
+        """端到端装配：data-analyst 实际可见工具集（BUILTIN_TOOLS − disallowed）含 fill/finalize。
+
+        直击 dogfood 复现的死路：LLM turn 4 正确调 fill_data_analyst_text_list，
+        但工具不在 data-analyst 工具集 → 改走 write_file 被 guardrail 拒 → 挣扎放弃。
+        """
+        from deerflow.subagents.builtins.data_analyst import DATA_ANALYST_CONFIG
+        from deerflow.tools.tools import BUILTIN_TOOLS
+
+        builtin_names = {getattr(t, "name", None) for t in BUILTIN_TOOLS}
+        disallowed = set(DATA_ANALYST_CONFIG.disallowed_tools)
+        visible = builtin_names - disallowed
+        for required in (
+            "fill_data_analyst_text_list",
+            "fill_data_analyst_record_list",
+            "fill_data_analyst_gate_signals",
+            "finalize_data_analyst_handoff",
+        ):
+            assert required in visible, f"{required} 不在 data-analyst 可见工具集（被 disallowed 或未注册）"
+
 
 # ---------------------------------------------------------------------------
 # T-resume — data-analyst 补轮催 finalize（隐藏耦合点 §三 #9 R2）
