@@ -1,0 +1,9 @@
+{
+  "name": "noldus-insight-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright driver + forensic panel for noldus-insight end-to-end dogfood (project skill)",
+  "dependencies": {
+    "playwright": "^1.61.0"
+  }
+}
