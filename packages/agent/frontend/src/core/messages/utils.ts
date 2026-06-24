@@ -315,14 +315,13 @@ function splitInlineReasoningFromAIMessage(message: Message) {
 }
 
 export function extractContentFromMessage(message: Message) {
+  let text: string;
   if (typeof message.content === "string") {
-    return (
+    text =
       splitInlineReasoningFromAIMessage(message)?.content ??
-      message.content.trim()
-    );
-  }
-  if (Array.isArray(message.content)) {
-    return message.content
+      message.content.trim();
+  } else if (Array.isArray(message.content)) {
+    text = message.content
       .map((content) => {
         switch (content.type) {
           case "text":
@@ -336,8 +335,14 @@ export function extractContentFromMessage(message: Message) {
       })
       .join("\n")
       .trim();
+  } else {
+    return "";
   }
-  return "";
+  // P0 (spec 2026-06-24-intent-gate-signals-leak): strip 后端控制协议方括号信号
+  // ([intent]/[gate_signals])。仅在展示层 strip——content 字段本身不动，后端
+  // guardrail/lead 照常从历史 content 读取信号。已核实本函数全部调用方
+  // (message-list render / 导出 / 最近 AI 回复派生) 无一构造回传后端 payload。
+  return stripControlSignalLines(text);
 }
 
 export function extractReasoningContentFromMessage(message: Message) {
@@ -527,6 +532,52 @@ const INTERNAL_MARKER_RE = new RegExp(
   `<(${INTERNAL_MARKER_TAGS.join("|")})>[\\s\\S]*?</\\1>`,
   "g",
 );
+
+/**
+ * Backend control-protocol signals that ride inside AIMessage ``content`` as
+ * square-bracket markers, consumed by backend components:
+ *
+ * - ``[intent] <NAME>`` — lead 意图分类声明，被
+ *   ``IntentClassificationGuardrailProvider`` 从历史 content 读取校验（W17）。
+ * - ``[gate_signals] ...`` — subagent 给 lead 的决策信号，lead 从历史 content
+ *   读取做下游决策。
+ *
+ * 这些是机器控制文法，对研究员零信息量且破坏专业观感。但【绝不能从 content
+ * 抽走】——后端 guardrail/lead 依赖从历史 content 读它们（不同于 ``<think>``：
+ * ThinkTagMiddleware 把 ``<think>`` 抽到 ``additional_kwargs`` 后无下游再读，
+ * 故可后端处理；``[intent]``/``[gate_signals]`` 抽走会让 guardrail/lead 瞎了）。
+ *
+ * 所以只在【前端 render 入口】行级 strip：content 在 state/历史/导出里原样保留，
+ * 仅 UI 气泡显示时删掉这些行。**后端新增方括号控制信号语法时必须同步加进
+ * ``CONTROL_SIGNAL_LINE_NAMES``**（手工白名单，避免前后端协议漂移）。
+ */
+export const CONTROL_SIGNAL_LINE_NAMES = ["intent", "gate_signals"] as const;
+
+// 行级匹配：整行（容忍前导空白）以 [intent] 或 [gate_signals] 开头 → 删该标记行，
+// 并一并删掉其后紧跟的连续非空行（gate_signals 的多行块体，如 chart-maker 的
+//   [gate_signals]
+//   charts_generated: 3
+//   chart_files:
+//     - plot_box_open_arm.png
+// 块体首列可能无缩进，故用「连续非空行直到空行」界定而非「缩进续行」）。
+// 用户正文里提及的 ``[intent]``（如「什么是 [intent] 标记」）因不以标记开头，安全保留。
+const CONTROL_SIGNAL_LINE_RE = new RegExp(
+  `^[ \\t]*\\[(?:${CONTROL_SIGNAL_LINE_NAMES.join("|")})\\][^\\n]*(?:\\n(?!\\s*$)[^\\n]*)*`,
+  "gm",
+);
+
+/**
+ * Strip backend control-protocol square-bracket signal lines from rendered
+ * message content. Display-layer only: the original ``content`` is untouched
+ * (backend guardrail/lead keep reading the signals from history). Collapses
+ * the blank lines left behind so the bubble doesn't show a wall of whitespace.
+ */
+export function stripControlSignalLines(content: string): string {
+  return content
+    .replace(CONTROL_SIGNAL_LINE_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 /**
  * Strip every known backend-injected marker from message content.

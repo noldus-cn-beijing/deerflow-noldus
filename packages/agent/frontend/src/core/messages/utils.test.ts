@@ -229,3 +229,75 @@ describe("inline <think> handling — streaming TTFT", () => {
     expect(extractReasoningContentFromMessage(msg)).toBeNull();
   });
 });
+
+describe("extractContentFromMessage — 后端控制协议方括号信号 strip (spec 2026-06-24)", () => {
+  // [intent] / [gate_signals] 是后端控制协议文法，写在 AIMessage 正文里：
+  //  - [intent] 被 IntentClassificationGuardrailProvider 从历史 content 读取（W17）。
+  //  - [gate_signals] 被 lead 从历史 content 读取做下游决策。
+  // 它们对研究员零信息量且破坏专业观感。content 必须对后端保持完整（guardrail/lead
+  // 依赖从历史读），所以只在【前端 render 入口 extractContentFromMessage】行级 strip。
+
+  it("1. 单行 [intent] E2E_FULL → strip 后只剩自然语言", () => {
+    const msg = makeAIMsg("1", {
+      content:
+        '查看其他 1 个步骤\n使用 "identify_ev19_template" 工具\n\n[intent] E2E_FULL\n\n好的，我看到你上传了28个EPM实验数据文件。',
+    });
+    expect(extractContentFromMessage(msg)).toBe(
+      '查看其他 1 个步骤\n使用 "identify_ev19_template" 工具\n\n好的，我看到你上传了28个EPM实验数据文件。',
+    );
+  });
+
+  it("2. 单行紧凑 [gate_signals] ... → strip 干净", () => {
+    const msg = makeAIMsg("1", {
+      content:
+        "计划已生成：28只动物，4组各7只。\n\n[gate_signals] constitution_acknowledged: true data_quality: critical_count: 0 warning_count: 0 critical_items: [] statistical_validity: ok errors_count: 0\n\n执行摘要：分析完成。",
+    });
+    expect(extractContentFromMessage(msg)).toBe(
+      "计划已生成：28只动物，4组各7只。\n\n执行摘要：分析完成。",
+    );
+  });
+
+  it("3. 多行块 [gate_signals]\\ncharts_generated: 1\\nchart_files:\\n  - x.png → 整块 strip", () => {
+    const msg = makeAIMsg("1", {
+      content:
+        "开始绘制图表。\n\n[gate_signals]\ncharts_generated: 3\nchart_files:\n  - plot_box_open_arm.png\n  - plot_bar_entries.png\nstatistics_status: ok\n\n绘制完成。",
+    });
+    expect(extractContentFromMessage(msg)).toBe(
+      "开始绘制图表。\n\n绘制完成。",
+    );
+  });
+
+  it("4. [intent] 夹在自然语言中间 → 只删 [intent] 行，保留前后自然语言", () => {
+    const msg = makeAIMsg("1", {
+      content:
+        "🧮 正在计算指标，预计 30-60 秒...\n\n[intent] E2E_FULL\n\n子任务已完成，结果如下：",
+    });
+    expect(extractContentFromMessage(msg)).toBe(
+      "🧮 正在计算指标，预计 30-60 秒...\n\n子任务已完成，结果如下：",
+    );
+  });
+
+  it("5. 合法用户输入保护：user message 含 [intent]-like 文本不被误 strip", () => {
+    // extractContentFromMessage 对 user message 也按 content 字符串处理；
+    // strip 只删「行首 [intent]/[gate_signals]」整行，研究员句子中间提到的 [intent]
+    // 不会整行以方括号标记开头，故安全保留。
+    const userMsg = {
+      type: "human",
+      id: "u1",
+      content: "研究员问：什么是 [intent] 标记？为什么对话里会冒出来？",
+    } as Message;
+    expect(extractContentFromMessage(userMsg)).toBe(
+      "研究员问：什么是 [intent] 标记？为什么对话里会冒出来？",
+    );
+  });
+
+  it("6. content 完整性：strip 仅作用于展示派生，message.content 字段本身不变（未被 mutate）", () => {
+    const original =
+      "[intent] E2E_FULL\n\n这是给研究员看自然语言正文。";
+    const msg = makeAIMsg("1", { content: original });
+    // 展示层 strip 掉了 [intent] 行
+    expect(extractContentFromMessage(msg)).toBe("这是给研究员看自然语言正文。");
+    // 但 message.content 原样保留（后端 guardrail/lead 从历史 content 读取依赖此不变性）
+    expect(msg.content).toBe(original);
+  });
+});
