@@ -128,12 +128,15 @@ def resolve_sandbox_path(
         return Path(workspace_base) / suffix if suffix else Path(workspace_base)
 
     # 都没有 → 原样（fail-safe：非沙箱环境/测试直接运行）
-    # 可观测信号：收到 /mnt 路径却既无 env 又无 workspace_base 兜底，原样返回时记
-    # 一行 debug（非 warning——正常沙箱外测试也走这条，不该刷 warning）。给未来排查
-    # "读不到 /mnt 文件"提供 grep 锚点（守 feedback_isolate_root_cause_*：合法静默
-    # 路径不响亮，但留痕）。
-    logger.debug(
-        "resolve_sandbox_path: 虚拟路径未解析（无 env/无兜底），原样返回 %s", p
+    # F2（spec 2026-06-24-run-chart-plan-permissionerror）：收到 /mnt 路径却既无 env 又无
+    # workspace_base 兜底 = 虚拟路径未解析，下游用它做文件 IO 必炸（PermissionError/
+    # FileNotFoundError）。升级为 WARNING（原 debug 在生产日志级别不可见 → 静默退化无痕，
+    # 本次 chart 渲染崩塌排查被「疑似伪造」误导正因此处无响亮信号）。给未来同类问题留 grep
+    # 锚点。沙箱外测试直接跑脚本也会走这条（合法），但 WARNING 不致命、只留痕。
+    logger.warning(
+        "resolve_sandbox_path: 虚拟路径 %s 未解析（无 DEERFLOW_PATH_* env 且无 workspace_base "
+        "兜底）→ 原样返回；若下游用它做文件 IO 将抛 PermissionError/FileNotFoundError",
+        p,
     )
     return Path(p)
 

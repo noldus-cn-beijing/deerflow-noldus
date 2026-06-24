@@ -341,3 +341,50 @@ class TestReadGroupsJsonResolvesPaths:
             "Control": ["/home/user/data/ctrl_1.txt"],
             "Treatment": ["/home/user/data/trt_1.txt"],
         }
+
+
+# ---------------------------------------------------------------------------
+# Spec 2026-06-24-run-chart-plan-permissionerror — F2 fail-safe 可观测
+# (T6/T7：收到 /mnt 虚拟路径却无 env 无 workspace_base 兜底 → 原样返回时记 WARNING，
+#  给「虚拟路径漏解析」留响亮 grep 锚点；真实路径不 warn)
+# ---------------------------------------------------------------------------
+
+
+class TestFailSafeWarning:
+    """F2：fail-safe 原样返回 /mnt 路径时记 WARNING（原 debug 在生产日志级别不可见 →
+    静默退化无痕，本次 chart 渲染崩塌排查被「疑似伪造」误导正因此处无响亮信号）。
+    """
+
+    def _clear_env(self, monkeypatch):
+        for k in list(os.environ):
+            if k.startswith("DEERFLOW_PATH_"):
+                monkeypatch.delenv(k)
+
+    def test_f2_t6_unresolved_virtual_path_warns(self, monkeypatch, caplog):
+        """T6：/mnt 路径无 env 无 workspace_base → 原样返回 + 记 WARNING（含原始路径）。"""
+        import logging
+
+        self._clear_env(monkeypatch)
+        virtual = "/mnt/user-data/workspace/x.json"
+
+        with caplog.at_level(logging.WARNING, logger="ethoinsight.scripts._cli"):
+            result = resolve_sandbox_path(virtual)
+
+        assert result == Path(virtual)  # fail-safe: still returned as-is (no crash)
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings, "F2 red: unresolved /mnt virtual path should emit a WARNING"
+        # The original path string must appear in the warning (grep anchor).
+        assert any(virtual in r.getMessage() for r in warnings), [
+            r.getMessage() for r in warnings
+        ]
+
+    def test_f2_t7_real_path_does_not_warn(self, caplog):
+        """T7：真实路径（非 /mnt）→ 原样返回，不 warn（合法路径，无信号噪音）。"""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="ethoinsight.scripts._cli"):
+            result = resolve_sandbox_path("/real/path/x.json")
+
+        assert result == Path("/real/path/x.json")
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert not warnings, f"F2 over-warns on real path: {[r.getMessage() for r in warnings]}"

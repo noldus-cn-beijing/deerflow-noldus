@@ -503,3 +503,145 @@ class TestSealGatePassThrough:
         runtime = None  # rule 1 short-circuits before runtime is touched.
         assert gate._check(state, runtime) is None
         assert gate.after_agent(state, runtime) is None  # also no auto-seal
+
+
+# ===================================================================
+# Spec 2026-06-24-run-chart-plan-permissionerror — F1 argv 预解析
+# (T1-T5：进程池把 plot 脚本 args 原样透传 /mnt → savefig 崩塌；F1 在 Step 5
+#  对 args 逐项跑 replace_virtual_path 预解析，对齐 bash 重写语义)
+# ===================================================================
+
+
+class TestArgvPreResolved:
+    """F1：喂 worker 的 args 必须已是真实物理路径（无 /mnt 前缀）。
+
+    Spec §四 T1/T3：注入 runner 捕获实际收到的 args，断言 /mnt 虚拟路径已被
+    replace_virtual_path 预解析。改前红 = runner 收到 ``--output
+    /mnt/user-data/outputs/x.png``；改后绿 = 收到 ``<workspace_parent>/outputs/x.png``。
+    """
+
+    def _capturing_runner(self, captured: dict):
+        """Runner that records the args it received keyed by task_id, rc=0, writes png."""
+
+        def _r(script: str, args: list[str], task_id: str):
+            captured[task_id] = list(args)
+            return (task_id, 0, "")
+
+        return _r
+
+    def test_f1_t1_output_argv_pre_resolved(self, ws_and_outputs, monkeypatch):
+        # T1 核心：runner 收到的 --output 已是真实路径（无 /mnt 前缀）。
+        workspace, outputs = ws_and_outputs
+        captured: dict[str, list[str]] = {}
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", self._capturing_runner(captured))
+        charts = [{"id": "trajectory_s0", "output_mode": "per_subject"}]
+        _write_plan(workspace, _plan(charts))
+        _call(_runtime(workspace, outputs))
+
+        args = captured["trajectory_s0"]
+        # The --output value must be the real physical path (mapped to outputs/),
+        # NOT the raw /mnt/user-data/outputs/... virtual path.
+        out_val = args[args.index("--output") + 1]
+        assert not out_val.startswith("/mnt/"), (
+            f"F1 red: --output not pre-resolved, still virtual: {out_val}"
+        )
+        assert out_val == str(outputs / "trajectory_s0.png"), out_val
+
+    def test_f1_t2_non_path_args_preserved(self, ws_and_outputs, monkeypatch):
+        # T2：非路径项（--parameters-json, JSON 字符串, --dpi, 150）原样不变。
+        workspace, outputs = ws_and_outputs
+        captured: dict[str, list[str]] = {}
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", self._capturing_runner(captured))
+        charts = [
+            {
+                "id": "box_open_arm",
+                "output_mode": "aggregate",
+                "args": [
+                    "--inputs", "/mnt/user-data/uploads/inputs.json",
+                    "--output", "/mnt/user-data/outputs/box_open_arm.png",
+                    "--parameters-json", '{"open_arm_zones": ["open"]}',
+                    "--dpi", "150",
+                ],
+            }
+        ]
+        _write_plan(workspace, _plan(charts))
+        _call(_runtime(workspace, outputs))
+
+        args = captured["box_open_arm"]
+        # JSON string preserved verbatim (not a /mnt path → unchanged).
+        assert '{"open_arm_zones": ["open"]}' in args
+        # Numeric / flag args preserved verbatim.
+        assert args[args.index("--dpi") + 1] == "150"
+        # --parameters-json flag itself unchanged (not a path).
+        assert "--parameters-json" in args
+
+    def test_f1_t3_multiple_subjects_all_resolved(self, ws_and_outputs, monkeypatch):
+        # T3：28 个 per_subject chart 各含不同 /mnt 路径 → 全部 args 解析（不只首个）。
+        workspace, outputs = ws_and_outputs
+        captured: dict[str, list[str]] = {}
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", self._capturing_runner(captured))
+        charts = [
+            {
+                "id": f"trajectory_s{i}",
+                "output_mode": "per_subject",
+                "args": [
+                    "--inputs", f"/mnt/user-data/uploads/inputs_s{i}.json",
+                    "--output", f"/mnt/user-data/outputs/plot_s{i}.png",
+                ],
+            }
+            for i in range(28)
+        ]
+        _write_plan(workspace, _plan(charts))
+        _call(_runtime(workspace, outputs))
+
+        # Every chart's args must have NO /mnt-prefixed item remaining.
+        for tid, args in captured.items():
+            mnt_items = [a for a in args if a.startswith("/mnt/")]
+            assert not mnt_items, f"F1 red: {tid} still has unresolved /mnt args: {mnt_items}"
+
+    def test_f1_t4_thread_data_none_passthrough(self, ws_and_outputs, monkeypatch):
+        # T4：thread_data 缺 outputs_path 映射 → replace_virtual_path 原样返回，不 crash。
+        # （Step 1 仍保证 workspace_path 存在，但 outputs_path 缺失时 outputs 虚拟路径
+        # 不被解析——这是 thread_data 映射不全的退化场景，F1 绝不能 crash。）
+        workspace, outputs = ws_and_outputs
+        captured: dict[str, list[str]] = {}
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", self._capturing_runner(captured))
+        charts = [{"id": "trajectory_s0", "output_mode": "per_subject"}]
+        _write_plan(workspace, _plan(charts))
+        # thread_data WITHOUT outputs_path → outputs 虚拟路径无法解析。
+        runtime_no_outputs = ToolRuntime(
+            state={"thread_data": {"workspace_path": str(workspace)}},
+            context=None,
+            config={},
+            stream_writer=None,
+            tool_call_id="test-id",
+            store=None,
+        )
+        _call(runtime_no_outputs)
+
+        # Did not crash (F1 ran replace_virtual_path per-arg). The output arg stays
+        # virtual because no outputs mapping — but that's the pre-existing thread_data
+        # gap, not F1's job to fix. F1's contract: apply replace_virtual_path without
+        # raising.
+        assert "trajectory_s0" in captured  # runner was reached (no crash in Step 5)
+
+    def test_f1_t5_chart_files_still_virtual(self, ws_and_outputs, monkeypatch):
+        # T5：F1 改的是喂 worker 的 args（真实路径），但 chart_meta["output"] 仍存虚拟
+        # 路径 → Step 7 核磁盘后 chart_files 里是 /mnt/user-data/outputs/ 前缀
+        # （守 ChartMakerHandoff _validate_chart_paths 契约）。两处解耦不冲突。
+        workspace, outputs = ws_and_outputs
+        # Use the success runner so pngs actually land on disk (real path).
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success(outputs=outputs))
+        charts = [
+            {"id": "box_open_arm", "output_mode": "aggregate"},
+            {"id": "trajectory_s0", "output_mode": "per_subject"},
+        ]
+        _write_plan(workspace, _plan(charts))
+        _call(_runtime(workspace, outputs))
+
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        # chart_files MUST stay virtual (the schema's _validate_chart_paths enforces
+        # /mnt/user-data/outputs/ prefix — F1 pre-resolves only the worker args, not
+        # the stored chart_files contract).
+        assert all(p.startswith("/mnt/user-data/outputs/") for p in h["chart_files"]), h["chart_files"]
+        assert h["status"] == "completed"

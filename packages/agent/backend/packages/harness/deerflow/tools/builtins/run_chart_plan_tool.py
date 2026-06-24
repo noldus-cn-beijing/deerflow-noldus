@@ -182,13 +182,24 @@ def run_chart_plan_tool(
 
     # ---- Step 5: build task list ----
     # 绘图脚本的 args（plan_charts.json 的 entry.args）已含完整 argv（--input --output
-    # --parameters-json ...），直接透传给 import_module(script).main(args)。
+    # --parameters-json ...）。
+    #
+    # F1（spec 2026-06-24-run-chart-plan-permissionerror）：argv 里的 /mnt 虚拟路径必须
+    # 在喂 worker 前预解析成真实物理路径。根因：plot 脚本 fig.savefig(args.output) 不调
+    # resolve_sandbox_path（与 compute 脚本走 save_output_json→自 resolve 不同），进程池
+    # 透传原始 /mnt → PermissionError/FileNotFoundError（112/113 图全废，见 problem doc）。
+    # bash 路径靠 replace_virtual_paths_in_command 重写命令字符串；进程池没有这步——F1 把
+    # 等价的 argv 重写提到工具内，让两条路径语义对齐（守「用确定性结构约束行为」）。
+    # replace_virtual_path 对非 /mnt 项（--input / --parameters-json / JSON 字符串 / 数字）
+    # 原样返回（幂等无害），故可对整个 args 数组逐项跑。
     tasks: list[tuple[str, list[str], str]] = []  # (script, args, task_id)
     # 保留 output_mode 用于 status 派生（aggregate 是组间对比 must_have）。
     chart_meta: dict[str, dict[str, Any]] = {}  # task_id -> {output, output_mode, chart_id}
     for c in plan_charts:
         script = c.get("script", "")
         args = list(c.get("args", []) or [])
+        # F1: 预解析 argv 里的 /mnt 虚拟路径 → 真实物理路径（对齐 bash 重写语义）。
+        args = [replace_virtual_path(a, thread_data) for a in args]
         chart_id = c.get("id", c.get("output", ""))
         output = c.get("output", "")
         output_mode = c.get("output_mode", "per_subject")
