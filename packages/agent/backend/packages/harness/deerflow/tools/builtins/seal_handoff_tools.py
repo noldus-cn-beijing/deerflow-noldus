@@ -423,14 +423,118 @@ def _outputs_dir_for(workspace: Path) -> Path:
     return workspace.parent / "outputs"
 
 
+def _chart_file_exists_on_disk(virtual_path: str, outputs_dir: Path) -> bool:
+    """把虚拟路径 /mnt/user-data/outputs/<name> resolve 成物理 outputs_dir/<name>，
+    确定性 exists() 核磁盘。与 2.2 门 rendered 集同源（basename 拼接）。
+
+    前缀不符（schema 已拦，防御性）或 basename 为空 → 视为不存在（剔进 remaining）。
+    """
+    basename = virtual_path.rsplit("/", 1)[-1]
+    if not basename:
+        return False
+    return (outputs_dir / basename).exists()
+
+
+def _reconcile_chart_files_against_disk(
+    payload: dict[str, Any],
+    workspace: Path,
+) -> None:
+    """产物真实性核对（spec 2026-06-24 ETHO-10）。
+
+    chart_files 里每条虚拟路径 resolve 成物理路径、确定性 exists() 核磁盘：
+      - 存在 → 留在 chart_files；
+      - 不存在 → 从 chart_files 剔除，挪进 remaining_charts 留痕
+        （语义：声称要画但未落盘，留痕供用户再要）。
+
+    这是对所有 status 生效的通用不变式（partial/failed 的幻影路径也会致下游 404）。
+    不靠 LLM 自报，磁盘是唯一真相——与 present_file_tool 守同一不变式。
+
+    鲁棒性：outputs 读盘异常（路径不是目录、权限问题等）→ warning + 跳过核对、
+    原样保留 chart_files（绝不 crash、绝不误剔真图）。注意「completed 且 chart_files
+    全空」的响亮 ValueError 不在此函数内（那是上层 2.2 段的有意拒绝，与读盘异常无关）。
+    """
+    chart_files = payload.get("chart_files") or []
+    if not chart_files:
+        return  # 空集无幻影可剔；completed 空集的拒绝由上层 2.2 段处理。
+
+    outputs_dir = _outputs_dir_for(workspace)
+    try:
+        kept: list[str] = []
+        purged: list[dict[str, str]] = []
+        for virtual_path in chart_files:
+            if not isinstance(virtual_path, str) or not virtual_path:
+                continue
+            try:
+                real = _chart_file_exists_on_disk(virtual_path, outputs_dir)
+            except OSError as e:
+                # 单条路径核盘异常（如 outputs 是文件）：保守不剔（绝不误剔真图）。
+                logger.warning(
+                    "chart-maker seal: chart_files reality check OSError on %r (%s); "
+                    "keep as-is (never purge on read error)",
+                    virtual_path,
+                    e,
+                )
+                real = True  # 保守保留
+            if real:
+                kept.append(virtual_path)
+            else:
+                basename = virtual_path.rsplit("/", 1)[-1] or virtual_path
+                purged.append(
+                    {
+                        "chart_id": basename,
+                        "reason": (
+                            "claimed in chart_files but not rendered on disk "
+                            "(likely loop-detection hard-stop / max_turns early-exit)"
+                        ),
+                    }
+                )
+    except (OSError, NotADirectoryError) as e:
+        # outputs 整体读盘异常 → warning + 跳过核对、原样封存（绝不 crash）。
+        logger.warning(
+            "chart-maker seal: outputs dir reality check unreadable (%s); "
+            "skip reality reconciliation, keep chart_files as-is",
+            e,
+        )
+        return
+
+    if purged:
+        logger.warning(
+            "chart-maker seal: 产物真实性核对剔除 %d 条幻影路径（磁盘不存在）"
+            "进 remaining_charts（sealed_by 可观测：reward hacking 治理触发率）",
+            len(purged),
+        )
+        payload["chart_files"] = kept
+        existing_remaining = payload.get("remaining_charts") or []
+        if not isinstance(existing_remaining, list):
+            existing_remaining = []
+        # 去重：同 chart_id 不重复进 remaining（保守合并）
+        seen = {
+            r.get("chart_id")
+            for r in existing_remaining
+            if isinstance(r, dict)
+        }
+        for p in purged:
+            if p["chart_id"] not in seen:
+                existing_remaining.append(p)
+                seen.add(p["chart_id"])
+        payload["remaining_charts"] = existing_remaining
+
+
 def _reconcile_chart_maker_payload(
     payload: dict[str, Any],
     workspace: Path,
 ) -> None:
-    """封存前对 chart-maker payload 做确定性对账（spec 2026-06-22）。
+    """封存前对 chart-maker payload 做确定性对账（spec 2026-06-22 + 2026-06-24 ETHO-10）。
 
     机读真相来源：plan_charts.json（resolver 真实 skip 列表 + 计划要画的图）+
-    outputs/ 文件系统（实际落盘的 png）。LLM 自述的 failed_charts[].reason 不可信。
+    outputs/ 文件系统（实际落盘的 png）。LLM 自述的 failed_charts[].reason 不可信，
+    LLM 自报的 chart_files 路径也不可信（2026-06-24：磁盘是唯一真相）。
+
+    2.0（产物真实性不变式，spec 2026-06-24 ETHO-10）：chart_files 每条虚拟路径
+        resolve 成物理路径、确定性 exists() 核磁盘——存在的留，不存在的剔除挪进
+        remaining_charts 留痕。对所有 status 生效（partial 的幻影也致 404）。与
+        present_file_tool 守同一不变式「声称的产物文件必须真存在」。剔除率记 warning
+        可观测（reward hacking 治理触发率）。
 
     2.1（订正伪造 reason）：对每条 failed_charts，
         - chart_id 在 plan.skipped[] → 用 plan 的真实 detail 覆盖 LLM 自述；
@@ -442,22 +546,41 @@ def _reconcile_chart_maker_payload(
         basename 集）- rendered（outputs/ 实际 *.png basename 集）= missing。
         status==completed 且 missing 非空 → 抛 ValueError（响亮拒绝，让 chart-maker
         补画；与 _completed_requires_core_output 同风格）。
+        另：2.0 真实性核对后若 completed 且 chart_files 为空（核心图一张没真画）
+        → 抛 ValueError（堵 `if not planned_aggregate: return` 的 plan-无-aggregate
+        放行漏洞，不依赖 plan 有没有 aggregate）。
 
-    per_subject 图（被 chart_budget 截断的）不进此门：只对账 aggregate。
+    per_subject 图（被 chart_budget 截断的）不进 2.2 aggregate 门：只对账 aggregate。
 
-    鲁棒性：plan_charts.json 不存在 → 跳过对账、原样封存（spec 2.1 实现要点）。
-    任何读盘异常 → warning + 跳过对账，绝不让 seal 因读不到 plan 而 crash。
+    鲁棒性：plan_charts.json 不存在 → 跳过 2.1/2.2、原样封存（但 2.0 真实性核对仍生效，
+    因它只看 outputs/ 磁盘不依赖 plan）。任何读盘异常 → warning + 跳过该段，绝不让 seal
+    因读不到 plan/outputs 而 crash。
 
     Args:
-        payload: 待封存的 chart-maker handoff payload（in-place 修订 failed_charts）。
+        payload: 待封存的 chart-maker handoff payload（in-place 修订 failed_charts
+            / chart_files / remaining_charts）。
         workspace: host-side workspace 目录。
 
     Raises:
-        ValueError: status==completed 且 plan 内 aggregate 图有未落盘者。
+        ValueError: status==completed 且（核磁盘后 chart_files 全空，或 plan 内
+            aggregate 图有未落盘者）。
     """
+    # --- 2.0：产物真实性核对（spec 2026-06-24 ETHO-10，磁盘是唯一真相）---
+    # 先于一切 plan 依赖逻辑：真实性核对只读 outputs/ 磁盘，不需要 plan。
+    # 即使 plan_charts.json 不存在（下面早退），2.0 仍生效（spec 六：2.0 不依赖 plan）。
+    _reconcile_chart_files_against_disk(payload, workspace)
+
     plan = _load_plan_charts(workspace)
     if plan is None:
-        # 极端早退：无 plan 可对账 → 不订正 reason、不做完整性校验，原样封存。
+        # 极端早退：无 plan 可对账 → 不订正 reason、不做 aggregate 完整性校验。
+        # 但 2.0 真实性核对已跑（剔除幻影路径）；completed 空集拒绝仍须守。
+        if payload.get("status") == "completed" and not payload.get("chart_files"):
+            raise ValueError(
+                "status='completed' but chart_files is empty after disk reality check "
+                "(and no plan_charts.json to reconcile). outputs/ has no real png "
+                "matching any claimed path. 补画真实图再 completed，或诚实改 "
+                "status=partial/failed。绝不留幻影路径（下游 present 时会 404）。"
+            )
         return
 
     # --- 2.1：用 plan.skipped[] 订正 failed_charts[].reason ---
@@ -498,8 +621,22 @@ def _reconcile_chart_maker_payload(
     payload["failed_charts"] = reconciled
 
     # --- 2.2：completed 时对账 plan 内 aggregate 图全部落盘 ---
+    # 改动 2（spec 2026-06-24）：2.0 真实性核对已剔除幻影路径（见函数顶部，先于 plan）。
+    # 剔除后若 completed 且 chart_files 为空（核心图一张没真画）→ 抛 ValueError。
+    # 这条不依赖 plan 有没有 aggregate，直接堵死下方 `if not planned_aggregate: return`
+    # 的 plan-无-aggregate 放行漏洞（2026-06-24 dogfood：57 张全 per_subject + outputs
+    # 0 png 仍标 completed）。
     if payload.get("status") != "completed":
         return
+    if not payload.get("chart_files"):
+        raise ValueError(
+            "status='completed' but chart_files is empty after disk reality check — "
+            "every claimed output path is missing on disk (outputs/ has 0 real png). "
+            "Likely chart-maker hit a loop-detection hard-stop / max_turns early-exit "
+            "before rendering anything. 补画真实图再 completed，或诚实改 status=partial/"
+            "failed 并在 failed_charts/remaining_charts 留痕。绝不留幻影路径（下游 "
+            "present 时会 404）。"
+        )
 
     planned_aggregate: set[str] = set()
     for c in plan.get("charts") or []:

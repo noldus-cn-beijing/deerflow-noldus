@@ -377,6 +377,11 @@ class TestTaskContextRemoval:
     def test_task_context_not_injected_for_ethoinsight_handoffs(self, model_cls, tmp_path):
         """4 个 ethoinsight handoff seal 后产出 JSON 不含 task_context 键。"""
         ws = _make_workspace(tmp_path)
+        # spec 2026-06-24：ChartMakerHandoff 封存核对 chart_files 磁盘真实性——
+        # 声称的 x.png 必须真落盘在 outputs/ 才过核对。其余 handoff 不需要。
+        if model_cls is ChartMakerHandoff:
+            (ws.parent / "outputs").mkdir(parents=True, exist_ok=True)
+            (ws.parent / "outputs" / "x.png").write_bytes(b"")
         # 各 schema 的 completed 校验要求不同核心产物，分别给最小合法 payload。
         payload = {
             CodeExecutorHandoff: {
@@ -389,6 +394,8 @@ class TestTaskContextRemoval:
                 "status": "completed",
                 "summary": "slim test",
                 "paradigm": "epm",
+                # spec 2026-06-24 产物真实性不变式：封存核对 outputs/ 磁盘，声称的
+                # chart_files 路径必须真存在。本测试钉 task_context 移除，先落盘 x.png。
                 "chart_files": ["/mnt/user-data/outputs/x.png"],
             },
             DataAnalystHandoff: {

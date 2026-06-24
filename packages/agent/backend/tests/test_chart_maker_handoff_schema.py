@@ -145,6 +145,12 @@ class TestSealChartMakerHandoffRemainingCharts:
 
         ws = tmp_path / "workspace"
         ws.mkdir()
+        # chart_files 声称的产物必须在磁盘上真实存在（spec 2026-06-24 产物真实性不变式）：
+        # 封存对账门会核 outputs/ 磁盘，不存在的路径被剔进 remaining_charts。
+        # 本测试钉 remaining_charts 持久化，故先落盘真实 png 让 chart_files 过核对。
+        outputs = ws.parent / "outputs"
+        outputs.mkdir(parents=True, exist_ok=True)
+        (outputs / "plot_box_open_arm.png").write_bytes(b"")
         # seal_chart_maker_handoff 构造的 payload（含 P5 的 remaining_charts）
         payload = {
             "status": "partial",
