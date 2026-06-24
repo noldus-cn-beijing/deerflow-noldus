@@ -18,6 +18,8 @@ import json
 import logging
 import os
 import re
+import threading
+import weakref
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -865,6 +867,44 @@ def seal_data_analyst_handoff(
 
 _DATA_ANALYST_HANDOFF_FILENAME = "handoff_data_analyst.json"
 
+# ============================================================================
+# data-analyst handoff 读-改-写并发安全（spec 2026-06-24-fill-handoff-concurrent-write-race）
+#
+# 根因：data-analyst 同一条 AIMessage 并行发多个 fill_data_analyst_* tool_call，
+# 它们都走「_load_da_payload 读 → 改 payload → _write_da_payload 写固定 tmp → os.rename」
+# 无锁且 tmp 路径固定共享 → 竞态（丢字段 / FileNotFoundError rename / 读到 0 字节）。
+#
+# 治本：所有 data-analyst handoff 读-改-写按 (workspace, filename) 用模块级 threading.Lock
+# 串行化。照 sandbox/file_operation_lock.py 模式（WeakValueDictionary + guard lock）。
+# fill 是 sync 工具用 threading（非 asyncio）；fill 只有 runtime 拿不到 sandbox，不能
+# 复用 get_file_operation_lock(sandbox, path)，按 workspace/filename 自建同款锁。
+# 临界区内只调 _load/_write/_da_progress（均不取锁）→ 无重入死锁。
+# ============================================================================
+
+# Use WeakValueDictionary to prevent memory leak in long-running processes
+# (locks auto-removed when no thread references them) — mirrors file_operation_lock.py.
+_DA_HANDOFF_LOCKS: weakref.WeakValueDictionary[str, threading.Lock] = weakref.WeakValueDictionary()
+_DA_HANDOFF_LOCKS_GUARD = threading.Lock()
+
+
+def _get_da_handoff_lock(workspace: Path) -> threading.Lock:
+    """按 (workspace, handoff filename) 返回串行化锁（同 path 同一 Lock，不同 path 不阻塞）。
+
+    Args:
+        workspace: host-side workspace 目录。
+
+    Returns:
+        该 workspace 的 data-analyst handoff 专用 threading.Lock。
+    """
+    key = str(workspace / _DATA_ANALYST_HANDOFF_FILENAME)
+    with _DA_HANDOFF_LOCKS_GUARD:
+        lock = _DA_HANDOFF_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _DA_HANDOFF_LOCKS[key] = lock
+        return lock
+
+
 # DataAnalystHandoff 的 list[str] 字段（工具 A）。
 _DATA_ANALYST_TEXT_LIST_FIELDS = (
     "key_findings",
@@ -929,14 +969,18 @@ def preset_data_analyst_template_to_workspace(workspace: Path, *, config_id: str
         "parameter_audit_findings": [],
         "sealed_by": "preset",
     }
-    # Pydantic 校验模板合法（防 schema 漂移写坏 in_progress 模板）。
-    handoff = DataAnalystHandoff(**payload)
-    final_path = workspace / _DATA_ANALYST_HANDOFF_FILENAME
-    tmp_path = workspace / f"{_DATA_ANALYST_HANDOFF_FILENAME}.tmp"
-    json_bytes = handoff.model_dump_json(indent=2, exclude_none=False).encode("utf-8")
-    tmp_path.write_bytes(json_bytes)
-    os.rename(tmp_path, final_path)  # POSIX atomic
-    os.chmod(final_path, 0o644)
+    # 进锁（spec 2026-06-24 #3）：防 preset 与首个 fill 竞态。preset 在派遣路径、fill 在
+    # subagent turn，理论有先后，但显式加锁更稳。Pydantic 校验 + 原子写整段在锁内。
+    with _get_da_handoff_lock(workspace):
+        # Pydantic 校验模板合法（防 schema 漂移写坏 in_progress 模板）。
+        handoff = DataAnalystHandoff(**payload)
+        final_path = workspace / _DATA_ANALYST_HANDOFF_FILENAME
+        # tmp 唯一后缀（纵深，同 _write_da_payload）。
+        tmp_path = workspace / f"{_DATA_ANALYST_HANDOFF_FILENAME}.{os.getpid()}.{threading.get_ident()}.tmp"
+        json_bytes = handoff.model_dump_json(indent=2, exclude_none=False).encode("utf-8")
+        tmp_path.write_bytes(json_bytes)
+        os.replace(tmp_path, final_path)  # POSIX atomic
+        os.chmod(final_path, 0o644)
     return str(final_path)
 
 
@@ -969,10 +1013,12 @@ def _write_da_payload(workspace: Path, payload: dict[str, Any]) -> None:
             f"Check field names/types against DataAnalystHandoff schema."
         ) from e
     final_path = workspace / _DATA_ANALYST_HANDOFF_FILENAME
-    tmp_path = workspace / f"{_DATA_ANALYST_HANDOFF_FILENAME}.tmp"
+    # tmp 路径加 pid+tid 唯一后缀（纵深防御）：锁已保证不并发，万一锁失效也不抢同一 tmp。
+    # 用 os.getpid()/threading.get_ident()（确定性、可测），不用随机数/时间戳（spec §七）。
+    tmp_path = workspace / f"{_DATA_ANALYST_HANDOFF_FILENAME}.{os.getpid()}.{threading.get_ident()}.tmp"
     json_bytes = handoff.model_dump_json(indent=2, exclude_none=False).encode("utf-8")
     tmp_path.write_bytes(json_bytes)
-    os.rename(tmp_path, final_path)
+    os.replace(tmp_path, final_path)
     os.chmod(final_path, 0o644)
 
 
@@ -1028,20 +1074,23 @@ def fill_data_analyst_text_list(
         value: 字符串列表。
     """
     workspace = _resolve_workspace(runtime)
-    payload = _load_da_payload(workspace)
-    current = payload.get(field) or []
-    if not isinstance(current, list):
-        current = []
-    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-        raise ValueError(f"fill_data_analyst_text_list: value must be list[str], got {type(value).__name__}")
-    if mode == "set":
-        payload[field] = list(value)
-    elif mode == "append":
-        payload[field] = [*current, *value]
-    else:  # 被 Literal 拦住，防御性
-        raise ValueError(f"fill_data_analyst_text_list: unknown mode {mode!r}")
-    _write_da_payload(workspace, payload)
-    return f"OK: filled {field} ({mode}, {len(payload[field])} items). progress={_da_progress(workspace)}"
+    # 读-改-写整段进锁（spec 2026-06-24 #2）：同消息多 fill 并行不再竞态。
+    with _get_da_handoff_lock(workspace):
+        payload = _load_da_payload(workspace)
+        current = payload.get(field) or []
+        if not isinstance(current, list):
+            current = []
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise ValueError(f"fill_data_analyst_text_list: value must be list[str], got {type(value).__name__}")
+        if mode == "set":
+            payload[field] = list(value)
+        elif mode == "append":
+            payload[field] = [*current, *value]
+        else:  # 被 Literal 拦住，防御性
+            raise ValueError(f"fill_data_analyst_text_list: unknown mode {mode!r}")
+        _write_da_payload(workspace, payload)
+        progress = _da_progress(workspace)  # 读回也在锁内，保证进度一致
+    return f"OK: filled {field} ({mode}, {len(payload[field])} items). progress={progress}"
 
 
 @tool("fill_data_analyst_record_list", parse_docstring=True)
@@ -1064,35 +1113,38 @@ def fill_data_analyst_record_list(
         value: dict 列表，每条 dict 的字段须匹配对应子模型（OutlierFinding / DataQualityWarning）。
     """
     workspace = _resolve_workspace(runtime)
-    payload = _load_da_payload(workspace)
-    sub_model = _data_analyst_record_model(field)
-    # 逐条用子模型校验 → 规整成 dict（拿子模型的默认/校验）。校验失败抛 ValueError 回响亮。
-    validated: list[dict[str, Any]] = []
-    if not isinstance(value, list):
-        raise ValueError(f"fill_data_analyst_record_list: value must be list[dict], got {type(value).__name__}")
-    for i, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise ValueError(
-                f"fill_data_analyst_record_list: value[{i}] must be a dict for {field} ({sub_model.__name__}), "
-                f"got {type(item).__name__}"
-            )
-        try:
-            validated.append(sub_model(**item).model_dump())
-        except ValidationError as e:
-            raise ValueError(
-                f"fill_data_analyst_record_list: value[{i}] failed {sub_model.__name__} validation: {e}"
-            ) from e
-    current = payload.get(field) or []
-    if not isinstance(current, list):
-        current = []
-    if mode == "set":
-        payload[field] = validated
-    elif mode == "append":
-        payload[field] = [*current, *validated]
-    else:  # 防御性
-        raise ValueError(f"fill_data_analyst_record_list: unknown mode {mode!r}")
-    _write_da_payload(workspace, payload)
-    return f"OK: filled {field} ({mode}, {len(payload[field])} items). progress={_da_progress(workspace)}"
+    # 读-改-写整段进锁（spec 2026-06-24 #2）。
+    with _get_da_handoff_lock(workspace):
+        payload = _load_da_payload(workspace)
+        sub_model = _data_analyst_record_model(field)
+        # 逐条用子模型校验 → 规整成 dict（拿子模型的默认/校验）。校验失败抛 ValueError 回响亮。
+        validated: list[dict[str, Any]] = []
+        if not isinstance(value, list):
+            raise ValueError(f"fill_data_analyst_record_list: value must be list[dict], got {type(value).__name__}")
+        for i, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"fill_data_analyst_record_list: value[{i}] must be a dict for {field} ({sub_model.__name__}), "
+                    f"got {type(item).__name__}"
+                )
+            try:
+                validated.append(sub_model(**item).model_dump())
+            except ValidationError as e:
+                raise ValueError(
+                    f"fill_data_analyst_record_list: value[{i}] failed {sub_model.__name__} validation: {e}"
+                ) from e
+        current = payload.get(field) or []
+        if not isinstance(current, list):
+            current = []
+        if mode == "set":
+            payload[field] = validated
+        elif mode == "append":
+            payload[field] = [*current, *validated]
+        else:  # 防御性
+            raise ValueError(f"fill_data_analyst_record_list: unknown mode {mode!r}")
+        _write_da_payload(workspace, payload)
+        progress = _da_progress(workspace)
+    return f"OK: filled {field} ({mode}, {len(payload[field])} items). progress={progress}"
 
 
 @tool("fill_data_analyst_gate_signals", parse_docstring=True)
@@ -1107,17 +1159,20 @@ def fill_data_analyst_gate_signals(value: dict, runtime: Runtime = None) -> str:
             quality_warnings_critical_count / statistics_status 等（详见 GateSignals schema）。
     """
     workspace = _resolve_workspace(runtime)
-    payload = _load_da_payload(workspace)
     from deerflow.subagents.handoff_schemas import GateSignals
 
-    if not isinstance(value, dict):
-        raise ValueError(f"fill_data_analyst_gate_signals: value must be a dict, got {type(value).__name__}")
-    try:
-        payload["gate_signals"] = GateSignals(**value).model_dump()
-    except ValidationError as e:
-        raise ValueError(f"fill_data_analyst_gate_signals: GateSignals validation failed: {e}") from e
-    _write_da_payload(workspace, payload)
-    return f"OK: filled gate_signals. progress={_da_progress(workspace)}"
+    # 读-改-写整段进锁（spec 2026-06-24 #2）。
+    with _get_da_handoff_lock(workspace):
+        payload = _load_da_payload(workspace)
+        if not isinstance(value, dict):
+            raise ValueError(f"fill_data_analyst_gate_signals: value must be a dict, got {type(value).__name__}")
+        try:
+            payload["gate_signals"] = GateSignals(**value).model_dump()
+        except ValidationError as e:
+            raise ValueError(f"fill_data_analyst_gate_signals: GateSignals validation failed: {e}") from e
+        _write_da_payload(workspace, payload)
+        progress = _da_progress(workspace)
+    return f"OK: filled gate_signals. progress={progress}"
 
 
 @tool("finalize_data_analyst_handoff", parse_docstring=True)
@@ -1141,26 +1196,29 @@ def finalize_data_analyst_handoff(
             描述性路径（如 n<3、statistics 空）；failed=无法判读（handoff 读取失败等）。
     """
     workspace = _resolve_workspace(runtime)
-    payload = _load_da_payload(workspace)
-    payload["status"] = final_status
-    payload["sealed_by"] = "finalize"
-    # 整体重校验让 _completed_requires_core_output validator 自然触发（守 SSOT）。
-    # 校验失败（如 completed 但 key_findings 空）→ ValueError → error ToolMessage 引导补 fill。
-    _write_da_payload(workspace, payload)
-    # 写 manifest，sealed_by="finalize" 可观测（spec §七）。
-    sha256 = hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
-    _update_manifest(
-        workspace,
-        _DATA_ANALYST_HANDOFF_FILENAME,
-        sha256,
-        payload.get("analysis_config_id", _read_analysis_config_id(workspace)),
-    )
+    # 读-改-写整段进锁（spec 2026-06-24 #2）：防末尾 fill 与 finalize 竞态。
+    with _get_da_handoff_lock(workspace):
+        payload = _load_da_payload(workspace)
+        payload["status"] = final_status
+        payload["sealed_by"] = "finalize"
+        # 整体重校验让 _completed_requires_core_output validator 自然触发（守 SSOT）。
+        # 校验失败（如 completed 但 key_findings 空）→ ValueError → error ToolMessage 引导补 fill。
+        _write_da_payload(workspace, payload)
+        # 写 manifest，sealed_by="finalize" 可观测（spec §七）。
+        sha256 = hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        _update_manifest(
+            workspace,
+            _DATA_ANALYST_HANDOFF_FILENAME,
+            sha256,
+            payload.get("analysis_config_id", _read_analysis_config_id(workspace)),
+        )
+        progress = _da_progress(workspace)
     return (
         f"OK: finalized handoff_data_analyst.json "
         f"(status={final_status}, sealed_by=finalize, sha256={sha256[:12]}...). "
-        f"progress={_da_progress(workspace)}"
+        f"progress={progress}"
     )
 
 
