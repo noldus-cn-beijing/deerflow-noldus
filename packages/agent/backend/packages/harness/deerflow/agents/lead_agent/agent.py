@@ -333,6 +333,13 @@ def build_middlewares(config: RunnableConfig, model_name: str | None, agent_name
 
         middlewares.append(DeferredToolFilterMiddleware(deferred_setup.deferred_names, deferred_setup.catalog_hash))
 
+    # Coalesce every SystemMessage into a single leading one before the request
+    # reaches the provider. Strict backends (vLLM, SGLang, Qwen, Anthropic)
+    # reject non-leading SystemMessages. See system_message_coalescing_middleware.py.
+    from deerflow.agents.middlewares.system_message_coalescing_middleware import SystemMessageCoalescingMiddleware
+
+    middlewares.append(SystemMessageCoalescingMiddleware())
+
     # Add SubagentLimitMiddleware to truncate excess parallel task calls
     subagent_enabled = config.get("configurable", {}).get("subagent_enabled", True)
     if subagent_enabled:

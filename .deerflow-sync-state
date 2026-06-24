@@ -9,7 +9,7 @@
 # - 6-02 sync (全量跟随 f9b70713→74e3e80c, 34 commit): 仍未 squash, 故 git log origin/dev..deerflow/main
 #   会虚高到 ~2192 (假象); 真实 delta 用 git log <last_sync_commit>..deerflow/main = 34
 
-last_sync_commit: e418d729
-last_sync_date: 2026-06-22
-last_sync_commits_count: 31
-last_sync_prs: "d2cc991d→e418d729 (31 commit harness delta, 46 文件): 26 safe + 7 new 全量跟随, 13 surgical (脚本 PROTECTED 11 + 清单外发现 2: subagents/config.py capability 契约 + sandbox_audit log 名). surgical 内部按「业务定制保 vs 架构跟」细分: 跟上游 thread_state SandboxStateField 别名/factory+agent TokenBudget/app_config content-signature 缓存+null coerce(加回 handoff_strict_mode)/local_sandbox cached_property/mcp-tools stdio 路径(加回 4096 截断)/prompt injection 防御段/executor+task_tool 认证上下文+tracing 注入; 保 Noldus shared_path/extra_env/中文 prompt/capability 契约/name kwarg. ⚠️ engine.py idempotent guard 被全量合入洗掉后补回 (PROTECTED 清单已补 persistence/engine.py). 测试调整: InputSanitization 入链首(8→9)/timeout 1800/TAG_NOSTREAM/__interrupt__ 保留/aggregate 去GROUP BY/session_pool per-user scope; test_app_config_reload resets_singleton skip 待按 content-signature 重写. 最终 4194 passed/3 pre-existing/23 skipped"
+last_sync_commit: 11415875
+last_sync_date: 2026-06-24
+last_sync_commits_count: 15
+last_sync_prs: "e418d729→11415875 (15 commit harness delta, 25 源码文件): 2 NEW + 17 SAFE 全量跟随, 6 PROTECTED surgical. NEW: system_message_coalescing_middleware(严格后端 SystemMessage 合并, 修 vLLM/Qwen/Anthropic)+utils/messages.py. PROTECTED surgical: executor.py(AI msg 去重 O(n^2)→O(n))+agent.py(注册 coalescing middleware)+lead_prompt.py(guaranteed_categories 参数)+app_config.py(get_*_config O(1) name 索引)+sandbox/tools.py(masking 正则 lru_cache+provider.acquire(user_id)+删死码)+memory/prompt.py(guaranteed injection+structure-aware truncation, 保 2026-05-13 隔离). 配套测试: 6 NEW + 9 full-take(全绿) + test_sandbox_middleware surgical(本地守护测试+user_id mock) + memory_prompt_injection surgical(守护不注入 history); 回退 5 个暴露历史债的 full-take. ⚠️ 历史债(本地 harness 落后 e418d729 之前多处: app_config 参数贯通/ToolRuntime tools 参数/skills cache 重构/executor async 化/uploads _make_file_sandbox_readable)单独立项清理. 验证: 主仓 overlay 全量 9 failed 全=baseline 预存零新增, 裸导入两生产入口 exit=0 无环"
