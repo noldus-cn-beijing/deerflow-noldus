@@ -17,6 +17,7 @@
 
 import type { Message } from "@langchain/langgraph-sdk";
 import { ListTreeIcon } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,11 +26,25 @@ import { useI18n } from "@/core/i18n/hooks";
 import { useRunTrace, useRunTraceSummary } from "@/core/trace";
 import { cn } from "@/lib/utils";
 
-import { RunTraceDrawer } from "./run-trace-drawer";
+// Phase0#7 Step 3 — code-split the heavy drawer (run-trace-panel + event item
+// rendering) via next/dynamic so it stays out of the first-screen bundle. The
+// drawer is only mounted after the user first opens it (`everOpened`), so the
+// chunk loads on demand. `ssr:false` because this is an interactive overlay.
+const RunTraceDrawer = dynamic(
+  () => import("./run-trace-drawer").then((m) => m.RunTraceDrawer),
+  {
+    ssr: false,
+    loading: () => null,
+  },
+);
 
 export function RunTraceWidget({ messages }: { messages: Message[] }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  // Only mount the (dynamically imported) drawer after the user first opens
+  // it. Before that the drawer chunk isn't requested at all — keeping the
+  // chat first-screen bundle lean (spec §3.4 / §六 "关键路径不分割").
+  const [everOpened, setEverOpened] = useState(false);
   const events = useRunTrace({ messages, t });
   const summary = useRunTraceSummary(events);
 
@@ -44,6 +59,16 @@ export function RunTraceWidget({ messages }: { messages: Message[] }) {
         ? t.runTrace.runningSteps(summary.running)
         : t.runTrace.stepCount(summary.total);
 
+  function handleToggle() {
+    setOpen((v) => {
+      const next = !v;
+      if (next) {
+        setEverOpened(true);
+      }
+      return next;
+    });
+  }
+
   return (
     <>
       <Tooltip content={t.runTrace.triggerLabel}>
@@ -52,7 +77,7 @@ export function RunTraceWidget({ messages }: { messages: Message[] }) {
           aria-label={t.runTrace.triggerLabel}
           aria-expanded={open}
           aria-haspopup="dialog"
-          onClick={() => setOpen((v) => !v)}
+          onClick={handleToggle}
           className={cn(
             "text-muted-foreground hover:text-foreground gap-1.5 transition-colors duration-base ease-brand-out",
             // 出错态：danger 色 + 轻脉动（error-recovery：清晰恢复路径）
@@ -74,7 +99,9 @@ export function RunTraceWidget({ messages }: { messages: Message[] }) {
           )}
         </Button>
       </Tooltip>
-      <RunTraceDrawer open={open} onOpenChange={setOpen} messages={messages} />
+      {everOpened && (
+        <RunTraceDrawer open={open} onOpenChange={setOpen} messages={messages} />
+      )}
     </>
   );
 }

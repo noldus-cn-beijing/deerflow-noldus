@@ -37,7 +37,11 @@ import { CopyButton } from "../copy-button";
 import { MarkdownContent } from "./markdown-content";
 import { QualityWarningBanner } from "./quality-warning-banner";
 
-export function MessageListItem({
+// Phase0#7 Step 2 — wrapped in React.memo so a parent re-render (e.g. an
+// unrelated streaming token landing in a sibling message) does NOT re-render
+// this completed message's subtree. Props are stable across unrelated renders
+// now that MessageList memoizes the groups array (Step 1).
+export const MessageListItem = memo(function MessageListItem({
   className,
   message,
   isLoading,
@@ -93,7 +97,7 @@ export function MessageListItem({
       )}
     </AIElementMessage>
   );
-}
+});
 
 /**
  * Custom image component that handles artifact URLs

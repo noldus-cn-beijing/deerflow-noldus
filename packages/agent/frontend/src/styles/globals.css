@@ -541,19 +541,36 @@
   .shadow-overlap { box-shadow: var(--shadow-overlap); }
   .shadow-overlay { box-shadow: var(--shadow-overlay); }
 
-  /* 子任务运行态:柔和 brand 色脉动(替代 ambilight) */
+  /* 子任务运行态:柔和 brand 色脉动(替代 ambilight)
+     Phase0#7 §3.5/§3.7 — 视觉不变(柔和 brand 脉动),改省写法:把脉动交给
+     transform/opacity(合成器驱动,不每帧重绘 box-shadow),并保持 reduced-motion
+     降级。box-shadow 现在是静态一层,只对 ::after 的 opacity/scale 做合成器动画。 */
   .animate-pulse-soft {
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.24);
+  }
+  .animate-pulse-soft::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.32),
+                0 6px 24px -4px rgba(16, 221, 139, 0.22);
+    opacity: 0;
+    transform: scale(0.985);
     animation: pulse-soft 2.4s ease-in-out infinite;
+    will-change: opacity, transform;
   }
 
   @keyframes pulse-soft {
     0%, 100% {
-      box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.18),
-                  0 4px 16px -4px rgba(16, 221, 139, 0.12);
+      opacity: 0;
+      transform: scale(0.985);
     }
     50% {
-      box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.32),
-                  0 6px 24px -4px rgba(16, 221, 139, 0.22);
+      opacity: 1;
+      transform: scale(1);
     }
   }
 
@@ -561,6 +578,10 @@
     .animate-pulse-soft {
       animation: none;
       box-shadow: 0 0 0 1px rgba(16, 221, 139, 0.24);
+    }
+    .animate-pulse-soft::after {
+      animation: none;
+      opacity: 0;
     }
   }
 }

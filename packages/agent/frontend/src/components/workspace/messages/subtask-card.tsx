@@ -7,7 +7,7 @@ import {
   LightbulbIcon,
   XCircleIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { type Components, Streamdown } from "streamdown";
 
 import {
@@ -37,7 +37,12 @@ import {
   type CoTStep,
 } from "./message-group";
 
-export function SubtaskCard({
+// Phase0#7 Step 2 — memoized so an unrelated parent re-render (e.g. a
+// streaming token landing in a sibling subagent group) does not re-render
+// this card's subtree. Props (taskId/threadId/messageRunIds) are stable
+// across unrelated renders now that MessageList memoizes the groups (Step 1).
+// The card's own state (task status from useSubtask) still updates normally.
+export const SubtaskCard = memo(function SubtaskCard({
   className,
   taskId,
   threadId,
@@ -207,7 +212,7 @@ export function SubtaskCard({
       </div>
     </ChainOfThought>
   );
-}
+});
 
 function SubtaskCoTTimeline({
   messages,

@@ -12,7 +12,7 @@ import {
   SquareTerminalIcon,
   WrenchIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ChainOfThought,
@@ -40,7 +40,11 @@ import { Tooltip } from "../tooltip";
 
 import { MarkdownContent } from "./markdown-content";
 
-export function MessageGroup({
+// Phase0#7 Step 2 — memoized so an unrelated parent re-render (e.g. a
+// streaming token landing in a sibling) does not re-render this reasoning/
+// thinking group's subtree. Props (messages array, isLoading) are stable
+// across unrelated renders now that MessageList memoizes the groups (Step 1).
+export const MessageGroup = memo(function MessageGroup({
   className,
   messages,
   isLoading = false,
@@ -227,7 +231,7 @@ export function MessageGroup({
       )}
     </ChainOfThought>
   );
-}
+});
 
 export function ToolCall({
   id,
