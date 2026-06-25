@@ -193,6 +193,26 @@ export interface Translations {
     representative: string;
     backToChat: string;
     galleryPlaceholder: string;
+    aggregate: string;
+    perSubject: string;
+    compareMode: string;
+    exitCompare: string;
+    downloadSelected: string;
+    expandPerSubject: string;
+    collapsePerSubject: string;
+    clearFilters: string;
+    filterParadigm: string;
+    filterChartType: string;
+    filterMode: string;
+    filterGroup: string;
+    filterSubject: string;
+    allParadigms: string;
+    allTypes: string;
+    allModes: string;
+    allGroups: string;
+    allSubjects: string;
+    searchPlaceholder: string;
+    nFiltered: (n: number) => string;
   };
 
   // Page titles (document title)
