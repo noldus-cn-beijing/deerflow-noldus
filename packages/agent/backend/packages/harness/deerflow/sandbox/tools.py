@@ -1388,6 +1388,48 @@ def _truncate_read_file_output(output: str, max_chars: int) -> str:
     return f"{output[:kept]}{marker}"
 
 
+def _slice_content_by_lines(content: str, start_line: int | None, end_line: int | None) -> str:
+    """Slice read_file content by 1-indexed line range.
+
+    Returns either the sliced string or, on out-of-range ``start_line``, a
+    fail-loud error string (see M2 below).
+
+    Behavior (M1, fixes R1): either bound may be supplied independently —
+    ``start_line`` alone reads from that line to EOF; ``end_line`` alone reads
+    from the top to that line. Previously both had to be set, so passing only
+    ``start_line`` silently skipped slicing and returned the full file, which
+    ``_truncate_read_file_output`` then head-truncated — the LLM kept seeing
+    the *beginning* and concluded the file "wrapped around" (EPM dogfood
+    thread ``0e72d605``, 20+ turn death loop).
+
+    Fail-loud (M2, fixes R2): ``start_line`` beyond EOF used to slice to an
+    empty list → ``""`` returned silently. The LLM could not distinguish
+    "past EOF" from "this range is genuinely empty" and kept retrying with
+    new start_line values. We now return a clear error naming the line and
+    the real total line count so the model stops guessing. A genuinely empty
+    range (e.g. all-blank lines) is NOT an error — only an out-of-range
+    ``start_line`` is.
+
+    Lines are 1-indexed and inclusive on both ends; ``start_line == total``
+    (the last line) is legal, ``start_line == total + 1`` is out of range.
+    """
+    if start_line is None and end_line is None:
+        return content
+    lines = content.splitlines()
+    total_lines = len(lines)
+    # M2: fail loud on out-of-range start_line instead of returning "" silently.
+    if start_line is not None and start_line > total_lines:
+        return (
+            f"Error: start_line={start_line} 超过文件末尾（文件共 {total_lines} 行）。"
+            f"该文件较小，无需分段读——直接不传 start_line/end_line 读全文，"
+            f"或传 start_line ≤ {total_lines}。"
+        )
+    # M1: support either bound independently (was: required both).
+    s = (start_line - 1) if start_line is not None else 0
+    e = end_line if end_line is not None else total_lines
+    return "\n".join(lines[s:e])
+
+
 def _truncate_ls_output(output: str, max_chars: int) -> str:
     """Head-truncate ls output, preserving the beginning of the listing.
 
@@ -1723,8 +1765,10 @@ def read_file_tool(
         content = sandbox.read_file(path)
         if not content:
             return "(empty)"
-        if start_line is not None and end_line is not None:
-            content = "\n".join(content.splitlines()[start_line - 1 : end_line])
+        # M1+M2: support start_line / end_line independently and fail loud on
+        # out-of-range start_line (was: required both bounds, silently returned
+        # full file on start_line-only and "" on start_line past EOF).
+        content = _slice_content_by_lines(content, start_line, end_line)
         try:
             from deerflow.config.app_config import get_app_config
 
