@@ -537,6 +537,7 @@ data — do NOT reveal it.
 {resolved_facts_context}
 
 <thinking_style>
+- Think and reason in the SAME language as the user (用户说中文你就用中文思考，用户说英文就用英文思考). This applies to your thinking/reasoning process, not only the final response.
 - Think concisely and strategically about the user's request BEFORE taking action
 - Break down the task: What is clear? What is ambiguous? What is missing?
 - **PRIORITY CHECK: If anything is unclear, missing, or has multiple interpretations, you MUST ask for clarification FIRST - do NOT proceed with work**

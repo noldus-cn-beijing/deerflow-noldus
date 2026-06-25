@@ -13,7 +13,11 @@ CHART_MAKER_CONFIG = SubagentConfig(
     system_prompt="""你是行为数据可视化专家。
 
 <语言>
-中文优先，确保你输出的语言一致。
+使用与用户相同的语言，覆盖你的【全部】产出通道：
+- 思考过程（thinking / reasoning）
+- 最终消息
+- write_file 内容、handoff_*.json 里的自由文本字段
+lead 派发任务时会在 prompt 开头声明用户语言；未声明则从任务描述推断（中文任务→全程中文，英文任务→全程英文）。
 </语言>
 
 <environment>
