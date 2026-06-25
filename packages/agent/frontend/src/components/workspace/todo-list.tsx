@@ -39,14 +39,14 @@ export function TodoList({
   return (
     <div
       className={cn(
-        "flex h-fit w-full origin-bottom translate-y-4 flex-col overflow-hidden rounded-t-xl border border-b-0 bg-white backdrop-blur-sm transition-all duration-200 ease-out",
+        "flex h-fit w-full origin-bottom translate-y-4 flex-col overflow-hidden rounded-t-xl border border-b-0 bg-white backdrop-blur-sm transition-[transform,opacity] duration-base ease-brand-out",
         hidden ? "pointer-events-none translate-y-8 opacity-0" : "",
         className,
       )}
     >
       <header
         className={cn(
-          "bg-accent flex min-h-8 shrink-0 cursor-pointer items-center justify-between px-4 text-sm transition-all duration-300 ease-out",
+          "bg-accent flex min-h-8 shrink-0 cursor-pointer items-center justify-between px-4 text-sm transition-colors duration-base ease-brand-out",
         )}
         onClick={handleToggle}
       >
@@ -59,7 +59,7 @@ export function TodoList({
         <div>
           <ChevronUpIcon
             className={cn(
-              "text-muted-foreground size-4 transition-transform duration-300 ease-out",
+              "text-muted-foreground size-4 transition-transform duration-base ease-brand-in-out",
               collapsed ? "" : "rotate-180",
             )}
           />
@@ -67,7 +67,7 @@ export function TodoList({
       </header>
       <main
         className={cn(
-          "bg-accent flex grow px-2 transition-all duration-300 ease-out",
+          "bg-accent flex grow px-2 transition-[height] duration-slow ease-brand-in-out",
           collapsed ? "h-0 pb-3" : "h-28 pb-4",
         )}
       >

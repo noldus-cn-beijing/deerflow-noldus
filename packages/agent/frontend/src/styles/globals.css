@@ -79,8 +79,31 @@
     "PingFang SC", "Microsoft YaHei", sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji";
 
+  /* ── 动效曲线（asymmetric，日式减速尾巴）────────────────────
+     命名对齐语义,不对齐数学:brand-out=入场/展开,brand-in=退场/收起。
+     v4 在 @theme 定义 --ease-* 会自动生成 ease-brand-* 工具类。 */
+  /* 入场/展开：快起 → 长缓停（用户要的"逐渐变慢的尾巴"）。quint ease-out */
+  --ease-brand-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 退场/收起：快、利落（exit 比 enter 短促，避免拖沓）。quint ease-in */
+  --ease-brand-in: cubic-bezier(0.64, 0, 0.78, 0);
+  /* 双向切换（展开↔收起 用同一条对称强曲线，比默认 ease-in-out 挺） */
+  --ease-brand-in-out: cubic-bezier(0.83, 0, 0.17, 1);
+  /* 强调/回弹微反馈（press、勾选）——轻微 overshoot，克制 */
+  --ease-brand-emphasis: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── 时长 token（ui-ux-pro-max Duration Timing：150-300ms 微交互，
+     ≤500ms 复杂，>500ms 禁用；exit-faster-than-enter）。
+     注意：v4 没有 --dur-* / --transition-duration-* 这个 theme namespace，
+     duration-* 工具类只认裸数字或 arbitrary 值，不从 @theme 变量派生。
+     命名 duration 工具类（duration-fast/base/slow/exit）由下方 @theme 块外的
+     @utility 显式定义；这里的 --dur-* token 供 @theme 内 var() 引用。 */
+  --dur-fast: 140ms;   /* 微交互：press、hover、勾选 */
+  --dur-base: 220ms;   /* 标准：卡片淡入、tooltip、tab 切换 */
+  --dur-slow: 340ms;   /* 复杂：侧栏滑入、面板展开（仍 <500ms 上限）*/
+  --dur-exit: 160ms;   /* 退场默认（≈base 的 70%，exit-faster-than-enter）*/
+
   /* 保留:基础交互动画 */
-  --animate-fade-in-up: fade-in-up 0.15s ease-in-out forwards;
+  --animate-fade-in-up: fade-in-up var(--dur-base) var(--ease-brand-out) forwards;
   @keyframes fade-in-up {
     0% { opacity: 0; transform: translateY(0.5rem); }
     100% { opacity: 1; transform: translateY(0); }
@@ -91,15 +114,16 @@
     to { opacity: 0.1; transform: translateY(-8px); }
   }
 
-  --animate-skeleton-entrance: skeleton-entrance 0.35s ease-out forwards;
+  --animate-skeleton-entrance: skeleton-entrance 0.35s var(--ease-brand-out) forwards;
   @keyframes skeleton-entrance {
     0% { opacity: 0; transform: scaleX(0); }
     100% { opacity: 1; transform: scaleX(1); }
   }
 
-  --animate-suggestion-in: suggestion-in 0.2s ease-out forwards;
+  /* 从下方进入(hierarchy-motion：进入从下 = 更深一层),用 brand-out 减速尾巴 */
+  --animate-suggestion-in: suggestion-in 0.2s var(--ease-brand-out) forwards;
   @keyframes suggestion-in {
-    0% { opacity: 0; transform: translateY(-1.25rem); }
+    0% { opacity: 0; transform: translateY(1.25rem); }
     100% { opacity: 1; transform: translateY(0); }
   }
 
@@ -136,6 +160,17 @@
     to { background-position: 0% 0%; }
   }
 }
+
+/* ── 命名 duration 工具类 ─────────────────────────────────────
+   v4 的 duration-* 工具类只接受裸数字（duration-200）或 arbitrary
+   值（duration-[220ms]），不从 @theme 的 --dur-* 派生。要在 className
+   里用 duration-fast/base/slow/exit 这类语义命名，必须 @theme 块外
+   @utility 显式定义，否则编译不出规则→元素无 transition-duration→
+   过渡回退 0s 瞬间完成。token 仍走上方 @theme 的 --dur-* 供 var() 引用。 */
+@utility duration-fast { transition-duration: var(--dur-fast); }
+@utility duration-base { transition-duration: var(--dur-base); }
+@utility duration-slow { transition-duration: var(--dur-slow); }
+@utility duration-exit { transition-duration: var(--dur-exit); }
 
 /* ============================================================
    @theme inline - 颜色 token 与 radius 映射到 Tailwind 工具类
@@ -185,6 +220,25 @@
   --color-brand-hover: var(--brand-hover);
   --color-brand-foreground: var(--brand-foreground);
   --color-elevated: var(--elevated);
+
+  /* 新增:状态语义色(供 banner/卡片/进度轨用,降饱和、非荧光) */
+  --color-status-info: var(--status-info);
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-danger: var(--status-danger);
+  --color-status-info-soft: var(--status-info-soft);
+  --color-status-success-soft: var(--status-success-soft);
+  --color-status-warning-soft: var(--status-warning-soft);
+  --color-status-danger-soft: var(--status-danger-soft);
+
+  /* 新增:工作流阶段色(7 阶段,全部由品牌绿 hue 偏移,Phase 0 后续进度轨/决策卡用) */
+  --color-stage-upload: var(--stage-upload);
+  --color-stage-paradigm: var(--stage-paradigm);
+  --color-stage-align: var(--stage-align);
+  --color-stage-compute: var(--stage-compute);
+  --color-stage-qc: var(--stage-qc);
+  --color-stage-interpret: var(--stage-interpret);
+  --color-stage-report: var(--stage-report);
 }
 
 /* ============================================================
@@ -261,6 +315,28 @@
   --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.04),
                   0 8px 24px -8px rgba(0, 0, 0, 0.08),
                   0 24px 48px -16px rgba(0, 0, 0, 0.06);
+
+  /* 状态语义色:与品牌绿同 family 协调,降饱和、非荧光。
+     呈现须"色 + 图标 + 文字"三件套(color-not-only),不可仅靠颜色表意。 */
+  --status-info:    oklch(0.62 0.10 230);   /* 沉静蓝 */
+  --status-success: oklch(0.60 0.11 155);   /* 苔绿，与 brand 同 family */
+  --status-warning: oklch(0.72 0.12  75);   /* 琥珀，降饱和（HITL 等待用）*/
+  --status-danger:  oklch(0.58 0.16  25);   /* 朱，非纯红 */
+  /* 各配一个极淡底色,给 banner/卡片背景 */
+  --status-info-soft:    oklch(0.62 0.10 230 / 0.10);
+  --status-success-soft: oklch(0.60 0.11 155 / 0.10);
+  --status-warning-soft: oklch(0.72 0.12  75 / 0.12);
+  --status-danger-soft:  oklch(0.58 0.16  25 / 0.10);
+
+  /* 工作流阶段色:7 阶段各一个低饱和 hue,全部由品牌绿出发做 hue 偏移
+     (保持家族感,不引入冲突色)。本 spec 只定义,进度轨在 Phase 0 spec#4 消费。 */
+  --stage-upload:    oklch(0.62 0.06 200);
+  --stage-paradigm:  oklch(0.60 0.08 175);
+  --stage-align:     oklch(0.60 0.10 155);  /* ≈brand 家族 */
+  --stage-compute:   oklch(0.62 0.09 140);
+  --stage-qc:        oklch(0.66 0.10 110);
+  --stage-interpret: oklch(0.64 0.10  85);
+  --stage-report:    oklch(0.62 0.10  60);
 }
 
 /* ============================================================
@@ -305,6 +381,17 @@
   --elevated-static: oklch(0.30 0.01 168 / 0.95);
   --shadow-modal: 0 16px 48px -12px rgba(0, 0, 0, 0.6);
   font-weight: 300;
+
+  /* 状态语义色 dark 占位:同 hue 明度抬高一档保证 dark 下对比度。
+     值留 Phase 2 精调(决策4),本 spec 只保证 token 齐全不塌。 */
+  --status-info:    oklch(0.70 0.10 230);
+  --status-success: oklch(0.68 0.11 155);
+  --status-warning: oklch(0.78 0.12  75);
+  --status-danger:  oklch(0.68 0.16  25);
+  --status-info-soft:    oklch(0.70 0.10 230 / 0.12);
+  --status-success-soft: oklch(0.68 0.11 155 / 0.12);
+  --status-warning-soft: oklch(0.78 0.12  75 / 0.14);
+  --status-danger-soft:  oklch(0.68 0.16  25 / 0.12);
 }
 
 /* ============================================================

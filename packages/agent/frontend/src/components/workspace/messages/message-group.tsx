@@ -140,7 +140,7 @@ export function MessageGroup({
             icon={
               <ChevronUp
                 className={cn(
-                  "size-4 opacity-60 transition-transform duration-200",
+                  "size-4 opacity-60 transition-transform duration-base ease-brand-in-out",
                   showAbove ? "rotate-180" : "",
                 )}
               />

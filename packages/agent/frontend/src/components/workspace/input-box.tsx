@@ -428,7 +428,7 @@ export function InputBox({
       )}
       <PromptInput
         className={cn(
-          "bg-card/90 glass-card shadow-float rounded-3xl transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-3xl",
+          "bg-card/90 glass-card shadow-float rounded-3xl transition-[box-shadow,border-color] duration-base ease-brand-out *:data-[slot='input-group']:rounded-3xl",
           className,
         )}
         disabled={disabled}

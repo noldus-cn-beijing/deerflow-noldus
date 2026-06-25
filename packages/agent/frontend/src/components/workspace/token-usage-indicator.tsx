@@ -36,7 +36,7 @@ export function TokenUsageIndicator({
         <button
           type="button"
           className={cn(
-            "text-muted-foreground flex cursor-default items-center gap-1 text-xs",
+            "text-muted-foreground flex cursor-default items-center gap-1 text-xs tabular-nums",
             className,
           )}
         >
