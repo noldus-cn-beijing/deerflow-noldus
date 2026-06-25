@@ -1,8 +1,8 @@
 # Spec：chart-maker 渲染执行解耦 —— run_chart_plan spawn 轻子进程跑批量入口（Gateway fork-free）
 
-> 状态：**实施 spec，但含「实测前置」——必须先坐实 Gateway 被画图拖垮再动架构**
+> 状态：**🟡 暂缓 · 前置未坐实（2026-06-25 实测 P1 FAILS）——Gateway event loop 未被画图阻塞，当前架构已够，不实施本 spec**
 > 日期：2026-06-25
-> 代码基线：dev HEAD `51f00191`
+> 代码基线：dev HEAD `51f00191`（实施 agent 工作于 `b00c39e4`）
 > 性质：🟡 中 · 执行架构优化（非 bug 修复）。把"画 N 张图"从「Gateway 重进程内 fork N 个 worker」改为「Gateway spawn 1 个轻子进程，子进程内开进程池」。**目的是 Gateway event loop 解耦 + 崩溃隔离强化，不是提速**。
 > **方向（用户拍板 2026-06-25）**：用户提「一次画几百张图对（Gateway）进程压力太大，能否用 celery 类似手段把画图变成 bash 一次性执行、别的程序程序化工程化出图」。调研结论：**不上 celery**（broker 三件套对单机批量画图是杀鸡牛刀），改用「spawn 轻子进程跑批量入口脚本 + 子进程内进程池」= 方案 A。**但前置：先实测坐实 Gateway 真被拖垮**（当前实测 112 图仅 5s，速度非瓶颈——若 Gateway event loop 没被阻塞/其他请求没被拖慢，本 spec 不该实施）。
 > **范式归属**：本 spec 是「[确定性批量执行工具 pattern](2026-06-24-deterministic-batch-execution-tool-pattern.md)」第 2 个实例（run_chart_plan）的**执行层架构演进**。pattern 的 12 铁律不变，只改「执行器宿主」——从「主进程内 ProcessPoolExecutor」演进为「主进程 spawn 子进程 + 子进程内 ProcessPoolExecutor」。
@@ -75,6 +75,48 @@ Gateway 多线程并发跑多 thread subagent。若两个 thread 同时画图（
 - P1/P2/P3 全不成立 → **暂缓**，当前架构已够，本 spec 转待办，记「实测未坐实 Gateway 被拖垮」。
 
 > **接手 agent 第一步就是跑 P1/P2/P3 并把结果填回本节**，再决定是否继续 §二之后的实施。
+
+---
+
+## ✅ 一'、实测前置结果（2026-06-25 实施 agent 跑完，**P1 FAILS → 暂缓**）
+
+接手 agent 第一步已跑前置，结论 **P1/P2/P3 全不成立 → 本 spec 暂缓（不实施）**。证据如下。
+
+### P1 = FAILS（核心判据不成立）—— 双重取证：代码路径 + 实测
+
+**调度路径取证（grep + 读 langchain_core 源码）**：`run_chart_plan` 是同步 `@tool(parse_docstring=True)` → `StructuredTool`（`coroutine=None`）。LangGraph ToolNode 调它走的是 async 路径（`langgraph/prebuilt/tool_node.py:1083` `await tool.ainvoke(call_args, config)`），而 `StructuredTool.ainvoke` 在 `coroutine=None` 时落到 **`return await run_in_executor(config, self.invoke, ...)`**（`langchain_core/tools/structured.py:53`）→ `run_in_executor` 内部 `asyncio.get_running_loop().run_in_executor(None, ...)`（`langchain_core/runnables/config.py:636`）= **asyncio 默认 ThreadPoolExecutor**。
+
+**即：sync 工具跑在 event loop 之外的 worker 线程，不阻塞 loop。** spec 原文「它是跑在 event loop 线程（阻塞 loop）还是 thread pool 线程」一问的答案是后者。`run_chart_plan` 内的 `ProcessPoolExecutor.submit/.result()` 也在这个 worker 线程同步等待，event loop 全程释放给其他 HTTP handler / SSE heartbeat / 其他 thread 的 subagent。
+
+**实测取证（`/tmp/p1_test.py`，本机 backend venv）**：构造一个镜像 `run_chart_plan` 生产路径的 sync 工具（开 `ProcessPoolExecutor`、submit 4 个 CPU 任务、同步 `.result()` 等），用 `tool.ainvoke({...})` 派遣（ToolNode 同款路径），同时在同一个 event loop 上跑一个 10ms tick 的「health monitor」。工具跑满 2s 期间 health 监控的延迟：
+
+| 指标 | 实测值 | 判读 |
+|---|---|---|
+| health ticks | 295 | loop 全程未被阻塞 |
+| health P50 延迟 | **10.150 ms** | ≈ 10ms tick 间隔（OS jitter） |
+| health P99 延迟 | **10.936 ms** | 远低于 >1s 阈值 → **event loop 未阻塞** |
+| health MAX 延迟 | 12.606 ms | 无尖峰 |
+
+若 loop 被阻塞，P99 应飙到数百 ms~秒级；实测 10.9ms。**P1 前置不成立。**
+
+> （旁注：traceback 本身也印证了路径——一次跑挂时的栈精确是 `ainvoke → run_in_executor(structured.py:68) → run_in_executor(config.py:636) → ThreadPoolExecutor thread(thread.py:58) → invoke → run → _run → self.func`，sync 函数体在 worker 线程执行。）
+
+### P2 = 无需实测（moot）
+
+spec 原数据（112 图 5.0s / 0.04s 每图 / parent RSS 84MB / child 260MB）已说明 fork 成本非瓶颈。且 P1 是**核心判据**、单独 FAILS 即按判据弱化 P2 的必要性；P2 即使成立也救不了 P1 缺位下的立论。不另起 live Gateway dogfood。
+
+### P3 = 无需实测（无并发拖垮证据）
+
+asyncio 默认 executor 容量 = `min(32, os.cpu_count()+4)` worker；每个 `run_chart_plan` 调用占 1 个 worker 线程约 5s。真实并发（几个 thread 同时画图）远不至打满 32 槽 → 无 event loop 饥饿。无证据「并发画图拖垮 Gateway」。P3 不成立。
+
+### 结论：本 spec **暂缓**
+
+按本文「前置结论判据」第三条（P1/P2/P3 全不成立 → 暂缓）+ §六暂缓判据：**当前架构（Gateway 内 ProcessPoolExecutor，sync 工具经 `run_in_executor` 跑在 worker 线程）已实现 spec 想要的「Gateway event loop 解耦」**——因为 sync 工具本就不在 loop 线程。本 spec 的方案 A（spawn 轻子进程）能多换一层崩溃隔离 + 省 fork 重父进程页表，但**前提（loop 被阻塞）不成立 → 收益不抵复杂度 + 风险 1（`/mnt` 子进程解析）的成本**。回退安全：当前架构无任何改动。
+
+**重启条件**（任一发生再考虑重启本 spec）：
+1. 证据出现 sync 工具被强制跑在 event loop 线程（如上游 langchain 改默认不走 `run_in_executor`，或我们给工具装了不走 executor 的 sync 包装）；
+2. 真实并发场景出现「多 thread 同时画图打满默认 executor → 其他请求排队」（此时改的应是 executor 容量或工具 `async` 化，未必是 spawn 子进程）；
+3. fork 重父进程页表成本被证明是真实瓶颈（需 live dogfood 取证 fork 延迟 >100ms 或 RSS 涨幅 >50MB）。
 
 ---
 
