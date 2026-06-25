@@ -511,6 +511,51 @@ def _prepare_artifact_delivery(
     return response_text, attachments
 
 
+def _auth_disabled_owner_user_id() -> str | None:
+    try:
+        from app.gateway.auth_disabled import AUTH_DISABLED_USER_ID, is_auth_disabled
+    except Exception:
+        logger.debug("Unable to inspect auth-disabled mode for channel owner fallback", exc_info=True)
+        return None
+    return AUTH_DISABLED_USER_ID if is_auth_disabled() else None
+
+
+def _effective_owner_user_id(msg: InboundMessage) -> str | None:
+    return _auth_disabled_owner_user_id() or msg.owner_user_id
+
+
+def _safe_user_id_for_run(raw_user_id: str) -> str:
+    from deerflow.config.paths import get_paths, make_safe_user_id
+
+    try:
+        return get_paths().prepare_user_dir_for_raw_id(raw_user_id)
+    except Exception:
+        logger.exception("Failed to prepare channel run user directory")
+        return make_safe_user_id(raw_user_id)
+
+
+def _channel_storage_user_id(msg: InboundMessage) -> str | None:
+    """Resolve the canonical DeerFlow user id for a channel-triggered message.
+
+    Single source of truth for the **file/artifact storage bucket**
+    (``receive_file`` / ``_ingest_inbound_files`` / ``_prepare_artifact_delivery``),
+    so the bucket the agent reads/writes always matches where channel files are
+    staged. Prefer the bound DeerFlow owner, otherwise fall back to the sanitized
+    raw platform user id. Without that fallback, an unbound auth-enabled channel
+    would run under ``safe(msg.user_id)`` but stage files under
+    ``get_effective_user_id()`` (the dispatcher task's unset contextvar →
+    ``"default"``), so uploads would land in ``users/default/...`` while the agent
+    reads ``users/{safe_platform_user_id}/...``. Returns ``None`` only when neither
+    identity is available, leaving the caller to fall back to the contextvar user.
+    """
+    owner_user_id = _effective_owner_user_id(msg)
+    if owner_user_id:
+        return _safe_user_id_for_run(owner_user_id)
+    if msg.user_id:
+        return _safe_user_id_for_run(msg.user_id)
+    return None
+
+
 async def _ingest_inbound_files(thread_id: str, msg: InboundMessage) -> list[dict[str, Any]]:
     if not msg.files:
         return []
@@ -850,7 +895,8 @@ class ChannelManager:
             service = get_channel_service()
             channel = service.get_channel(msg.channel_name) if service else None
             logger.info("[Manager] preparing receive file context for %d attachments", len(msg.files))
-            msg = await channel.receive_file(msg, thread_id) if channel else msg
+            storage_user_id = _channel_storage_user_id(msg)
+            msg = await channel.receive_file(msg, thread_id, user_id=storage_user_id) if channel else msg
         if extra_context:
             run_context.update(extra_context)
 

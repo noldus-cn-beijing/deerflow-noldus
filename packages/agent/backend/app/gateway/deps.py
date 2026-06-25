@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, TypeVar, cast
 from fastapi import FastAPI, HTTPException, Request
 from langgraph.types import Checkpointer
 
-from deerflow.config.app_config import AppConfig
+from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.persistence.feedback import FeedbackRepository
 from deerflow.runtime import RunContext, RunManager, StreamBridge
 from deerflow.runtime.events.store.base import RunEventStore
@@ -58,12 +58,19 @@ async def _mark_latest_recovered_threads_error(
             logger.warning("Failed to mark thread %s as error during run reconciliation", thread_id, exc_info=True)
 
 
-def get_config(request: Request) -> AppConfig:
-    """Return the app-scoped ``AppConfig`` stored on ``app.state``."""
-    config = getattr(request.app.state, "config", None)
-    if config is None:
-        raise HTTPException(status_code=503, detail="Configuration not available")
-    return config
+def get_config() -> AppConfig:
+    """Return the freshest ``AppConfig`` for the current request.
+
+    Routes through :func:`deerflow.config.app_config.get_app_config`, which
+    honours runtime ``ContextVar`` overrides and reloads ``config.yaml`` from
+    disk when its mtime changes, instead of a stale startup snapshot cached on
+    ``app.state``. Any failure to materialise the config is reported as 503.
+    """
+    try:
+        return get_app_config()
+    except Exception as exc:  # noqa: BLE001 - request boundary: log and degrade gracefully
+        logger.exception("Failed to load AppConfig at request time")
+        raise HTTPException(status_code=503, detail="Configuration not available") from exc
 
 
 @asynccontextmanager
@@ -181,7 +188,7 @@ def get_run_context(request: Request) -> RunContext:
 
     Returns a *base* context with infrastructure dependencies.
     """
-    config = get_config(request)
+    config = get_config()
     return RunContext(
         checkpointer=get_checkpointer(request),
         store=get_store(request),
