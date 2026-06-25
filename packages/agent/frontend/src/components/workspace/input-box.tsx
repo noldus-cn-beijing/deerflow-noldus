@@ -233,11 +233,15 @@ export function InputBox({
             selectedModel?.supports_thinking ?? false,
           ),
         });
-        setTimeout(() => onSubmit?.(message), 0);
+        setTimeout(() => void onSubmit?.(message), 0);
         return;
       }
 
-      return onSubmit?.(message);
+      // `onSubmit` is `(message) => void | Promise<void>`; the form-level
+      // `PromptInput onSubmit` handler is treated as a void return, so don't
+      // forward the (possibly Promise) result up — `void` discards it without
+      // changing behaviour (PromptInput awaits its own onSubmit internally).
+      void onSubmit?.(message);
     },
     [
       context,

@@ -130,7 +130,11 @@ export function SubtaskCard({
                       hasToolCalls(task.latestMessage)
                         ? explainLastToolCall(task.latestMessage, t)
                         : task.status === "completed" && task.result
-                          ? // Show the first line of the result as a summary
+                          ? // Show the first line of the result as a summary.
+                            // `||` (not `??`) is intentional: an empty/whitespace
+                            // first line must fall back to the status label, and
+                            // `??` would only catch null/undefined, leaving "".
+                            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
                             task.result.split("\n")[0]?.trim() || t.subtasks[task.status]
                           : t.subtasks[task.status]}
                     </FlipDisplay>

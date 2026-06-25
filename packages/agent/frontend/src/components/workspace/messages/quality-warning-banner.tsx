@@ -1,5 +1,8 @@
 "use client";
 
+import { ChevronDownIcon, ExclamationTriangleIcon } from "@radix-ui/react-icons";
+import { useState } from "react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Collapsible,
@@ -7,8 +10,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { ChevronDownIcon, ExclamationTriangleIcon } from "@radix-ui/react-icons";
-import { useState } from "react";
 
 export interface QualityWarning {
   severity: "critical" | "warning" | "info";
