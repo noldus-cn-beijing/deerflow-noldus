@@ -21,6 +21,7 @@ import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicator";
 import { Tooltip } from "@/components/workspace/tooltip";
+import { RunTraceWidget } from "@/components/workspace/trace";
 import { useAgent } from "@/core/agents";
 import { useI18n } from "@/core/i18n/hooks";
 import { useNotification } from "@/core/notification/hooks";
@@ -147,6 +148,7 @@ export default function AgentChatPage() {
                 </Button>
               </Tooltip>
               <TokenUsageIndicator messages={thread.messages} />
+              <RunTraceWidget messages={thread.messages} />
               <ExportTrigger threadId={threadId} />
               <ArtifactTrigger />
             </div>

@@ -237,6 +237,45 @@ export interface Translations {
     orTypeCustom: string;
   };
 
+  // Run Trace（运行轨迹侧抽屉 —— spec 2026-06-24-frontend-phase0-2）
+  runTrace: {
+    /** 入口按钮 tooltip / aria-label */
+    triggerLabel: string;
+    /** 抽屉标题 */
+    drawerTitle: string;
+    /** 抽屉关闭按钮 aria-label（复用 common.close 也行，但单独留文案位更稳） */
+    close: string;
+    /** 空态：当前 run 还没有任何 agent 行为 */
+    empty: string;
+    /** 进行中徽章：「N 步进行中」 */
+    runningSteps: (count: number) => string;
+    /** 完成态徽章：「N 步」 */
+    stepCount: (count: number) => string;
+    /** 出错态徽章 */
+    hasError: string;
+    /** gate 节点标题（数据质量关卡） */
+    gateTitle: string;
+    /** gate 明细展开/收起 */
+    showGateDetail: string;
+    hideGateDetail: string;
+    /** dispatch 节点展开/收起子步骤 */
+    showSubSteps: string;
+    hideSubSteps: string;
+    /** 节点状态文字标签（色+图标+文字三件套） */
+    statusRunning: string;
+    statusOk: string;
+    statusWarning: string;
+    statusFailed: string;
+    statusWaiting: string;
+    /** 节点 kind 文字标签（用于图标旁的类别说明） */
+    kindParadigm: string;
+    kindDispatch: string;
+    kindTool: string;
+    kindGate: string;
+    kindClarification: string;
+    kindArtifact: string;
+  };
+
   // Token Usage
   tokenUsage: {
     title: string;

@@ -19,12 +19,19 @@
 import type { Translations } from "@/core/i18n";
 
 /**
+ * 这两个函数只读 `t.toolCalls.stageBroadcast.*`。参数类型用窄的 Pick，既兼容现有调用方
+ * （传完整 Translations 仍满足 Pick），又让只持有 Translations 子集的消费者（如运行轨迹
+ * 的 useRunTrace）能直接复用，不必强转（LSP 安全）。
+ */
+type StageBroadcastTranslations = Pick<Translations, "toolCalls">;
+
+/**
  * Subagent type → 状态播报文案。
  * 未知 subagent_type 走通用 "正在派遣 <type>…" fallback。
  */
 export function getStageBroadcastForSubagent(
   subagentType: string,
-  t: Translations,
+  t: StageBroadcastTranslations,
 ): string {
   return t.toolCalls.stageBroadcast.dispatchSubagent(subagentType);
 }
@@ -49,7 +56,7 @@ export function detectEthoinsightCli(
  */
 export function getStageBroadcastForBash(
   command: string,
-  t: Translations,
+  t: StageBroadcastTranslations,
 ): string | null {
   const cliKind = detectEthoinsightCli(command);
   if (cliKind === "parse") {

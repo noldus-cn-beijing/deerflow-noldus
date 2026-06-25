@@ -311,6 +311,33 @@ export const enUS: Translations = {
     orTypeCustom: "Or type a custom reply below",
   },
 
+  // Run Trace (run trace side drawer)
+  runTrace: {
+    triggerLabel: "Run trace",
+    drawerTitle: "Run trace",
+    close: "Close run trace",
+    empty: "No agent activity yet for this run. Start an analysis and each step will appear here in real time.",
+    runningSteps: (count: number) => `${count} step${count === 1 ? "" : "s"} running`,
+    stepCount: (count: number) => `${count} step${count === 1 ? "" : "s"}`,
+    hasError: "Needs attention",
+    gateTitle: "Data quality gate",
+    showGateDetail: "Show gate detail",
+    hideGateDetail: "Hide gate detail",
+    showSubSteps: "Show internal steps",
+    hideSubSteps: "Hide internal steps",
+    statusRunning: "Running",
+    statusOk: "Done",
+    statusWarning: "Heads up",
+    statusFailed: "Error",
+    statusWaiting: "Awaiting input",
+    kindParadigm: "Paradigm locked",
+    kindDispatch: "Subagent dispatched",
+    kindTool: "Tool call",
+    kindGate: "Quality gate",
+    kindClarification: "Needs confirmation",
+    kindArtifact: "Artifact produced",
+  },
+
   // Token Usage
   tokenUsage: {
     title: "Token Usage",

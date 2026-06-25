@@ -300,6 +300,33 @@ export const zhCN: Translations = {
     orTypeCustom: "或在下方输入框自定义回复",
   },
 
+  // Run Trace（运行轨迹侧抽屉）
+  runTrace: {
+    triggerLabel: "运行轨迹",
+    drawerTitle: "运行轨迹",
+    close: "关闭运行轨迹",
+    empty: "当前分析还没有 agent 行为，开始一次分析后这里会实时显示每一步。",
+    runningSteps: (count: number) => `${count} 步进行中`,
+    stepCount: (count: number) => `${count} 步`,
+    hasError: "出现问题",
+    gateTitle: "数据质量关卡",
+    showGateDetail: "展开关卡明细",
+    hideGateDetail: "收起关卡明细",
+    showSubSteps: "展开内部步骤",
+    hideSubSteps: "收起内部步骤",
+    statusRunning: "进行中",
+    statusOk: "已完成",
+    statusWarning: "有提示",
+    statusFailed: "出错",
+    statusWaiting: "等待确认",
+    kindParadigm: "范式锁定",
+    kindDispatch: "子代理派遣",
+    kindTool: "工具调用",
+    kindGate: "质检关卡",
+    kindClarification: "需要确认",
+    kindArtifact: "产物生成",
+  },
+
   // Token Usage
   tokenUsage: {
     title: "Token 用量",
