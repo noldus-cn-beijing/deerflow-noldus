@@ -178,12 +178,37 @@ PYTHONPATH=. python -c "from deerflow.agents import make_lead_agent"
 
 ---
 
-## 七、待查（不在本 spec 范围）
+## 七、run_metric_plan 第一次中断根因（已查明，2026-06-25 取证坐实）
 
-- **run_metric_plan 第一次中断根因**：dogfood trace「Tool call was interrupted and did not return a result」。可能：subagent max_turns/超时、SSE 断、工具内异常被吞。需独立复现 subagent（守 `feedback_diagnose_subagent_behavior_replay_subagent_not_dump_lead`）查 SubagentExecutor 日志。**单列 problem doc，不混进本 spec。**
+> 原列为「待查」。2026-06-25 已用真实 checkpoint（解 langgraph `SqliteSaver` 拿 code-executor 24-turn timeline）+ executor 代码坐实——**它是 R1/R3（read_file 死循环）的下游危害，不是独立 bug。**
+
+### 真根因：read_file 死循环耗尽 max_turns，run_metric_plan 在 turn 20 被 hard-limit `break` 掐断
+
+code-executor 真实 24-turn timeline（task result 解出）：
+```
+turn 1-19:  read_file ×18 + ls    ← R1/R3 的 read_file 死循环烧掉 19 个 turn
+turn 20:    run_metric_plan         ← 终于调，但这是第 20 条 AI message
+turn 21-22: ls                       ← seal-resume 补轮：检查 handoff 落盘没
+turn 23:    run_metric_plan          ← 补轮里重跑（这次跑完返回）
+turn 24:    总结完成
+```
+
+机制（坐实）：
+1. code-executor `max_turns=20`（[code_executor.py:159](../../../packages/agent/backend/packages/harness/deerflow/subagents/builtins/code_executor.py#L159)）。
+2. [executor.py:1483-1486](../../../packages/agent/backend/packages/harness/deerflow/subagents/executor.py#L1483)：`if len(result.ai_messages) >= max_turns: break`——**AI message 数达 20 即 `break` 跳出 astream 循环**。
+3. turn 20 的 run_metric_plan tool_call **已被 captured 进 ai_messages（计为第 20 条）→ 立即触发 break → 但它的 tool 执行/返回还没等到** → code-executor 看到「Tool call was interrupted and did not return a result」。**不是工具崩溃，是 subagent 在 tool_call 与 tool_return 之间被 max_turns hard-limit `break` 掐断。**
+4. seal-resume 补轮（[executor.py:170-175](../../../packages/agent/backend/packages/harness/deerflow/subagents/executor.py#L170) Sprint 5.8）启动催完成 → turn 21-24 重跑成功（补轮 turn 数超过 max_turns=20，故 timeline 到 24）。
+
+### 根治 = 本 spec 的 R1/R3（无需单独改）
+read_file 死循环修掉后（M1/M2 工程修 + M3 prompt），code-executor 会在 turn 2-3 就调 run_metric_plan，**永远撞不到 max_turns=20** → 中断不发生。**中断是 read_file 死循环的下游症状，治本即消除。**
+
+### 次生缺陷（记录，本 spec 不修）
+**max_turns hard-limit 会在「tool_call 已发出、tool 未返回」的中间态 `break`**（[executor.py:1486](../../../packages/agent/backend/packages/harness/deerflow/subagents/executor.py#L1486)）——turn 20 那次 run_metric_plan 可能已 fork ProcessPoolExecutor 跑了一半（甚至跑完写了 handoff）被弃，补轮 turn 23 又重跑一次 = **ProcessPoolExecutor 白跑一次（算力浪费）**。
+- **为什么本 spec 不修**：① 修 R1/R3 后正常 subagent 不会在 turn 20 才调首个重工具，此缺陷基本不触发；② 改 max_turns 的 `break` 语义（如「break 前等最后一个 tool 返回」）是**高危改动**（subagent 终止条件），守 `feedback_seal_missing_root_cause_is_react_no_toolcall_exit_gate_not_fallback` 的「别轻改终止条件」。
+- **若未来要修**：方向是让 hard-limit 在「最后一条 AI message 带未决 tool_call」时**多等一个 tools 节点再 break**（让工具跑完落盘），避免白跑 + 避免补轮重跑。需独立 spec + 充分回归（改终止条件高危）。
 
 ---
 
 ## 八、milestone 建议
 
-归入「harness 工具鲁棒性」track。checkpoint：「EPM dogfood（thread 0e72d605）端到端成功但 code-executor 阶段 read_file 找 plan statistics 死循环 20+ 轮。取证坐实 read_file 两个越界静默 bug（只传 start_line 被忽略返回头部 / start_line 越界静默返回空）+ code-executor 策略错（read 给工具吃的大 plan）。修法=M1/M2 工程修 read_file 切片（fail-loud 越界，全 subagent 受益）+ M3 code-executor prompt（不 read 大 plan）。**回应用户「纯 prompt 够不够」：不够，必须 prompt+工程双管**——prompt 只让 code-executor 绕开，工程修才消除 bug 本身。」
+归入「harness 工具鲁棒性」track。checkpoint：「EPM dogfood（thread 0e72d605）端到端成功但 code-executor 阶段 read_file 找 plan statistics 死循环 20+ 轮。取证坐实 read_file 两个越界静默 bug（只传 start_line 被忽略返回头部 / start_line 越界静默返回空）+ code-executor 策略错（read 给工具吃的大 plan）。修法=M1/M2 工程修 read_file 切片（fail-loud 越界，全 subagent 受益）+ M3 code-executor prompt（不 read 大 plan）。**回应用户「纯 prompt 够不够」：不够，必须 prompt+工程双管**——prompt 只让 code-executor 绕开，工程修才消除 bug 本身。**另查明 §七 run_metric_plan「第一次中断」真根因=read_file 死循环耗尽 max_turns=20 → run_metric_plan 在 turn 20 被 hard-limit break 在 tool_call/tool_return 之间掐断 → seal-resume 补轮 turn 23 重跑救回（白跑一次进程池）。中断是 read_file 死循环的下游症状，修 R1/R3 即根治；次生缺陷（max_turns break 掐断未返回 tool）记录但不单独修（改终止条件高危）。」
