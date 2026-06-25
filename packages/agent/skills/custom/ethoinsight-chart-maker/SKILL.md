@@ -34,7 +34,7 @@ author: noldus-insight
    - 重跑子集（如用户追加某张图）传 `only_chart_ids=["box_open_arm"]`；遇失败想快速停传 `on_error="abort"`。默认全画 + continue。
    - **画图全走 run_chart_plan**——args 由工具透传自 plan_charts.json 的 entry.args（resolve 阶段已按 catalog 拼好完整 argv，含 `--parameters-json`），彻底消除 dogfood thread 339512dd 那种手拼漏 `--parameters-json` 致 bar 图失败、靠重试才救活的脆弱。
 6. run_chart_plan 内部已 seal handoff（**不要再调 seal_chart_maker_handoff**）。run_chart_plan 自动透传 plan.charts_budget_remaining 进 handoff.remaining_charts（P5 降级指纹，红线一）。
-7. `present_files(<run_chart_plan 落盘的 png 列表>)`
+7. 图表已由 run_chart_plan 自动登记并呈现给用户（前端画廊直接可见）。再调一次 `present_files(<run_chart_plan 落盘的 png 列表>)` 把同批图登记进消息通道——IM 渠道（飞书/Slack）据此把图作为附件推送；Web 端已由 run_chart_plan 呈现，此步为幂等补充（reducer 按 path 去重不会重复）。
 8. 输出 `OK: charts written\n[gate_signals]\n...`（charts_generated / failed_charts / chart_files 直接引用 run_chart_plan 返回的 gate_signals）
 
 ## 失败硬规范(2026-06-24 改：执行确定性化，画图全走 run_chart_plan)

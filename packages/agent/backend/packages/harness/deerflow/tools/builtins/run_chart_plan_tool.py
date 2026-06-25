@@ -21,9 +21,11 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from langchain.tools import ToolRuntime, tool
+from langchain.tools import InjectedToolCallId, ToolRuntime, tool
+from langchain_core.messages import ToolMessage
+from langgraph.types import Command
 from langgraph.typing import ContextT
 
 from deerflow.agents.thread_state import ThreadState
@@ -107,19 +109,28 @@ def _run_chart_task(
 # ============================================================================
 
 
+# ⚠️ 与孪生 run_metric_plan_tool 的返回类型不对称（spec 2026-06-25 §1.6，防 catastrophic forgetting）：
+# run_chart_plan 返 Command（图进 state.artifacts，给前端画廊 / IM 渠道）；run_metric_plan 仍返 dict
+# （指标落 JSON handoff 给下游 subagent 读，**不该进 artifacts**）。这是合理不对称，勿"修回"一致——
+# 下个 sync / 重构者若以为漏改、照 run_metric_plan 把这里改回 dict，会立刻回归「图不进画廊」本 fix。
 @tool("run_chart_plan", parse_docstring=True)
 def run_chart_plan_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
     plan_path: str = "/mnt/user-data/workspace/plan_charts.json",
     only_chart_ids: list[str] | None = None,
     on_error: str = "continue",
-) -> dict[str, Any]:
-    """一步跑完 plan_charts.json 的所有绘图脚本，确定性核磁盘落盘并封存 handoff。
+) -> Command:
+    """一步跑完 plan_charts.json 的所有绘图脚本，确定性核磁盘落盘、封存 handoff、登记 artifacts。
 
     不需要逐条拼 bash、不需要手构 handoff。工具内 ProcessPoolExecutor 进程内并行跑
     所有绘图脚本（每 worker import 一次），逐个核 output png 真落盘（磁盘真相），
     经 _seal_handoff_to_workspace 原子落盘 handoff_chart_maker.json（sealed_by="run_plan"）。
     chart_files 直接列真落盘的 png 虚拟路径，零重拼 args、零 LLM 自报。
+
+    落盘的图在工具内一并登记进 state.artifacts（产出+交付合一，不再依赖 chart-maker
+    逐张调 present_files——修「113 张图只显示 1 张」产物丢失）。与 present_files 写同一
+    artifacts 字段、过同一 merge_artifacts reducer（按 path 去重）。
 
     Args:
       plan_path: plan_charts.json 的虚拟路径（默认 /mnt/user-data/workspace/plan_charts.json）。
@@ -127,7 +138,10 @@ def run_chart_plan_tool(
       on_error: 失败策略。"continue" = 遇失败继续画剩余（默认）；"abort" = 遇首个失败停止提交后续。
 
     Returns:
-      紧凑结果（成功明细落盘不进 context）：
+      返回 Command，把 artifacts（落盘图元数据，命中 plan_charts.json 升级成 ArtifactMeta dict、
+      含缩略图路径）/ charts_status（失败/截断摘要，仅 partial 时带）/ messages 写入 thread state。
+      ToolMessage content 是 json 序列化的结果 dict，含 status / n_total / n_rendered / n_failed /
+      failures / gate_signals 供 chart-maker 决策树 parse（与旧 dict 返回字节同形）：
         {"status": "completed"|"partial"|"failed",
          "handoff_path": "/mnt/user-data/workspace/handoff_chart_maker.json",
          "n_total": int, "n_rendered": int, "n_failed": int,
@@ -145,7 +159,7 @@ def run_chart_plan_tool(
     # ---- Step 1: resolve workspace from thread_data ----
     thread_data = runtime.state.get("thread_data") if runtime.state else None
     if not thread_data or not thread_data.get("workspace_path"):
-        return _error_result("workspace_missing", "thread_data.workspace_path 未设置（基础设施 bug）")
+        return _error_command(tool_call_id, "workspace_missing", "thread_data.workspace_path 未设置（基础设施 bug）")
     workspace_str = thread_data["workspace_path"]
     workspace = Path(workspace_str)
 
@@ -154,17 +168,17 @@ def run_chart_plan_tool(
     if not Path(plan_real_path).exists():
         # plan 缺失 → seal failed，让 lead 补 plan（对齐 run_metric_plan plan-missing 路径）。
         _seal_failed(workspace, ChartMakerHandoff, f"plan_charts.json 不存在: {plan_path}")
-        return _error_result("plan_missing", f"plan_charts.json 不存在: {plan_path}")
+        return _error_command(tool_call_id, "plan_missing", f"plan_charts.json 不存在: {plan_path}")
     try:
         plan = json.loads(Path(plan_real_path).read_text(encoding="utf-8"))
     except Exception as e:
         _seal_failed(workspace, ChartMakerHandoff, f"plan_charts.json 解析失败: {e}")
-        return _error_result("plan_unparseable", f"plan_charts.json 解析失败: {e}")
+        return _error_command(tool_call_id, "plan_unparseable", f"plan_charts.json 解析失败: {e}")
 
     plan_charts: list[dict] = plan.get("charts", [])
     if not plan_charts:
         _seal_failed(workspace, ChartMakerHandoff, "plan 无 charts[]")
-        return _error_result("empty_plan", "plan 无 charts[]")
+        return _error_command(tool_call_id, "empty_plan", "plan 无 charts[]")
 
     # ---- Step 3: apply only_chart_ids selector（重跑子集用）----
     only_set = set(only_chart_ids) if only_chart_ids else None
@@ -172,7 +186,7 @@ def run_chart_plan_tool(
         plan_charts = [c for c in plan_charts if c.get("id") in only_set]
         if not plan_charts:
             _seal_failed(workspace, ChartMakerHandoff, f"only_chart_ids 过滤后无 chart: {sorted(only_set)}")
-            return _error_result("empty_after_filter", f"only_chart_ids 过滤后无 chart: {sorted(only_set)}")
+            return _error_command(tool_call_id, "empty_after_filter", f"only_chart_ids 过滤后无 chart: {sorted(only_set)}")
 
     # ---- Step 4: build DEERFLOW_PATH_* env so workers resolve /mnt virtual paths ----
     # 不在父进程 mutate 全局 os.environ（Gateway 多线程并发跑多 thread subagent，全局
@@ -298,8 +312,34 @@ def run_chart_plan_tool(
     except ValueError as e:
         # seal schema 校验失败 = 产物与 schema 不匹配 / 2.2 reconcile aggregate 门拒绝（回归探针）。
         logger.error("[run_chart_plan] seal schema 校验失败: %s", e)
-        return _error_result("seal_failed", f"handoff schema 校验失败: {e}")
+        return _error_command(tool_call_id, "seal_failed", f"handoff schema 校验失败: {e}")
 
+    logger.info(
+        "[run_chart_plan] done: status=%s n_total=%d n_rendered=%d n_failed=%d",
+        status, n_total, n_rendered, n_failed,
+    )
+
+    # ---- Step 10: 自动登记 artifacts（产出+交付合一，不再依赖 chart-maker 逐张 present）----
+    # 惰性 import present_file 三 helper（spec §1.2）：present_file_tool 顶层引
+    # sandbox.tools / config.paths / runtime.user_context / tools.types，与 run_chart_plan
+    # 交叉成环，故惰性（同区既有 _build_path_env/replace_virtual_path/_seal_handoff_to_workspace）。
+    # 复用 SSOT（_load_plan_charts / _build_artifact_meta / _build_charts_status），别手重建 by_output。
+    from deerflow.tools.builtins.present_file_tool import (
+        _build_artifact_meta,
+        _build_charts_status,
+        _load_plan_charts,
+    )
+
+    # artifact_plan = {paradigm, by_output}；缺/坏 → None（chart_files 退回裸 string path）。
+    artifact_plan = _load_plan_charts(thread_data)
+    artifact_metas: list[str | dict[str, Any]] = [
+        # chart_files 是 Step 7 已核磁盘的虚拟路径；同步串行生成缩略图（spec §三）。
+        _build_artifact_meta(vp, artifact_plan, thread_data, generate_thumb=True)
+        for vp in chart_files
+    ]
+
+    # ToolMessage content 用 json.dumps(result)——与旧 dict 返回字节同形 →
+    # chart-maker 决策树（chart_maker.py step 9 parse status/failures）零感知变化。
     result = {
         "status": status,
         "handoff_path": "/mnt/user-data/workspace/handoff_chart_maker.json",
@@ -309,11 +349,17 @@ def run_chart_plan_tool(
         "failures": failed_charts,
         "gate_signals": payload["gate_signals"],
     }
-    logger.info(
-        "[run_chart_plan] done: status=%s n_total=%d n_rendered=%d n_failed=%d",
-        status, n_total, n_rendered, n_failed,
-    )
-    return result
+    update: dict[str, Any] = {
+        "artifacts": artifact_metas,
+        "messages": [ToolMessage(json.dumps(result, ensure_ascii=False), tool_call_id=tool_call_id)],
+    }
+    # 连带修：失败/截断摘要（charts_status）原本只在 present_files 时进 state，
+    # 现在 run_chart_plan 自己登记 artifacts，必须一并写 charts_status，否则 partial
+    # 路径下前端拿不到失败原因（present_files 在新流程里是幂等补充，未必被调）。
+    charts_status = _build_charts_status(thread_data)
+    if charts_status is not None:
+        update["charts_status"] = charts_status
+    return Command(update=update)
 
 
 # ============================================================================
@@ -494,9 +540,16 @@ def _seal_failed(workspace: Path, model_cls: type, message: str) -> None:
             pass
 
 
-def _error_result(code: str, message: str) -> dict[str, Any]:
-    """Build a standardised error return dict (tool-level)."""
-    return {
+def _error_command(tool_call_id: str, code: str, message: str) -> Command:
+    """Build a standardised error Command for the 6 early-return paths (tool-level).
+
+    spec §1.4：签名 ``-> Command`` 后错误路径也必须返 Command（混返 dict 会让 ToolMessage
+    无 tool_call_id 绑定、行为退化）。错误路径**不写 artifacts**（不污染画廊）。content 是
+    json 序列化的 result dict，与正常返回字节同形 → chart-maker 决策树 parse error_code 零感知。
+    """
+    import json
+
+    result = {
         "status": "failed",
         "error_code": code,
         "message": message,
@@ -514,3 +567,6 @@ def _error_result(code: str, message: str) -> dict[str, Any]:
             "errors_count": 1,
         },
     }
+    return Command(
+        update={"messages": [ToolMessage(json.dumps(result, ensure_ascii=False), tool_call_id=tool_call_id)]}
+    )

@@ -186,8 +186,27 @@ def _set_runner(monkeypatch, runner):
 
 
 def _call(runtime, **kwargs):
-    """Invoke the underlying function (bypass @tool wrapper)."""
-    return _TOOL.run_chart_plan_tool.func(runtime, **kwargs)
+    """Invoke the underlying function and unpack the result dict from the Command.
+
+    Spec 2026-06-25-run-chart-plan-auto-register-artifacts：run_chart_plan_tool 现返
+    ``Command(update={"messages":[ToolMessage(json(result))...]})``。本 helper 把首条
+    ToolMessage 的 json content 解回 result dict，让既有读 ``res["status"]`` /
+    ``res["n_rendered"]`` / ``res["failures"]`` / ``res["error_code"]`` 的断言（T1-T14
+    + F1 + M2）零改动继续工作。
+    """
+    cmd = _TOOL.run_chart_plan_tool.func(runtime, tool_call_id="test-tcid", **kwargs)
+    msgs = cmd.update.get("messages", [])
+    assert msgs, f"Command 缺 ToolMessage: {cmd.update}"
+    return json.loads(msgs[0].content)
+
+
+def _call_command(runtime, **kwargs):
+    """Invoke the underlying function, return the raw Command.
+
+    用于直接断言 ``cmd.update["artifacts"]`` / ``cmd.update["charts_status"]`` /
+    ``ToolMessage.tool_call_id`` 透传的测试（_call 会把这些信息丢掉）。
+    """
+    return _TOOL.run_chart_plan_tool.func(runtime, tool_call_id="test-tcid", **kwargs)
 
 
 # ===================================================================
@@ -809,3 +828,118 @@ class TestAllSuccessHandoffConsistent:
         assert h["failed_charts"] == []
         # R1：sealed_by 是 run_plan（确定性），不是 model（LLM 手调覆盖）。
         assert h["sealed_by"] == "run_plan", h["sealed_by"]
+
+
+# ===================================================================
+# Spec 2026-06-25-run-chart-plan-auto-register-artifacts —— run_chart_plan
+# 返 Command 自己确定性登记 artifacts（不再依赖 chart-maker 逐张 present_files）
+# ===================================================================
+
+
+class TestArtifactsRegistered:
+    """run_chart_plan 必须把 chart_files 全量登记进 state.artifacts（修「113 张图只显示 1 张」）。
+
+    红态：run_chart_plan 返 dict、从不更新 artifacts → ``cmd.update`` 里没有 ``artifacts`` 键。
+    绿态：run_chart_plan 返 Command(update={"artifacts": [...113 meta...], ...})，经与
+          present_files 同款 merge_artifacts reducer（按 path 去重）上行到 lead thread state。
+    """
+
+    def _build_113_charts(self):
+        """复现 dogfood 形态：1 aggregate + 112 per_subject（4×28）。"""
+        charts = [{"id": "box_open_arm", "output_mode": "aggregate"}]
+        chart_ids = [
+            "open_arm_time_ratio_bar",
+            "zone_entry_distribution",
+            "center_time_ratio_bar",
+            "closed_arm_time_ratio_bar",
+        ]
+        for cid in chart_ids:
+            for i in range(28):
+                charts.append({
+                    "id": cid,
+                    "output_mode": "per_subject",
+                    "subject_index": i,
+                    "output": f"/mnt/user-data/outputs/plot_{cid}_s{i}.png",
+                    "args": [
+                        "--input", "/mnt/user-data/uploads/fake.txt",
+                        "--output", f"/mnt/user-data/outputs/plot_{cid}_s{i}.png",
+                    ],
+                })
+        return charts
+
+    def test_113_charts_all_registered_as_artifacts(self, ws_and_outputs, monkeypatch):
+        # 核心：113 张图全进 cmd.update["artifacts"]（不是依赖 LLM 逐张 present）。
+        workspace, outputs = ws_and_outputs
+        charts = self._build_113_charts()
+        assert len(charts) == 113
+        _write_plan(workspace, _plan(charts))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success(outputs=outputs))
+
+        cmd = _call_command(_runtime(workspace, outputs))
+        artifacts = cmd.update.get("artifacts")
+        assert artifacts is not None, f"red: Command 没登记 artifacts: {cmd.update}"
+        assert len(artifacts) == 113, (
+            f"red: 只登记了 {len(artifacts)} 张 artifact（应 113）: {artifacts}"
+        )
+        # 全是 /mnt/user-data/outputs/ 前缀路径（命中 plan by_output 的升级成 meta dict，
+        # 未命中的退回裸 string——但这里 113 张全命中 plan，故全是 meta dict）。
+        for meta in artifacts:
+            assert isinstance(meta, dict), f"113 张全命中 plan 应升级成 meta dict: {meta}"
+            assert meta["path"].startswith("/mnt/user-data/outputs/"), meta
+            assert meta["kind"] == "chart", meta
+        # aggregate 那张 output_mode=="aggregate"。
+        agg = [m for m in artifacts if m.get("output_mode") == "aggregate"]
+        assert len(agg) == 1, f"应有 1 张 aggregate，实得 {len(agg)}"
+
+    def test_tool_message_carries_status_and_tool_call_id(self, ws_and_outputs, monkeypatch):
+        # ToolMessage content 是 json(result dict)，chart-maker 决策树 parse 它零感知变化。
+        # tool_call_id 正确透传（InjectedToolCallId，LLM 不可见但 ToolMessage 必须绑定）。
+        workspace, outputs = ws_and_outputs
+        charts = [
+            {"id": "box_open_arm", "output_mode": "aggregate"},
+            {"id": "trajectory_s0", "output_mode": "per_subject"},
+        ]
+        _write_plan(workspace, _plan(charts))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success(outputs=outputs))
+
+        cmd = _call_command(_runtime(workspace, outputs))
+        msg = cmd.update["messages"][0]
+        assert msg.tool_call_id == "test-tcid", msg.tool_call_id
+        payload = json.loads(msg.content)
+        assert payload["status"] == "completed", payload
+        assert payload["n_rendered"] == 2, payload
+        # result dict 形态与决策树（chart_maker.py step 9 parse status/failures）零感知变化。
+        assert "failures" in payload and "gate_signals" in payload, payload
+
+    def test_charts_status_into_state_on_partial(self, ws_and_outputs, monkeypatch):
+        # partial（有失败）→ charts_status 摘要进 state（前端拿失败原因）。
+        workspace, outputs = ws_and_outputs
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_fail_on({"trajectory_s0"}, outputs=outputs))
+        charts = [
+            {"id": "box_open_arm", "output_mode": "aggregate"},
+            {"id": "trajectory_s0", "output_mode": "per_subject"},
+        ]
+        _write_plan(workspace, _plan(charts))
+
+        cmd = _call_command(_runtime(workspace, outputs))
+        cs = cmd.update.get("charts_status")
+        assert cs is not None, f"partial 应带 charts_status 进 state: {cmd.update}"
+        assert cs["n_rendered"] == 1, cs
+        assert any(f["chart_id"] == "trajectory_s0" for f in cs["failed"]), cs
+
+    def test_error_path_returns_command_no_artifacts(self, ws_and_outputs, sync_runner):
+        # 6 个错误早退点也返 Command（签名 -> Command 后混返 dict 会退化），
+        # 且错误路径**不写 artifacts**（不污染画廊）。
+        workspace, outputs = ws_and_outputs
+        _write_plan(workspace, _plan([]))  # empty_plan
+
+        cmd = _call_command(_runtime(workspace, outputs))
+        # 错误路径返 Command（有 ToolMessage）。
+        msg = cmd.update["messages"][0]
+        payload = json.loads(msg.content)
+        assert payload["status"] == "failed", payload
+        assert payload["error_code"] == "empty_plan", payload
+        # 错误路径不写 artifacts（不要把失败画图的空集/部分集污染画廊）。
+        assert "artifacts" not in cmd.update, (
+            f"red: 错误路径不应写 artifacts: {cmd.update}"
+        )

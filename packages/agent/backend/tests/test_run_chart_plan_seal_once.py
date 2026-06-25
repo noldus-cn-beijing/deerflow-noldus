@@ -141,7 +141,14 @@ def ws_and_outputs(tmp_path):
 
 
 def _call_run_chart_plan(runtime, **kwargs):
-    return _TOOL.run_chart_plan_tool.func(runtime, **kwargs)
+    """run_chart_plan_tool 现返 Command(update={"messages":[ToolMessage(json(result))...]})（spec
+    2026-06-25-auto-register-artifacts）。解包首条 ToolMessage 的 json content 回 result dict，
+    让既有读 ``res["status"]`` 的断言零改动继续工作（同 test_run_chart_plan.py:_call 模式）。
+    """
+    cmd = _TOOL.run_chart_plan_tool.func(runtime, tool_call_id="test-tcid", **kwargs)
+    msgs = cmd.update.get("messages", [])
+    assert msgs, f"Command 缺 ToolMessage: {cmd.update}"
+    return json.loads(msgs[0].content)
 
 
 def _read_handoff(workspace: Path) -> dict:
