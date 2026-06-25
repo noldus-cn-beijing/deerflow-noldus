@@ -183,6 +183,13 @@
   --radius-2xl: 28px;
   --radius-3xl: 40px;
 
+  /* 图标尺寸 token（Phase0#6 §2.2，ui-ux-pro-max Consistent Icon Sizing）
+     映射到 Tailwind 生成 size-icon-sm/md/lg 工具类，同一视觉层同一尺寸，
+     取代随手 18/22/26。值对齐 lucide 默认 grid（16/20/24 = size-4/5/6）。 */
+  --size-icon-sm: 1rem;   /* 16px — 小：内联文字旁、dense 行 */
+  --size-icon-md: 1.25rem;/* 20px — 中：按钮内、卡片头默认 */
+  --size-icon-lg: 1.5rem; /* 24px — 大：空状态/强调 */
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -230,6 +237,12 @@
   --color-status-success-soft: var(--status-success-soft);
   --color-status-warning-soft: var(--status-warning-soft);
   --color-status-danger-soft: var(--status-danger-soft);
+
+  /* 新增:Mœbius 灰沙漠暖中性 accent（Phase0#6 §4.3）
+     映射到 Tailwind 生成 bg-accent-clay / bg-accent-clay-soft / text-accent-clay 等工具类。
+     纪律:仅插画/空状态/极少点缀;不进数据可视化分类色/状态语义。 */
+  --color-accent-clay: var(--accent-clay);
+  --color-accent-clay-soft: var(--accent-clay-soft);
 
   /* 新增:工作流阶段色(7 阶段,全部由品牌绿 hue 偏移,Phase 0 后续进度轨/决策卡用) */
   --color-stage-upload: var(--stage-upload);
@@ -316,6 +329,25 @@
                   0 8px 24px -8px rgba(0, 0, 0, 0.08),
                   0 24px 48px -16px rgba(0, 0, 0, 0.06);
 
+  /* ── elevation 阶梯（Phase0#6 §1.2，日式：柔、薄、多层，绝不硬黑边）
+     语义命名对齐用途、不对齐数字；每档 = 1-2 层柔影叠加。补足旧
+     --shadow-float 与 --shadow-modal 之间的断层。重叠 card 用阴影差表达
+     z 关系、不用 border 套 border。--shadow-rest 与 --shadow-float 同值并存：
+     新组件用语义名 rest/raised/overlap，旧 float 渐进迁移（守不破坏既有引用）。 */
+  --shadow-rest:    0 1px 2px rgba(0, 0, 0, 0.04);                                   /* 静止卡片 */
+  --shadow-raised:  0 2px 4px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);     /* 悬浮/被 hover 抬升的卡片 */
+  --shadow-overlap: 0 6px 16px -4px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04); /* 重叠在别的卡片之上 */
+  --shadow-overlay: 0 12px 32px -8px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.04); /* 画廊 lightbox / 浮层抽屉 */
+  /* --shadow-modal 见上方，保留现值 */
+
+  /* Mœbius 灰沙漠色温的暖中性 accent（Phase0#6 §4.3）：降饱和暖陶土/赭，
+     补足纯绿系缺的暖色锚点。纪律：仅插画层 + 空状态 + 极少装饰点缀，
+     绝不进数据可视化分类色 / 状态语义 / 大面积铺（它是“暖色的一点呼吸”，
+     不是第二主色）。状态色仍走 --status-*，与此 accent 正交。
+     bare token 在 :root，@theme inline 加 --color- 前缀生成 Tailwind 工具类。 */
+  --accent-clay:      oklch(0.70 0.045 70);
+  --accent-clay-soft: oklch(0.70 0.045 70 / 0.12);
+
   /* 状态语义色:与品牌绿同 family 协调,降饱和、非荧光。
      呈现须"色 + 图标 + 文字"三件套(color-not-only),不可仅靠颜色表意。 */
   --status-info:    oklch(0.62 0.10 230);   /* 沉静蓝 */
@@ -380,7 +412,17 @@
   --elevated: oklch(0.30 0.01 168 / 0.85);
   --elevated-static: oklch(0.30 0.01 168 / 0.95);
   --shadow-modal: 0 16px 48px -12px rgba(0, 0, 0, 0.6);
-  font-weight: 300;
+
+  /* elevation 阶梯 dark 占位（Phase0#6 §1.2）：阴影在暗色下加深，给不塌的值，
+     Phase 2 精调（决策4）。与 light 同语义命名对齐。 */
+  --shadow-rest:    0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-raised:  0 2px 4px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-overlap: 0 6px 16px -4px rgba(0, 0, 0, 0.50), 0 2px 4px rgba(0, 0, 0, 0.30);
+  --shadow-overlay: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.30);
+
+  /* clay accent dark：明度抬高一档，与 light 同 hue。bare token 同 light 命名。 */
+  --accent-clay:      oklch(0.74 0.045 70);
+  --accent-clay-soft: oklch(0.74 0.045 70 / 0.14);
 
   /* 状态语义色 dark 占位:同 hue 明度抬高一档保证 dark 下对比度。
      值留 Phase 2 精调(决策4),本 spec 只保证 token 齐全不塌。 */
@@ -392,6 +434,7 @@
   --status-success-soft: oklch(0.68 0.11 155 / 0.12);
   --status-warning-soft: oklch(0.78 0.12  75 / 0.14);
   --status-danger-soft:  oklch(0.68 0.16  25 / 0.12);
+  font-weight: 300;
 }
 
 /* ============================================================
@@ -489,6 +532,14 @@
   .shadow-float {
     box-shadow: var(--shadow-float);
   }
+
+  /* elevation 阶梯工具类（Phase0#6 §1.2，照 .shadow-float/.shadow-modal 模式）
+     用途语义：rest=静止卡片，raised=hover 抬升，overlap=叠在别的卡片上，
+     overlay=lightbox/浮层抽屉。重叠 card 靠升档表达 z，不靠 border 套 border。 */
+  .shadow-rest    { box-shadow: var(--shadow-rest); }
+  .shadow-raised  { box-shadow: var(--shadow-raised); }
+  .shadow-overlap { box-shadow: var(--shadow-overlap); }
+  .shadow-overlay { box-shadow: var(--shadow-overlay); }
 
   /* 子任务运行态:柔和 brand 色脉动(替代 ambilight) */
   .animate-pulse-soft {
