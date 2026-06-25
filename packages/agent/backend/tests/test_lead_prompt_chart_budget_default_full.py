@@ -8,6 +8,7 @@ lead 才给定 chart_budget 数字并透传给 chart-maker。
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from deerflow.agents.lead_agent import prompt as prompt_module
 
@@ -17,36 +18,39 @@ def _render_prompt() -> str:
 
     复用 test_apply_prompt_template_includes_custom_mounts 的 monkeypatch 模式：
     把所有外部依赖 stub 掉，让 has_noldus_agents=True，从而 noldus_rules 段被渲染。
+
+    使用 ``patch.object`` 上下文管理器统一 stub 与恢复——此前手写赋值只在
+    ``finally`` 里恢复了 ``cfg_mod.get_app_config``，其余 ``prompt_module.*``
+    属性（``_get_resolved_facts_context`` / ``_get_prior_corrections_context`` /
+    ``_get_memory_context`` 等）被永久替换成返回空串的 lambda，污染后续整套
+    test suite（test_resolved_facts_readback / test_s8_feedback_corrections 全红）。
     """
     # has_noldus_agents 由 get_available_subagent_names() 决定 —— 返回含 noldus agent。
-    prompt_module.get_available_subagent_names = lambda **kw: [  # type: ignore[assignment]
-        "code-executor",
-        "data-analyst",
-        "chart-maker",
-        "report-writer",
-        "knowledge-assistant",
-    ]
-    # 其余外部依赖 stub 为空/恒等。
     config = SimpleNamespace(
         sandbox=SimpleNamespace(mounts=[]),
         skills=SimpleNamespace(container_path="/mnt/skills"),
     )
     import deerflow.config as cfg_mod
 
-    original_get_app_config = cfg_mod.get_app_config
-    cfg_mod.get_app_config = lambda: config  # type: ignore[assignment]
-    prompt_module._get_app_config = lambda: config  # type: ignore[assignment]
-    prompt_module._get_enabled_skills = lambda: []  # type: ignore[assignment]
-    prompt_module.get_deferred_tools_prompt_section = lambda **kw: ""  # type: ignore[assignment]
-    prompt_module._build_acp_section = lambda **kw: ""  # type: ignore[assignment]
-    prompt_module._get_memory_context = lambda agent_name=None, **kw: ""  # type: ignore[assignment]
-    prompt_module._get_prior_corrections_context = lambda paradigm=None, user_id=None: ""  # type: ignore[assignment]
-    prompt_module._get_resolved_facts_context = lambda thread_id=None, agent_name=None, user_id=None: ""  # type: ignore[assignment]
-    prompt_module.get_agent_soul = lambda agent_name=None: ""  # type: ignore[assignment]
-    try:
+    with (
+        patch.object(prompt_module, "get_available_subagent_names", lambda **kw: [
+            "code-executor",
+            "data-analyst",
+            "chart-maker",
+            "report-writer",
+            "knowledge-assistant",
+        ]),
+        patch.object(cfg_mod, "get_app_config", lambda: config),
+        patch.object(prompt_module, "_get_app_config", lambda: config, create=True),
+        patch.object(prompt_module, "_get_enabled_skills", lambda: []),
+        patch.object(prompt_module, "get_deferred_tools_prompt_section", lambda **kw: ""),
+        patch.object(prompt_module, "_build_acp_section", lambda **kw: ""),
+        patch.object(prompt_module, "_get_memory_context", lambda agent_name=None, **kw: ""),
+        patch.object(prompt_module, "_get_prior_corrections_context", lambda paradigm=None, user_id=None: ""),
+        patch.object(prompt_module, "_get_resolved_facts_context", lambda thread_id=None, agent_name=None, user_id=None: ""),
+        patch.object(prompt_module, "get_agent_soul", lambda agent_name=None: ""),
+    ):
         return prompt_module.apply_prompt_template(subagent_enabled=True)
-    finally:
-        cfg_mod.get_app_config = original_get_app_config  # type: ignore[assignment]
 
 
 def test_prompt_default_full_plot_no_budget():

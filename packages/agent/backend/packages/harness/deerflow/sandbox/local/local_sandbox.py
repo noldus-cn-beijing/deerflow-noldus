@@ -1,4 +1,5 @@
 import errno
+import logging
 import ntpath
 import os
 import re
@@ -12,6 +13,8 @@ from typing import NamedTuple
 from deerflow.sandbox.local.list_dir import list_dir
 from deerflow.sandbox.sandbox import Sandbox
 from deerflow.sandbox.search import GrepMatch, find_glob_matches, find_grep_matches
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -505,6 +508,9 @@ class LocalSandbox(Sandbox):
         stripped_path = normalised.lstrip("/")
         allowed_prefix = VIRTUAL_PATH_PREFIX.lstrip("/")
         if stripped_path != allowed_prefix and not stripped_path.startswith(f"{allowed_prefix}/"):
+            # Security-relevant: log before denying so attempted escapes outside the
+            # virtual path prefix are observable, not just raised.
+            logger.error("Rejected download_file outside allowed directory: %s", path)
             raise PermissionError(errno.EACCES, f"Access denied: path must be under '{VIRTUAL_PATH_PREFIX}'", path)
 
         resolved_path = self._resolve_path(path)

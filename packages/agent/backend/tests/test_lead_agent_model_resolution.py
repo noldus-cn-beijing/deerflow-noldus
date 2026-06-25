@@ -129,7 +129,7 @@ def test_build_middlewares_uses_resolved_model_name_for_vision(monkeypatch):
     )
 
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
-    monkeypatch.setattr(lead_agent_module, "_create_summarization_middleware", lambda: None)
+    monkeypatch.setattr(lead_agent_module, "_create_summarization_middleware", lambda **kwargs: None)
     monkeypatch.setattr(lead_agent_module, "_create_todo_list_middleware", lambda is_plan_mode: None)
 
     middlewares = lead_agent_module.build_middlewares({"configurable": {"model_name": "stale-model", "is_plan_mode": False, "subagent_enabled": False}}, model_name="vision-model", custom_middlewares=[MagicMock()])
@@ -158,6 +158,9 @@ def test_create_summarization_middleware_uses_configured_model_alias(monkeypatch
 
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
     monkeypatch.setattr(lead_agent_module, "ArchivingSummarizationMiddleware", lambda **kwargs: kwargs)
+    # _create_summarization_middleware reads skills.container_path from the app
+    # config; stub it so the test doesn't require a real config.yaml on disk.
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: _make_app_config([_make_model("m", supports_thinking=False)]))
 
     middleware = lead_agent_module._create_summarization_middleware()
 

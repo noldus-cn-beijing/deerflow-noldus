@@ -79,7 +79,7 @@ def _resolve_model_name(requested_model_name: str | None = None) -> str:
     return default_model_name
 
 
-def _create_summarization_middleware() -> ArchivingSummarizationMiddleware | None:
+def _create_summarization_middleware(app_config: AppConfig | None = None) -> ArchivingSummarizationMiddleware | None:
     """Create and configure the summarization middleware from config."""
     config = get_summarization_config()
 
@@ -125,7 +125,11 @@ def _create_summarization_middleware() -> ArchivingSummarizationMiddleware | Non
     kwargs["preserve_recent_skill_count"] = config.preserve_recent_skill_count
     kwargs["preserve_recent_skill_tokens"] = config.preserve_recent_skill_tokens
     kwargs["preserve_recent_skill_tokens_per_skill"] = config.preserve_recent_skill_tokens_per_skill
-    kwargs["skills_container_path"] = get_app_config().skills.container_path
+    # Resolve the app config the caller already holds (build_middlewares) rather
+    # than re-reading the global, so tests/callers that inject an AppConfig are
+    # honoured and we don't require a real config.yaml on disk.
+    resolved_app_config = app_config or get_app_config()
+    kwargs["skills_container_path"] = resolved_app_config.skills.container_path
 
     return ArchivingSummarizationMiddleware(**kwargs)
 
@@ -306,7 +310,7 @@ def build_middlewares(
     loop_detection = LoopDetectionMiddleware.from_config(resolved_app_config.loop_detection)
 
     # Add summarization middleware if enabled
-    summarization_middleware = _create_summarization_middleware()
+    summarization_middleware = _create_summarization_middleware(app_config=resolved_app_config)
     if summarization_middleware is not None:
         summarization_middleware._loop_detection = loop_detection
         middlewares.append(summarization_middleware)
@@ -535,7 +539,11 @@ def build_middlewares(
     # after_model dispatch lets it strip stale tool_calls *first*; downstream
     # Loop / Subagent accounting then sees a clean AIMessage. See
     # safety_finish_reason_middleware.py docstring.
-    safety_config = app_config.safety_finish_reason
+    # NOTE: use ``resolved_app_config`` (line 301: ``app_config or get_app_config()``),
+    # not the raw ``app_config`` parameter — the parameter is ``None`` whenever a
+    # caller relies on the global config (every production caller passes it, but
+    # tests and any future caller that omit it would crash here).
+    safety_config = resolved_app_config.safety_finish_reason
     if safety_config.enabled:
         middlewares.append(SafetyFinishReasonMiddleware.from_config(safety_config))
 

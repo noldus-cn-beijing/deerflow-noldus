@@ -305,8 +305,12 @@ class TestSymlinkEscapes:
 
         entries = sandbox.list_dir("/mnt/data", max_depth=1)
 
-        assert "/mnt/data/nested/" in entries
-        assert "/mnt/data/nested/linked-dir/" in entries
+        # Reverse-resolving local paths back to container paths normalises away
+        # the trailing slash that the raw ``list_dir`` adds for directories, so
+        # the rendered entries are slash-less (consistent across real dirs and
+        # symlinked dirs). Assert the normalised container paths.
+        assert "/mnt/data/nested" in entries
+        assert "/mnt/data/nested/linked-dir" in entries
         assert "/mnt/data/dir-link" not in entries
 
     def test_write_file_blocks_symlink_into_nested_read_only_mount(self, tmp_path):
@@ -501,10 +505,13 @@ class TestMultipleMounts:
         monkeypatch.setattr("deerflow.sandbox.local.local_sandbox.LocalSandbox._get_shell", lambda self: "/bin/sh")
 
         sandbox.execute_command("cat /mnt/data/test.txt")
-        # Verify the command received the resolved local path
-        command = captured.get("command", [])
-        assert isinstance(command, list) and len(command) >= 3
-        assert str(data_dir) in command[2]
+        # Verify the command received the resolved local path. On Linux the shell
+        # invocation passes a single resolved-command *string* to subprocess.run
+        # (shell=True); on Windows it passes a list ``[shell, "-c", cmd]``. Accept
+        # both shapes and assert the resolved local path is present either way.
+        command = captured.get("command", "")
+        command_str = " ".join(command) if isinstance(command, list) else command
+        assert str(data_dir) in command_str
 
     def test_reverse_resolve_path_does_not_match_partial_prefix(self, tmp_path):
         foo_dir = tmp_path / "foo"
