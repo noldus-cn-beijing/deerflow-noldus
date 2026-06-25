@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { ArtifactMeta } from "@/core/artifacts/types";
 import { urlOfArtifact } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { installSkill } from "@/core/skills/api";
@@ -32,8 +33,8 @@ const IMAGE_EXTENSIONS = new Set([
   ".bmp",
 ]);
 
-function isImageFile(filepath: string): boolean {
-  const ext = filepath.slice(filepath.lastIndexOf(".")).toLowerCase();
+function isImageFile(meta: ArtifactMeta): boolean {
+  const ext = meta.path.slice(meta.path.lastIndexOf(".")).toLowerCase();
   return IMAGE_EXTENSIONS.has(ext);
 }
 
@@ -43,7 +44,8 @@ export function ArtifactFileList({
   threadId,
 }: {
   className?: string;
-  files: string[];
+  /** ArtifactMeta[]（spec phase0-3）；缩略图优先 thumb_path（治渲染成本 ①）。 */
+  files: ArtifactMeta[];
   threadId: string;
 }) {
   const { t } = useI18n();
@@ -94,29 +96,34 @@ export function ArtifactFileList({
       {imageFiles.length > 0 && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {imageFiles.map((file) => {
+            const path = file.path;
+            const thumbUrl = file.thumb_path
+              ? urlOfArtifact({ filepath: file.thumb_path, threadId })
+              : null;
             const imgUrl = urlOfArtifact({
-              filepath: file,
+              filepath: path,
               threadId,
             });
             return (
               <div
-                key={file}
+                key={path}
                 className="group relative cursor-pointer overflow-hidden rounded-lg border bg-muted/30"
-                onClick={() => handleClick(file)}
+                onClick={() => handleClick(path)}
               >
                 <img
-                  src={imgUrl}
-                  alt={getFileName(file)}
-                  className="w-full object-contain"
+                  src={thumbUrl ?? imgUrl}
+                  alt={getFileName(path)}
+                  className="w-full aspect-square object-contain"
                   loading="lazy"
+                  decoding="async"
                 />
                 <div className="flex items-center justify-between border-t bg-background/80 px-3 py-2 text-xs backdrop-blur-sm">
                   <span className="truncate font-medium">
-                    {getFileName(file)}
+                    {getFileName(path)}
                   </span>
                   <a
                     href={urlOfArtifact({
-                      filepath: file,
+                      filepath: path,
                       threadId,
                       download: true,
                     })}
@@ -136,30 +143,32 @@ export function ArtifactFileList({
       )}
       {otherFiles.length > 0 && (
         <ul className="flex w-full flex-col gap-4">
-          {otherFiles.map((file) => (
+          {otherFiles.map((file) => {
+            const path = file.path;
+            return (
             <Card
-              key={file}
+              key={path}
               className="relative cursor-pointer p-3"
-              onClick={() => handleClick(file)}
+              onClick={() => handleClick(path)}
             >
               <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 pr-2 pl-1">
                 <CardTitle className="relative min-w-0 pl-8 leading-tight [overflow-wrap:anywhere] break-words">
-                  <div className="min-w-0">{getFileName(file)}</div>
+                  <div className="min-w-0">{getFileName(path)}</div>
                   <div className="absolute top-2 -left-0.5">
-                    {getFileIcon(file, "size-6")}
+                    {getFileIcon(path, "size-6")}
                   </div>
                 </CardTitle>
                 <CardDescription className="min-w-0 pl-8 text-xs">
-                  {getFileExtensionDisplayName(file)} file
+                  {getFileExtensionDisplayName(path)} file
                 </CardDescription>
                 <CardAction className="row-span-1 self-center">
-                  {file.endsWith(".skill") && (
+                  {path.endsWith(".skill") && (
                     <Button
                       variant="ghost"
-                      disabled={installingFile === file}
-                      onClick={(e) => handleInstallSkill(e, file)}
+                      disabled={installingFile === path}
+                      onClick={(e) => handleInstallSkill(e, path)}
                     >
-                      {installingFile === file ? (
+                      {installingFile === path ? (
                         <LoaderIcon className="size-4 animate-spin" />
                       ) : (
                         <PackageIcon className="size-4" />
@@ -170,7 +179,7 @@ export function ArtifactFileList({
                   <Button variant="ghost" asChild>
                     <a
                       href={urlOfArtifact({
-                        filepath: file,
+                        filepath: path,
                         threadId: threadId,
                         download: true,
                       })}
@@ -185,7 +194,8 @@ export function ArtifactFileList({
                 </CardAction>
               </CardHeader>
             </Card>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>

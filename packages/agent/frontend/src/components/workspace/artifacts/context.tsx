@@ -7,12 +7,14 @@ import {
 } from "react";
 
 import { useSidebar } from "@/components/ui/sidebar";
+import type { ArtifactMeta } from "@/core/artifacts/types";
 import { env } from "@/env";
 
 export interface ArtifactsContextType {
-  artifacts: string[];
-  setArtifacts: (artifacts: string[]) => void;
+  artifacts: ArtifactMeta[];
+  setArtifacts: (artifacts: ArtifactMeta[]) => void;
 
+  /** 选中的 artifact path（唯一键）；详情面板据此取 ArtifactFileDetail。 */
   selectedArtifact: string | null;
   autoSelect: boolean;
   select: (artifact: string, autoSelect?: boolean) => void;
@@ -32,7 +34,7 @@ interface ArtifactsProviderProps {
 }
 
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
-  const [artifacts, setArtifacts] = useState<string[]>([]);
+  const [artifacts, setArtifacts] = useState<ArtifactMeta[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null);
   const [autoSelect, setAutoSelect] = useState(true);
   const [open, setOpen] = useState(

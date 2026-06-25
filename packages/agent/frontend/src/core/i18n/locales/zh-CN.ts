@@ -231,6 +231,27 @@ export const zhCN: Translations = {
     searchChats: "搜索对话",
   },
 
+  // Artifact gallery (spec phase0-3)
+  gallery: {
+    title: "产物画廊",
+    summaryCharts: (n: number) => `${n} 张汇总图`,
+    summaryPerSubject: (n: number) => `${n} 张单样本图`,
+    summaryAll: (n: number) => `共 ${n} 张图`,
+    openGallery: (n: number) => `打开产物画廊 · 查看全部 ${n} 张`,
+    openGalleryShort: "打开产物画廊",
+    downloadAll: (n: number) => `下载全部 ${n} 张 (ZIP)`,
+    downloadAllShort: "下载全部 (ZIP)",
+    exportDataTable: "导出数据表 (CSV)",
+    failedGenerated: (n: number) => `${n} 张图未生成`,
+    failedReason: "原因",
+    failedRemedy: "补全未生成的图",
+    noArtifacts: "暂无产物",
+    representative: "汇总图",
+    backToChat: "返回对话",
+    galleryPlaceholder:
+      "完整画廊（分面筛选 + 虚拟化网格 + 小倍数对比）将在下一迭代上线。可先点「下载全部」带走所有图。",
+  },
+
   // Page titles (document title)
   pages: {
     appName: "EthoInsight",

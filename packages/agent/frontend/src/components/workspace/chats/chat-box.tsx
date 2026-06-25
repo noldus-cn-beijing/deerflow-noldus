@@ -10,6 +10,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { normalizeArtifact, normalizeArtifacts } from "@/core/artifacts/types";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
@@ -49,8 +50,8 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
       deselect();
     }
 
-    // Update artifacts from the current thread
-    setArtifacts(thread.values.artifacts);
+    // Update artifacts from the current thread（normalize 兜底裸 string）
+    setArtifacts(normalizeArtifacts(thread.values.artifacts));
 
     // DO NOT automatically deselect the artifact when switching threads, because the artifacts auto discovering is not work now.
     // if (
@@ -66,7 +67,7 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
     ) {
       if (thread?.values?.artifacts?.length > 0) {
         setAutoSelectFirstArtifact(false);
-        selectArtifact(thread.values.artifacts[0]!);
+        selectArtifact(normalizeArtifact(thread.values.artifacts[0]!).path);
       }
     }
   }, [
@@ -163,7 +164,7 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
                   <main className="min-h-0 grow">
                     <ArtifactFileList
                       className="max-w-(--container-width-sm) p-4 pt-12"
-                      files={thread.values.artifacts ?? []}
+                      files={normalizeArtifacts(thread.values.artifacts ?? [])}
                       threadId={threadId}
                     />
                   </main>

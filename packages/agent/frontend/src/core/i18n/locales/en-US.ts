@@ -241,6 +241,28 @@ export const enUS: Translations = {
     searchChats: "Search chats",
   },
 
+  // Artifact gallery (spec phase0-3)
+  gallery: {
+    title: "Artifact Gallery",
+    summaryCharts: (n: number) => `${n} summary chart${n === 1 ? "" : "s"}`,
+    summaryPerSubject: (n: number) => `${n} per-subject chart${n === 1 ? "" : "s"}`,
+    summaryAll: (n: number) => `${n} chart${n === 1 ? "" : "s"} in total`,
+    openGallery: (n: number) => `Open gallery · view all ${n}`,
+    openGalleryShort: "Open gallery",
+    downloadAll: (n: number) => `Download all ${n} (ZIP)`,
+    downloadAllShort: "Download all (ZIP)",
+    exportDataTable: "Export data table (CSV)",
+    failedGenerated: (n: number) =>
+      `${n} chart${n === 1 ? "" : "s"} not generated`,
+    failedReason: "Reason",
+    failedRemedy: "Regenerate missing charts",
+    noArtifacts: "No artifacts yet",
+    representative: "Summary charts",
+    backToChat: "Back to chat",
+    galleryPlaceholder:
+      "Full gallery (facets + virtualized grid + small multiples) lands in the next iteration. Use “Download all” to take every chart with you.",
+  },
+
   // Page titles (document title)
   pages: {
     appName: "EthoInsight",

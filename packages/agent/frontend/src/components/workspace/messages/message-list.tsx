@@ -7,7 +7,6 @@ import {
 import { useI18n } from "@/core/i18n/hooks";
 import {
   extractContentFromMessage,
-  extractPresentFilesFromMessage,
   extractQualityWarnings,
   extractTextFromMessage,
   findToolCallArgs,
@@ -23,7 +22,7 @@ import { useUpdateSubtask } from "@/core/tasks/context";
 import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
-import { ArtifactFileList } from "../artifacts/artifact-file-list";
+import { InlineArtifactSummary } from "../artifacts/inline-artifact-summary";
 import { StreamingIndicator } from "../streaming-indicator";
 
 import { ClarificationOptions } from "./clarification-options";
@@ -133,13 +132,9 @@ export function MessageList({
             }
             return null;
           } else if (group.type === "assistant:present-files") {
-            const files: string[] = [];
-            for (const message of group.messages) {
-              if (hasPresentFiles(message)) {
-                const presentFiles = extractPresentFilesFromMessage(message);
-                files.push(...presentFiles);
-              }
-            }
+            // inline 代表图 + 入口（spec §3.2）：元数据来自 thread.values.artifacts（后端
+            // ArtifactMeta），不从消息裸路径猜。详见 InlineArtifactSummary。
+            const hasPresentFileMessage = group.messages.some(hasPresentFiles);
             return (
               <div className="w-full" key={group.id}>
                 {group.messages[0] && hasContent(group.messages[0]) && (
@@ -150,7 +145,13 @@ export function MessageList({
                     threadId={threadId}
                   />
                 )}
-                <ArtifactFileList files={files} threadId={threadId} />
+                {hasPresentFileMessage && (
+                  <InlineArtifactSummary
+                    threadId={threadId}
+                    artifacts={thread.values.artifacts}
+                    chartsStatus={thread.values.charts_status}
+                  />
+                )}
               </div>
             );
           } else if (group.type === "assistant:subagent") {

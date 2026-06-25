@@ -10,6 +10,7 @@ from typing import get_type_hints
 from deerflow.agents.thread_state import (
     ThreadState,
     merge_artifacts,
+    merge_charts_status,
     merge_todos,
     merge_viewed_images,
 )
@@ -56,6 +57,70 @@ class TestMergeArtifacts:
         assert merge_artifacts(None, ["a"]) == ["a"]
 
 
+class TestMergeArtifactsArtifactMeta:
+    """spec 2026-06-24-frontend-phase0-3-artifact-gallery：artifacts 升级成
+    ArtifactMeta[]（向后兼容裸 string）。merge 必须按 path 去重，新值覆盖旧值。"""
+
+    def test_dedup_by_path_mixed_string_and_meta(self):
+        """混合 string + meta + 重复 path → 按 path 去重，不崩。"""
+        existing = [
+            "/mnt/user-data/outputs/a.png",  # 裸 string（旧数据）
+            {"path": "/mnt/user-data/outputs/b.png", "kind": "chart", "chart_id": "b"},
+        ]
+        new = [
+            {"path": "/mnt/user-data/outputs/a.png", "kind": "chart", "chart_id": "a", "output_mode": "aggregate"},
+            "/mnt/user-data/outputs/c.md",  # 报告（裸 string）
+        ]
+        merged = merge_artifacts(existing, new)
+        # 按 path 去重：a/b/c 三条；a 的新值（meta 带 chart_id）覆盖旧的裸 string。
+        by_path = {m["path"] if isinstance(m, dict) else m: m for m in merged}
+        assert set(by_path.keys()) == {
+            "/mnt/user-data/outputs/a.png",
+            "/mnt/user-data/outputs/b.png",
+            "/mnt/user-data/outputs/c.md",
+        }
+        # a 的新 meta 覆盖了旧裸 string（追问轮补全元数据）。
+        assert by_path["/mnt/user-data/outputs/a.png"]["chart_id"] == "a"
+        assert by_path["/mnt/user-data/outputs/a.png"]["output_mode"] == "aggregate"
+        # c 仍是裸 string（无 plan 命中的报告）。
+        assert by_path["/mnt/user-data/outputs/c.md"] == "/mnt/user-data/outputs/c.md"
+
+    def test_new_overrides_existing_same_path(self):
+        """同 path 的新 meta 覆盖旧 meta（元数据补全场景）。"""
+        existing = [{"path": "/x.png", "kind": "chart", "output_mode": "per_subject"}]
+        new = [{"path": "/x.png", "kind": "chart", "output_mode": "aggregate", "chart_id": "x"}]
+        merged = merge_artifacts(existing, new)
+        assert len(merged) == 1
+        assert merged[0]["output_mode"] == "aggregate"
+        assert merged[0]["chart_id"] == "x"
+
+    def test_preserves_distinct_subjects(self):
+        """per_subject 多张图 path 不同 → 各自保留（不被 chart_id 互吞）。"""
+        metas = [
+            {"path": f"/o_{i}.png", "kind": "chart", "chart_id": "o", "subject": str(i)}
+            for i in range(5)
+        ]
+        merged = merge_artifacts(None, metas)
+        assert len(merged) == 5
+
+    def test_bare_strings_still_dedupe(self):
+        """纯裸 string 列表仍按值去重（向后兼容锚点）。"""
+        assert merge_artifacts(["a", "b"], ["b", "c"]) == ["a", "b", "c"]
+
+
+class TestMergeChartsStatus:
+    """charts_status reducer（spec §四 Step 5：failed/remaining 摘要进 state）。"""
+
+    def test_none_new_preserves_existing(self):
+        existing = {"n_rendered": 5, "failed": [], "remaining": []}
+        assert merge_charts_status(existing, None) == existing
+
+    def test_new_overrides_existing(self):
+        existing = {"n_rendered": 5, "failed": [{"chart_id": "x"}], "remaining": []}
+        new = {"n_rendered": 6, "failed": [], "remaining": []}
+        assert merge_charts_status(existing, new) == new
+
+
 class TestMergeViewedImages:
     """Sanity check for the existing viewed_images reducer."""
 
@@ -95,3 +160,8 @@ class TestThreadStateAnnotations:
         """Sanity check that existing reducer wiring is preserved."""
         hints = get_type_hints(ThreadState, include_extras=True)
         assert merge_artifacts in hints["artifacts"].__metadata__
+
+    def test_charts_status_field_is_wired_to_merge_charts_status(self):
+        """spec phase0-3: charts_status must be Annotated with merge_charts_status."""
+        hints = get_type_hints(ThreadState, include_extras=True)
+        assert merge_charts_status in hints["charts_status"].__metadata__

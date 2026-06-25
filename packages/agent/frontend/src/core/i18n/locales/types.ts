@@ -175,6 +175,26 @@ export interface Translations {
     searchChats: string;
   };
 
+  // Artifact gallery (spec phase0-3)
+  gallery: {
+    title: string;
+    summaryCharts: (n: number) => string;
+    summaryPerSubject: (n: number) => string;
+    summaryAll: (n: number) => string;
+    openGallery: (n: number) => string;
+    openGalleryShort: string;
+    downloadAll: (n: number) => string;
+    downloadAllShort: string;
+    exportDataTable: string;
+    failedGenerated: (n: number) => string;
+    failedReason: string;
+    failedRemedy: string;
+    noArtifacts: string;
+    representative: string;
+    backToChat: string;
+    galleryPlaceholder: string;
+  };
+
   // Page titles (document title)
   pages: {
     appName: string;

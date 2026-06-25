@@ -168,9 +168,9 @@ export function ArtifactFileDetail({
                 </SelectTrigger>
                 <SelectContent className="select-none">
                   <SelectGroup>
-                    {(artifacts ?? []).map((filepath) => (
-                      <SelectItem key={filepath} value={filepath}>
-                        {getFileName(filepath)}
+                    {(artifacts ?? []).map((meta) => (
+                      <SelectItem key={meta.path} value={meta.path}>
+                        {getFileName(meta.path)}
                       </SelectItem>
                     ))}
                   </SelectGroup>

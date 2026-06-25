@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 
 from app.gateway.authz import require_permission
 from app.gateway.path_utils import resolve_thread_virtual_path
@@ -22,6 +22,12 @@ ACTIVE_CONTENT_MIME_TYPES = {
 
 MAX_SKILL_ARCHIVE_MEMBER_BYTES = 16 * 1024 * 1024
 _SKILL_ARCHIVE_READ_CHUNK_SIZE = 64 * 1024
+
+# 产物画廊（spec 2026-06-24-frontend-phase0-3-artifact-gallery §3.1.7）：流式 zip 打包时
+# 排除后端生成的缩略图（<name>.thumb.webp）——它是渲染优化衍生物，不该进「下载全部图」。
+_THUMB_SUFFIX = ".thumb.webp"
+# 流式 zip 单次读取块大小（不全量进内存）。
+_ZIP_STREAM_CHUNK = 64 * 1024
 
 
 def _build_content_disposition(disposition_type: str, filename: str) -> str:
@@ -94,6 +100,96 @@ def _extract_file_from_skill_archive(zip_path: Path, internal_path: str) -> byte
             return None
     except (zipfile.BadZipFile, KeyError):
         return None
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/archive",
+    summary="Download All Artifacts (ZIP)",
+    description="Stream a ZIP of all artifact files in the thread's outputs directory (zero-render bulk download).",
+)
+@require_permission("threads", "read", owner_check=True)
+async def archive_artifacts(thread_id: str, request: Request) -> StreamingResponse:
+    """第 1 层主路径（spec §3.1.7）：一次点击带走全部图，零渲染。
+
+    浏览器直接下载，不经任何缩略图渲染。流式 zip：边读边压、不全量进内存。
+    排除后端缩略图（``*.thumb.webp``）——它们是渲染衍生物，不该进「全部图」。
+    路径必须在 ``{path:path}`` catch-all 之前注册（FastAPI 按声明顺序匹配）。
+    """
+    outputs_dir = resolve_thread_virtual_path(thread_id, "/mnt/user-data/outputs")
+    if not outputs_dir.exists() or not outputs_dir.is_dir():
+        raise HTTPException(status_code=404, detail="No artifacts to archive")
+
+    files: list[Path] = [p for p in sorted(outputs_dir.rglob("*")) if p.is_file() and not p.name.endswith(_THUMB_SUFFIX)]
+    if not files:
+        raise HTTPException(status_code=404, detail="No artifacts to archive")
+
+    def _stream_zip():
+        """流式生成 zip：用 ZipFile 写到 buffer，逐文件 flush。
+
+        每个文件读 _ZIP_STREAM_CHUNK 字节写入 zip 流；buffer 在 yield 后被消费，
+        整体内存占用 ≈ 单文件 chunk 而非全部图之和（trajectory 实测 1–2.7MB/张，
+        100+ 张全量进内存会爆）。``zipfile`` 不支持真正的 pipe 流式，所以用 SpooledTemporaryFile
+        滚动落盘 + 分块读回 yield 的折中（内存有界，超大图集自动溢出磁盘）。
+        """
+        import io
+        import tempfile
+
+        buf = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, suffix=".zip")
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for fpath in files:
+                arcname = fpath.relative_to(outputs_dir).as_posix()
+                zinfo = zipfile.ZipInfo.from_file(fpath, arcname)
+                zinfo.compress_type = zipfile.ZIP_DEFLATED
+                with zf.open(zinfo, mode="w") as dst, open(fpath, "rb") as src:
+                    while True:
+                        chunk = src.read(_ZIP_STREAM_CHUNK)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
+        buf.seek(0)
+        try:
+            while True:
+                chunk = buf.read(_ZIP_STREAM_CHUNK)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            buf.close()
+
+    filename = f"artifacts-{thread_id[:8]}.zip"
+    return StreamingResponse(
+        _stream_zip(),
+        media_type="application/zip",
+        headers={"Content-Disposition": _build_content_disposition("attachment", filename)},
+    )
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/data-table",
+    summary="Export Data Table (CSV placeholder)",
+    description="Placeholder for data-table CSV export (spec Step 5: full implementation deferred; returns the first .csv artifact or 404).",
+)
+@require_permission("threads", "read", owner_check=True)
+async def export_data_table(thread_id: str, request: Request) -> Response:
+    """数据表导出占位（spec §四 Step 5：CSV 完整实现顺延，不阻塞画廊主体）。
+
+    Phase 0：返回 outputs/ 里第一个 ``.csv`` 文件（metric 计算结果若有 CSV 产物即取）。
+    无 CSV → 404，前端按钮置灰。完整数据表实现（按指标/组别重组）顺延。
+    """
+    outputs_dir = resolve_thread_virtual_path(thread_id, "/mnt/user-data/outputs")
+    if not outputs_dir.exists() or not outputs_dir.is_dir():
+        raise HTTPException(status_code=404, detail="No data table available")
+
+    csv_files = sorted(p for p in outputs_dir.rglob("*.csv") if p.is_file())
+    if not csv_files:
+        raise HTTPException(status_code=404, detail="No data table available")
+
+    csv_path = csv_files[0]
+    return FileResponse(
+        path=csv_path,
+        media_type="text/csv",
+        headers={"Content-Disposition": _build_content_disposition("attachment", csv_path.name)},
+    )
 
 
 @router.get(

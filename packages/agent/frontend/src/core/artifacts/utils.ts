@@ -1,6 +1,9 @@
 import { getBackendBaseURL } from "../config";
 import type { AgentThread } from "../threads";
 
+import type { ArtifactMeta } from "./types";
+import { normalizeArtifacts } from "./types";
+
 export function urlOfArtifact({
   filepath,
   threadId,
@@ -18,8 +21,24 @@ export function urlOfArtifact({
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts${filepath}${download ? "?download=true" : ""}`;
 }
 
-export function extractArtifactsFromThread(thread: AgentThread) {
-  return thread.values.artifacts ?? [];
+/**
+ * 提取并归一化 thread 的 artifacts（spec phase0-3）。
+ *
+ * thread.values.artifacts 现是 ArtifactInput[]（裸 string | ArtifactMeta）；一律经
+ * normalizeArtifacts 兜底成 ArtifactMeta[]，老数据（裸 string）不崩。
+ */
+export function extractArtifactsFromThread(thread: AgentThread): ArtifactMeta[] {
+  return normalizeArtifacts(thread.values.artifacts);
+}
+
+/** 第 1 层主路径「下载全部 ZIP」端点（spec §3.1.7，零渲染）。 */
+export function archiveArtifactsURL(threadId: string): string {
+  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/archive`;
+}
+
+/** 数据表 CSV 导出端点占位（spec §四 Step 5）。 */
+export function dataTableExportURL(threadId: string): string {
+  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/data-table`;
 }
 
 /**
