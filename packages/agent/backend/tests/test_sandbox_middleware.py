@@ -156,7 +156,6 @@ async def test_abefore_agent_delegates_to_super_when_not_acquiring(
 
 
 @pytest.mark.anyio
-@pytest.mark.skip(reason="Requires langchain >= 1.2.15 (ToolRuntime tools= kwarg); local pin is 1.2.3. Re-enable after langchain upgrade in a follow-up PR.")
 async def test_default_lazy_tool_acquisition_uses_async_provider() -> None:
     provider = _AsyncOnlyProvider()
     set_sandbox_provider(provider)
