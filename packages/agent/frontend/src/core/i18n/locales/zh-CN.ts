@@ -78,6 +78,10 @@ export const zhCN: Translations = {
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
     tooManyFiles: "文件数量超出上限，一次最多上传 {max} 份。",
+    attachmentImage: "图片",
+    removeAttachment: "移除 {name}",
+    stackLabel: "还有 {count} 个附件，点按可浏览并删除。",
+    stackFanOutTitle: "已折叠 {count} 个附件",
     mode: "模式",
     autoMode: "全自动",
     autoModeDescription:

@@ -63,6 +63,10 @@ export interface Translations {
     createSkillPrompt: string;
     addAttachments: string;
     tooManyFiles: string;
+    attachmentImage: string;
+    removeAttachment: string;
+    stackLabel: string;
+    stackFanOutTitle: string;
     mode: string;
     autoMode: string;
     autoModeDescription: string;

@@ -78,6 +78,10 @@ export const enUS: Translations = {
       "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
     addAttachments: "Add attachments",
     tooManyFiles: "Too many files. Up to {max} files can be uploaded at once.",
+    attachmentImage: "Image",
+    removeAttachment: "Remove {name}",
+    stackLabel: "{count} more attachments. Activate to browse and remove.",
+    stackFanOutTitle: "{count} hidden attachments",
     mode: "Mode",
     autoMode: "Auto",
     autoModeDescription:

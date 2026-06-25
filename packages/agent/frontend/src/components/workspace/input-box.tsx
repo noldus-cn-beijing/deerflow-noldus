@@ -24,8 +24,6 @@ import {
   PromptInputActionMenuContent,
   PromptInputActionMenuItem,
   PromptInputActionMenuTrigger,
-  PromptInputAttachment,
-  PromptInputAttachments,
   PromptInputBody,
   PromptInputButton,
   PromptInputFooter,
@@ -68,6 +66,7 @@ import {
 } from "../ai-elements/model-selector";
 import { Suggestion, Suggestions } from "../ai-elements/suggestion";
 
+import { StackedAttachments } from "./attachments/stacked-attachments";
 import { useThread } from "./messages/context";
 import { ModeHoverGuide } from "./mode-hover-guide";
 import { Tooltip } from "./tooltip";
@@ -455,9 +454,7 @@ export function InputBox({
             </div>
           </div>
         )}
-        <PromptInputAttachments>
-          {(attachment) => <PromptInputAttachment data={attachment} />}
-        </PromptInputAttachments>
+        <StackedAttachments />
         <PromptInputBody className="absolute top-0 right-0 left-0 z-3">
           <PromptInputTextarea
             className={cn("size-full min-h-14 py-4 text-[15px] leading-6")}
