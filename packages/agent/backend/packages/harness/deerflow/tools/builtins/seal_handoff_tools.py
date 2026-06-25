@@ -676,6 +676,8 @@ def _seal_handoff_to_workspace(
     filename: str,
     payload: dict[str, Any],
     workspace: Path,
+    *,
+    force: bool = False,
 ) -> str:
     """Pure-function variant of _seal_handoff: Pydantic validate → atomic write → manifest.
 
@@ -683,9 +685,38 @@ def _seal_handoff_to_workspace(
     Used by harness-level auto-seal where no Runtime is available (Spec C).
 
     Same contract as _seal_handoff: all failure paths raise ValueError.
+
+    Args:
+      force: 强制覆盖已有确定性封存（spec 2026-06-25 M1）。仅 ``run_chart_plan`` 工具
+        （确定性来源，重跑全量是合法覆盖场景）传 ``force=True``。``seal_chart_maker_handoff``
+        （LLM 手调）与 auto-seal 都不传 force → 走默认 ``False`` → 撞已有 ``run_plan`` 封存
+        即被拒。守「LLM 提议，确定性门定生死」——LLM 无法绕过。
     """
     # 1. 注入 analysis_config_id (subagent 不用手动传)
     payload.setdefault("analysis_config_id", _read_analysis_config_id(workspace))
+
+    # 1.4. chart-maker「封存只允许一次」不变式（spec 2026-06-25 M1 / R1）：
+    #      磁盘已有 ``sealed_by=run_plan`` 封存时，拒绝任何**非 force** chart-maker seal。
+    #      治 double-seal 覆盖：chart-maker 手调 ``seal_chart_maker_handoff``（或 auto-seal）
+    #      会把 ``run_chart_plan`` 的确定性封存（sealed_by=run_plan）覆盖成 LLM 自报
+    #      （sealed_by=model）。``run_chart_plan`` 是唯一传 force=True 的合法覆盖场景。
+    #      放在 reconcile / 校验 / atomic write 之前——拒绝时 manifest 不被污染。
+    if model_cls is ChartMakerHandoff and not force:
+        existing = workspace / filename
+        prev_sealed_by: str | None = None
+        if existing.exists():
+            try:
+                prev = json.loads(existing.read_text(encoding="utf-8"))
+                prev_sealed_by = prev.get("sealed_by") if isinstance(prev, dict) else None
+            except Exception:
+                prev_sealed_by = None
+        if prev_sealed_by == "run_plan":
+            raise ValueError(
+                f"seal_{filename}: 已存在确定性封存 (sealed_by=run_plan)，拒绝覆盖。"
+                f"run_chart_plan 已确定性封存真相（chart_files 是磁盘真相），"
+                f"不要再调 seal_chart_maker_handoff。"
+                f"如需重跑，调 run_chart_plan（它带 force=True 合法覆盖）。"
+            )
 
     # 1.5. 自动组装 task_context —— 仅当目标 schema 仍声明该字段时注入。
     # ethoinsight 4 个 handoff 已移除该字段（拆为旁路 lineage，spec 2026-06-18）；

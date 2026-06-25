@@ -194,7 +194,11 @@ def run_chart_plan_tool(
     # 原样返回（幂等无害），故可对整个 args 数组逐项跑。
     tasks: list[tuple[str, list[str], str]] = []  # (script, args, task_id)
     # 保留 output_mode 用于 status 派生（aggregate 是组间对比 must_have）。
-    chart_meta: dict[str, dict[str, Any]] = {}  # task_id -> {output, output_mode, chart_id}
+    # chart_meta 按 **task index** 对齐（M2，spec 2026-06-25）：per_subject 多 chart 共享
+    # 同一 chart id（如 open_arm_time_ratio_bar × 28 subject），若按 chart id 建 dict 会
+    # 互相覆盖成最后写入的一个 → Step 7 核盘只核少数几张、丢失败 reason。list 形态保证每个
+    # task 恰好一条 meta，核盘循环按 index 遍历 112 张全核出。
+    chart_meta: list[dict[str, Any]] = []  # 按 task 顺序，每条 {output, output_mode, chart_id}
     for c in plan_charts:
         script = c.get("script", "")
         args = list(c.get("args", []) or [])
@@ -209,10 +213,12 @@ def run_chart_plan_tool(
             tasks.append(("", [], chart_id))  # 空 script → worker 立即 ImportError 失败
         else:
             tasks.append((script, args, chart_id))
-        chart_meta[chart_id] = {"output": output, "output_mode": output_mode}
+        chart_meta.append({"output": output, "output_mode": output_mode, "chart_id": chart_id})
 
     # ---- Step 6: execute via ProcessPoolExecutor ----
-    results, failures = _execute_tasks(
+    # failures list 现冗余（results 按 index 存满全量，Step 7 以 results 为唯一真相），
+    # 仅 unpack 占位；保留 _execute_tasks 返回 failures 以维持与 run_metric_plan 的对偶契约。
+    results, _failures = _execute_tasks(
         tasks,
         on_error=on_error,
         timeout=PER_TASK_TIMEOUT_SECONDS,
@@ -224,12 +230,20 @@ def run_chart_plan_tool(
     # ---- Step 7: 核磁盘 + 构造 chart_files / failed_charts（run_chart_plan 核心）----
     # 对每个 chart：output 虚拟路径 → replace_virtual_path 物理路径 → exists()。
     # 落盘 → chart_files（虚拟路径）；未落盘（rc≠0 或 rc=0 但 png 缺失=脚本半成功）→ failed_charts。
+    #
+    # M2（spec 2026-06-25）：核盘按 **task index** 遍历（不是 chart id）。results 也按 index
+    # 存（见 _execute_tasks）。这保证 112 张同 id（4×28）chart 每张恰好核一次——原版按
+    # ``for tid in results`` 遍历，results 只 4 个 key（同 id 覆盖）→ 只核 4 张，handoff 只列 4 张。
+    # chart_meta 与 results 同序（都按 task index），故 ``chart_meta[idx]`` 与 ``results[idx]`` 对齐。
+    # _execute_tasks 为每个 idx 都写一条 results（含 abort 被取消项标 aborted），故 results 是
+    # 唯一真相，无须再用 failures list 兜底（failures 仅冗余供日志）。
     chart_files: list[str] = []
     failed_charts: list[dict[str, str]] = []
-    for tid, (rc, err) in results.items():
-        meta = chart_meta.get(tid, {})
+    for idx in range(n_total):
+        meta = chart_meta[idx]
         output_virtual = meta.get("output", "")
-        output_mode = meta.get("output_mode", "per_subject")
+        chart_id = meta.get("chart_id", "")
+        tid, rc, err = results.get(idx, ("", 1, "missing result"))
         on_disk = False
         if output_virtual:
             output_real = replace_virtual_path(output_virtual, thread_data)
@@ -245,15 +259,7 @@ def run_chart_plan_tool(
                 reason = "rendered rc=0 but png missing"
             else:
                 reason = (err or "")[:500] or f"rc={rc}"
-            failed_charts.append({"chart_id": tid, "reason": reason})
-
-    # 失败 task 不在 results 命中（runner error 路径）也兜底进 failed_charts。
-    seen_failed_ids = {fc["chart_id"] for fc in failed_charts}
-    for f in failures:
-        fid = f.get("id", "")
-        if fid and fid not in seen_failed_ids:
-            failed_charts.append({"chart_id": fid, "reason": (f.get("error", "") or "")[:500]})
-            seen_failed_ids.add(fid)
+            failed_charts.append({"chart_id": tid or chart_id, "reason": reason})
 
     n_rendered = len(chart_files)
     n_failed = n_total - n_rendered
@@ -285,7 +291,10 @@ def run_chart_plan_tool(
     }
 
     try:
-        _seal_handoff_to_workspace(ChartMakerHandoff, "handoff_chart_maker.json", payload, workspace)
+        # M1（spec 2026-06-25）：run_chart_plan 是确定性来源，带 force=True 合法覆盖
+        # 已有封存（用户追加图重跑场景）。其余 seal 路径（seal_chart_maker_handoff 手调 /
+        # auto-seal）不传 force → 撞已有 run_plan 封存即被「只允许一次」门拒绝。
+        _seal_handoff_to_workspace(ChartMakerHandoff, "handoff_chart_maker.json", payload, workspace, force=True)
     except ValueError as e:
         # seal schema 校验失败 = 产物与 schema 不匹配 / 2.2 reconcile aggregate 门拒绝（回归探针）。
         logger.error("[run_chart_plan] seal schema 校验失败: %s", e)
@@ -319,7 +328,7 @@ def _execute_tasks(
     timeout: int = PER_TASK_TIMEOUT_SECONDS,
     runner=None,
     path_env: dict[str, str] | None = None,
-) -> tuple[dict[str, tuple[int, str]], list[dict[str, str]]]:
+) -> tuple[dict[int, tuple[str, int, str]], list[dict[str, str]]]:
     """Execute all plot tasks, return (results, failures).
 
     与 run_metric_plan _execute_tasks 同构：per-task timeout（不杀整池）、on_error policy、
@@ -334,10 +343,14 @@ def _execute_tasks(
       path_env: DEERFLOW_PATH_* env，经 initializer 在每个 worker 进程内设置（不污染父进程）。
 
     Returns:
-      results: {task_id: (rc, error_str)}.
-      failures: [{"id", "error"}] 仅失败 task。
+      results: {task_index: (task_id, rc, error_str)} —— 按 **task index**（提交顺序）存。
+        per_subject 多 chart 共享同一 chart id，按 id 做 key 会互相覆盖（spec 2026-06-25
+        M2/R2 真根因）；按 index 存保证每个 task 恰好一条结果。两条路径（runner / 进程池）
+        都写满全部 index（含 abort 被取消项标 aborted）。
+      failures: [{"id", "error"}] 仅失败 task（与 results 冗余，保留供日志/调试；Step 7
+        核盘以 results 为唯一真相）。
     """
-    results: dict[str, tuple[int, str]] = {}
+    results: dict[int, tuple[str, int, str]] = {}
     failures: list[dict[str, str]] = []
 
     if not tasks:
@@ -351,12 +364,12 @@ def _execute_tasks(
                 _tid, rc, err = runner(script, args, tid)
             except BaseException as e:  # noqa: BLE001
                 rc, err = 1, f"runner error: {type(e).__name__}: {e}"
-            results[tid] = (rc, err)
+            results[idx] = (tid, rc, err)
             if rc != 0:
                 failures.append({"id": tid, "error": (err or "")[:500]})
                 if on_error == "abort":
-                    for other_script, other_args, other_tid in tasks[idx + 1:]:
-                        results[other_tid] = (1, "aborted (on_error=abort 前序失败)")
+                    for other_idx, (_os, _oa, other_tid) in enumerate(tasks[idx + 1 :], start=idx + 1):
+                        results[other_idx] = (other_tid, 1, "aborted (on_error=abort 前序失败)")
                         failures.append({"id": other_tid, "error": "aborted"})
                     break
         return results, failures
@@ -368,27 +381,27 @@ def _execute_tasks(
         initargs=(path_env or {},),
     )
     try:
-        future_to_tid = {pool.submit(_run_chart_task, sc, ar, tid): tid for (sc, ar, tid) in tasks}
-        ordered = list(future_to_tid.items())  # 提交顺序
+        future_to_meta = {pool.submit(_run_chart_task, sc, ar, tid): (idx, tid) for idx, (sc, ar, tid) in enumerate(tasks)}
+        ordered = list(future_to_meta.items())  # 提交顺序
         # 按提交顺序逐个 result(timeout=)——每个 future 有独立 per-task 超时预算（同 run_metric_plan）。
-        for idx, (fut, tid) in enumerate(ordered):
+        for fut, (idx, tid) in ordered:
             try:
                 _tid, rc, err = fut.result(timeout=timeout)
-                results[tid] = (rc, err)
+                results[idx] = (tid, rc, err)
                 if rc != 0:
                     failures.append({"id": tid, "error": (err or "")[:500]})
             except FuturesTimeoutError:
-                results[tid] = (1, f"timeout (>{timeout}s)")
+                results[idx] = (tid, 1, f"timeout (>{timeout}s)")
                 failures.append({"id": tid, "error": f"timeout (>{timeout}s)"})
             except BaseException as e:  # noqa: BLE001
-                results[tid] = (1, f"pool error: {e}")
+                results[idx] = (tid, 1, f"pool error: {e}")
                 failures.append({"id": tid, "error": f"pool error: {type(e).__name__}: {e}"})
 
-            if on_error == "abort" and results[tid][0] != 0:
+            if on_error == "abort" and results[idx][1] != 0:
                 logger.warning("[run_chart_plan] on_error=abort，遇失败即停，取消未启动 task")
-                for other_fut, other_tid in ordered[idx + 1:]:
+                for other_fut, (other_idx, other_tid) in ordered[idx + 1 :]:
                     other_fut.cancel()
-                    results[other_tid] = (1, "aborted (on_error=abort 前序失败)")
+                    results[other_idx] = (other_tid, 1, "aborted (on_error=abort 前序失败)")
                     failures.append({"id": other_tid, "error": "aborted"})
                 break
     finally:

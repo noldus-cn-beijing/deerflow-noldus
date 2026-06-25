@@ -645,3 +645,167 @@ class TestArgvPreResolved:
         # the stored chart_files contract).
         assert all(p.startswith("/mnt/user-data/outputs/") for p in h["chart_files"]), h["chart_files"]
         assert h["status"] == "completed"
+
+
+# ===================================================================
+# Spec 2026-06-25-chart-maker-seal-once-and-results-key-uniqueness — M2 (R2)
+# per_subject 多 chart 共享同一 chart id → results dict key 必须唯一（task index），
+# 否则 112 个结果互相覆盖成最后写入的少数几个。R1/M1 修了 double-seal 后，run_chart_plan
+# 路径不能再靠 chart-maker 手调 seal 的 LLM 自报"救"计数缺口，故 R2 必须同 PR 修。
+# ===================================================================
+
+
+class TestPerSubjectSameIdAllReconciled:
+    """R2 红→绿：per_subject 多 chart 同 id 全核盘（不丢图）。
+
+    构造 plan：1 个 chart id × N subject（真实 dogfood 形态：open_arm_time_ratio_bar
+    被复用 28 次，靠 subject_index 区分）。全 rc=0 落盘。
+    红态：results dict 按 tid（=chart id）覆盖 → 只 1 entry → Step 7 核盘循环只核 1 次
+          → chart_files 只 1 张。
+    绿态：results 按 task index → chart_files N 张全核出。
+    """
+
+    def test_t4_per_subject_same_id_all_reconciled(self, ws_and_outputs, monkeypatch):
+        workspace, outputs = ws_and_outputs
+        # 28 个 chart 共享同一 id，靠 subject_index + 不同 output 文件名区分
+        # （镜像 dogfood thread a6e3775c 的 open_arm_time_ratio_bar × 28 subject 形态）。
+        charts = [
+            {
+                "id": "open_arm_time_ratio_bar",
+                "output_mode": "per_subject",
+                "subject_index": i,
+                "output": f"/mnt/user-data/outputs/plot_open_arm_ratio_s{i}.png",
+                "args": [
+                    "--input", "/mnt/user-data/uploads/fake.txt",
+                    "--output", f"/mnt/user-data/outputs/plot_open_arm_ratio_s{i}.png",
+                ],
+            }
+            for i in range(28)
+        ]
+        _write_plan(workspace, _plan(charts))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success(outputs=outputs))
+
+        res = _call(_runtime(workspace, outputs))
+        assert res["status"] == "completed", res
+        # 核心断言：28 张同 id chart 全核盘，不丢图。
+        assert res["n_total"] == 28, res
+        assert res["n_rendered"] == 28, (
+            f"R2 red: 同 id 多 chart 只核盘 {res['n_rendered']} 张（应为 28）"
+        )
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert len(h["chart_files"]) == 28, (
+            f"R2 red: handoff chart_files 只 {len(h['chart_files'])} 条（应为 28）"
+        )
+
+
+class TestSameIdPartialFailuresAllReasonsKept:
+    """R2：同 id 部分失败 reason 不丢。
+
+    28 个同 id chart，其中 3 个失败（不同 reason）→ failed_charts 应含 3 条独立失败。
+    红态：results 按 id 覆盖 → 同 id 只留最后 1 个结果（可能是成功也可能是失败）。
+    绿态：results 按 index → 3 个失败全保留，failed_charts 含 3 条。
+    """
+
+    def test_t5_same_id_partial_failures_all_reasons_kept(self, ws_and_outputs, monkeypatch):
+        workspace, outputs = ws_and_outputs
+
+        # 用 subject_index 标记每个 chart；失败的 3 个用 task_id 区分。
+        # runner 按 task_id 决定成败，task_id 这里用 chart id + subject_index 拼成唯一
+        # 但 chart_meta 仍按同 id 建（复现多对一）。为了让 runner 能区分，我们让 plan 里
+        # 每个 chart 的 id 都相同，但 runner 按 output 文件名（隐式唯一）落盘。
+        # _runner_fail_on 按 task_id 匹配；task_id = chart id（相同）→ 无法按 subject 区分。
+        # 故改用 capturing runner：按 output 路径里的 subject index 判失败。
+        fail_subjects = {3, 7, 11}
+        success = _runner_success(outputs=outputs)
+
+        def _r(script: str, args: list[str], task_id: str):
+            # 从 --output 提取 subject index（plot_open_arm_ratio_s{N}.png）。
+            out = next((args[i + 1] for i, a in enumerate(args) if a == "--output"), "")
+            name = out.rsplit("/", 1)[-1]
+            # parse s{N}
+            import re as _re
+
+            m = _re.search(r"_s(\d+)\.png$", name)
+            if m and int(m.group(1)) in fail_subjects:
+                return (task_id, 1, f"planned failure subject {m.group(1)}")
+            return success(script, args, task_id)
+
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _r)
+
+        charts = [
+            {
+                "id": "open_arm_time_ratio_bar",
+                "output_mode": "per_subject",
+                "subject_index": i,
+                "output": f"/mnt/user-data/outputs/plot_open_arm_ratio_s{i}.png",
+                "args": [
+                    "--input", "/mnt/user-data/uploads/fake.txt",
+                    "--output", f"/mnt/user-data/outputs/plot_open_arm_ratio_s{i}.png",
+                ],
+            }
+            for i in range(28)
+        ]
+        _write_plan(workspace, _plan(charts))
+
+        res = _call(_runtime(workspace, outputs))
+        assert res["status"] == "partial", res
+        assert res["n_rendered"] == 25, res  # 28 - 3 failed
+        assert res["n_failed"] == 3, res
+        # failed_charts 必须含 3 条独立失败 reason（不丢）。
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert len(h["failed_charts"]) == 3, (
+            f"R2 red: 同 id 失败 reason 被覆盖，只留 {len(h['failed_charts'])} 条（应 3）: {h['failed_charts']}"
+        )
+        reasons = {fc["reason"] for fc in h["failed_charts"]}
+        assert len(reasons) == 3, f"R2: 3 条 reason 应各不同，实得 {reasons}"
+
+
+class TestAllSuccessHandoffConsistent:
+    """R2 + R1 联合回归（复现 dogfood 正路径）。
+
+    112 图全 rc=0 落盘 → status=completed, chart_files=112, failed_charts=0,
+    sealed_by=run_plan（不是 model!）。这是 dogfood thread a6e3775c 应走的正路径：
+    封存只允许一次（M1）后 chart-maker 不能再覆盖成 model；results key 唯一化（M2）后
+    112 张全核盘不靠 LLM 自报。
+    """
+
+    def test_t6_112_charts_all_success_handoff_consistent(self, ws_and_outputs, monkeypatch):
+        workspace, outputs = ws_and_outputs
+        # 4 个唯一 chart id × 28 subject = 112 张（复现 dogfood 形态）。
+        chart_ids = [
+            "open_arm_time_ratio_bar",
+            "zone_entry_distribution",
+            "center_time_ratio_bar",
+            "closed_arm_time_ratio_bar",
+        ]
+        charts = []
+        for cid in chart_ids:
+            for i in range(28):
+                charts.append({
+                    "id": cid,
+                    "output_mode": "per_subject",
+                    "subject_index": i,
+                    "output": f"/mnt/user-data/outputs/plot_{cid}_s{i}.png",
+                    "args": [
+                        "--input", "/mnt/user-data/uploads/fake.txt",
+                        "--output", f"/mnt/user-data/outputs/plot_{cid}_s{i}.png",
+                    ],
+                })
+        assert len(charts) == 112
+        _write_plan(workspace, _plan(charts))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success(outputs=outputs))
+
+        res = _call(_runtime(workspace, outputs))
+        assert res["status"] == "completed", res
+        assert res["n_total"] == 112, res
+        assert res["n_rendered"] == 112, (
+            f"R2 red: 112 张同 id（4×28）只核盘 {res['n_rendered']} 张（应为 112）"
+        )
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert h["status"] == "completed"
+        assert len(h["chart_files"]) == 112, (
+            f"R2 red: handoff chart_files 只 {len(h['chart_files'])} 条（应为 112）"
+        )
+        assert h["failed_charts"] == []
+        # R1：sealed_by 是 run_plan（确定性），不是 model（LLM 手调覆盖）。
+        assert h["sealed_by"] == "run_plan", h["sealed_by"]
