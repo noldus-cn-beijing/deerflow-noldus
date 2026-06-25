@@ -1,9 +1,10 @@
 import type { Message } from "@langchain/langgraph-sdk";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   extractContentFromMessage,
   extractReasoningContentFromMessage,
+  getMessageGroups,
   groupMessages,
   hasContent,
   hasReasoning,
@@ -24,6 +25,27 @@ function makeAIMsg(
     additional_kwargs:
       opts.reasoning != null ? { reasoning_content: opts.reasoning } : {},
     tool_calls: opts.toolCalls,
+  } as Message;
+}
+
+function makeHumanMsg(id: string, content = "hi"): Message {
+  return { type: "human", id, content } as Message;
+}
+
+function makeToolMsg(
+  id: string,
+  opts: {
+    toolCallId: string;
+    name?: string;
+    content?: string;
+  },
+): Message {
+  return {
+    type: "tool",
+    id,
+    name: opts.name ?? "some_tool",
+    tool_call_id: opts.toolCallId,
+    content: opts.content ?? "{...}",
   } as Message;
 }
 
@@ -87,6 +109,146 @@ describe("groupMessages", () => {
     });
     const result = groupTypes([msg1, msg2]);
     expect(result).toEqual(["assistant:processing", "assistant"]);
+  });
+});
+
+describe("getMessageGroups — 流式瞬态孤儿 tool message (spec 2026-06-25)", () => {
+  // EPM dogfood（thread 0e72d605）console 报 `Unexpected tool message outside a
+  // processing group {}`。真根因=流式分片时序：AI message 的 content/tool_calls/
+  // reasoning 分片分批到达；在 tool_calls 未到、content 仍空的瞬态帧里，AI message
+  // 五个分支全不命中 → 不开任何组 → 其 tool result 流到即成孤儿 → console.error + 丢弃。
+  // 修法：M1 任何 AI message（含暂时全空壳）都进/开 processing 组；M2 孤儿兜底进
+  // processing 组不丢弃不 error。
+
+  beforeEach(() => {
+    // 每个用例独立 spy，避免互相干扰断言「无 console.error」。
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  // T1（治本）：流式瞬态——空 AI message + 其 tool result，不产生孤儿
+  it("T1: streaming transient — empty AI message (no content/tool_calls/reasoning) gets a processing group, its tool result attaches (no orphan, no console.error)", () => {
+    const msgs = [
+      makeHumanMsg("h1", "A. 是画图"),
+      // 流式中途：set_viz_choice 的 tool_calls 尚未到达，content 本就空 → 空壳 AI message
+      makeAIMsg("a1", {}),
+      makeToolMsg("t1", {
+        name: "set_viz_choice",
+        toolCallId: "tc1",
+        content: "viz_choice set",
+      }),
+    ];
+    const groups = getMessageGroups(msgs);
+
+    // a1 必须开了一个 assistant:processing 组（消除孤儿源头）
+    expect(groups.some((g) => g.type === "assistant:processing")).toBe(true);
+
+    // t1 必须挂进那个 processing 组的 messages（不再孤儿/丢弃）
+    const processingGroup = groups.find(
+      (g) => g.type === "assistant:processing",
+    );
+    expect(processingGroup?.messages.map((m) => m.id)).toContain("t1");
+
+    // 不再 console.error 丢弃（治本 + 兜底双重保证）
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  // T2（兜底）：纯孤儿 tool message（前面是 human，没有任何 open group）不丢弃、不 error
+  it("T2: orphan tool after human opens a processing group (not dropped, no console.error)", () => {
+    const msgs = [
+      makeHumanMsg("h1", "A"),
+      makeToolMsg("t1", {
+        name: "x",
+        toolCallId: "tc1",
+        content: "r",
+      }),
+    ];
+    const groups = getMessageGroups(msgs);
+
+    // human 之后多了至少一个组（兜底开的 processing 组容纳 t1）
+    expect(groups.length).toBeGreaterThan(1);
+
+    // t1 进了一个 processing 组（兜底容器，对 tool message 渲染安全）
+    const orphanGroup = groups.find((g) => g.messages.some((m) => m.id === "t1"));
+    expect(orphanGroup?.type).toBe("assistant:processing");
+
+    // 不再 console.error 丢弃
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  // T3（回归）：正常 AI+tool 序列分组不变（M1 不破坏既有行为）
+  it("T3: regression — normal ai-with-toolcall + tool result groups unchanged", () => {
+    const msgs = [
+      makeHumanMsg("h1", "分析"),
+      makeAIMsg("a1", {
+        content: "调用工具",
+        reasoning: "思考",
+        toolCalls: [{ name: "search", args: {} }],
+      }),
+      makeToolMsg("t1", { toolCallId: "call_a1", content: "结果" }),
+      makeAIMsg("a2", { content: "最终答复" }),
+    ];
+    // a1(reasoning+tool_calls) → processing；t1 挂进 processing；a2(content only) → assistant
+    expect(groupTypes(msgs)).toEqual([
+      "human",
+      "assistant:processing",
+      "assistant",
+    ]);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  // T4（回归）：present_files / subagent / clarification 终结组行为不变
+  it("T4: regression — present-files / subagent / clarification grouping unchanged", () => {
+    const presentFilesMsg = makeAIMsg("pf", {
+      toolCalls: [{ name: "present_files", args: { filepaths: ["a.png"] } }],
+    });
+    expect(groupTypes([presentFilesMsg])).toEqual(["assistant:present-files"]);
+
+    const subagentMsg = makeAIMsg("sg", {
+      toolCalls: [{ name: "task", args: {} }],
+    });
+    expect(groupTypes([subagentMsg])).toEqual(["assistant:subagent"]);
+
+    // clarification：ask_clarification tool message 开独立 clarification 组
+    const clarTool = makeToolMsg("ct", {
+      name: "ask_clarification",
+      toolCallId: "call_clar",
+      content: "请选择",
+    });
+    expect(groupTypes([clarTool])).toEqual(["assistant:clarification"]);
+  });
+
+  // T5（回归）：真实 dogfood 0e72d605 序列——无孤儿、关键 set_viz_choice 瞬态覆盖
+  it("T5: real dogfood 0e72d605 sequence — set_viz_choice transient (empty AI) does not orphan, grouping stays sane", () => {
+    // 真实序列的最易触发点：用户回答「A.是画图」→ lead 调 set_viz_choice。
+    // [19] ai content='' tool_calls=['set_viz_choice'] 在流式中途 tool_calls 未到时
+    // 是 content 空的空壳 → 其 [20] set_viz_choice 的 result 成孤儿的窗口最长最稳。
+    const msgs = [
+      makeHumanMsg("h_q", "你希望我以图表形式展示结果吗？"),
+      makeAIMsg("a_ask", { content: "你希望我以图表形式展示结果吗？" }),
+      makeHumanMsg("h_a", "A. 是画图"),
+      // [19] 流式中途空壳（tool_calls 未到），最易触发孤儿
+      makeAIMsg("a_viz", {}),
+      // [20] set_viz_choice result
+      makeToolMsg("t_viz", {
+        name: "set_viz_choice",
+        toolCallId: "call_viz",
+        content: "ok",
+      }),
+      makeAIMsg("a_final", { content: "好的，正在生成图表。" }),
+    ];
+    const groups = getMessageGroups(msgs);
+
+    // a_viz 的空壳开了一个 processing 组，t_viz 挂进去，不孤儿
+    const processingGroup = groups.find(
+      (g) => g.type === "assistant:processing",
+    );
+    expect(processingGroup?.messages.map((m) => m.id)).toContain("t_viz");
+
+    // 最终态：a_final 的 content 渲染为 assistant 组（最终态正常，符合「只在流式中途报错」）
+    expect(groups.some((g) => g.type === "assistant")).toBe(true);
+
+    // 全程无 console.error
+    expect(console.error).not.toHaveBeenCalled();
   });
 });
 

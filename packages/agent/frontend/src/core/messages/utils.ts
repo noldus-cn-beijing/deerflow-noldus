@@ -80,10 +80,21 @@ export function getMessageGroups(messages: Message[]): MessageGroup[] {
         if (open) {
           open.messages.push(message);
         } else {
-          console.error(
-            "Unexpected tool message outside a processing group",
-            message,
-          );
+          // M2 (spec 2026-06-25): orphan tool message with no open processing
+          // group. M1 makes streaming transients no longer produce orphans,
+          // but this is the safety net for any future unanticipated timing.
+          // Rather than console.error + drop the message (the previous
+          // behavior), open a standalone assistant:processing group to hold
+          // it. The processing renderer (message-list.tsx) skips non-ai
+          // messages, so the orphan tool result renders nothing visible —
+          // it is not lost, not reported as an error, and never falls back
+          // to a human/assistant/subagent group (which would mis-render raw
+          // tool output or trigger updateSubtask side effects — see spec §二).
+          groups.push({
+            id: message.id,
+            type: "assistant:processing",
+            messages: [message],
+          });
         }
       }
       continue;
@@ -108,9 +119,19 @@ export function getMessageGroups(messages: Message[]): MessageGroup[] {
         // a single bubble, so we don't also push to assistant:processing —
         // that would produce a duplicate rendering of the same content.
         groups.push({ id: message.id, type: "assistant", messages: [message] });
-      } else if (hasReasoning(message) || hasToolCalls(message)) {
-        // Intermediate steps: reasoning-only or tool calls that don't produce
-        // standalone user-visible text content yet.
+      } else {
+        // M1 (spec 2026-06-25): any AI message that is NOT a present-files /
+        // subagent / final-assistant special case opens/joins a processing
+        // group — INCLUDING the streaming-transient empty shell where
+        // content/tool_calls/reasoning have all not arrived yet. This keeps
+        // an open processing group for the AI message's subsequent tool
+        // result to attach to, so the tool result never becomes an orphan.
+        // Previously this branch was `else if (hasReasoning || hasToolCalls)`,
+        // which left the empty AI shell ungrouped mid-stream → its tool
+        // result arrived with no open group → console.error + dropped.
+        // An empty / tool-only processing group renders nothing: the
+        // assistant:processing renderer (message-list.tsx) skips non-ai
+        // messages and returns null when no results are produced.
         const lastGroup = groups[groups.length - 1];
         if (lastGroup?.type !== "assistant:processing") {
           groups.push({
