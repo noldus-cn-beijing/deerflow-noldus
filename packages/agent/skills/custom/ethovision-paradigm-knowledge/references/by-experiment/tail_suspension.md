@@ -47,6 +47,10 @@
 
 **测量参数差异**：悬尾实验一般采用 **Activity / Activity State** 作为测量参数，而强迫游泳一般采用 **Mobility / Mobility State**，两者不可混用。
 
+### 不分区（无分析区聚合）
+
+TST **不分区**——`catalog/tst.yaml` 无 `zone_concept_params`、无 `in_zone*` requires_columns、无 `anonymous_zone_override`。列对齐链路对 TST **不触发 zone 反问**（`_build_zone_aliases_overrides` 对无 zone_pattern 的范式返回 `{}`）。
+
 **钟摆算法**：不动行为判定使用 pendulum 算法区分钟摆摆动与真实挣扎，完整参数表和算法流程见同目录 `tail_suspension-pendulum-params.md`。data-analyst 在 step 2.8 参数审计时按该文档判据审计。
 
 ### 核心指标的第一性原理

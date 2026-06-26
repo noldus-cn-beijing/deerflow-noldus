@@ -47,6 +47,10 @@
 
 **钟摆算法**：不动行为检测使用自相关周期性分析（区分真实不动 vs 停止挣扎后的钟摆摆动），参数判据见同目录 `forced_swim-pendulum-params.md`。data-analyst 在 step 2.8 参数审计时，对 FST pendulum 参数按该文档判据审计。
 
+### 不分区（无分析区聚合）
+
+FST **不分区**——`catalog/fst.yaml` 无 `zone_concept_params`、无 `in_zone*` requires_columns、无 `anonymous_zone_override`。列对齐链路对 FST **不触发 zone 反问**（`_build_zone_aliases_overrides` 对无 zone_pattern 的范式返回 `{}`）。即使数据带 zone 味道的列也不应被激活。
+
 ### 核心指标的第一性原理
 
 - **累计不动时间**：绝望核心代理。不动↑ → 抑郁样行为↑。抗抑郁药减少不动时间
