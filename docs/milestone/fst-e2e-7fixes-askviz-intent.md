@@ -25,8 +25,15 @@
 ## 当前状态
 
 - 完成项：FST E2E 流水线修复完毕，所有已知 bug 已合入 dev；ASKVIZ 意图路由就位；测试基线 0 退化
-- 遗留项：EPM/OFT/LDB/Zero Maze 其余 4 个范式 dogfood 待跑
+- 遗留项：~~EPM~~/OFT/LDB/Zero Maze 范式 dogfood 待跑（**EPM ✅ 2026-06-24 完成**，全链路健康；剩 OFT/LDB/Zero Maze）
 - 下一 milestone：[chart-catalog-p0-p3.md](chart-catalog-p0-p3.md)（5/25 完成）
+
+## EPM dogfood 补跑（2026-06-24）
+
+- **handoff**：[epm-dogfood-chart-success-askviz-gate](../handoffs/2026-06/2026-06-24-epm-dogfood-chart-success-askviz-gate-handoff.md)
+- **结论**：EPM（`Raw data-EPM-Xuhui-28`，28 trials，XX/XY/YY/YZ 四组）全链路健康——code-executor `sealed_by=run_plan`（140/140 指标）、data-analyst `sealed_by=finalize`（#187 持续生效）、report-writer `sealed_by=model`。统计决策树正确（正态→ANOVA / 非正态→Kruskal-Wallis），主结论 {XX,XY} vs {YY,YZ} 开臂时间比例 p=0.0002 大效应量，排除运动抑制混杂，离群个体 Trial 3/12/19 正确标出。
+- **Gate 3 可视化门验证**：双 thread 对照——generic `确认`（`2c95aada`）→ lead 判 `viz_choice=no` 不画图（driver 限制，非 bug）；手回 "A"（`a6e3775c`）→ `viz_choice=yes` → chart-maker **112/112 画图成功**，report.md 嵌入代表图。**反证渲染层无问题。**
+- **新观察（良性，已记 problem）**：chart-maker `run_chart_plan` 核盘时机竞态——进程池 flush 前核盘误判 `n_rendered=4/n_failed=108`，但最终 seal 正确（112）。见 [disk-race-false-partial](../problems/2026-06-24-chart-maker-run-chart-plan-disk-race-false-partial.md)。与同日 [silent-drop-completed](../problems/2026-06-24-chart-maker-run-chart-plan-silent-drop-completed-handoff.md) 的封存对账洞**正交**（本文是核盘时机，那项是封存对账）。
 
 ## 相关 handoff
 
