@@ -36,8 +36,8 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 
 - **`app/`** — Next.js App Router. Routes: `/` (landing), `/workspace/chats/[thread_id]` (chat).
 - **`components/`** — React components split into:
-  - `ui/` — Shadcn UI primitives (auto-generated, ESLint-ignored)
-  - `ai-elements/` — Vercel AI SDK elements (auto-generated, ESLint-ignored)
+  - `ui/` — Shadcn `new-york` primitives (copy-in source you own; editable with care) + some MagicUI/React Bits items (registry-pulled, don't edit). ESLint-ignored. See §Code Style.
+  - `ai-elements/` — Vercel AI SDK elements (registry-pulled, don't edit, ESLint-ignored)
   - `workspace/` — Chat page components (messages, artifacts, settings)
   - `landing/` — Landing page sections
 - **`core/`** — Business logic, the heart of the app:
@@ -76,7 +76,9 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 - **Unused variables**: Prefix with `_`.
 - **Class names**: Use `cn()` from `@/lib/utils` for conditional Tailwind classes.
 - **Path alias**: `@/*` maps to `src/*`.
-- **Components**: `ui/` and `ai-elements/` are generated from registries (Shadcn, MagicUI, React Bits, Vercel AI SDK) — don't manually edit these.
+- **Components**:
+  - `ai-elements/` (Vercel AI SDK) and the MagicUI / React Bits items in `ui/` are **pulled from live registries** (`components.json` → `registries`: `@ai-elements` / `@magicui` / `@react-bits`) — **don't manually edit these**, a re-pull overwrites your changes.
+  - The Shadcn `new-york` primitives in `ui/` (empty / button / dialog / …) are **copy-in source** (`npx shadcn add`, no live registry entry) — **you own them and may edit**, but only with **API-preserving** changes (keep all existing exports/prop signatures) and a comment noting why (e.g. `Phase0#6 …`). They are ESLint-ignored, so run `pnpm check` against baseline after editing. Prefer composing over editing when a wrapper in `workspace/` would do.
 
 ## Environment
 

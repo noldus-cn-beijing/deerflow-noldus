@@ -115,7 +115,7 @@ if [ "${SKIP_SHIP:-0}" = "1" ]; then
 fi
 
 info "[3/5] Ensuring remote target directories exist"
-ssh "$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/images' '$DEPLOY_PATH/docker' '$DEPLOY_PATH/skills' '$DEPLOY_PATH/runtime'"
+ssh "$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/images' '$DEPLOY_PATH/docker' '$DEPLOY_PATH/skills' '$DEPLOY_PATH/runtime' '$DEPLOY_PATH/scripts'"
 
 info "[4/5] Shipping image tar and runtime files to ${DEPLOY_HOST}:${DEPLOY_PATH}"
 
@@ -132,6 +132,12 @@ rsync -avz docker/nginx/nginx.conf "$DEPLOY_HOST:$DEPLOY_PATH/docker/nginx/nginx
 # 4c. Skills directory (read-only mount inside containers)
 rsync -avz --delete --exclude='__pycache__' --exclude='*.pyc' \
     skills/ "$DEPLOY_HOST:$DEPLOY_PATH/skills/"
+
+# 4c-bis. DB migration runner — shipped so the remote can run Alembic inside the
+# gateway image before bringing services up (the image bakes in alembic + the
+# migration files, but not scripts/). Without this, an existing prod DB stays
+# missing any column a sync added → 500s on the hot path (see run-db-migrations.sh).
+rsync -avz scripts/run-db-migrations.sh "$DEPLOY_HOST:$DEPLOY_PATH/scripts/run-db-migrations.sh"
 
 # 4d. Runtime configs (config.yaml + extensions_config.json + .env) — never commit secrets to repo
 rsync -avz "$DEPLOY_CONFIG"     "$DEPLOY_HOST:$DEPLOY_PATH/runtime/config.yaml"
@@ -187,6 +193,26 @@ mkdir -p "$HOME/.claude" "$HOME/.codex"
 
 echo "→ Restarting services via docker compose"
 cd "$DEPLOY_PATH/docker"
+
+# ── DB migrations (BEFORE bringing services up) ──────────────────────────────
+# The gateway boots with Base.metadata.create_all, which creates missing TABLES
+# but never ALTERs an existing table to add a column. So any upstream sync that
+# adds an ORM column (e.g. runs.token_usage_by_model) leaves the already-existing
+# prod DB short that column → every request on the hot path 500s with
+# `no such column`. We run Alembic inside the freshly-loaded gateway image (it
+# bakes in alembic + the migration files) against the host-persisted DB
+# (${DEER_FLOW_HOME} → /app/backend/.deer-flow). run-db-migrations.sh is
+# idempotent and auto-stamps legacy DBs that predate the alembic_version table.
+# Failure here ABORTS the deploy — better to keep the old (working) containers
+# running than to bring up new code against an un-migrated schema.
+echo "→ Running DB migrations (alembic) inside gateway image before service start"
+docker compose -p deer-flow -f docker-compose.yaml run --rm --no-deps \
+    -v "$DEPLOY_PATH/scripts/run-db-migrations.sh:/app/scripts/run-db-migrations.sh:ro" \
+    --entrypoint sh \
+    gateway -c "chmod +x /app/scripts/run-db-migrations.sh && /app/scripts/run-db-migrations.sh" \
+    || { echo "✗ DB migration FAILED — aborting deploy, leaving existing containers running"; exit 1; }
+echo "✓ DB migrations applied (or already up to date)"
+
 # Explicitly list services to start — skips 'provisioner' (Kubernetes-only, not needed here).
 # --force-recreate is mandatory: compose normally skips rebuilding a container when its
 # service spec is unchanged, but that misses two real change classes we hit in practice:
