@@ -4,22 +4,21 @@
 > 想看全局进展从这里开始，想看操作细节下钻到对应 handoff。
 > **本索引即本项目的 roadmap**（无独立 `docs/roadmap.md`）。
 
-> ## ⚠️ 当前 v0.1 推进的真实阻塞 = 行为学同事的范式方法论
+> ## ⚠️ 当前 v0.1 行为学分析方向的唯一硬阻塞 = 行为学同事的 Golden Cases
 >
-> 两条路卡在同一个上游（**不是工程卡点**，harness/基础设施层均可独立推进）：
+> - **Golden Cases**（[Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90)，OPEN）— 微调 benchmark + 回归种子 + SFT 数据评分基准，**只有同事能定义对/错标准**，当前数量为零。卡的是**微调路线**（SkillOpt → SFT → Qwen3-30B），不卡 v0.1 端到端分析。
 >
-> - **结构聚合**（[Issue #98](https://github.com/noldus-cn-beijing/noldus-insight/issues/98)）— 自定义分区粒度按范式聚合，**需逐范式确认聚合语义**（不都是 OR，可能加权/需区分臂身份）。
-> - **Golden Cases**（[Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90)）— 微调 benchmark + 回归种子 + SFT 数据评分基准，**只有同事能定义对/错标准**。
+> ✅ **结构聚合（原阻塞，Issue #98）已解除**（#98 于 2026-06-18 CLOSED）：同事逐范式聚合方法论已交付（PR #115）；读码坐实 N 列→1 概念的 OR 聚合机制**全链路早已实现并工作**，milestone 此前标的 blocked 滞后于代码。**功能性上 v0.1 六范式端到端分析现已可用**（识别+判读+聚合全齐、标准与复杂多分区数据都能跑）。剩余只是坐实+固化+补测（[Sprint 2 spec](../superpowers/specs/2026-06-26-column-semantics-sprint2-structural-aggregation-spec.md)，非新增能力、不阻塞）。
 >
 > 精确待办（降低同事回合成本）见 → [blocked-on-expert-methodology.md](blocked-on-expert-methodology.md)
 >
-> v0.1 六范式（EPM/OFT/LDB/FST/Zero Maze/TST）的**识别 + 判读领域知识同事已交付**（`ethovision-paradigm-knowledge` skill 内对应文件已填实）；标准命名数据现在就能端到端跑。
+> v0.1 六范式（EPM/OFT/LDB/FST/Zero Maze/TST）的**识别 + 判读领域知识同事已交付**（`ethovision-paradigm-knowledge` skill 内对应文件已填实）。未支持的全是 v1.0 才做的范式（鱼类/学习记忆迷宫/PhenoTyper/昆虫）。
 
 ## 活跃 feature track
 
 | Feature | 状态 | Milestone | 最新 handoff |
 |---------|------|-----------|-------------|
-| **EV19 列语义对齐** | Sprint 1 已合 dev（自定义分析区列 HITL 对齐）· **Sprint 2 结构聚合 🔴 阻塞于同事方法论** · [Issue #98](https://github.com/noldus-cn-beijing/noldus-insight/issues/98) | [column-semantics-alignment.md](column-semantics-alignment.md) | [6/5 design v2](../design/2026-06-05-column-semantics-hitl-design-v2.md) |
+| **EV19 列语义对齐** | Sprint 1 已合 dev（自定义分析区列 HITL 对齐）· **Sprint 2 结构聚合机制已在线**（#98 已 CLOSED、方法论已交付；剩余=坐实+固化+补测，非阻塞） · [Sprint 2 spec](../superpowers/specs/2026-06-26-column-semantics-sprint2-structural-aggregation-spec.md) | [column-semantics-alignment.md](column-semantics-alignment.md) | [6/5 design v2](../design/2026-06-05-column-semantics-hitl-design-v2.md) |
 | **Skill 优化 → SFT（SkillOpt 方法论）** | 计划已就绪 · **🔴 阻塞于同事 Golden Cases**（benchmark 数量为零）· [Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90) | — | [6/4 实施计划](../plans/2026-06-04-skillopt-skill-optimization-plan.md) |
 | **DeerFlow upstream sync（21 commit）** | ✅ 已合 dev（74e3e80c→f92a26d5，PR #113，受保护文件 surgical + full-follow 补回 2 处定制） | [deerflow-sync-2026-05-25-all-5-pr-merged.md](deerflow-sync-2026-05-25-all-5-pr-merged.md) | [6/9 sync21 review-fix + 409 merged](../handoffs/2026-06/2026-06-09-sync21-review-fix-and-409-merged-handoff.md) |
 | **Gateway 多 worker 切 thread 409 修复** | ✅ 已合 dev（PR #112，前端优雅降级 A + 默认单 worker B；共享 StreamBridge C 留 backlog） | — | [6/9 sync21 review-fix + 409 merged](../handoffs/2026-06/2026-06-09-sync21-review-fix-and-409-merged-handoff.md) |
