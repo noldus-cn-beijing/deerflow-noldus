@@ -183,7 +183,9 @@ export default function AgentChatPage() {
                 </div>
               </div>
             )}
-            <div className="flex size-full justify-center">
+            {/* 同 chats/[thread_id]：size-full(h-full) 会从 sticky 进度轨下方起算却取满 main 全高，
+                底部溢出视口致滚动条错位 + 末条藏到输入框后；改 flex-1 min-h-0 只吃剩余高度。 */}
+            <div className="flex min-h-0 w-full flex-1 justify-center">
               <MessageList
                 className={cn("size-full", !isNewThread && "pt-4")}
                 threadId={threadId}

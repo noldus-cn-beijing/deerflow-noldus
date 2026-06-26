@@ -171,7 +171,12 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
-            <div className="flex size-full justify-center">
+            {/* size-full（h-full=父全高）在此处错误：本 div 是 <main>(flex-col) 里 sticky 进度轨
+                之后的 flex 兄弟，h-full 取满 main 全高（900）却从轨道下方（y≈127）起算 → 底部
+                溢出视口 127px，把消息滚动区下沿推到屏幕外 → 滚动条错位 + 末条消息藏到输入框后。
+                改 flex-1 min-h-0：只吃轨道之后的剩余高度，滚动区下沿对齐视口底。新会话无轨道时
+                flex-1 仍 = 全高（行为不变）。 */}
+            <div className="flex min-h-0 w-full flex-1 justify-center">
               <MessageList
                 className={cn("size-full", !isNewThread && "pt-4")}
                 threadId={threadId}
