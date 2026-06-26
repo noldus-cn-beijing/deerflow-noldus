@@ -9,6 +9,7 @@ import { isImageArtifact, type ArtifactMeta } from "@/core/artifacts/types";
 import { urlOfArtifact } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import type { AgentThreadState } from "@/core/threads";
+import { cn } from "@/lib/utils";
 
 import { GalleryFacetBar } from "./gallery-facet-bar";
 import { GalleryGrid } from "./gallery-grid";
@@ -118,16 +119,29 @@ export function ArtifactGallery({ artifacts, threadId, chartsStatus }: ArtifactG
         <section>
           <button
             type="button"
-            className="mb-2 flex items-center gap-1 text-sm font-medium"
+            // 折叠入口可发现性（spec 2026-06-26）：保持默认折叠（防图墙），但把入口
+            // 做成明显的可点 affordance——边框 + hover 抬升 + 圆角，文案带「展开 + 计数」
+            // 动作提示。日式克制：是「明确可点」，不是「花哨大按钮」。
+            className={cn(
+              "mb-2 flex w-full items-center gap-2 rounded-lg border bg-card px-3 py-2 text-left text-sm font-medium shadow-rest",
+              "duration-fast ease-[var(--ease-brand-out)]",
+              "hover:shadow-raised hover:bg-accent/50",
+              "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+            )}
             onClick={() => setPerSubjectExpanded((v) => !v)}
             aria-expanded={perSubjectExpanded}
+            title={perSubjectExpanded ? g.collapsePerSubject : g.expandPerSubject(perSubjectMetas.length)}
           >
             {perSubjectExpanded ? (
-              <ChevronDownIcon className="size-4" />
+              <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
             ) : (
-              <ChevronRightIcon className="size-4" />
+              <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
             )}
-            {g.perSubject} ({perSubjectMetas.length})
+            <span className="truncate">
+              {perSubjectExpanded
+                ? `${g.perSubject} (${perSubjectMetas.length}) · ${g.collapsePerSubject}`
+                : g.expandPerSubject(perSubjectMetas.length)}
+            </span>
           </button>
 
           {perSubjectExpanded && (

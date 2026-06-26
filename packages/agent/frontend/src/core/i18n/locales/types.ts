@@ -205,7 +205,7 @@ export interface Translations {
     compareMode: string;
     exitCompare: string;
     downloadSelected: string;
-    expandPerSubject: string;
+    expandPerSubject: (n: number) => string;
     collapsePerSubject: string;
     clearFilters: string;
     filterParadigm: string;

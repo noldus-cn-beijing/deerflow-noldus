@@ -273,8 +273,10 @@ export const enUS: Translations = {
     compareMode: "Compare",
     exitCompare: "Exit compare",
     downloadSelected: "Download selected",
-    expandPerSubject: "Show per-subject charts",
-    collapsePerSubject: "Hide per-subject charts",
+    // 折叠入口可发现性（spec 2026-06-26）：折叠态文案带「展开 + 计数」动作提示，
+    // 不再是裸 "Per-subject (N)"——E2E agent 滚动 8 次都没发现要点开。
+    expandPerSubject: (n: number) => `Expand · view all ${n} per-subject chart${n === 1 ? "" : "s"}`,
+    collapsePerSubject: "Collapse per-subject charts",
     clearFilters: "Clear filters",
     filterParadigm: "Paradigm",
     filterChartType: "Type",

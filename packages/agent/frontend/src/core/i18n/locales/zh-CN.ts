@@ -262,8 +262,10 @@ export const zhCN: Translations = {
     compareMode: "对比",
     exitCompare: "退出对比",
     downloadSelected: "下载选中",
-    expandPerSubject: "展开单样本图",
-    collapsePerSubject: "折叠单样本图",
+    // 折叠入口可发现性（spec 2026-06-26）：折叠态文案带「展开 + 计数」动作提示，
+    // 不再是裸「单样本图 (N)」——E2E agent 滚动 8 次都没发现要点开。
+    expandPerSubject: (n: number) => `展开查看全部 ${n} 张个体图`,
+    collapsePerSubject: "收起单样本图",
     clearFilters: "清除筛选",
     filterParadigm: "范式",
     filterChartType: "图类型",
