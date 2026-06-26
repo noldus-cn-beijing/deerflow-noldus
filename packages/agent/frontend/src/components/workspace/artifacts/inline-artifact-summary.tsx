@@ -2,10 +2,11 @@
 
 import { AlertTriangleIcon, ChevronDownIcon, ChevronRightIcon, DownloadIcon, FileTextIcon, ImagesIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/workspace/messages/markdown-content";
+import { useChartArtifacts } from "@/core/artifacts/hooks";
 import { loadArtifactContent } from "@/core/artifacts/loader";
 import {
   isImageArtifact,
@@ -30,14 +31,21 @@ import { cn } from "@/lib/utils";
  *   - 「下载全部 ZIP」→ 第 1 层带走全部（零渲染，浏览器直下）
  * 失败/截断显式呈现（守「无声截断」铁律）。
  *
- * 元数据来自 thread.values.artifacts（后端 ArtifactMeta，plan_charts.json SSOT），
- * 不从消息裸路径猜分类。
+ * 数据源（spec 2026-06-26-conversation-gallery-empty §一修复）：图元数据走 **磁盘端点**
+ * `/artifacts/charts`（useChartArtifacts），与 /gallery 独立页同源——不再吃 thread.values.artifacts
+ * （state 冒泡，chart-maker subagent 的 artifacts 不上行到 lead，恒空）。磁盘端点空/失败时回退
+ * props.artifacts（lead present 的代表图仍在 state，至少 1 张）。报告（report.md）仍从 props
+ * artifacts 里认（它是 lead present 的裸 string，不在磁盘 charts 端点里）。
+ *
+ * 触发时机：present-files 消息出现即挂载本组件→拉一次；run 完成（onFinish）后由 message-list
+ * 传 refetchSignal 触发 refetch 补全量（图陆续落盘）。不每帧拉、不轮询（性能）。
  */
 export function InlineArtifactSummary({
   threadId,
   artifacts,
   chartsStatus,
   className,
+  refetchSignal,
 }: {
   threadId: string;
   artifacts: ArtifactInput[] | null | undefined;
@@ -49,16 +57,32 @@ export function InlineArtifactSummary({
       }
     | null;
   className?: string;
+  /**
+   * run 完成（onFinish）后递增 → 触发 refetch 拉全量图（spec §一触发时机）。
+   * message-list 把 run 完成事件折成一个递增序号传进来，避免每帧拉。
+   */
+  refetchSignal?: number;
 }) {
   const { t } = useI18n();
   const router = useRouter();
 
-  const metas = useMemo(() => normalizeArtifacts(artifacts), [artifacts]);
+  // 磁盘端点是图的唯一真相（spec §一）；state（props.artifacts）作回退 + 报告来源。
+  const fallbackArtifacts = useMemo(() => normalizeArtifacts(artifacts), [artifacts]);
+  const { artifacts: diskArtifacts, loaded, refetch } = useChartArtifacts(threadId, {
+    fallbackArtifacts,
+  });
+  // run 完成（refetchSignal 变化）后补拉一次全量（图陆续落盘，首轮可能不全）。
+  useEffect(() => {
+    if (refetchSignal !== undefined && refetchSignal > 0) {
+      void refetch();
+    }
+  }, [refetchSignal, refetch]);
+
+  // 报告卡（report.md）走 state（lead present 的裸 string，不在磁盘 charts 端点）；图走磁盘。
+  const report = useMemo(() => fallbackArtifacts.find(isReportArtifact) ?? null, [fallbackArtifacts]);
+  // 加载中先用回退（state 代表图）撑住首屏，避免闪烁；加载完用磁盘全量。
+  const metas = loaded ? diskArtifacts : fallbackArtifacts;
   const images = useMemo(() => metas.filter(isImageArtifact), [metas]);
-  // spec §2 现象2：报告（report.md）lead present 为裸 string 进 state，画廊 isImageArtifact
-  // 过滤掉非图，研究员在对话流看不到。这里在产物摘要内显式拉出报告卡（spec §2 方案 A：
-  // 对话流内嵌报告，研究员最关心报告，应在主路径可见，不藏侧栏）。
-  const report = useMemo(() => metas.find(isReportArtifact) ?? null, [metas]);
   const representatives = useMemo(
     () => selectRepresentativeCharts(metas).slice(0, 6),
     [metas],

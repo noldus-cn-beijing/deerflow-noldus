@@ -22,6 +22,8 @@ import { useMemo } from "react";
 import { useRunTrace } from "@/core/trace";
 import type { RunTraceTranslations } from "@/core/trace";
 
+import { deriveCapabilityPlan } from "./capability-plan";
+import type { CapabilityStageEntry } from "./capability-plan";
 import { deriveWorkflowStages } from "./derive-workflow-stages";
 import type { StageState, StageStatus } from "./derive-workflow-stages";
 
@@ -48,4 +50,18 @@ export function useWorkflowFocus(stages: StageState[]): StageState | undefined {
   );
 }
 
-export type { StageState, StageStatus };
+/**
+ * 派生能力进度轨要显示的阶段集（spec 2026-06-26 §二/三 方案 B「动态能力进度」）。
+ *
+ * 与 useWorkflowStages 同源（都吃 useRunTrace）——本 hook 决定「显哪些阶段」，
+ * useWorkflowStages 决定「这些阶段什么状态」。AnalysisRail 两者结合：plan 决定可见集 +
+ * ordinal，stages 决定 active/done/waiting 色。
+ *
+ * 空线程（知识问答，无任何 pipeline 信号）→ 返回 []，消费方据此隐藏轨（日式克制，不塞空轨）。
+ */
+export function useCapabilityPlan({ messages, t }: UseWorkflowStagesArgs): CapabilityStageEntry[] {
+  const events = useRunTrace({ messages, t });
+  return useMemo(() => deriveCapabilityPlan(events, messages), [events, messages]);
+}
+
+export type { CapabilityStageEntry, StageState, StageStatus };

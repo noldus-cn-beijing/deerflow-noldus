@@ -130,7 +130,10 @@ export default function AgentChatPage() {
   return (
     <ThreadContext.Provider value={{ thread }}>
       <ChatBox threadId={threadId}>
-        <div className="relative flex size-full min-h-0 justify-between">
+        {/* spec 2026-06-26-conversation-gallery-empty §四点五 视口高度链（同 chats 路由）：
+            size-full 的 h-full 在父链无 definite height 时回退视口高，底部被裁；改 flex-1
+            min-h-0 w-full 受 ResizablePanel flex 约束到真实可用高。 */}
+        <div className="relative flex w-full min-h-0 flex-1 justify-between">
           <header
             className={cn(
               "absolute top-0 right-0 left-0 z-30 flex h-12 shrink-0 items-center gap-2 px-4",

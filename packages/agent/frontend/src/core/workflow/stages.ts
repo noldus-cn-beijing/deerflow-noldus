@@ -13,6 +13,7 @@
  */
 
 import {
+  ChartColumnBigIcon,
   ClipboardListIcon,
   FlaskConicalIcon,
   GitCompareArrowsIcon,
@@ -35,6 +36,19 @@ export const WORKFLOW_STAGE_IDS = {
 } as const;
 
 export type WorkflowStageId = keyof typeof WORKFLOW_STAGE_IDS;
+
+/**
+ * 能力阶段「图表生成」id（spec 2026-06-26-conversation-gallery-empty §二/三，方案 B 动态能力进度）。
+ *
+ * 它对应 chart-maker / run_chart_plan 这条**独立能力**——可脱离端到端流水线单独发生
+ * （追问画图、chart-only run）。它**不是固定 7 阶段流水线的一环**：那 7 阶段是端到端线性推导的
+ * SSOT（derive-workflow-stages），加第 8 项会破坏既有线性化测试与 spec#4 的「当前焦点唯一」语义。
+ * 故 charts 走 capability-plan 动态显示，不进 WORKFLOW_STAGE_IDS 的固定序。
+ */
+export const CHART_STAGE_ID = "charts" as const;
+
+/** 所有可在能力进度轨上出现的阶段 id（固定 7 + 动态 charts），供类型收口。 */
+export type CapabilityStageId = WorkflowStageId | typeof CHART_STAGE_ID;
 
 /** 单个阶段的静态元数据。colorToken 引用 spec#1 的 CSS 变量，不在此重定义色值。 */
 export interface WorkflowStageDef {
@@ -106,6 +120,50 @@ export const WORKFLOW_STAGES: readonly WorkflowStageDef[] = [
     colorToken: "var(--color-stage-report)",
   },
 ];
+
+/**
+ * 能力阶段「图表生成」静态元数据（spec 2026-06-26 §二/三 方案 B）。
+ *
+ * 与 WORKFLOW_STAGES 同构（id/nameKey/icon/colorToken），但**独立列出**——它由
+ * capability-plan 动态加入显示集，不参与 derive-workflow-stages 的 7 阶段线性推导。
+ * colorToken 复用 spec#1 的图表色变量；nameKey 走 t.workflowStages.names.charts（i18n 已加）。
+ */
+export interface CapabilityStageDef {
+  id: CapabilityStageId;
+  nameKey: string;
+  icon: LucideIcon;
+  colorToken: string;
+}
+
+export const CHART_STAGE_DEF: CapabilityStageDef = {
+  id: CHART_STAGE_ID,
+  nameKey: "charts",
+  icon: ChartColumnBigIcon,
+  colorToken: "var(--color-stage-interpret)",
+};
+
+/**
+ * 按 CapabilityStageId 取静态阶段定义（spec 2026-06-26 方案 B）。
+ * 固定 7 阶段走 WORKFLOW_STAGES；charts 走 CHART_STAGE_DEF。单一来源：组件枚举阶段定义
+ * 只经此函数，不在各处硬编码。
+ */
+export function stageDefOf(id: CapabilityStageId): CapabilityStageDef {
+  if (id === CHART_STAGE_ID) return CHART_STAGE_DEF;
+  const def = WORKFLOW_STAGES.find((s) => s.id === id);
+  if (!def) throw new Error(`unknown capability stage id: ${id}`);
+  return def;
+}
+
+/**
+ * 能力阶段在动态轨上的**显示顺序**（spec §二/三）。
+ *
+ * 固定 7 阶段按 WORKFLOW_STAGE_IDS 序；charts 排在 report 之前、interpret 之后（图表是
+ * 解读的可视化产出）。capability-plan 按此序稳定排序，不随事件到达顺序漂移。
+ */
+export const CAPABILITY_STAGE_ORDER: Record<CapabilityStageId, number> = {
+  ...WORKFLOW_STAGE_IDS,
+  [CHART_STAGE_ID]: 5.5, // interpret(5) < charts(5.5) < report(6)
+};
 
 /**
  * 列语义对齐反问（阶段 ③）的关键词启发（spec §3.1 / §六风险1）。

@@ -24,7 +24,9 @@ export async function WorkspaceContent({
 
   return (
     <QueryClientProvider>
-      <SidebarProvider className="h-screen" defaultOpen={initialSidebarOpen}>
+      {/* spec 2026-06-26-conversation-gallery-empty §四点五：h-screen（固定 vh）在移动端
+          地址栏伸缩 / 窗口 resize 时不跟随，底部会被遮；改 h-dvh（动态视口高）跟随真实可视区。 */}
+      <SidebarProvider className="h-dvh" defaultOpen={initialSidebarOpen}>
         <WorkspaceSidebar />
         <SidebarInset className="min-w-0">{children}</SidebarInset>
       </SidebarProvider>

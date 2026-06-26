@@ -131,8 +131,13 @@ export default function ChatPage() {
   return (
     <ThreadContext.Provider value={{ thread, isMock }}>
       <ChatBox threadId={threadId}>
+        {/* spec 2026-06-26-conversation-gallery-empty §四点五 视口高度链：
+            size-full（= w-full h-full）里的 h-full 在父链无 definite height 时会回退到
+            视口高（实测 900px），把底部推出 <main>（792px）之外被裁。改成 flex-1 min-h-0
+            w-full：作为 ResizablePanel 的 flex 子项被约束到真实可用高（792px），不再硬取
+            视口；min-h-0 允许内部 <main> grow 后正确滚动。absolute header/input 仍相对它定位。 */}
         <div
-          className="relative flex size-full min-h-0 justify-between"
+          className="relative flex w-full min-h-0 flex-1 justify-between"
           data-chat-root=""
         >
           <header

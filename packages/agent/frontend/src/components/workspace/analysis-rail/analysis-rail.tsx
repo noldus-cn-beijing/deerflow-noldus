@@ -15,15 +15,17 @@
  */
 
 import { type Message } from "@langchain/langgraph-sdk";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { type Translations } from "@/core/i18n";
 import { useI18n } from "@/core/i18n/hooks";
 import {
+  CHART_STAGE_ID,
+  stageDefOf,
+  type CapabilityStageId,
   type StageStatus,
-  useWorkflowFocus,
+  useCapabilityPlan,
   useWorkflowStages,
-  WORKFLOW_STAGES,
 } from "@/core/workflow";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +43,14 @@ function scrollToMessage(messageId: string) {
   el?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
 }
 
+/** 轨上一个可见阶段的渲染视图（def + 状态 + 锚点 + 在可见集里的序号）。 */
+interface VisibleStage {
+  id: CapabilityStageId;
+  status: StageStatus;
+  anchorMessageId?: string;
+  ordinal: number;
+}
+
 export interface AnalysisRailProps {
   /** 传入 messages 供 hook 派生（与 RunTraceWidget 同款从 thread.messages 取）。 */
   messages: Message[];
@@ -50,34 +60,57 @@ export interface AnalysisRailProps {
 
 export function AnalysisRail({ messages, className }: AnalysisRailProps) {
   const { t } = useI18n();
+  // 方案 B（spec 2026-06-26 §二/三）：显哪些阶段由 capability plan 动态决定；
+  // 各阶段 active/done/waiting 状态仍由 7 阶段线性推导（useWorkflowStages）取。
+  const plan = useCapabilityPlan({ messages, t });
   const stages = useWorkflowStages({ messages, t });
-  const focus = useWorkflowFocus(stages);
   const [compactOpen, setCompactOpen] = useState(false);
 
-  // 无任何进展（空 thread）时不渲染——避免知识问答线程占垂直空间（spec §3.2 adaptive-navigation）。
-  const hasProgress = stages.some((s) => s.status !== "pending");
-  if (!hasProgress) return null;
+  // 把 plan（可见 id 集）与 stages（状态）合并成渲染视图。charts 不在 7 阶段数组里，
+  // 其状态从 capability plan 是否触及推断：触及即 done（图已生成；chart-only run 主语义）。
+  const visibleStages = useMemo<VisibleStage[]>(() => {
+    return plan.map((entry, index) => {
+      let status: StageStatus;
+      let anchorMessageId = entry.anchorMessageId;
+      if (entry.id === CHART_STAGE_ID) {
+        // charts 是独立能力阶段，不在 deriveWorkflowStages 的 7 阶段里；触及即 done。
+        status = "done";
+      } else {
+        const found = stages.find((s) => s.id === entry.id);
+        status = found?.status ?? "done";
+        anchorMessageId = anchorMessageId ?? found?.anchorMessageId;
+      }
+      return { id: entry.id, status, ...(anchorMessageId ? { anchorMessageId } : {}), ordinal: index + 1 };
+    });
+  }, [plan, stages]);
 
-  const focusOrdinal = focus ? stages.indexOf(focus) + 1 : 0;
+  // 无任何 pipeline 信号（知识问答 run）→ plan 空 → 不渲染轨（日式克制，不塞空轨）。
+  if (visibleStages.length === 0) return null;
+
+  const focus = visibleStages.find(
+    (s) => s.status === "active" || s.status === "waiting" || s.status === "failed",
+  );
+  const focusOrdinal = focus ? focus.ordinal : 0;
+  const totalCount = visibleStages.length;
 
   const rail = (
     <nav aria-label={t.workflowStages.navLabel} className={cn("w-full", className)}>
       {/* 宽屏横向 stepper（md+ 显示） */}
       <ol className="hidden items-start justify-between gap-1 md:flex">
-        {stages.map((stage, index) => {
-          const def = WORKFLOW_STAGES[index]!;
+        {visibleStages.map((stage) => {
+          const def = stageDefOf(stage.id);
           return (
             <li key={stage.id} className="flex min-w-0 flex-1 items-start">
               <StageNode
-                ordinal={index + 1}
-                name={t.workflowStages.names[def.nameKey]}
+                ordinal={stage.ordinal}
+                name={t.workflowStages.names[def.nameKey as keyof typeof t.workflowStages.names] ?? def.nameKey}
                 status={stage.status}
-                hint={t.workflowStages.whatItDoes[def.nameKey]}
+                hint={t.workflowStages.whatItDoes[def.nameKey as keyof typeof t.workflowStages.whatItDoes] ?? ""}
                 statusLabel={statusLabel(stage.status, t)}
                 waitingHint={t.workflowStages.waitingHint}
                 icon={def.icon}
                 colorToken={def.colorToken}
-                showConnector={index > 0}
+                showConnector={stage.ordinal > 1}
                 anchorMessageId={stage.anchorMessageId}
                 onScrollToAnchor={scrollToMessage}
               />
@@ -86,7 +119,7 @@ export function AnalysisRail({ messages, className }: AnalysisRailProps) {
         })}
       </ol>
 
-      {/* 窄屏紧凑态（<md 显示）：当前阶段 · 状态 + N/7 + 展开看全部 */}
+      {/* 窄屏紧凑态（<md 显示）：当前阶段 · 状态 + N/total + 展开看全部 */}
       <div className="flex flex-col gap-1 md:hidden">
         <button
           type="button"
@@ -99,9 +132,9 @@ export function AnalysisRail({ messages, className }: AnalysisRailProps) {
         >
           {focus ? (
             <>
-              <Dot status={focus.status} colorToken={WORKFLOW_STAGES[focusOrdinal - 1]!.colorToken} />
+              <Dot status={focus.status} colorToken={stageDefOf(focus.id).colorToken} />
               <span className="font-medium text-foreground">
-                {focusOrdinal}. {t.workflowStages.names[WORKFLOW_STAGES[focusOrdinal - 1]!.nameKey]}
+                {focus.ordinal}. {t.workflowStages.names[stageDefOf(focus.id).nameKey as keyof typeof t.workflowStages.names] ?? stageDefOf(focus.id).nameKey}
               </span>
               <span className="text-muted-foreground">· {compactStatusLabel(focus.status, t.workflowStages)}</span>
             </>
@@ -109,21 +142,21 @@ export function AnalysisRail({ messages, className }: AnalysisRailProps) {
             <span className="text-muted-foreground">{t.workflowStages.navLabel}</span>
           )}
           <span className="text-muted-foreground/70 tabular-nums">
-            {t.workflowStages.compactOf(focusOrdinal || 1)}
+            {t.workflowStages.compactOf(focusOrdinal || 1, totalCount)}
           </span>
         </button>
 
         {compactOpen && (
           <ol className="mt-1 grid grid-cols-2 gap-x-2 gap-y-1 rounded-md bg-muted/20 p-2">
-            {stages.map((stage, index) => {
-              const def = WORKFLOW_STAGES[index]!;
+            {visibleStages.map((stage) => {
+              const def = stageDefOf(stage.id);
               return (
                 <li key={stage.id} className="flex min-w-0 items-start">
                   <StageNode
-                    ordinal={index + 1}
-                    name={t.workflowStages.names[def.nameKey]}
+                    ordinal={stage.ordinal}
+                    name={t.workflowStages.names[def.nameKey as keyof typeof t.workflowStages.names] ?? def.nameKey}
                     status={stage.status}
-                    hint={t.workflowStages.whatItDoes[def.nameKey]}
+                    hint={t.workflowStages.whatItDoes[def.nameKey as keyof typeof t.workflowStages.whatItDoes] ?? ""}
                     statusLabel={statusLabel(stage.status, t)}
                     waitingHint={t.workflowStages.waitingHint}
                     icon={def.icon}

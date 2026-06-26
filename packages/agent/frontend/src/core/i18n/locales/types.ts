@@ -341,7 +341,7 @@ export interface Translations {
   workflowStages: {
     /** nav 语义 aria-label（整条进度轨） */
     navLabel: string;
-    /** 7 阶段名（key 与 WORKFLOW_STAGE_NAME_KEYS 对齐） */
+    /** 7 阶段名（key 与 WORKFLOW_STAGE_NAME_KEYS 对齐）+ charts 能力阶段（方案 B 动态轨） */
     names: {
       upload: string;
       paradigm: string;
@@ -350,6 +350,7 @@ export interface Translations {
       qc: string;
       interpret: string;
       report: string;
+      charts: string;
     };
     /** 阶段状态文字（色+图标+文字三件套 / color-not-only） */
     statusPending: string;
@@ -369,9 +370,10 @@ export interface Translations {
       qc: string;
       interpret: string;
       report: string;
+      charts: string;
     };
-    /** 窄屏紧凑态：「第 N 阶段，共 7」（currentOrdinal 从 1 起） */
-    compactOf: (currentOrdinal: number) => string;
+    /** 窄屏紧凑态：「第 N 阶段，共 total」（currentOrdinal 从 1 起；total 动态=本 run 显的阶段数） */
+    compactOf: (currentOrdinal: number, total: number) => string;
     /** 窄屏紧凑态展开按钮 aria-label */
     compactExpand: string;
     compactCollapse: string;

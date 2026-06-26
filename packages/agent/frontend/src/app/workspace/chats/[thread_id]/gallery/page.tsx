@@ -7,9 +7,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArtifactGallery } from "@/components/workspace/artifacts/gallery/artifact-gallery";
 import { getAPIClient } from "@/core/api";
-import { fetch as fetchWithAuth } from "@/core/api/fetcher";
+import { fetchChartArtifactsFromDisk } from "@/core/artifacts/hooks";
 import { normalizeArtifacts, type ArtifactMeta } from "@/core/artifacts/types";
-import { chartsArtifactsURL } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import type { AgentThreadState } from "@/core/threads";
 
@@ -28,13 +27,11 @@ export default function GalleryPage() {
     void (async () => {
       // spec 2026-06-26-artifact-bubbling §1.1/§1.2：画廊全量图走「磁盘 + plan_charts.json」端点，
       // 不再依赖 LangGraph state.artifacts（subagent→lead 边界会丢 artifacts，113 张只活 2 张）。
-      // charts_status（失败/截断告警）仍读 state——它不在丢失链路上且对画廊有用。
+      // fetch 逻辑抽到 core/artifacts/hooks.ts 的 fetchChartArtifactsFromDisk，与对话流内嵌
+      // 图廊（useChartArtifacts）同源，不复制（守 SSOT）。
       let charts: ArtifactMeta[] = [];
       try {
-        const resp = await fetchWithAuth(chartsArtifactsURL(threadId));
-        if (resp.ok) {
-          charts = normalizeArtifacts((await resp.json()) as ArtifactMeta[]);
-        }
+        charts = await fetchChartArtifactsFromDisk(threadId);
       } catch {
         // 端点不可达（如旧后端未部署）：下方 state 回退兜底，画廊仍能显示 lead present 的代表图。
       }

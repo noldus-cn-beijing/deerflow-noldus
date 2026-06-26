@@ -1,5 +1,5 @@
 import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { useDeferredValue, useMemo, useRef } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { StickToBottomContext } from "use-stick-to-bottom";
 
 import {
@@ -94,6 +94,17 @@ export function MessageList({
   const deferredMessages = useDeferredValue(messages);
   const isLoading = thread.isLoading;
   const artifacts = thread.values.artifacts;
+  // 对话流图廊 refetch 信号（spec 2026-06-26-conversation-gallery-empty §一触发时机）：
+  // run 完成（isLoading true→false）后递增，传给 InlineArtifactSummary 触发其重拉磁盘端点
+  // 补全量图（chart-maker 陆续落盘，首轮可能不全）。present-files 出现即首次拉，这里只补 run 完。
+  const wasLoadingRef = useRef(false);
+  const [artifactsRefetchSignal, setArtifactsRefetchSignal] = useState(0);
+  useEffect(() => {
+    if (wasLoadingRef.current && !isLoading) {
+      setArtifactsRefetchSignal((n) => n + 1);
+    }
+    wasLoadingRef.current = isLoading;
+  }, [isLoading]);
   const chartsStatus = thread.values.charts_status;
   const renderedGroups = useMemo(
     () =>
@@ -194,8 +205,10 @@ export function MessageList({
           }
           return null;
         } else if (group.type === "assistant:present-files") {
-          // inline 代表图 + 入口（spec §3.2）：元数据来自 thread.values.artifacts（后端
-          // ArtifactMeta），不从消息裸路径猜。详见 InlineArtifactSummary。
+          // inline 代表图 + 入口（spec §3.2）：图元数据走磁盘端点 /artifacts/charts
+          // （InlineArtifactSummary 内部 useChartArtifacts），不再吃 thread.values.artifacts
+          // （state 冒泡恒空，chart-maker artifacts 不上行到 lead，见 spec §一）。
+          // artifacts 仍作回退传下去（磁盘空/失败时至少显示 lead present 的代表图）。
           const hasPresentFileMessage = group.messages.some(hasPresentFiles);
           return (
             <div className="w-full" key={group.id} data-message-id={group.id}>
@@ -212,6 +225,7 @@ export function MessageList({
                   threadId={threadId}
                   artifacts={artifacts}
                   chartsStatus={chartsStatus}
+                  refetchSignal={artifactsRefetchSignal}
                 />
               )}
             </div>
@@ -472,6 +486,7 @@ export function MessageList({
       messageRunIds,
       updateSubtask,
       onSelectClarificationOption,
+      artifactsRefetchSignal,
       t,
     ],
   );
@@ -504,7 +519,10 @@ export function MessageList({
   );
   return (
     <Conversation
-      className={cn("flex size-full flex-col justify-center", className)}
+      // spec 2026-06-26-conversation-gallery-empty §四点五 ②：Conversation（ai-elements registry，
+      // 禁改源）默认 overflow-y-hidden 致右侧滚动条不显示 + 内容溢出容器。消费侧传 overflow-y-auto
+      // 覆盖（cn/tailwind-merge 让后者赢），零改 registry。StickToBottom 内部仍管理滚动行为。
+      className={cn("flex size-full flex-col justify-center overflow-y-auto", className)}
       contextRef={scrollContextRef}
     >
       <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-12">
