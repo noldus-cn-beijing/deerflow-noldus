@@ -29,8 +29,20 @@ import { cn } from "@/lib/utils";
  * integration proves unstable in dogfood, set the threshold to `Infinity` (or
  * drop this component from MessageList) — Step 1-3 (defer + memo) already
  * remove the dominant streaming jank, so virtualization is additive.
+ *
+ * Threshold calibration (chat-render-jank-on-open fix, 2026-06-26): the
+ * previous value of 30 left typical research sessions (10~30 messages, i.e.
+ * <30 groups) below the bar, so they ate the full one-shot mount cost on every
+ * thread open (CPU profile thread bd7ca7f7: 6 Long Tasks ~716ms all in the
+ * React commit phase). Lowered to 15 so a normal-weight session window-mounts
+ * its groups instead of plain-mapping them. This widens the virtualized path,
+ * so it MUST be dogfood-verified (streaming append doesn't jump, stick-to-
+ * bottom still works, dynamic measure doesn't thrash, `data-message-id`
+ * survives — #214 analysis rail depends on it). If 15 proves unstable, raise
+ * toward 30 rather than disabling the component outright; the render-jank spec
+ * also treats mount cost separately via Fix 3 (collapse historical reasoning).
  */
-export const VIRTUALIZATION_THRESHOLD = 30;
+export const VIRTUALIZATION_THRESHOLD = 15;
 
 export function VirtualizedGroups({
   groups,

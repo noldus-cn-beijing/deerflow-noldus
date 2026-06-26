@@ -38,6 +38,16 @@ describe("VirtualizedGroups (Phase0#7 Step 4)", () => {
     expect(VIRTUALIZATION_THRESHOLD).toBeGreaterThanOrEqual(10);
   });
 
+  // chat-render-jank-on-open fix (2026-06-26): the threshold was 30, which
+  // left typical research sessions (10~30 messages) below the bar and eating
+  // the full one-shot mount cost on every thread open. Lowered to 15 so a
+  // normal-weight session window-mounts. This pins the calibrated value —
+  // raising it back toward 30 silently re-introduces the open-jank regression
+  // and must be a deliberate decision (see virtualized-groups.tsx docstring).
+  it("calibrated threshold covers a typical research session (15)", () => {
+    expect(VIRTUALIZATION_THRESHOLD).toBe(15);
+  });
+
   it("renders without crashing for a large list with a scroll context", async () => {
     const { render } = await import("@testing-library/react");
 

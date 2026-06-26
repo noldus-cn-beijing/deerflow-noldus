@@ -32,6 +32,10 @@ import { DecisionCard } from "./decision-card";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
+import {
+  PROGRESSIVE_MOUNT_MIN_TOTAL,
+  useProgressiveMount,
+} from "./progressive-mount";
 import { QualityWarningBanner } from "./quality-warning-banner";
 import { MessageListSkeleton } from "./skeleton";
 import { SubtaskCard } from "./subtask-card";
@@ -464,10 +468,27 @@ export function MessageList({
       t,
     ],
   );
+  const shouldVirtualize = renderedGroups.length >= VIRTUALIZATION_THRESHOLD;
+  // chat-render-jank-on-open Fix 2 — split the one-shot historical mount on the
+  // NON-virtualized path (virtualized already window-mounts). Only when the
+  // thread is not streaming and the list is heavy enough to be worth splitting.
+  // The hook grows `visibleCount` from the initial slice toward the full count
+  // across idle frames; see progressive-mount.ts. Called unconditionally
+  // (before the loading-skeleton early return) to respect the Rules of Hooks;
+  // it is a no-op when disabled.
+  const progressiveEnabled =
+    !shouldVirtualize && !isLoading && renderedGroups.length >= PROGRESSIVE_MOUNT_MIN_TOTAL;
+  const visibleCount = useProgressiveMount({
+    total: renderedGroups.length,
+    enabled: progressiveEnabled,
+  });
   if (thread.isThreadLoading && messages.length === 0) {
     return <MessageListSkeleton />;
   }
-  const shouldVirtualize = renderedGroups.length >= VIRTUALIZATION_THRESHOLD;
+  const visibleGroups =
+    progressiveEnabled && visibleCount < renderedGroups.length
+      ? renderedGroups.slice(renderedGroups.length - visibleCount)
+      : renderedGroups;
   const trailing = (
     <>
       {thread.isLoading && <StreamingIndicator className="my-4" />}
@@ -490,7 +511,7 @@ export function MessageList({
           </VirtualizedGroups>
         ) : (
           <>
-            {renderedGroups}
+            {visibleGroups}
             {trailing}
           </>
         )}

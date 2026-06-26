@@ -263,7 +263,17 @@ function ReasoningPanel({
   reasoningContent: string;
 }) {
   const { t } = useI18n();
-  const [showThinking, setShowThinking] = useState(true);
+  // chat-render-jank-on-open fix (Fix 3, 2026-06-26): historical messages (a
+  // thread that is NOT streaming) default COLLAPSED. Most researchers read the
+  // conclusion, not the lead's reasoning trace; mounting every historical
+  // reasoning block expanded means N Radix Collapsible `useLayoutEffect`
+  // synchronous height measurements on thread open — a confirmed 2.5% slice of
+  // the open-jank CPU profile (CollapsibleContentImpl.useLayoutEffect).
+  // Collapsing on mount skips that measurement entirely; the user can still
+  // click to expand any block. The in-flight message keeps its streaming
+  // behavior: when the thread IS streaming we default open so the live
+  // thinking trace stays visible (matches MessageGroup's streaming-open rule).
+  const [showThinking, setShowThinking] = useState(isStreaming);
 
   return (
     <ChainOfThought
