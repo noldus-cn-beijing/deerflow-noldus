@@ -59,13 +59,12 @@ export default function GalleryPage() {
 
   // spec §三 现象3：画廊「返回对话」用 router.back() 回到对话页既有实例（不重挂载、
   // 不丢滚动位置）——page.tsx 自己注释警告过 router.push 会重挂载几百消息致卡顿。
-  // 深链直进画廊（无 history）时 fallback 到 push。
+  // 「返回对话」直接 push 到本 thread 的对话路由。
+  // 不用 router.back()：对话页用 history.replaceState 把 /chats/new 改写成 /chats/{realId}
+  // （见 page.tsx onStart 注释），history 栈被改写后 back() 可能弹到 /new 或上一个 thread，
+  // 导致「返回画廊后落到新/别的 thread」（用户实测）。threadId 是确定的，直接 push 它最稳。
   function handleBack() {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      router.push(`/workspace/chats/${threadId}`);
-    }
+    router.push(`/workspace/chats/${threadId}`);
   }
 
   return (

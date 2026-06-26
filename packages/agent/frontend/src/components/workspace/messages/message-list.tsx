@@ -15,7 +15,6 @@ import {
   findToolCallArgs,
   groupMessages,
   hasContent,
-  hasPresentFiles,
   hasReasoning,
   hasToolCalls,
   stripClarificationOptionsFromContent,
@@ -106,14 +105,6 @@ export function MessageList({
     wasLoadingRef.current = isLoading;
   }, [isLoading]);
   const chartsStatus = thread.values.charts_status;
-  // 对话流是否已有 present-files 组（lead 显式 present 了产物 → InlineArtifactSummary 已就地
-  // 内嵌）。若 lead 画完图只用文字汇报、从不调 present_files，则没有这种组 → 对话流零图廊入口
-  // （用户「图库在哪」）。这时在对话流末尾兜底渲染一个 InlineArtifactSummary：它自己走磁盘端点
-  // 取图，磁盘有图/报告就显示入口、空则返回 null（零副作用）。两处不并存（有 present 组就不兜底）。
-  const hasPresentFilesGroup = useMemo(
-    () => deferredMessages.some(hasPresentFiles),
-    [deferredMessages],
-  );
   const renderedGroups = useMemo(
     () =>
       groupMessages(deferredMessages, (group) => {
@@ -213,11 +204,11 @@ export function MessageList({
           }
           return null;
         } else if (group.type === "assistant:present-files") {
-          // inline 代表图 + 入口（spec §3.2）：图元数据走磁盘端点 /artifacts/charts
-          // （InlineArtifactSummary 内部 useChartArtifacts），不再吃 thread.values.artifacts
-          // （state 冒泡恒空，chart-maker artifacts 不上行到 lead，见 spec §一）。
-          // artifacts 仍作回退传下去（磁盘空/失败时至少显示 lead present 的代表图）。
-          const hasPresentFileMessage = group.messages.some(hasPresentFiles);
+          // present-files 组只渲染它自己的文字内容；产物摘要（图廊入口 + 报告卡）统一由
+          // 对话流末尾的单个 InlineArtifactSummary（trailing）承载——见下方 trailing 注释。
+          // 早先把摘要挂在每个 present-files 组上，导致「画图后有图廊、写报告(又一个 present
+          // 组)后图廊入口闪烁/消失」（present 组增减 → 挂载点漂移）。改成末尾单点后，摘要只依赖
+          // 磁盘真相，run 之间稳定不漂移。
           return (
             <div className="w-full" key={group.id} data-message-id={group.id}>
               {group.messages[0] && hasContent(group.messages[0]) && (
@@ -226,14 +217,6 @@ export function MessageList({
                   isLoading={isLoading}
                   className="mb-4"
                   threadId={threadId}
-                />
-              )}
-              {hasPresentFileMessage && (
-                <InlineArtifactSummary
-                  threadId={threadId}
-                  artifacts={artifacts}
-                  chartsStatus={chartsStatus}
-                  refetchSignal={artifactsRefetchSignal}
                 />
               )}
             </div>
@@ -483,18 +466,16 @@ export function MessageList({
     // remaining closed-over values that affect the rendered output are listed
     // explicitly so the cache invalidates when they change (not every render).
     // `updateSubtask`/`t` come from context hooks; `threadId`/`messageRunIds`
-    // /`onSelectClarificationOption` are props. `isLoading`/`artifacts`/
-    // `chartsStatus` are read off `thread` into stable locals above.
+    // /`onSelectClarificationOption` are props. `isLoading` is read off `thread`.
+    // (artifacts/chartsStatus/artifactsRefetchSignal no longer used inside —
+    // moved to the single trailing InlineArtifactSummary.)
     [
       deferredMessages,
       isLoading,
-      artifacts,
-      chartsStatus,
       threadId,
       messageRunIds,
       updateSubtask,
       onSelectClarificationOption,
-      artifactsRefetchSignal,
       t,
     ],
   );
@@ -522,11 +503,12 @@ export function MessageList({
   const trailing = (
     <>
       {thread.isLoading && <StreamingIndicator className="my-4" />}
-      {/* 图廊/报告入口兜底（修「图库在哪」）：lead 画完图未调 present_files 时对话流没有
-          present-files 组 → 无内嵌入口。这里在流末尾补一个 InlineArtifactSummary，它自走磁盘
-          端点取图，磁盘有图/报告即显示「打开画廊/下载/报告卡」，空则返回 null。仅在无 present
-          组、非加载中、非新会话时渲染，避免与就地入口重复或在流式中途闪现。 */}
-      {!hasPresentFilesGroup && !isLoading && messages.length > 0 && (
+      {/* 产物摘要单点：对话流末尾渲染唯一一个 InlineArtifactSummary，承载图廊入口 + 报告卡。
+          它自走磁盘端点 /artifacts/charts 取图（磁盘=真相），有图/报告即显示「打开画廊/下载
+          ZIP/报告卡」、空则返回 null（零副作用）。放末尾（非挂在 present-files 组上）保证 run
+          之间不漂移、不闪烁——画图后、写报告后都稳定在同一处。仅非加载中 + 有消息时渲染，
+          避免流式中途闪现与新会话空态。 */}
+      {!isLoading && messages.length > 0 && (
         <InlineArtifactSummary
           className="mx-auto w-full max-w-(--container-width-md)"
           threadId={threadId}
