@@ -16,6 +16,7 @@ import {
   MessageList,
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
   MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM,
+  INPUT_BOX_PADDING_BREATHING_ROOM_PX,
 } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
 import { ThreadTitle } from "@/components/workspace/thread-title";
@@ -30,11 +31,6 @@ import { useThreadStream } from "@/core/threads/hooks";
 import { textOfMessage } from "@/core/threads/utils";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
-
-// Breathing room added on top of the measured input-box height so the last
-// message scrolls fully past the floating input box's top edge instead of
-// sitting flush against it (spec §2.2: +1.5rem).
-const INPUT_BOX_PADDING_BREATHING_ROOM_PX = 24;
 
 export default function ChatPage() {
   const { t } = useI18n();

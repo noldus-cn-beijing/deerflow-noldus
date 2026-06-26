@@ -46,6 +46,13 @@ import {
 
 export const MESSAGE_LIST_DEFAULT_PADDING_BOTTOM = 160;
 export const MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM = 80;
+// Breathing room added on top of the measured input-box height so the last
+// message scrolls fully past the floating input box's top edge instead of
+// sitting flush against it (spec §2.2: +1.5rem). Shared by both chat routes
+// (chats/[thread_id] + agents/[agent_name]/chats/[thread_id]) so the dynamic
+// paddingBottom computation can't drift between them — see catastrophic-
+// forgetting self-check in the input-box-overlap spec.
+export const INPUT_BOX_PADDING_BREATHING_ROOM_PX = 24;
 
 export function MessageList({
   className,

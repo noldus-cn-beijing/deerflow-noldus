@@ -16,6 +16,7 @@ import {
   MessageList,
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
   MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM,
+  INPUT_BOX_PADDING_BREATHING_ROOM_PX,
 } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
 import { ThreadTitle } from "@/components/workspace/thread-title";
@@ -35,6 +36,7 @@ import { cn } from "@/lib/utils";
 export default function AgentChatPage() {
   const { t } = useI18n();
   const [showFollowups, setShowFollowups] = useState(false);
+  const [inputBoxHeight, setInputBoxHeight] = useState<number>(0);
   const router = useRouter();
 
   const { agent_name } = useParams<{
@@ -108,10 +110,22 @@ export default function AgentChatPage() {
     await thread.stop();
   }, [thread]);
 
-  const messageListPaddingBottom = showFollowups
-    ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
-      MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
-    : undefined;
+  const handleInputBoxHeightChange = useCallback((heightPx: number) => {
+    setInputBoxHeight(heightPx);
+  }, []);
+
+  // Reserve bottom space in the message stream equal to the floating input
+  // box's measured height plus breathing room, so the last message /
+  // decision-card options are never covered. Before the first measurement
+  // lands, fall back to the static default so a short conversation renders
+  // without a flash of overlap. Mirrors the standard chats route (spec §一:
+  // the #219 fix was missing here — catastrophic-forgetting across the two
+  // chat routes). When followups are visible, add the dedicated extra.
+  const messageListPaddingBottom =
+    (inputBoxHeight > 0
+      ? inputBoxHeight + INPUT_BOX_PADDING_BREATHING_ROOM_PX
+      : MESSAGE_LIST_DEFAULT_PADDING_BOTTOM) +
+    (showFollowups ? MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM : 0);
 
   return (
     <ThreadContext.Provider value={{ thread }}>
@@ -221,6 +235,7 @@ export default function AgentChatPage() {
                   disabled={env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true"}
                   onContextChange={(context) => setSettings("context", context)}
                   onFollowupsVisibilityChange={setShowFollowups}
+                  onHeightChange={handleInputBoxHeightChange}
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                 />
