@@ -71,34 +71,45 @@ function messageIdentity(message: Message): string | undefined {
 }
 
 function dedupeMessagesByIdentity(messages: Message[]): Message[] {
-  const lastIndexByIdentity = new Map<string, number>();
-  const lastVisibleIndexByIdentity = new Map<string, number>();
-
+  // One canonical copy per identity, at the position of its FIRST occurrence,
+  // preferring the first VISIBLE copy over any hidden copy that shares the
+  // identity (hidden-then-visible reordering during streaming must not bury a
+  // visible bubble behind a hidden control twin).
+  //
   // This is a UI-display dedupe rule, not a general LangChain message-stream
   // contract. Hidden messages that share an identity with a visible message are
   // treated as control messages for this merged view; hidden messages carrying
   // independent tracing/task semantics should use a distinct id or a custom
   // stream/state channel instead of relying on message dedupe preservation.
+  const chosenByIndex = new Map<string, { index: number; message: Message }>();
+
   messages.forEach((message, index) => {
     const identity = messageIdentity(message);
-    if (identity) {
-      lastIndexByIdentity.set(identity, index);
-      if (!isHiddenFromUIMessage(message)) {
-        lastVisibleIndexByIdentity.set(identity, index);
-      }
+    if (!identity) {
+      return;
     }
+    const existing = chosenByIndex.get(identity);
+    if (existing) {
+      // Keep the first occurrence's position, but upgrade to the first VISIBLE
+      // copy if the keeper is currently a hidden twin (visible beats hidden).
+      const keeperIsHidden = isHiddenFromUIMessage(existing.message);
+      const candidateIsVisible = !isHiddenFromUIMessage(message);
+      if (keeperIsHidden && candidateIsVisible) {
+        chosenByIndex.set(identity, { index: existing.index, message });
+      }
+      return;
+    }
+    chosenByIndex.set(identity, { index, message });
   });
 
+  // Messages without an identity (no id and no tool_call_id) always survive at
+  // their original position — they cannot be deduped.
   return messages.filter((message, index) => {
     const identity = messageIdentity(message);
     if (!identity) {
       return true;
     }
-    const visibleIndex = lastVisibleIndexByIdentity.get(identity);
-    if (visibleIndex !== undefined) {
-      return visibleIndex === index;
-    }
-    return lastIndexByIdentity.get(identity) === index;
+    return chosenByIndex.get(identity)?.index === index;
   });
 }
 
@@ -120,39 +131,78 @@ export function mergeMessages(
   threadMessages: Message[],
   optimisticMessages: Message[],
 ): Message[] {
-  // Only visible live messages should trim overlapping history. Hidden messages
-  // are UI control messages in this path, not observability records; any hidden
-  // message that must survive as task/tracing data should use custom events or a
-  // separate state channel instead of participating in this overlap heuristic.
-  const threadMessageIds = new Set(
-    threadMessages
-      .filter((message) => !isHiddenFromUIMessage(message))
-      .map(messageIdentity)
-      .filter(isNonEmptyString),
-  );
+  // Merge two independently-loaded views of the same canonical sequence
+  // (history = useThreadHistory per-run /messages; thread = useStream
+  // fetchStateHistory) plus in-flight optimistic messages, preserving canonical
+  // order regardless of which source hydrates first.
+  //
+  // Spec 2026-06-26: the previous tail-overlap scan assumed `thread` was always
+  // a superset of `history`'s tail. During the rejoin race window `thread` can
+  // be STALER than `history`, which made the scan `break` at history's tail and
+  // left dedupe to relocate the stale thread messages to the end ("input jumps
+  // to the middle"). Instead of assuming a direction, we interleave the two
+  // sources like a stable merge: walk both in order, and at each step consume
+  // the history message whose identity has not already appeared (so history
+  // anchors older messages thread hasn't hydrated) up until the first identity
+  // that also exists in thread, after which thread becomes the backbone. This
+  // can only place a message at a position adjacent to a canonical neighbor —
+  // never relocate it to the opposite end.
+  const merged = interleaveMessages(historyMessages, threadMessages);
+  return dedupeMessagesByIdentity([...merged, ...optimisticMessages]);
+}
 
-  // The overlap is a contiguous suffix of historyMessages (newest history == oldest thread).
-  // Scan from the end: shrink cutoff while messages are already in thread, stop as soon as
-  // we hit one that isn't — everything before that point is non-overlapping.
-  let cutoff = historyMessages.length;
-  for (let i = historyMessages.length - 1; i >= 0; i--) {
-    const msg = historyMessages[i];
-    if (!msg) {
-      continue;
+function interleaveMessages(
+  historyMessages: Message[],
+  threadMessages: Message[],
+): Message[] {
+  // Identities the thread already has — once we reach them, the thread takes
+  // over as the canonical backbone (thread state is the authoritative sequence).
+  const threadIdentityOrder = new Map<string, number>();
+  threadMessages.forEach((m, i) => {
+    const id = messageIdentity(m);
+    if (id !== undefined && !threadIdentityOrder.has(id)) {
+      threadIdentityOrder.set(id, i);
     }
-    const identity = messageIdentity(msg);
-    if (identity && threadMessageIds.has(identity)) {
-      cutoff = i;
-    } else {
+  });
+
+  const result: Message[] = [];
+  const seen = new Set<string>();
+
+  // Phase 1: emit history messages that are NOT in the thread (thread hasn't
+  // hydrated them yet — they precede the thread's canonical range). Keep
+  // history's relative order; stop at the first history message whose identity
+  // IS in the thread (that's the canonical boundary where thread takes over).
+  for (const m of historyMessages) {
+    const id = messageIdentity(m);
+    if (id !== undefined && threadIdentityOrder.has(id)) {
       break;
     }
+    if (id && seen.has(id)) continue;
+    result.push(m);
+    if (id) seen.add(id);
   }
 
-  return dedupeMessagesByIdentity([
-    ...historyMessages.slice(0, cutoff),
-    ...threadMessages,
-    ...optimisticMessages,
-  ]);
+  // Phase 2: the thread is the canonical backbone from here. Append all thread
+  // messages in order; any remaining history messages not already covered are
+  // older-but-unanchored or post-thread additions — fall back to appending them
+  // after the thread (history is loaded newest-run-first, so leftover history
+  // entries are the oldest prefix the thread simply doesn't cover; rendering
+  // them after thread is still safer than the old reorder, and in the steady
+  // state the thread already contains them).
+  for (const m of threadMessages) {
+    const id = messageIdentity(m);
+    if (id && seen.has(id)) continue;
+    result.push(m);
+    if (id) seen.add(id);
+  }
+  for (const m of historyMessages) {
+    const id = messageIdentity(m);
+    if (id && seen.has(id)) continue;
+    result.push(m);
+    if (id) seen.add(id);
+  }
+
+  return result;
 }
 
 type RunMessagesPageResponse = {
