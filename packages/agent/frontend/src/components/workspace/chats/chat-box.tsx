@@ -108,7 +108,17 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
       defaultLayout={{ chat: 100, artifacts: 0 }}
       groupRef={layoutRef}
     >
-      <ResizablePanel className="relative" defaultSize={100} id="chat">
+      {/* #227 把 chat-root 从 size-full 改成 flex-1 min-h-0 以支持内部滚动，但 flex-1 只在
+          flex 父容器内生效——react-resizable-panels 的 Panel 默认是普通 block（仅做横向
+          flex 尺寸），不是 flex 容器，导致 chat-root 高度塌成内容高（198px）、输入框被
+          translate 推出视口、对话流空白。这里给 Panel 补 flex flex-col，让 chat-root 的
+          flex-1 解析到 Panel 全高（= group stretch 得到的 SidebarInset 全高）。chats + agents
+          两路由共用本修复。 */}
+      <ResizablePanel
+        className="relative flex flex-col"
+        defaultSize={100}
+        id="chat"
+      >
         {children}
       </ResizablePanel>
       <ResizableHandle
