@@ -84,6 +84,14 @@ class FileMemoryStorage(MemoryStorage):
     def _get_memory_file_path(self, agent_name: str | None = None, *, user_id: str | None = None) -> Path:
         """Get the path to the memory file."""
         if user_id is not None:
+            # Normalize at the storage boundary: the ``user_id: str | None``
+            # contract is enforced here, not at every caller. ``current_user.id``
+            # is a UUID object at runtime (the ``CurrentUser`` protocol declares
+            # ``id: str`` but the concrete ``User.id`` is a UUID); without this
+            # coercion the downstream ``_validate_user_id`` runs ``re.match`` on
+            # a UUID and raises ``TypeError``. Coerce once so any caller that
+            # forgets ``str()`` cannot reintroduce the crash.
+            user_id = str(user_id)
             if agent_name is not None:
                 self._validate_agent_name(agent_name)
                 return get_paths().user_agent_memory_file(user_id, agent_name)

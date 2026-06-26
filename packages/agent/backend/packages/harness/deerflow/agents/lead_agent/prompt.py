@@ -835,7 +835,14 @@ def _get_memory_context(agent_name: str | None = None, *, app_config: AppConfig 
             return ""
 
         current_user = get_current_user()
-        user_id = current_user.id if current_user is not None else None
+        # ``current_user.id`` is a UUID object at runtime (the ``CurrentUser``
+        # protocol types it as ``str`` but the concrete ``User.id`` is a UUID).
+        # The memory storage layer requires ``str`` for path validation
+        # (``_validate_user_id`` runs ``re.match`` on it); passing the raw UUID
+        # raises ``TypeError`` and the broad ``except`` below silently degrades
+        # the whole memory context to "" — the lead agent then runs with no
+        # memory at all. Coerce here so the contract is honoured.
+        user_id = str(current_user.id) if current_user is not None else None
         memory_data = get_memory_data(agent_name, user_id=user_id)
         memory_content = format_memory_for_injection(
             memory_data,
