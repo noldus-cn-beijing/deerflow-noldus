@@ -7,6 +7,7 @@ import {
   ConversationContent,
 } from "@/components/ai-elements/conversation";
 import { useI18n } from "@/core/i18n/hooks";
+import { answeredOptionIndex } from "@/core/messages/clarification-state";
 import {
   extractContentFromMessage,
   extractQualityWarnings,
@@ -27,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { InlineArtifactSummary } from "../artifacts/inline-artifact-summary";
 import { StreamingIndicator } from "../streaming-indicator";
 
-import { ClarificationOptions } from "./clarification-options";
+import { DecisionCard } from "./decision-card";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
@@ -133,21 +134,48 @@ export function MessageList({
                 options = [rawOptions];
               }
             }
+            // spec#5 决策卡：clarification_type 驱动 accent 色/标题强度；context 是
+            // 决策依据（「为什么问」）；answeredIndex 已答时高亮选中项（闭环反馈）。
+            // 类型/context 均从 findToolCallArgs 取（message-list.tsx:90 既有 pattern）。
+            const clarificationType =
+              typeof toolArgs?.clarification_type === "string"
+                ? toolArgs.clarification_type
+                : undefined;
+            const contextText =
+              typeof toolArgs?.context === "string"
+                ? toolArgs.context
+                : undefined;
+            const answeredIndex = answeredOptionIndex(
+              deferredMessages,
+              toolCallId,
+              options,
+            );
             return (
               <div key={group.id} data-message-id={group.id}>
-                <MarkdownContent
-                  content={stripClarificationOptionsFromContent(
-                    extractContentFromMessage(message),
-                    options ?? [],
-                  )}
-                  isLoading={isLoading}
-                  threadId={threadId}
-                />
-                {onSelectClarificationOption && (
-                  <ClarificationOptions
+                {onSelectClarificationOption ? (
+                  <DecisionCard
+                    question={stripClarificationOptionsFromContent(
+                      extractContentFromMessage(message),
+                      options ?? [],
+                    )}
+                    context={contextText}
+                    clarificationType={clarificationType}
                     options={options}
+                    answeredIndex={answeredIndex}
                     onSelect={onSelectClarificationOption}
-                    disabled={isLoading}
+                    isLoading={isLoading}
+                    threadId={threadId}
+                  />
+                ) : (
+                  // No select handler (e.g. read-only / mock) — still render the
+                  // question as markdown so the pause is visible without buttons.
+                  <MarkdownContent
+                    content={stripClarificationOptionsFromContent(
+                      extractContentFromMessage(message),
+                      options ?? [],
+                    )}
+                    isLoading={isLoading}
+                    threadId={threadId}
                   />
                 )}
               </div>

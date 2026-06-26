@@ -282,6 +282,20 @@ export interface Translations {
   clarification: {
     chooseOption: string;
     orTypeCustom: string;
+    /** 决策卡标题前缀图标 + 强信号「分析已暂停」(spec#5 §3.1)。 */
+    cardPausedTitle: string;
+    /** risk_confirmation 专用更强标题 (spec#5 §3.5)。 */
+    cardRiskTitle: string;
+    /** 决策依据块前缀「为什么问：」(spec#5 §3.1，服务 feedback_identify_zone_info_not_persisted)。 */
+    contextPrefix: string;
+    /** 已答态闭环徽章「已确认」(spec#5 §3.1)。 */
+    answeredBadge: string;
+    /** 等待决策时输入框 placeholder (spec#5 §3.4)。 */
+    awaitingPlaceholder: string;
+    /** 等待决策时输入框旁轻提示 (spec#5 §3.4，可选)。 */
+    awaitingHint: string;
+    /** 选项键盘可达 a11y 提示「按数字键选择」(spec#5 §3.2)。 */
+    keyboardHint: string;
   };
 
   // Run Trace（运行轨迹侧抽屉 —— spec 2026-06-24-frontend-phase0-2）

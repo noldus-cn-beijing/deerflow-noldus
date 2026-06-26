@@ -346,6 +346,13 @@ export const zhCN: Translations = {
   clarification: {
     chooseOption: "选择一个选项",
     orTypeCustom: "或在下方输入框自定义回复",
+    cardPausedTitle: "分析已暂停 · 等待你的确认",
+    cardRiskTitle: "需要你确认风险",
+    contextPrefix: "为什么问",
+    answeredBadge: "已确认",
+    awaitingPlaceholder: "回答上面的问题，或直接输入…",
+    awaitingHint: "等待你的确认",
+    keyboardHint: "按数字键可直接选择",
   },
 
   // Run Trace（运行轨迹侧抽屉）

@@ -50,6 +50,7 @@ import {
 import { fetch as fetchWithAuth } from "@/core/api/fetcher";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
+import { lastClarificationIsAwaiting } from "@/core/messages/clarification-state";
 import { useModels } from "@/core/models/hooks";
 import type { AgentThreadContext } from "@/core/threads";
 import { textOfMessage } from "@/core/threads/utils";
@@ -180,6 +181,14 @@ export function InputBox({
     () => selectedModel?.supports_thinking ?? false,
     [selectedModel],
   );
+
+  // spec#5 §3.4 输入框态联动：流非 streaming 且消息流止于一个未答的 ask_clarification
+  // 时，输入框 placeholder 切换为「回答上面的问题…」，给研究员「agent 在等你」的强信号。
+  // 信号纯前端从消息流派生（lastClarificationIsAwaiting），不改后端（spec §3.4）。
+  const awaitingClarification =
+    status !== "streaming" &&
+    !isNewThread &&
+    lastClarificationIsAwaiting(thread.messages);
 
   const handleModelSelect = useCallback(
     (model_name: string) => {
@@ -463,7 +472,11 @@ export function InputBox({
           <PromptInputTextarea
             className={cn("size-full min-h-14 py-4 text-[15px] leading-6")}
             disabled={disabled}
-            placeholder={t.inputBox.placeholder}
+            placeholder={
+              awaitingClarification
+                ? t.clarification.awaitingPlaceholder
+                : t.inputBox.placeholder
+            }
             autoFocus={autoFocus}
             defaultValue={initialValue}
           />

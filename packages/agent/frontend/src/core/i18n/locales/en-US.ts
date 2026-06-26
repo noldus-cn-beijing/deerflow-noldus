@@ -358,6 +358,13 @@ export const enUS: Translations = {
   clarification: {
     chooseOption: "Choose an option",
     orTypeCustom: "Or type a custom reply below",
+    cardPausedTitle: "Analysis paused · awaiting your confirmation",
+    cardRiskTitle: "Please confirm a risk",
+    contextPrefix: "Why we’re asking",
+    answeredBadge: "Confirmed",
+    awaitingPlaceholder: "Answer the question above, or just type below…",
+    awaitingHint: "Awaiting your confirmation",
+    keyboardHint: "Press a number key to choose",
   },
 
   // Run Trace (run trace side drawer)
