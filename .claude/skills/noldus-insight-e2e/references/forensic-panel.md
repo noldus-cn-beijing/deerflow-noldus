@@ -73,6 +73,48 @@ and the handoff still legitimately says `completed`. See memory
   "token expired mid-run, rerun" (the <1h ensure-login threshold makes this
   near-impossible, but it's the one silent failure mode worth catching).
 
+## Panel C — frontend perf (longtask / interaction timing)
+
+Reads `<run dir>/perf.json`, written by `run-e2e.cjs` AFTER the pipeline
+reaches terminal. The driver runs a deterministic set of known-janky
+interactions (spec B.2) and records, per action:
+
+- `longtask_max_ms` / `longtask_total_ms` / `longtask_count` — main-thread
+  blocks >50ms, harvested from an injected `PerformanceObserver('longtask')`.
+- `interaction_ms[]` — click → render-stable (3 stable rAF-pairs), bounded 5s.
+
+Fixed actions: `switch_back_thread` (navigate away then back to the thread),
+`open_gallery` (click the first gallery/artifact affordance — skipped if none).
+
+**Thresholds** (mirror `lib.js defaultThresholds` exactly — single source of
+truth; change both or neither):
+
+| check | threshold | meaning |
+|---|---|---|
+| `longtask_max_ms` | 200 | any single main-thread block during the action |
+| `longtask_total_ms` | 800 | sum of all longtasks during the action |
+| `interaction_p95_ms` | 300 | click → render-stable, p95 of the samples |
+
+These are the INITIAL prod baseline — they are NOT picked from thin air. To
+re-baseline after a clean prod run, set `E2E_PERF_THRESHOLDS_JSON` (a JSON
+object overriding any subset, e.g. `'{"longtask_max_ms":150}'`).
+
+**Verdict logic**:
+- `perf.json.build != "prod"` → `⏭️ PERF: skipped (dev build)` — raw trace is
+  still recorded for reference, but NO red/green. dev = Turbopack + HMR +
+  sourcemap = noise. Never treat a green dev run as evidence (spec B.0).
+- prod + all checks ≤ threshold → `✅ 绿`.
+- prod + any check > threshold → `🔴 退化告警`. This is the signal the panel
+  exists to surface: a known-janky interaction regressed. The whole point is
+  `代码有修复 ≠ 现象消除` (memory) — a prior dogfood's "切回卡顿" was caught
+  only by a throwaway manual CPU-profile script; this panel makes it a
+  regression guard. When it goes red, treat it as real and investigate.
+
+**Honest coverage note** (spec B.1: implement-and-label, don't claim what
+wasn't measured): only P0 dimensions (longtask + interaction timing) are
+captured. FPS / Web Vitals (INP/CLS/LCP) / pixel-diff visual regression are P1/P2
+and NOT implemented — do not report them as covered.
+
 ## When a panel shows a regression
 
 The skill does NOT auto-run subagent reproduction. If Panel A shows degraded

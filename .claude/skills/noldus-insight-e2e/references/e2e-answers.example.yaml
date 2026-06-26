@@ -1,0 +1,44 @@
+# e2e-answers.yaml — sample HITL answer prefill for noldus-insight-e2e.
+#
+# Copy this beside your dataset as `e2e-answers.yaml` (or point E2E_ANSWERS at
+# it). The driver matches each HITL question against `answers[].match` (ANY
+# keyword in the list hits — keyword OR, first match wins) and replies with
+# that entry's `answer`. Keywords are matched as regex against the question
+# text, so "哪.{0,4}列" works (note: commas inside a regex quantifier are fine
+# — quote the keyword).
+#
+# Unmatched questions FAIL LOUD by default (on_unmatched: fail): the driver
+# writes unmatched_clarification.json with the full question + the answers you
+# had, and exits non-zero. It never guesses a paradigm-specific answer. To keep
+# the old generic-确认 behavior for a dataset where a generic confirm suffices,
+# set on_unmatched: generic (or just omit the file entirely).
+#
+# Match by keyword, NOT by question order — the agent's wording varies run to
+# run, so ordering on position is brittle and mis-aligns if one question is
+# skipped.
+
+answers:
+  # --- paradigm / template identification ---
+  - match: ["模板", "PlusMaze", "范式", "高架十字", "EPM"]
+    answer: "这是 EPM 高架十字迷宫，模板选 PlusMaze（划了区的变体，open/closed 是区归属列）"
+
+  - match: ["OpenField", "旷场", "OFT"]
+    answer: "这是 OFT 旷场实验，模板选 OpenFieldRectangle-AllZones"
+
+  - match: ["ZeroMaze", "零迷宫", "EZM", "o迷宫"]
+    answer: "这是零迷宫 EZM，模板选 ZeroMaze-AllZones，open/closed 同 EPM"
+
+  # --- column semantics (the OFT center-zone question — must ASK, not guess) ---
+  # Replace zone_center / zone_border with the ACTUAL column names in YOUR file.
+  - match: ["中心区", "边缘区", "哪.{0,4}列", "分析区", "中心是哪"]
+    answer: "中心区对应 zone_center 列，边缘区对应 zone_border 列"
+
+  # --- grouping ---
+  - match: ["分组", "Treatment", "对照", "处理", "control", "drug"]
+    answer: "按 Treatment 列分组，control 为对照组，其余为处理组"
+
+  # --- generic confirm fallback (only used if on_unmatched: generic) ---
+  - match: ["确认", "是否", "继续"]
+    answer: "确认，按上述执行"
+
+on_unmatched: fail   # fail (default, recommended) | generic (legacy 确认 fallback)

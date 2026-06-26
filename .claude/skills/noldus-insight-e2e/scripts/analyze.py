@@ -154,6 +154,80 @@ if not rw:
                     break
         except Exception: pass
 
+# ---- Panel C — perf (task B) ------------------------------------------------
+# Reads $E2E_OUT/perf.json written by run-e2e.cjs. Thresholds MIRROR lib.js
+# defaultThresholds exactly (single source of truth lives in lib.js; if you
+# change one, change both). Re-baseline via E2E_PERF_THRESHOLDS_JSON (a JSON
+# object overriding any subset) AFTER a clean prod run — never pick from thin
+# air (spec B.3). Dev builds are SKIPPED, never red/green (spec B.0).
+PERF_THRESH = {"longtask_max_ms": 200, "longtask_total_ms": 800, "interaction_p95_ms": 300}
+_thresh_env = os.environ.get("E2E_PERF_THRESHOLDS_JSON", "")
+if _thresh_env:
+    try:
+        PERF_THRESH.update({k: float(v) for k, v in json.loads(_thresh_env).items()})
+    except Exception as e:
+        p(f"  ⚠️ E2E_PERF_THRESHOLDS_JSON parse failed ({e}), using defaults")
+
+p("")
+p("=" * 70)
+p("Panel C — 前端性能 (longtask / 交互耗时, 仅 prod 出红绿)")
+p("=" * 70)
+perf_path = Path(OUT) / "perf.json" if OUT else None
+perf = None
+if perf_path and perf_path.exists():
+    try: perf = json.loads(perf_path.read_text(encoding="utf-8"))
+    except Exception as e: p(f"  ⚠️ perf.json 解析失败: {e}")
+
+def _pct(arr, q):
+    arr = sorted(x for x in arr if isinstance(x, (int, float)))
+    if not arr: return None
+    idx = (q / 100.0) * (len(arr) - 1)
+    lo, hi = int(idx), min(int(idx) + 1, len(arr) - 1)
+    if lo == hi: return arr[lo]
+    return arr[lo] + (arr[hi] - arr[lo]) * (idx - lo)
+
+if perf is None:
+    p("  ⏭️ PERF: skipped (perf.json 不存在 — 未跑性能段或 E2E_PERF=0)")
+elif str(perf.get("build", "")).lower() != "prod":
+    p(f"  ⏭️ PERF: skipped ({perf.get('build', '?')} build — 仅 prod build 可信, 不出红绿)")
+    p(f"     (dev = Turbopack + HMR + sourcemap, 数据是噪声; 指定 E2E_PERF_BASE_URL 指向 prod 再跑)")
+    if perf.get("actions"):
+        p(f"     原始 trace 仍记录了 {len(perf['actions'])} 个动作 (仅参考, 不判定):")
+        for a in perf["actions"]:
+            p(f"       {a.get('name')}: longtask_max={a.get('longtask_max_ms')} count={a.get('longtask_count')}")
+else:
+    actions = perf.get("actions") or []
+    if not actions:
+        p("  ⏭️ PERF: prod build 但无动作采集 (perf.actions 为空)")
+    else:
+        any_red = False
+        for a in actions:
+            if a.get("error") or a.get("skipped"):
+                p(f"  • {a.get('name')}: 跳过 ({a.get('error') or a.get('skipped')})")
+                continue
+            checks = []
+            lt_max = a.get("longtask_max_ms")
+            lt_tot = a.get("longtask_total_ms")
+            i_p95 = _pct(a.get("interaction_ms") or [], 95)
+            if isinstance(lt_max, (int, float)):
+                ok = lt_max <= PERF_THRESH["longtask_max_ms"]; any_red = any_red or not ok
+                checks.append(f"longtask_max={lt_max}ms{'≤' if ok else '>'}{int(PERF_THRESH['longtask_max_ms'])}{'✅' if ok else '🔴'}")
+            if isinstance(lt_tot, (int, float)):
+                ok = lt_tot <= PERF_THRESH["longtask_total_ms"]; any_red = any_red or not ok
+                checks.append(f"longtask_total={lt_tot}ms{'≤' if ok else '>'}{int(PERF_THRESH['longtask_total_ms'])}{'✅' if ok else '🔴'}")
+            if i_p95 is not None:
+                ok = i_p95 <= PERF_THRESH["interaction_p95_ms"]; any_red = any_red or not ok
+                checks.append(f"interaction_p95={int(i_p95)}ms{'≤' if ok else '>'}{int(PERF_THRESH['interaction_p95_ms'])}{'✅' if ok else '🔴'}")
+            verdict = "🔴 退化告警" if any(c.endswith("🔴") for c in checks) else "✅ 绿"
+            p(f"  • {a.get('name')}: {verdict}  " + " | ".join(checks))
+        p(f"  阈值: longtask_max<={int(PERF_THRESH['longtask_max_ms'])}ms, "
+          f"longtask_total<={int(PERF_THRESH['longtask_total_ms'])}ms, "
+          f"interaction_p95<={int(PERF_THRESH['interaction_p95_ms'])}ms")
+        if any_red:
+            p("  🔴 性能退化: 切回/图廊主线程阻塞超阈值 — 守「代码有修复≠现象消除」, 亲手验证它真能抓回归")
+        else:
+            p("  ✅ 所有 P0 指标在阈值内")
+
 out = "\n".join(lines)
 print(out)
 if OUT:

@@ -1,8 +1,11 @@
 {
   "name": "noldus-insight-e2e",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Playwright driver + forensic panel for noldus-insight end-to-end dogfood (project skill)",
+  "scripts": {
+    "test": "node scripts/lib.test.cjs && python3 scripts/analyze.test.py"
+  },
   "dependencies": {
     "playwright": "^1.61.0"
   }
