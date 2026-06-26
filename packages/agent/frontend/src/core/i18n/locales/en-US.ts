@@ -262,6 +262,9 @@ export const enUS: Translations = {
     failedRemedy: "Regenerate missing charts",
     noArtifacts: "No artifacts yet",
     representative: "Summary charts",
+    reportTitle: "Analysis report",
+    reportOpen: "View full report",
+    reportDownload: "Download report",
     backToChat: "Back to chat",
     galleryPlaceholder:
       "Full gallery (facets + virtualized grid + small multiples) lands in the next iteration. Use “Download all” to take every chart with you.",

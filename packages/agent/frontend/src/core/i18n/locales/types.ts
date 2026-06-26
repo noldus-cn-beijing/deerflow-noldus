@@ -195,6 +195,9 @@ export interface Translations {
     failedRemedy: string;
     noArtifacts: string;
     representative: string;
+    reportTitle: string;
+    reportOpen: string;
+    reportDownload: string;
     backToChat: string;
     galleryPlaceholder: string;
     aggregate: string;

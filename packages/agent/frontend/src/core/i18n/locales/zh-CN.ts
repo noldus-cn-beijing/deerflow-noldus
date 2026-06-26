@@ -251,6 +251,9 @@ export const zhCN: Translations = {
     failedRemedy: "补全未生成的图",
     noArtifacts: "暂无产物",
     representative: "汇总图",
+    reportTitle: "分析报告",
+    reportOpen: "查看完整报告",
+    reportDownload: "下载报告",
     backToChat: "返回对话",
     galleryPlaceholder:
       "完整画廊（分面筛选 + 虚拟化网格 + 小倍数对比）将在下一迭代上线。可先点「下载全部」带走所有图。",

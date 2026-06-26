@@ -1,10 +1,12 @@
 "use client";
 
-import { AlertTriangleIcon, DownloadIcon, ImagesIcon } from "lucide-react";
+import { AlertTriangleIcon, ChevronDownIcon, ChevronRightIcon, DownloadIcon, FileTextIcon, ImagesIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { MarkdownContent } from "@/components/workspace/messages/markdown-content";
+import { loadArtifactContent } from "@/core/artifacts/loader";
 import {
   isImageArtifact,
   normalizeArtifacts,
@@ -53,6 +55,10 @@ export function InlineArtifactSummary({
 
   const metas = useMemo(() => normalizeArtifacts(artifacts), [artifacts]);
   const images = useMemo(() => metas.filter(isImageArtifact), [metas]);
+  // spec §2 现象2：报告（report.md）lead present 为裸 string 进 state，画廊 isImageArtifact
+  // 过滤掉非图，研究员在对话流看不到。这里在产物摘要内显式拉出报告卡（spec §2 方案 A：
+  // 对话流内嵌报告，研究员最关心报告，应在主路径可见，不藏侧栏）。
+  const report = useMemo(() => metas.find(isReportArtifact) ?? null, [metas]);
   const representatives = useMemo(
     () => selectRepresentativeCharts(metas).slice(0, 6),
     [metas],
@@ -64,7 +70,7 @@ export function InlineArtifactSummary({
 
   const failedCount = (chartsStatus?.failed?.length ?? 0) + (chartsStatus?.remaining?.length ?? 0);
 
-  if (nTotal === 0 && failedCount === 0) {
+  if (nTotal === 0 && failedCount === 0 && !report) {
     return null;
   }
 
@@ -75,6 +81,9 @@ export function InlineArtifactSummary({
         className,
       )}
     >
+      {/* 报告卡（spec §2 方案 A：对话流内嵌报告，研究员最关心，主路径可见） */}
+      {report && <ReportCard meta={report} threadId={threadId} />}
+
       {/* 摘要行（tabular-nums，对齐数字） */}
       <div className="text-muted-foreground text-sm tabular-nums">
         {nAggregate > 0 && <span className="mr-3">{t.gallery.summaryCharts(nAggregate)}</span>}
@@ -174,5 +183,76 @@ function RepresentativeThumb({
         className="aspect-square w-full object-contain transition-transform duration-200 ease-[var(--ease-brand-out)] group-hover:scale-[1.03]"
       />
     </a>
+  );
+}
+
+/**
+ * 报告产物判定（spec §2）：report.md 是 lead present 的裸 string，normalize 成 {path}，
+ * kind 缺失。按 path 扩展名 .md 推 report（types.ts ArtifactKind 已含 "report"，但后端
+ * present 报告时不带 kind，故前端按扩展名补判，不依赖后端先改 present_file）。
+ */
+export function isReportArtifact(meta: ArtifactMeta): boolean {
+  if (meta.kind === "report") return true;
+  return meta.path.toLowerCase().endsWith(".md");
+}
+
+/**
+ * 报告卡（spec §2 方案 A）：对话流内嵌，点开懒拉 report.md 文本用 MarkdownContent 渲染。
+ * 复用 messages/markdown-content（含 citation 链接、图片路径规范化），与对话流渲染同构。
+ */
+function ReportCard({ meta, threadId }: { meta: ArtifactMeta; threadId: string }) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleToggle() {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && content === null) {
+      setLoading(true);
+      try {
+        const { content: text } = await loadArtifactContent({ filepath: meta.path, threadId });
+        setContent(text);
+      } catch {
+        setContent("");
+      } finally {
+        setLoading(false);
+      }
+    }
+  }
+
+  return (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="flex items-center gap-2">
+        <FileTextIcon className="size-4 shrink-0 text-primary" />
+        <span className="text-sm font-medium">{t.gallery.reportTitle}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" className="gap-1" onClick={handleToggle}>
+            {expanded ? <ChevronDownIcon className="size-4" /> : <ChevronRightIcon className="size-4" />}
+            {t.gallery.reportOpen}
+          </Button>
+          <Button type="button" variant="outline" size="sm" asChild>
+            <a
+              href={urlOfArtifact({ filepath: meta.path, threadId, download: true })}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <DownloadIcon className="size-4" />
+              {t.gallery.reportDownload}
+            </a>
+          </Button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="mt-3 border-t pt-3">
+          {loading ? (
+            <p className="text-muted-foreground text-sm">{t.gallery.reportOpen}…</p>
+          ) : (
+            <MarkdownContent content={content ?? ""} isLoading={loading} className="prose prose-sm max-w-none" threadId={threadId} />
+          )}
+        </div>
+      )}
+    </div>
   );
 }

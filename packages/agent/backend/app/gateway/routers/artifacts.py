@@ -1,7 +1,9 @@
+import json
 import logging
 import mimetypes
 import zipfile
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
@@ -189,6 +191,114 @@ async def export_data_table(thread_id: str, request: Request) -> Response:
         path=csv_path,
         media_type="text/csv",
         headers={"Content-Disposition": _build_content_disposition("attachment", csv_path.name)},
+    )
+
+
+# 画廊全量图端点（spec 2026-06-26-artifact-bubbling-report-display-gallery-return-fix §1.1）。
+# 磁盘是唯一真相：subagent→lead 边界会丢 state.artifacts（run_chart_plan 写进 subagent
+# state 不上行），但图都确定性落盘在 outputs/。画廊直接按磁盘 + plan_charts.json 取图，
+# 不再依赖 LangGraph state 冒泡。元数据 join 逻辑与 present_file_tool._build_artifact_meta
+# 同构（chart_type 推导、by_output 命中、thumb_path 退化），但走 resolve_thread_virtual_path
+# （需 thread_id，无 thread_data），端点侧自洽。
+_OUTPUTS_VIRTUAL_PREFIX = "/mnt/user-data/outputs"
+_PLAN_CHARTS_VIRTUAL = "/mnt/user-data/workspace/plan_charts.json"
+
+
+def _derive_chart_type(chart_id: str, script: str) -> str | None:
+    """从 chart_id/script 确定性推导 chart_type（与 present_file_tool 同构，SSOT 一处推导）。"""
+    text = f"{chart_id} {script}".lower()
+    for token in ("trajectory", "timeseries", "time_series", "box", "bar", "heatmap", "violin", "scatter", "line"):
+        if token in text:
+            return "timeseries" if token in ("timeseries", "time_series") else token
+    return None
+
+
+def _build_chart_by_output(plan: dict[str, Any] | None) -> tuple[dict[str, dict[str, Any]], str]:
+    """把 plan_charts.json 的 charts[] 折叠成 {output_virtual: entry}，便于按磁盘路径反查。
+
+    返回 (by_output, paradigm)。plan 为 None/缺 charts → ({}, "")。
+    """
+    if not plan:
+        return {}, ""
+    by_output: dict[str, dict[str, Any]] = {}
+    for entry in plan.get("charts", []) or []:
+        output = entry.get("output")
+        if isinstance(output, str) and output:
+            by_output[output] = entry
+    return by_output, plan.get("paradigm", "") or ""
+
+
+def _load_plan_charts(plan_real: Path) -> dict[str, Any] | None:
+    """读 plan_charts.json；缺失/坏掉 → None（plan 是增强项，不是前提）。"""
+    try:
+        if not plan_real.exists():
+            return None
+        return json.loads(plan_real.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — plan 坏掉不阻塞画廊按磁盘列图
+        return None
+
+
+def list_chart_artifacts(thread_id: str, request: Request | None) -> list[dict[str, Any]]:
+    """按磁盘 + plan_charts.json 构造画廊全量图的 ArtifactMeta[]。
+
+    磁盘真实文件即真相：outputs/ 下所有 .png（排除 .thumb.webp 缩略图）。
+    每张图路径命中 plan_charts.json.output → 升级成带 chart 元数据的 ArtifactMeta；
+    未命中（极少，如 plan 缺失/坏掉/多出孤儿图）→ 退裸 {path}，不丢图。
+    缩略图：同 stem 的 <stem>.thumb.webp 若存在则带 thumb_path，否则前端退化原图。
+    """
+    outputs_dir = resolve_thread_virtual_path(thread_id, _OUTPUTS_VIRTUAL_PREFIX)
+    if not outputs_dir.exists() or not outputs_dir.is_dir():
+        return []
+
+    plan_real = resolve_thread_virtual_path(thread_id, _PLAN_CHARTS_VIRTUAL)
+    plan = _load_plan_charts(plan_real)
+    by_output, paradigm = _build_chart_by_output(plan)
+
+    metas: list[dict[str, Any]] = []
+    outputs_virtual_prefix = _OUTPUTS_VIRTUAL_PREFIX
+    for png in sorted(p for p in outputs_dir.rglob("*") if p.is_file() and p.suffix.lower() == ".png"):
+        if png.name.endswith(_THUMB_SUFFIX):
+            continue
+        rel = png.relative_to(outputs_dir).as_posix()
+        virtual = f"{outputs_virtual_prefix}/{rel}"
+        entry = by_output.get(virtual)
+        if entry:
+            chart_id = str(entry.get("id") or entry.get("output") or "")
+            meta: dict[str, Any] = {
+                "path": virtual,
+                "kind": "chart",
+                "chart_id": chart_id or None,
+                "output_mode": entry.get("output_mode") or "per_subject",
+                "paradigm": paradigm or None,
+                "metric": entry.get("metric"),
+                "subject": entry.get("subject"),
+                "group": entry.get("group"),
+                "chart_type": _derive_chart_type(chart_id, str(entry.get("script") or "")),
+            }
+        else:
+            meta = {"path": virtual}
+        # 缩略图只读不重生成（chart 生成时 Pillow 已产出 <stem>.thumb.webp）。
+        thumb = png.with_name(f"{png.stem}.thumb.webp")
+        if thumb.exists():
+            meta["thumb_path"] = f"{outputs_virtual_prefix}/{thumb.relative_to(outputs_dir).as_posix()}"
+        metas.append(meta)
+    return metas
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/charts",
+    summary="List Chart Artifacts (disk + plan_charts.json)",
+    description="List all generated chart images for the thread, joined with plan_charts.json metadata. Disk is the source of truth (independent of LangGraph state bubbling).",
+)
+@require_permission("threads", "read", owner_check=True)
+async def get_chart_artifacts(thread_id: str, request: Request) -> Response:
+    """画廊全量图数据源（spec §1.1）：磁盘 .png + plan_charts.json 元数据 → ArtifactMeta[]。
+
+    注册在 catch-all ``/artifacts/{path:path}`` 之前，避免被吞。
+    """
+    return Response(
+        content=json.dumps(list_chart_artifacts(thread_id, request)),
+        media_type="application/json",
     )
 
 

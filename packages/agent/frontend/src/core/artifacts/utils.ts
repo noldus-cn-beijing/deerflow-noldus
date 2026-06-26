@@ -36,6 +36,17 @@ export function archiveArtifactsURL(threadId: string): string {
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/archive`;
 }
 
+/**
+ * 画廊全量图端点（spec 2026-06-26-artifact-bubbling §1.1）。
+ *
+ * 数据源 = 磁盘 + plan_charts.json，**不依赖 LangGraph state 冒泡**（subagent→lead
+ * 边界会丢 state.artifacts，实测 113 张只活 2 张）。画廊调此端点拉全部图，磁盘有几张
+ * 就显示几张。返回 ArtifactMeta[]（chart 元数据来自后端，前端不正则猜分类）。
+ */
+export function chartsArtifactsURL(threadId: string): string {
+  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/charts`;
+}
+
 /** 数据表 CSV 导出端点占位（spec §四 Step 5）。 */
 export function dataTableExportURL(threadId: string): string {
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/data-table`;
