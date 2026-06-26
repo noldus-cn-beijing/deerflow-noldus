@@ -13,7 +13,12 @@ const VIRTUALIZE_THRESHOLD = 50; // spec §3.1: virtualize the fan-out list beyo
 
 export interface FanOutListProps {
   items: Attachment[];
-  onRemove: (id: string) => void;
+  /**
+   * Remove handler. Required in the editable input-box context (store-backed);
+   * OPTIONAL in read-only contexts like the message-flow attachments, where a
+   * sent message's files cannot be removed. When omitted, no ✕ control renders.
+   */
+  onRemove?: (id: string) => void;
 }
 
 /**
@@ -102,7 +107,8 @@ export function FanOutList({ items, onRemove }: FanOutListProps) {
 interface FanOutRowProps {
   item: Attachment;
   index: number;
-  onRemove: (id: string) => void;
+  /** Optional: when omitted the row is read-only and renders no ✕ control. */
+  onRemove?: (id: string) => void;
   absolute?: string;
 }
 
@@ -128,7 +134,11 @@ function FanOutRow({ item, index, onRemove, absolute }: FanOutRowProps) {
       }}
     >
       <AttachmentChip
-        alwaysShowRemove
+        // In the fan-out the remove control is always visible when removal is
+        // possible (touch users have no hover). Read-only callers pass no
+        // onRemove → AttachmentChip renders no ✕ at all, so alwaysShowRemove
+        // is only meaningful when a handler exists.
+        alwaysShowRemove={Boolean(onRemove)}
         className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 w-full"
         data={item}
         onRemove={onRemove}

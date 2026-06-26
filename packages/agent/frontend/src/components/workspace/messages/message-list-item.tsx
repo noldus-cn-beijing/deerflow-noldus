@@ -1,5 +1,5 @@
 import type { Message } from "@langchain/langgraph-sdk";
-import { ChevronUp, FileIcon, LightbulbIcon, Loader2Icon } from "lucide-react";
+import { ChevronUp, LightbulbIcon } from "lucide-react";
 import { useParams } from "next/navigation";
 import { memo, useMemo, useState, type ImgHTMLAttributes } from "react";
 
@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { CopyButton } from "../copy-button";
 
 import { MarkdownContent } from "./markdown-content";
+import { MessageAttachments } from "./message-attachments";
 import { QualityWarningBanner } from "./quality-warning-banner";
 
 // Phase0#7 Step 2 — wrapped in React.memo so a parent re-render (e.g. an
@@ -173,7 +174,7 @@ function MessageContent_({
 
   const filesList =
     files && files.length > 0 && thread_id ? (
-      <RichFilesList files={files} threadId={thread_id} />
+      <MessageAttachments files={files} threadId={thread_id} />
     ) : null;
 
   const qualityWarnings = useMemo(
@@ -241,171 +242,6 @@ function MessageContent_({
         />
       )}
     </AIElementMessageContent>
-  );
-}
-
-/**
- * Get file extension and check helpers
- */
-const getFileExt = (filename: string) =>
-  filename.split(".").pop()?.toLowerCase() ?? "";
-
-const FILE_TYPE_MAP: Record<string, string> = {
-  json: "JSON",
-  csv: "CSV",
-  txt: "TXT",
-  md: "Markdown",
-  py: "Python",
-  js: "JavaScript",
-  ts: "TypeScript",
-  tsx: "TSX",
-  jsx: "JSX",
-  html: "HTML",
-  css: "CSS",
-  xml: "XML",
-  yaml: "YAML",
-  yml: "YAML",
-  pdf: "PDF",
-  png: "PNG",
-  jpg: "JPG",
-  jpeg: "JPEG",
-  gif: "GIF",
-  svg: "SVG",
-  zip: "ZIP",
-  tar: "TAR",
-  gz: "GZ",
-};
-
-const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
-
-function getFileTypeLabel(filename: string): string {
-  const ext = getFileExt(filename);
-  return FILE_TYPE_MAP[ext] ?? (ext.toUpperCase() || "FILE");
-}
-
-function isImageFile(filename: string): boolean {
-  return IMAGE_EXTENSIONS.includes(getFileExt(filename));
-}
-
-/**
- * Format bytes to human-readable size string
- */
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "—";
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
-}
-
-/**
- * List of files from additional_kwargs.files (with optional upload status)
- */
-function RichFilesList({
-  files,
-  threadId,
-}: {
-  files: FileInMessage[];
-  threadId: string;
-}) {
-  if (files.length === 0) return null;
-  return (
-    <div className="mb-2 flex flex-wrap justify-end gap-2">
-      {files.map((file, index) => (
-        <RichFileCard
-          key={`${file.filename}-${index}`}
-          file={file}
-          threadId={threadId}
-        />
-      ))}
-    </div>
-  );
-}
-
-/**
- * Single file card that handles FileInMessage (supports uploading state)
- */
-function RichFileCard({
-  file,
-  threadId,
-}: {
-  file: FileInMessage;
-  threadId: string;
-}) {
-  const { t } = useI18n();
-  const isUploading = file.status === "uploading";
-  const isImage = isImageFile(file.filename);
-
-  if (isUploading) {
-    return (
-      <div className="bg-background border-border/40 flex max-w-50 min-w-30 flex-col gap-1 rounded-lg border p-3 opacity-60 shadow-sm">
-        <div className="flex items-start gap-2">
-          <Loader2Icon className="text-muted-foreground mt-0.5 size-4 shrink-0 animate-spin" />
-          <span
-            className="text-foreground truncate text-sm font-medium"
-            title={file.filename}
-          >
-            {file.filename}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <Badge
-            variant="secondary"
-            className="rounded px-1.5 py-0.5 text-[10px] font-normal"
-          >
-            {getFileTypeLabel(file.filename)}
-          </Badge>
-          <span className="text-muted-foreground text-[10px]">
-            {t.uploads.uploading}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  if (!file.path) return null;
-
-  const fileUrl = resolveArtifactURL(file.path, threadId);
-
-  if (isImage) {
-    return (
-      <a
-        href={fileUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group border-border/40 relative block overflow-hidden rounded-lg border"
-      >
-        <img
-          src={fileUrl}
-          alt={file.filename}
-          className="h-32 w-auto max-w-60 object-cover transition-transform group-hover:scale-105"
-        />
-      </a>
-    );
-  }
-
-  return (
-    <div className="bg-background border-border/40 flex max-w-50 min-w-30 flex-col gap-1 rounded-lg border p-3 shadow-sm">
-      <div className="flex items-start gap-2">
-        <FileIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-        <span
-          className="text-foreground truncate text-sm font-medium"
-          title={file.filename}
-        >
-          {file.filename}
-        </span>
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <Badge
-          variant="secondary"
-          className="rounded px-1.5 py-0.5 text-[10px] font-normal"
-        >
-          {getFileTypeLabel(file.filename)}
-        </Badge>
-        <span className="text-muted-foreground text-[10px]">
-          {formatBytes(file.size)}
-        </span>
-      </div>
-    </div>
   );
 }
 
