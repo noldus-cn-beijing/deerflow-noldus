@@ -106,6 +106,14 @@ export function MessageList({
     wasLoadingRef.current = isLoading;
   }, [isLoading]);
   const chartsStatus = thread.values.charts_status;
+  // 对话流是否已有 present-files 组（lead 显式 present 了产物 → InlineArtifactSummary 已就地
+  // 内嵌）。若 lead 画完图只用文字汇报、从不调 present_files，则没有这种组 → 对话流零图廊入口
+  // （用户「图库在哪」）。这时在对话流末尾兜底渲染一个 InlineArtifactSummary：它自己走磁盘端点
+  // 取图，磁盘有图/报告就显示入口、空则返回 null（零副作用）。两处不并存（有 present 组就不兜底）。
+  const hasPresentFilesGroup = useMemo(
+    () => deferredMessages.some(hasPresentFiles),
+    [deferredMessages],
+  );
   const renderedGroups = useMemo(
     () =>
       groupMessages(deferredMessages, (group) => {
@@ -514,6 +522,19 @@ export function MessageList({
   const trailing = (
     <>
       {thread.isLoading && <StreamingIndicator className="my-4" />}
+      {/* 图廊/报告入口兜底（修「图库在哪」）：lead 画完图未调 present_files 时对话流没有
+          present-files 组 → 无内嵌入口。这里在流末尾补一个 InlineArtifactSummary，它自走磁盘
+          端点取图，磁盘有图/报告即显示「打开画廊/下载/报告卡」，空则返回 null。仅在无 present
+          组、非加载中、非新会话时渲染，避免与就地入口重复或在流式中途闪现。 */}
+      {!hasPresentFilesGroup && !isLoading && messages.length > 0 && (
+        <InlineArtifactSummary
+          className="mx-auto w-full max-w-(--container-width-md)"
+          threadId={threadId}
+          artifacts={artifacts}
+          chartsStatus={chartsStatus}
+          refetchSignal={artifactsRefetchSignal}
+        />
+      )}
       <div style={{ height: `${paddingBottom}px` }} />
     </>
   );
