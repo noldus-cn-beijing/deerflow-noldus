@@ -98,6 +98,7 @@ export function InputBox({
   initialValue,
   onContextChange,
   onFollowupsVisibilityChange,
+  onHeightChange,
   onSubmit,
   onStop,
   ...props
@@ -126,6 +127,15 @@ export function InputBox({
     },
   ) => void;
   onFollowupsVisibilityChange?: (visible: boolean) => void;
+  /**
+   * Fired whenever the input box's outer height changes (attachments
+   * stacking, multi-line expansion, followups toggling). The page uses it to
+   * reserve matching bottom space in the message stream so the floating input
+   * box never covers the last message / decision-card options. Also published
+   * as the `--input-box-height` CSS variable on the closest
+   * `[data-chat-root]` ancestor for any direct CSS consumer.
+   */
+  onHeightChange?: (heightPx: number) => void;
   onSubmit?: (message: PromptInputMessage) => void | Promise<void>;
   onStop?: () => void;
 }) {
@@ -146,6 +156,29 @@ export function InputBox({
   const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(
     null,
   );
+
+  // Measure the input box height and report it upward so the message stream
+  // can reserve matching bottom space (the input box floats absolute over the
+  // stream — without this, the last message / decision-card options get
+  // covered when the box grows: attachments stacking, multi-line expansion).
+  // Also published as `--input-box-height` on the closest [data-chat-root]
+  // ancestor for any direct CSS consumer.
+  useEffect(() => {
+    const el = promptRootRef.current;
+    if (!el) return;
+    const sync = () => {
+      const h = el.offsetHeight;
+      const root = el.closest("[data-chat-root]");
+      if (root instanceof HTMLElement) {
+        root.style.setProperty("--input-box-height", `${h}px`);
+      }
+      onHeightChange?.(h);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onHeightChange]);
 
   useEffect(() => {
     if (models.length === 0) {

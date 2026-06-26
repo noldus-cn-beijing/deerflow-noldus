@@ -31,9 +31,15 @@ import { textOfMessage } from "@/core/threads/utils";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
+// Breathing room added on top of the measured input-box height so the last
+// message scrolls fully past the floating input box's top edge instead of
+// sitting flush against it (spec §2.2: +1.5rem).
+const INPUT_BOX_PADDING_BREATHING_ROOM_PX = 24;
+
 export default function ChatPage() {
   const { t } = useI18n();
   const [showFollowups, setShowFollowups] = useState(false);
+  const [inputBoxHeight, setInputBoxHeight] = useState<number>(0);
   const { threadId, isNewThread, setIsNewThread, isMock } = useThreadChat();
   const [settings, setSettings] = useThreadSettings(threadId);
   const [mounted, setMounted] = useState(false);
@@ -109,15 +115,30 @@ export default function ChatPage() {
     await thread.stop();
   }, [thread]);
 
-  const messageListPaddingBottom = showFollowups
-    ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
-      MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
-    : undefined;
+  const handleInputBoxHeightChange = useCallback((heightPx: number) => {
+    setInputBoxHeight(heightPx);
+  }, []);
+
+  // Reserve bottom space in the message stream equal to the floating input
+  // box's measured height plus breathing room, so the last message /
+  // decision-card options are never covered. Before the first measurement
+  // lands (or before mount), fall back to the static default so a short
+  // conversation renders without a flash of overlap. When followups are
+  // visible (extra row of suggestion chips inside the stream's bottom), add
+  // the dedicated extra.
+  const messageListPaddingBottom =
+    (inputBoxHeight > 0
+      ? inputBoxHeight + INPUT_BOX_PADDING_BREATHING_ROOM_PX
+      : MESSAGE_LIST_DEFAULT_PADDING_BOTTOM) +
+    (showFollowups ? MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM : 0);
 
   return (
     <ThreadContext.Provider value={{ thread, isMock }}>
       <ChatBox threadId={threadId}>
-        <div className="relative flex size-full min-h-0 justify-between">
+        <div
+          className="relative flex size-full min-h-0 justify-between"
+          data-chat-root=""
+        >
           <header
             className={cn(
               "absolute top-0 right-0 left-0 z-30 flex h-14 shrink-0 items-center px-4",
@@ -207,6 +228,7 @@ export default function ChatPage() {
                       setSettings("context", context)
                     }
                     onFollowupsVisibilityChange={setShowFollowups}
+                    onHeightChange={handleInputBoxHeightChange}
                     onSubmit={handleSubmit}
                     onStop={handleStop}
                   />
