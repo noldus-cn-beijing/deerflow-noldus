@@ -8,11 +8,12 @@
 
 ## 0. 一句话现状
 
-v0.1 推进的行为学分析方向**只剩一条真实阻塞**，卡在 **行为学同事的 Golden Cases**（不是工程卡点）：
+v0.1 推进的行为学分析方向**只剩一条真实阻塞**，卡在 **行为学同事的 Golden Cases**（不是工程卡点）。另有一条**新 feature 的方法论依赖**（不卡 v0.1，但卡跨范式对比 feature）：
 
 | # | 阻塞 | Issue | 卡住的能力 | 不卡的部分 |
 |---|------|-------|-----------|-----------|
 | ② | **Golden Cases**（微调 benchmark + 回归种子） | [#90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90) OPEN | SkillOpt 优化循环 + SFT 数据生成（微调路线） | v0.1 端到端分析**不卡**（识别+判读+聚合全已交付） |
+| ③ | **跨范式对比方法论**（同批动物多范式结论怎么对比） | [#226](https://github.com/noldus-cn-beijing/noldus-insight/issues/226) OPEN | Experiment 跨范式 synthesizer 的判读规则（落成新 skill `ethoinsight-cross-paradigm`） | experiment 工程骨架（建表/import/并列展示）**不卡**，可先建 |
 
 > ✅ **结构聚合（原阻塞 ①，Issue #98）已解除**（#98 于 2026-06-18 CLOSED）：同事方法论已交付（PR #115 → `docs/review-packages/2026-06-09-feedbacks/自定义数据列识别对齐聚合.md`）。读码坐实 N 列→1 概念的 OR 聚合机制**全链路早已实现并工作**（`resolve.py:_build_zone_aliases_overrides` 多列收集 + `metrics/epm.py` `df[cols].max(axis=1)` OR 聚合 + `epm.yaml` glob 匹配多列）——milestone 此前标的 blocked **滞后于代码**。**功能性上 v0.1 六范式端到端分析现已可用**，复杂多分区数据也能聚合。剩余是"坐实+固化+补测"（不是新增能力），spec 见 `docs/superpowers/specs/2026-06-26-column-semantics-sprint2-structural-aggregation-spec.md`，**不再 blocked、可随时开工**。详见本文 §1。
 >

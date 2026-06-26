@@ -4,7 +4,7 @@
 > 日期：2026-06-26
 > 代码基线：dev HEAD `776450b2`
 > 性质：🟢 新 feature 立项 · 后端 persistence + gateway + subagent + 前端
-> 阻塞：**判读层（"跨范式相同/不同"怎么算才科学）需行为学同事方法论**——工程骨架可先建，synthesizer 的判读规则挂着等同事（同 Golden Cases #90 的依赖性质）。
+> 阻塞：**判读层（"跨范式相同/不同"怎么算才科学）需行为学同事方法论**——工程骨架可先建，synthesizer 的判读规则挂着等同事（同 Golden Cases #90 的依赖性质）。已开 [Issue #226](https://github.com/noldus-cn-beijing/noldus-insight/issues/226) 给同事填写，最终落成新 skill `ethoinsight-cross-paradigm`。
 
 ---
 
@@ -152,7 +152,7 @@ Experiment 层正是这个范式的落地形态：
 
 ## 五、需同事 / 需用户决策的开放项
 
-1. **跨范式判读方法论**（同事）：同批鼠跨范式结论怎么对比才科学？相同/不同的判据？→ 开 issue，性质同 #90。
+1. **跨范式判读方法论**（同事）：同批鼠跨范式结论怎么对比才科学？相同/不同的判据？→ **已开 [Issue #226](https://github.com/noldus-cn-beijing/noldus-insight/issues/226)**（最终落成新 skill `ethoinsight-cross-paradigm`，仿 `ethovision-paradigm-knowledge` 渐进披露），性质同 #90。
 2. **synthesizer 接法 A/B 终选**（实施时定）：倾向 A（受约束 subagent）。
 3. **快照语义**（用户）：import 是"冻结时点快照"还是"始终跟随 thread 最新"？init 倾向**冻结快照**（简单、可追溯、不受原 thread 删除影响）。
 
