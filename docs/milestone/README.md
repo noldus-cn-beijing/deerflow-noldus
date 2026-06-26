@@ -18,7 +18,8 @@
 
 | Feature | 状态 | Milestone | 最新 handoff |
 |---------|------|-----------|-------------|
-| **EV19 列语义对齐** | Sprint 1 已合 dev（自定义分析区列 HITL 对齐）· **Sprint 2 结构聚合机制已在线**（#98 已 CLOSED、方法论已交付；剩余=坐实+固化+补测，非阻塞） · [Sprint 2 spec](../superpowers/specs/2026-06-26-column-semantics-sprint2-structural-aggregation-spec.md) | [column-semantics-alignment.md](column-semantics-alignment.md) | [6/5 design v2](../design/2026-06-05-column-semantics-hitl-design-v2.md) |
+| **前端生成式 UX Phase 0** | ✅ 已合 dev（8 份 spec 全实施 #201/202/203/205+207/210/212/214/217 + dogfood bug 修复批 #218-#227 全合；扁平图墙→inline 代表图+虚拟化画廊、7 阶段进度轨、决策卡、设计 token/动效曲线、运行时性能治卡顿）· dark mode/replay 推迟 Phase 1/2 | [frontend-generative-ux-phase0.md](frontend-generative-ux-phase0.md) | [6/26 切回卡顿回归对比](../handoffs/2026-06/2026-06-26-phase0-frontend-regression-diff-switchback-jank.md) |
+| **EV19 列语义对齐** | ✅ Sprint 1 + Sprint 2 全已合 dev（自定义分析区列 HITL 对齐 + N 列→1 概念 OR 聚合机制坐实/固化/补测，#225 合）· #98 已 CLOSED、同事方法论已交付 | [column-semantics-alignment.md](column-semantics-alignment.md) | [6/5 design v2](../design/2026-06-05-column-semantics-hitl-design-v2.md) |
 | **文件路径可靠性承重墙** | 📋 立项（治"路径类 bug"家族：DB 外键+run 隔离+解析单点强制；DeerFlow 已有 resolve_virtual_path、缺的自己补）· 未派实施 | — | [6/26 路径可靠性 spec](../superpowers/specs/2026-06-26-file-path-reliability-loadbearing-convergence-spec.md) |
 | **Experiment 跨范式对比** | 📋 立项（thread archive 归一为实验 + 快照提取 + synthesizer 跨范式综合；让项目更像 agent）· 工程骨架可建，**判读方法论待行为学同事**（[Issue #226](https://github.com/noldus-cn-beijing/noldus-insight/issues/226)，落成新 skill）· 未派实施 | — | [6/26 experiment init 设计](../superpowers/specs/2026-06-26-experiment-cross-paradigm-comparison-init-design.md) |
 | **Skill 优化 → SFT（SkillOpt 方法论）** | 计划已就绪 · **🔴 阻塞于同事 Golden Cases**（benchmark 数量为零）· [Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90) | — | [6/4 实施计划](../plans/2026-06-04-skillopt-skill-optimization-plan.md) |
@@ -36,6 +37,8 @@
 
 | Feature | 完成日期 | Milestone |
 |---------|---------|-----------|
+| 前端生成式 UX Phase 0（8 spec + dogfood bug 修复批，#201-#227） | 2026-06-26 | [frontend-generative-ux-phase0.md](frontend-generative-ux-phase0.md) |
+| EV19 列语义对齐 Sprint 1+2（HITL 列对齐 + N 列→1 概念 OR 聚合） | 2026-06-26 | [column-semantics-alignment.md](column-semantics-alignment.md) |
 | DeerFlow sync 21 commit (74e3e80c→f92a26d5) + Gateway 409 修复 | 2026-06-09 | [6/9 sync21 + 409 handoff](../handoffs/2026-06/2026-06-09-sync21-review-fix-and-409-merged-handoff.md) |
 | Handoff task_context 评审（框架适配性收口） | 2026-06-04 | [handoff-task-context-eval-checkpoint.md](handoff-task-context-eval-checkpoint.md) |
 | DeerFlow upstream sync (e19bec14→f9b70713) | 2026-05-25 | [deerflow-sync-2026-05-25-all-5-pr-merged.md](deerflow-sync-2026-05-25-all-5-pr-merged.md) |
