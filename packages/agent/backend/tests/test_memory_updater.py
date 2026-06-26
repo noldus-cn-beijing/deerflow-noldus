@@ -1200,3 +1200,36 @@ class TestUserIdForwarding:
         mock_load.assert_called_once_with(None, user_id="user-99")
         save_call = mock_storage.save.call_args
         assert save_call.kwargs.get("user_id") == "user-99" or (len(save_call.args) > 2 and save_call.args[2] == "user-99")
+
+
+class TestMemoryUpdateJsonMode:
+    """spec 2026-06-26 §二: memory 更新用 LLM 应结构性约束输出 JSON。
+
+    根因：LLM 返回非合法 JSON 对象时 ``_parse_memory_update_response`` 抛
+    JSONDecodeError → ``_do_update_memory_sync`` catch 成 warning 跳过本次更新，
+    该 thread 没写进记忆飞轮。prompt 层已是 "Return ONLY valid JSON"，但偶发仍
+    失败——结构层约束（response_format=json_object）比改 prompt 更硬。
+    """
+
+    def test_get_model_binds_json_object_response_format(self):
+        """``_get_model`` 返回的 runnable 必须绑定 response_format=json_object。
+
+        断言：底层 create_chat_model 返回的模型被 ``.bind(response_format=...)``
+        约束成 JSON 输出，且绑定的 response_format 是 {"type": "json_object"}。
+        """
+        base_model = MagicMock(name="base_chat_model")
+        bound_model = MagicMock(name="bound_json_model")
+        base_model.bind = MagicMock(return_value=bound_model)
+
+        with (
+            patch("deerflow.agents.memory.updater.create_chat_model", return_value=base_model),
+            patch("deerflow.agents.memory.updater.get_memory_config", return_value=_memory_config(enabled=True, model_name=None)),
+        ):
+            updater = MemoryUpdater()
+            result = updater._get_model()
+
+        # base model was bound with response_format json_object
+        assert result is bound_model
+        base_model.bind.assert_called_once()
+        bound_kwargs = base_model.bind.call_args.kwargs
+        assert bound_kwargs.get("response_format") == {"type": "json_object"}

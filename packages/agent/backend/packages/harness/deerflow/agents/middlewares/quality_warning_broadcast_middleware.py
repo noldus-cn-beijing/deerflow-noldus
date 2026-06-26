@@ -48,13 +48,13 @@ class QualityWarningBroadcastMiddleware(AgentMiddleware[AgentState]):
 
     @override
     def after_model(self, state: AgentState, runtime: Runtime) -> dict | None:
-        return self._maybe_inject(state)
+        return self._maybe_inject(state, runtime)
 
     @override
     async def aafter_model(self, state: AgentState, runtime: Runtime) -> dict | None:
-        return self._maybe_inject(state)
+        return self._maybe_inject(state, runtime)
 
-    def _maybe_inject(self, state: AgentState) -> dict | None:
+    def _maybe_inject(self, state: AgentState, runtime: Runtime | None = None) -> dict | None:
         messages = state.get("messages", [])
         if not messages:
             return None
@@ -84,10 +84,31 @@ class QualityWarningBroadcastMiddleware(AgentMiddleware[AgentState]):
 
         logger.info(
             "quality_warning_broadcast | thread=%s | injected=%d warnings",
-            state.get("thread_id", "unknown"),
+            _resolve_thread_id(state, runtime),
             len(warnings),
         )
         return {"messages": [updated_msg]}
+
+
+def _resolve_thread_id(state: AgentState, runtime: Runtime | None) -> str:
+    """Resolve the current thread_id for the broadcast log line.
+
+    Prefer ``runtime.context["thread_id"]`` (the canonical location per
+    ``feedback_toolruntime_context_thread_id_is_flat`` — it is a flat lookup, not
+    nested); this is where every other middleware in the chain reads it and where it is
+    populated in production. Fall back to a ``thread_id`` key on ``state`` (kept for
+    backward compatibility with older call sites / tests), then to ``"unknown"`` so the
+    log line stays parseable when neither source has it.
+    """
+    context = getattr(runtime, "context", None)
+    if isinstance(context, dict):
+        thread_id = context.get("thread_id")
+        if isinstance(thread_id, str) and thread_id:
+            return thread_id
+    state_thread_id = state.get("thread_id") if isinstance(state, dict) else None
+    if isinstance(state_thread_id, str) and state_thread_id:
+        return state_thread_id
+    return "unknown"
 
 
 def _has_recent_data_analyst_toolmessage(messages: list[Any]) -> bool:

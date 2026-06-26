@@ -384,10 +384,21 @@ class MemoryUpdater:
         self._model_name = model_name
 
     def _get_model(self):
-        """Get the model for memory updates."""
+        """Get the model for memory updates, structurally constrained to JSON output.
+
+        We bind ``response_format={"type": "json_object"}`` so the provider returns a
+        well-formed JSON object instead of prose / fenced blocks. This is the structural
+        fix for the recurring ``Failed to parse LLM response for memory update`` warning
+        (an OpenAI-compatible provider occasionally wraps JSON in <think>…</think> or
+        markdown fences even when prompted to return JSON only): constraining output at
+        the API level is harder than another prompt nudge. ``_parse_memory_update_response``
+        still tolerates residual wrappers as a graceful fallback, but the bound constraint
+        makes parse failures the rare exception rather than the rule.
+        """
         config = get_memory_config()
         model_name = self._model_name or config.model_name
-        return create_chat_model(name=model_name, thinking_enabled=False)
+        model = create_chat_model(name=model_name, thinking_enabled=False)
+        return model.bind(response_format={"type": "json_object"})
 
     def _build_correction_hint(
         self,

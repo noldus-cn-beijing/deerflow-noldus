@@ -372,3 +372,68 @@ class TestAsyncEntrypoint:
         result = await mw.aafter_model(state, runtime=None)
         assert result is not None
         assert result["messages"][0].additional_kwargs["quality_warnings"]
+
+
+class TestThreadIdFromRuntimeContext:
+    """spec 2026-06-26 §三: thread_id 应从 runtime.context 取，fallback unknown。
+
+    根因：生产环境 state 里没有 thread_id 字段，``state.get("thread_id", "unknown")``
+    fallback 成 "unknown"，log 标记 ``thread=unknown`` 无法追踪（gateway.log 该 thread
+    出现 3 次）。memory feedback ``feedback_toolruntime_context_thread_id_is_flat``：
+    ``runtime.context.get("thread_id")`` 是扁平的。修法：优先从 runtime.context 取
+    thread_id，state 字段作为兼容 fallback，最后 "unknown"。
+    """
+
+    def _runtime(self, thread_id: str | None):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(context={"thread_id": thread_id} if thread_id else {})
+
+    def test_log_shows_runtime_thread_id_when_state_missing(self, tmp_path, caplog):
+        """state 无 thread_id 但 runtime.context 有 → log 记真实 thread_id 非 unknown。"""
+        import logging
+
+        _write_handoff(tmp_path, [_critical_warning()])
+        broadcast = _broadcast_ai_message()
+        # state 故意不带 thread_id（模拟生产环境）
+        state = {
+            "messages": [
+                HumanMessage(content="分析"),
+                _data_analyst_dispatch(),
+                _tool_message(),
+                broadcast,
+            ],
+            "thread_data": {"workspace_path": str(tmp_path)},
+        }
+
+        mw = QualityWarningBroadcastMiddleware()
+        with caplog.at_level(logging.INFO, logger="deerflow.agents.middlewares.quality_warning_broadcast_middleware"):
+            result = mw.after_model(state, runtime=self._runtime("rt-thread-9"))
+
+        assert result is not None  # injection happened
+        log_text = caplog.text
+        assert "thread=rt-thread-9" in log_text
+        assert "thread=unknown" not in log_text
+
+    def test_log_falls_back_to_unknown_when_neither_state_nor_runtime(self, tmp_path, caplog):
+        """state 与 runtime.context 都无 thread_id → 仍记 unknown（不崩）。"""
+        import logging
+
+        _write_handoff(tmp_path, [_critical_warning()])
+        broadcast = _broadcast_ai_message()
+        state = {
+            "messages": [
+                HumanMessage(content="分析"),
+                _data_analyst_dispatch(),
+                _tool_message(),
+                broadcast,
+            ],
+            "thread_data": {"workspace_path": str(tmp_path)},
+        }
+
+        mw = QualityWarningBroadcastMiddleware()
+        with caplog.at_level(logging.INFO, logger="deerflow.agents.middlewares.quality_warning_broadcast_middleware"):
+            result = mw.after_model(state, runtime=self._runtime(None))
+
+        assert result is not None
+        assert "thread=unknown" in caplog.text

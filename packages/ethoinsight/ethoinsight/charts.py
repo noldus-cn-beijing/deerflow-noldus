@@ -292,7 +292,14 @@ def trajectory_plot(
                 color=PALETTE[i % len(PALETTE)],
                 label=str(grp),
             )
-        ax.legend(fontsize=8, loc="upper right")
+        # 仅当确有可收集 label 时才画图例。matplotlib 收集 legend handle 时会忽略
+        # label 以下划线开头的 artist（见 ax.get_legend_handles_labels()），此时若仍
+        # 无条件调 ax.legend() 会发
+        # "No artists with labels found to put in legend." UserWarning（曾在一 dogfood
+        # thread 的 gateway.log 出现 19 次）。守门后只在有图例项时才出 legend。
+        handles, labels = ax.get_legend_handles_labels()
+        if labels:
+            ax.legend(fontsize=8, loc="upper right")
     else:
         ax.plot(
             df["x_center"], df["y_center"], alpha=0.5, linewidth=0.5, color=PALETTE[0]
