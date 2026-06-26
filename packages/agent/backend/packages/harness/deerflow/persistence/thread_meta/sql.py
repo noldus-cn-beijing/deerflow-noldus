@@ -241,3 +241,19 @@ class ThreadMetaRepository(ThreadMetaStore):
                 return
             await session.delete(row)
             await session.commit()
+
+    async def count_legacy_orphans(self) -> int:
+        """统计 ``user_id IS NULL`` 的 thread_meta 行数（spec 2026-06-26 §任务5 观测）。
+
+        启动观测用：判断是否还有老部署（auth 引入前）遗留的无归属 thread。
+        ``user_dir`` 路径迁移已就位（paths.py:181-203），本方法不动路径逻辑，
+        仅给运维一个「还有多少 legacy 行待清理/认领」的可观测数字。memory backend
+        无 SQL repo，observer 对缺省 session_factory 静默跳过。
+        """
+        from sqlalchemy import func
+
+        async with self._sf() as session:
+            result = await session.execute(
+                select(func.count()).select_from(ThreadMetaRow).where(ThreadMetaRow.user_id.is_(None))
+            )
+            return int(result.scalar() or 0)

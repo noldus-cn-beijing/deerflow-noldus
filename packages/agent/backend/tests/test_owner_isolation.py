@@ -50,6 +50,36 @@ async def _make_engines(tmp_path):
     return close_engine
 
 
+async def _seed_threads(*threads: tuple[str, str]) -> None:
+    """Create parent ``threads_meta`` rows so runs/events/feedback FKs resolve.
+
+    spec 2026-06-26 §任务1 给 runs/run_events 加了 ``thread_id → threads_meta``
+    外键——生产里 thread_meta 永远先于 run 创建（create_thread 路径）。这些隔离
+    测试直接经 repo 造 run/event，必须先有父 thread 行，否则 FK 约束正确拒绝。
+    传 (thread_id, user_id) 元组，用 user_id=None 绕过 owner filter 直接写入。
+    """
+    from deerflow.persistence.engine import get_session_factory
+    from deerflow.persistence.thread_meta import ThreadMetaRepository
+
+    repo = ThreadMetaRepository(get_session_factory())
+    for thread_id, user_id in threads:
+        await repo.create(thread_id, user_id=user_id)
+
+
+async def _seed_runs(*runs: tuple[str, str, str]) -> None:
+    """Create parent ``runs`` rows so run_events FK (run_id → runs) resolves.
+
+    传 (run_id, thread_id, user_id) 元组。run_events 同时外键 thread_id 与 run_id
+    （spec §任务1），故事件测试需先种 thread + run 两层父行。
+    """
+    from deerflow.persistence.engine import get_session_factory
+    from deerflow.persistence.run import RunRepository
+
+    repo = RunRepository(get_session_factory())
+    for run_id, thread_id, user_id in runs:
+        await repo.put(run_id, thread_id=thread_id, user_id=user_id)
+
+
 def _as_user(user):
     """Context manager-like helper that set/reset the contextvar."""
 
@@ -162,6 +192,7 @@ async def test_runs_cross_user_isolation(tmp_path):
     cleanup = await _make_engines(tmp_path)
     try:
         repo = RunRepository(get_session_factory())
+        await _seed_threads(("t-alpha", "user-a"), ("t-beta", "user-b"))
 
         with _as_user(USER_A):
             await repo.put("run-a1", thread_id="t-alpha")
@@ -206,6 +237,7 @@ async def test_runs_cross_user_delete_denied(tmp_path):
     cleanup = await _make_engines(tmp_path)
     try:
         repo = RunRepository(get_session_factory())
+        await _seed_threads(("t-alpha", "user-a"))
 
         with _as_user(USER_A):
             await repo.put("run-a1", thread_id="t-alpha")
@@ -235,6 +267,9 @@ async def test_run_events_cross_user_isolation(tmp_path):
     cleanup = await _make_engines(tmp_path)
     try:
         store = DbRunEventStore(get_session_factory())
+        # run_events 外键级联到 threads_meta + runs（spec §任务1）——先种父行。
+        await _seed_threads(("t-alpha", "user-a"), ("t-beta", "user-b"))
+        await _seed_runs(("run-a1", "t-alpha", "user-a"), ("run-b1", "t-beta", "user-b"))
 
         with _as_user(USER_A):
             await store.put(
@@ -305,6 +340,8 @@ async def test_run_events_cross_user_delete_denied(tmp_path):
     cleanup = await _make_engines(tmp_path)
     try:
         store = DbRunEventStore(get_session_factory())
+        await _seed_threads(("t-alpha", "user-a"))
+        await _seed_runs(("run-a1", "t-alpha", "user-a"))
 
         with _as_user(USER_A):
             await store.put(

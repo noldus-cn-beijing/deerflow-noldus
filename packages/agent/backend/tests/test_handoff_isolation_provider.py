@@ -128,3 +128,84 @@ async def test_aevaluate_delegates_to_evaluate():
         agent_id="subagent:data-analyst",
     ))
     assert sync.allow == async_d.allow
+
+
+# ---------------------------------------------------------------------------
+# Task 4 (P2) spec 2026-06-26 §任务4：handoff 读取显式归属校验
+# ---------------------------------------------------------------------------
+
+
+class TestHandoffThreadOwnership:
+    """显式断言 handoff 路径归属当前 thread 的 workspace/shared 虚拟根。
+
+    即使 lead 通过 {{handoff://X}} 把某路径写进 authorized_paths，路径本身也必须
+    落在 thread-scoped 虚拟根（/mnt/user-data/workspace/ 或 /mnt/shared/）下——
+    这是结构约束，独立于字符串 allowlist。catch：foreign-thread 注入、host 绝对
+    路径、路径穿越变体。
+    """
+
+    def test_handoff_under_workspace_root_allowed(self):
+        """workspace 根下的 handoff（哪怕未单独授权）走 self-outbox/allowlist 判断。"""
+        p = HandoffIsolationProvider(
+            authorized_paths={"/mnt/user-data/workspace/handoff_data_analyst.json"},
+            self_outbox_subagent_name="data-analyst",
+        )
+        decision = p.evaluate(_request(
+            file_path="/mnt/user-data/workspace/handoff_data_analyst.json",
+            agent_id="subagent:data-analyst",
+        ))
+        assert decision.allow is True
+
+    def test_handoff_under_shared_root_evaluated_normally(self):
+        """/mnt/shared/ 根下的 handoff 不被归属校验本身拒（走 allowlist）。"""
+        p = HandoffIsolationProvider(authorized_paths={
+            "/mnt/shared/handoff_code_executor.json"
+        })
+        decision = p.evaluate(_request(
+            file_path="/mnt/shared/handoff_code_executor.json",
+            agent_id="subagent:data-analyst",
+        ))
+        assert decision.allow is True
+
+    def test_handoff_foreign_root_denied_even_if_authorized_string_matches(self):
+        """路径不在 thread-scoped 根下（如 host 绝对路径 / 跨 thread 注入）→ 结构性拒。
+
+        即使调用方误把一个 foreign-root 路径塞进 authorized_paths，归属校验也兜底拒掉，
+        fail-closed。这是「显式断言 is_relative_to(workspace/shared_root)」的结构实现。
+        """
+        p = HandoffIsolationProvider(authorized_paths={
+            "/opt/secret/threads/other-thread/handoff_code_executor.json"
+        })
+        decision = p.evaluate(_request(
+            file_path="/opt/secret/threads/other-thread/handoff_code_executor.json",
+            agent_id="subagent:data-analyst",
+        ))
+        assert decision.allow is False
+        assert decision.reasons[0].code == "handoff_isolation.foreign_root"
+
+    def test_handoff_relative_traversal_denied(self):
+        """路径穿越变体（不以 /mnt 虚拟根开头）→ 拒。"""
+        p = HandoffIsolationProvider(authorized_paths={"../../etc/handoff_x.json"})
+        decision = p.evaluate(_request(
+            file_path="../../etc/handoff_x.json",
+            agent_id="subagent:data-analyst",
+        ))
+        assert decision.allow is False
+        assert decision.reasons[0].code == "handoff_isolation.foreign_root"
+
+    def test_own_outbox_under_foreign_root_still_denied(self):
+        """归属校验优先于 self-outbox：own handoff 名但路径在 foreign root → 拒。
+
+        否则 subagent 可构造 ``/opt/x/handoff_data_analyst.json`` 绕过 self-outbox
+        读任意位置的「自己的 handoff」名文件。
+        """
+        p = HandoffIsolationProvider(
+            authorized_paths=set(),
+            self_outbox_subagent_name="data-analyst",
+        )
+        decision = p.evaluate(_request(
+            file_path="/opt/foreign/handoff_data_analyst.json",
+            agent_id="subagent:data-analyst",
+        ))
+        assert decision.allow is False
+        assert decision.reasons[0].code == "handoff_isolation.foreign_root"

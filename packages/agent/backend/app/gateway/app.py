@@ -182,6 +182,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Must run AFTER langgraph_runtime so app.state.store is available for thread migration
         await _ensure_admin_user(app)
 
+        # Task 5 (spec 2026-06-26 §任务5)：启动观测 legacy 无归属 thread 数。
+        # best-effort，绝不阻断启动；仅给运维一个「还有多少老部署遗留」的数字。
+        try:
+            from app.gateway.legacy_observer import observe_legacy_threads
+            from deerflow.persistence.engine import get_session_factory
+
+            await observe_legacy_threads(session_factory=get_session_factory())
+        except Exception:
+            logger.debug("Legacy thread observation skipped (non-fatal)", exc_info=True)
+
         # Start IM channel service if any channels are configured
         try:
             from app.channels.service import start_channel_service

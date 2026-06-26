@@ -164,6 +164,71 @@ def _delete_thread_data(thread_id: str, paths: Paths | None = None, *, user_id: 
     return ThreadDeleteResponse(success=True, message=f"Deleted local thread data for {thread_id}")
 
 
+async def _delete_thread_cascaded(
+    thread_id: str,
+    *,
+    paths: Paths | None = None,
+    thread_store,
+    checkpointer=None,
+    user_id: str | None = None,
+    runs_deleted_count: int | None = None,
+) -> ThreadDeleteResponse:
+    """DB↔磁盘一致性删除（spec 2026-06-26 §任务1）。
+
+    顺序：**先 DB（删 thread_meta，FK ON DELETE CASCADE 连带清 runs / run_events），
+    后 checkpoint，最后磁盘目录**。DB 事务失败则磁盘不动——磁盘孤儿（meta 没了
+    但文件还在）可被后续 GC 清，比 DB 孤儿（meta 在但磁盘没了 → search 列着、
+    点进去 404）安全，故宁可留磁盘孤儿也不留 DB 孤儿。
+
+    Args:
+        thread_store: ThreadMetaStore（SQL 或 memory）。删其 thread_meta 行触发级联。
+        checkpointer: 可选；有 ``adelete_thread`` 则删检查点（best-effort）。
+        user_id: 当前用户（用于 user-scoped 磁盘路径）。
+        runs_deleted_count: 调用方预先统计的 runs 行数（观测日志用）。None=未统计。
+
+    Returns:
+        磁盘删除结果（沿用 ``_delete_thread_data`` 的响应）。
+
+    Raises:
+        DB 删除失败时原样冒泡（调用方决定回应）；此时 checkpoint 与磁盘均未触碰。
+    """
+    path_manager = paths or get_paths()
+    # 观测用：删除前目录是否存在。非法 thread_id（含 '.' 等）这里会抛 ValueError，
+    # 观测字段不应因此中断删除主流程——降级为 unknown，让 _delete_thread_data
+    # 后续抛标准的 422 HTTPException。
+    try:
+        dir_existed = path_manager.thread_dir(thread_id, user_id=user_id).exists()
+    except ValueError:
+        dir_existed = "invalid_id"
+
+    # 1) DB 先行：删 thread_meta（FK CASCADE 清 runs / run_events）。失败即冒泡，
+    #    磁盘与 checkpoint 不动（不产生「meta 没删、磁盘删了」的反向孤儿）。
+    await thread_store.delete(thread_id)
+
+    # 2) checkpoint（best-effort）：DB 已成功，checkpoint 删失败不回滚 DB。
+    if checkpointer is not None:
+        try:
+            if hasattr(checkpointer, "adelete_thread"):
+                await checkpointer.adelete_thread(thread_id)
+        except Exception:
+            logger.debug("Could not delete checkpoints for thread %s (not critical)", sanitize_log_param(thread_id))
+
+    # 3) 磁盘目录（best-effort）：DB 已成功，磁盘删失败记 error 但不回滚 DB
+    #    （磁盘孤儿可被后续 GC 清，比 DB 孤儿安全）。
+    response = _delete_thread_data(thread_id, path_manager, user_id=user_id)
+
+    # 结构化观测日志：删除完成（spec §任务1 观测项）。
+    runs_field = "unknown" if runs_deleted_count is None else runs_deleted_count
+    logger.info(
+        "thread_deleted thread_id=%s user_id=%s runs_deleted_count=%s dir_existed=%s",
+        sanitize_log_param(thread_id),
+        sanitize_log_param(user_id) if user_id else "none",
+        runs_field,
+        dir_existed,
+    )
+    return response
+
+
 def _derive_thread_status(checkpoint_tuple) -> str:
     """Derive thread status from checkpoint metadata."""
     if checkpoint_tuple is None:
@@ -195,31 +260,44 @@ async def delete_thread_data(thread_id: str, request: Request) -> ThreadDeleteRe
 
     Cleans DeerFlow-managed thread directories, removes checkpoint data,
     and removes the thread_meta row from the configured ThreadMetaStore
-    (sqlite or memory).
+    (sqlite or memory). DB↔磁盘一致性删除（spec 2026-06-26 §任务1）：先 DB 删
+    thread_meta（FK CASCADE 清 runs / run_events），后 checkpoint，最后磁盘；
+    DB 失败则磁盘不动。
     """
-    from app.gateway.deps import get_thread_store
+    from app.gateway.deps import get_run_store, get_thread_store
 
-    # Clean local filesystem
-    response = _delete_thread_data(thread_id, user_id=get_effective_user_id())
+    user_id = get_effective_user_id()
+    thread_store = get_thread_store(request)
 
-    # Remove checkpoints (best-effort)
-    checkpointer = getattr(request.app.state, "checkpointer", None)
-    if checkpointer is not None:
-        try:
-            if hasattr(checkpointer, "adelete_thread"):
-                await checkpointer.adelete_thread(thread_id)
-        except Exception:
-            logger.debug("Could not delete checkpoints for thread %s (not critical)", sanitize_log_param(thread_id))
-
-    # Remove thread_meta row (best-effort) — required for sqlite backend
-    # so the deleted thread no longer appears in /threads/search.
+    # 预统计 runs 行数（观测日志用）。SQL repo 有 count_by_thread；memory backend
+    # 无此方法 → runs_deleted_count=None（日志记 unknown）。best-effort，失败不阻断。
+    runs_deleted_count: int | None = None
     try:
-        thread_store = get_thread_store(request)
-        await thread_store.delete(thread_id)
+        run_store = get_run_store(request)
+        counter = getattr(run_store, "count_by_thread", None)
+        if callable(counter):
+            runs_deleted_count = await counter(thread_id)
     except Exception:
-        logger.debug("Could not delete thread_meta for %s (not critical)", sanitize_log_param(thread_id))
+        logger.debug("Could not pre-count runs for thread %s (observation only)", sanitize_log_param(thread_id))
 
-    return response
+    checkpointer = getattr(request.app.state, "checkpointer", None)
+
+    try:
+        return await _delete_thread_cascaded(
+            thread_id,
+            thread_store=thread_store,
+            checkpointer=checkpointer,
+            user_id=user_id,
+            runs_deleted_count=runs_deleted_count,
+        )
+    except HTTPException:
+        # _delete_thread_data 的 422/500 已是 HTTPException —— 原样透传。
+        raise
+    except Exception:
+        # DB 删除失败（FK/连接/约束）：磁盘未动，记 error 后回 500。
+        # 不吞异常假装成功——否则前端以为删了但 meta 还在。
+        logger.exception("Failed to cascade-delete thread %s", sanitize_log_param(thread_id))
+        raise HTTPException(status_code=500, detail="Failed to delete thread.")
 
 
 @router.post("", response_model=ThreadResponse)

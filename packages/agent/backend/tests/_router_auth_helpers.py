@@ -107,6 +107,10 @@ def make_authed_test_app(
 
     repo = MagicMock()
     repo.check_access = AsyncMock(return_value=owner_check_passes)
+    # delete is async on the real ThreadMetaStore (SQL/memory). Make the stub
+    # awaitable so routes that ``await thread_store.delete(...)`` (e.g. the
+    # cascaded thread-delete) resolve correctly under TestClient.
+    repo.delete = AsyncMock(return_value=None)
     app.state.thread_store = repo
 
     return app

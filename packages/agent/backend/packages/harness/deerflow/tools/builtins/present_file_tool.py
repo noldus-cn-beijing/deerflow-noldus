@@ -37,6 +37,21 @@ def _get_thread_id(runtime: Runtime) -> str | None:
         return None
 
 
+def _get_run_id(runtime: Runtime) -> str | None:
+    """Resolve the current run id from runtime context (spec 2026-06-26 §任务2).
+
+    run worker（runtime/runs/worker.py）把 ``run_id`` 注入 runtime.context，
+    task_tool 透传到 subagent。present_files 在 lead / subagent 调用时从 context
+    取当前 run，stamp 进 chart 元数据，让 merge_artifacts 按 (run_id, path) 去重。
+    非 run 上下文（如直接 tool 调用 / 旧入口）→ None，meta 不写 run_id 字段。
+    """
+    if runtime.context:
+        run_id = runtime.context.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            return run_id
+    return None
+
+
 def _normalize_presented_filepath(
     runtime: Runtime,
     filepath: str,
@@ -197,11 +212,17 @@ def _build_artifact_meta(
     plan: dict[str, Any] | None,
     thread_data: ThreadDataState | None,
     generate_thumb: bool,
+    *,
+    run_id: str | None = None,
 ) -> str | dict[str, Any]:
     """为一张已 normalize 的虚拟路径构造 ArtifactMeta（或退回裸 string）。
 
     路径命中 plan_charts.json.output → chart dict（带元数据 + thumb_path）；
     否则 → 裸 string（报告/技能等无 chart 元数据产物，向后兼容）。
+
+    ``run_id``（spec 2026-06-26 §任务2 路 A）：chart 元数据带 run 维度，让
+    merge_artifacts 按 (run_id, path) 去重——同 thread 多 run 产同名 chart 不互覆盖。
+    None（非 run 上下文）→ 不写字段，与旧 meta 字节兼容。
     """
     if not plan:
         return normalized_virtual
@@ -222,6 +243,8 @@ def _build_artifact_meta(
         "group": entry.get("group"),
         "chart_type": _derive_chart_type(chart_id, str(entry.get("script") or "")),
     }
+    if run_id:
+        meta["run_id"] = run_id
 
     if generate_thumb and thread_data:
         real_path = Path(replace_virtual_path(normalized_virtual, thread_data))
@@ -298,8 +321,12 @@ def present_file_tool(
     # 任一文件命中 plan 才生成缩略图（避免给报告/技能等非 chart 产物白跑 Pillow）。
     plan = _load_plan_charts(thread_data)
     has_any_chart = plan is not None and any(p in plan.get("by_output", {}) for p in normalized_paths)
+    # run_id 维度（spec 2026-06-26 §任务2 路 A）：chart meta 带 run_id，merge_artifacts
+    # 按 (run_id, path) 去重——同 thread 多 run 同名 chart 不互覆盖。
+    run_id = _get_run_id(runtime)
     artifact_metas: list[str | dict[str, Any]] = [
-        _build_artifact_meta(p, plan, thread_data, generate_thumb=has_any_chart) for p in normalized_paths
+        _build_artifact_meta(p, plan, thread_data, generate_thumb=has_any_chart, run_id=run_id)
+        for p in normalized_paths
     ]
 
     # 失败/截断摘要接进 state（spec §四 Step 5：前端拿不到 handoff，present 时一并带出）。

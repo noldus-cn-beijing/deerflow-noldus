@@ -59,25 +59,42 @@ def _artifact_path(artifact: str | dict) -> str:
     return str(artifact)
 
 
+def _artifact_run_id(artifact: str | dict) -> str:
+    """提取 artifact 的 run 维度键（spec 2026-06-26 §任务2 路 A）。
+
+    chart 元数据带 ``run_id`` 时按 (run_id, path) 去重——同一 thread 内多 run 若产
+    同名 chart（chart_id 来自 catalog 固定、与 run 无关），跨 run 不再互覆盖；同 run
+    同 path 仍覆盖（追问轮补全元数据）。裸 string / 无 run_id 的 dict 退化为空串，
+    与历史「按 path 去重」行为完全一致（向后兼容旧产物）。
+    """
+    if isinstance(artifact, dict):
+        rid = artifact.get("run_id")
+        if isinstance(rid, str) and rid:
+            return rid
+    return ""
+
+
 def merge_artifacts(existing: list | None, new: list | None) -> list:
-    """Reducer for artifacts list - merges and deduplicates artifacts by path.
+    """Reducer for artifacts list - merges and deduplicates artifacts.
 
     兼容两种形态（spec §3.1）：裸 string（向后兼容锚点）与 ArtifactMeta dict。
-    去重键是 ``path``：同 path 的产物，**新值覆盖旧值**（追问轮次可能补全元数据，
-    如首轮裸 path、追问轮 chart-maker 重 present 带 output_mode）。
+    去重键是 ``(run_id, path)``（spec 2026-06-26 §任务2 路 A）：同 (run_id, path)
+    的产物新值覆盖旧值；跨 run 同 path 不互覆盖（"113 图只显示 1 张"家族病根之一）。
+    无 run_id 的产物退化为 ("", path) —— 等价于旧的「按 path 去重」语义。
     """
     if existing is None:
         return new or []
     if new is None:
         return existing
 
-    # 按 path 去重；新值覆盖旧值（new 在后写入覆盖 existing）。
-    merged: dict[str, str | dict] = {}
+    # 按 (run_id, path) 去重；新值覆盖旧值（new 在后写入覆盖 existing）。
+    merged: dict[tuple[str, str], str | dict] = {}
     for artifact in [*existing, *new]:
-        key = _artifact_path(artifact)
+        key = (_artifact_run_id(artifact), _artifact_path(artifact))
         # 无 path 的项（空串键）各自保留——用 id 做兜底键避免互吞。
-        dedup_key = key if key else f"__no_path_{id(artifact)}"
-        merged[dedup_key] = artifact
+        if key[1] == "":
+            key = ("", f"__no_path_{id(artifact)}")
+        merged[key] = artifact
     return list(merged.values())
 
 

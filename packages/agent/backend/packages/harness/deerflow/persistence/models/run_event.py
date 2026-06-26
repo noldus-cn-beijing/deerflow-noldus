@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from deerflow.persistence.base import Base
@@ -14,8 +14,19 @@ class RunEventRow(Base):
     __tablename__ = "run_events"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    thread_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 外键级联（spec 2026-06-26 §任务1）：删 thread → cascade runs → cascade
+    # run_events；删 run → cascade run_events。原本两列均无约束，删 thread/run 后
+    # 事件行残留成孤儿。ON DELETE CASCADE 由 DB 兜底。
+    thread_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("threads_meta.thread_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     # Owner of the conversation this event belongs to. Nullable for data
     # created before auth was introduced; populated by auth middleware on
     # new writes and by the boot-time orphan migration on existing rows.

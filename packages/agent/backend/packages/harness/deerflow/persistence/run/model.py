@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Index, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from deerflow.persistence.base import Base
@@ -14,7 +14,16 @@ class RunRow(Base):
     __tablename__ = "runs"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    thread_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # 外键级联（spec 2026-06-26 §任务1）：删 threads_meta 行 → 连带删该 thread 的
+    # 所有 runs 行。DeerFlow 原本仅 index=True 无约束，删 thread 后 runs 残留指向
+    # 不存在的 thread_id（孤儿）。ON DELETE CASCADE 由 DB 确定性兜底，应用层三步
+    # 删除顺序失败时不再留孤儿。SQLite 需 PRAGMA foreign_keys=ON（engine.py 已设）。
+    thread_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("threads_meta.thread_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     assistant_id: Mapped[str | None] = mapped_column(String(128))
     user_id: Mapped[str | None] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(20), default="pending")

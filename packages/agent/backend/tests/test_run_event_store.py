@@ -14,6 +14,21 @@ def store():
     return MemoryRunEventStore()
 
 
+async def _seed_db_parents(session_factory) -> None:
+    """spec 2026-06-26 §任务1：run_events 外键到 threads_meta + runs。
+
+    DbRunEventStore 单测直接造事件，先种父 thread (t1) + 父 runs (r1/r2 @ t1)。
+    生产里 thread/run 永远先于事件创建；此处镜像该顺序以满足 FK。
+    """
+    from deerflow.persistence.run import RunRepository
+    from deerflow.persistence.thread_meta import ThreadMetaRepository
+
+    await ThreadMetaRepository(session_factory).create("t1", user_id=None)
+    run_repo = RunRepository(session_factory)
+    await run_repo.put("r1", thread_id="t1", user_id=None)
+    await run_repo.put("r2", thread_id="t1", user_id=None)
+
+
 # -- Basic write and query --
 
 
@@ -310,6 +325,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory())
 
+        await _seed_db_parents(get_session_factory())
         r = await s.put(thread_id="t1", run_id="r1", event_type="human_message", category="message", content="hi")
         assert r["seq"] == 1
         r2 = await s.put(thread_id="t1", run_id="r1", event_type="ai_message", category="message", content="hello")
@@ -332,6 +348,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory(), max_trace_content=100)
 
+        await _seed_db_parents(get_session_factory())
         long = "x" * 200
         r = await s.put(thread_id="t1", run_id="r1", event_type="llm_end", category="trace", content=long)
         assert len(r["content"]) == 100
@@ -352,6 +369,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory())
 
+        await _seed_db_parents(get_session_factory())
         content = [{"type": "text", "text": "hello"}, {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}}]
         record = await s.put(thread_id="t1", run_id="r1", event_type="ai_message", category="message", content=content)
 
@@ -374,6 +392,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory())
 
+        await _seed_db_parents(get_session_factory())
         for i in range(10):
             await s.put(thread_id="t1", run_id="r1", event_type="human_message", category="message", content=str(i))
 
@@ -400,6 +419,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory())
 
+        await _seed_db_parents(get_session_factory())
         await s.put(thread_id="t1", run_id="r1", event_type="human_message", category="message")
         await s.put(thread_id="t1", run_id="r2", event_type="ai_message", category="message")
         c = await s.delete_by_run("t1", "r2")
@@ -422,6 +442,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory())
 
+        await _seed_db_parents(get_session_factory())
         events = [{"thread_id": "t1", "run_id": "r1", "event_type": "trace", "category": "trace"} for _ in range(50)]
         results = await s.put_batch(events)
         seqs = [r["seq"] for r in results]
@@ -437,6 +458,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory())
 
+        await _seed_db_parents(get_session_factory())
         content = [{"messages": [{"type": "ai", "content": ""}]}]
         results = await s.put_batch(
             [
@@ -468,6 +490,7 @@ class TestDbRunEventStore:
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         s = DbRunEventStore(get_session_factory())
 
+        await _seed_db_parents(get_session_factory())
         content = {"status": "success"}
         record = await s.put(thread_id="t1", run_id="r1", event_type="run.end", category="outputs", content=content)
 

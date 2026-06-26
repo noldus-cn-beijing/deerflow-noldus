@@ -13,6 +13,13 @@ async def _make_repo(tmp_path):
 
     url = f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"
     await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
+    # spec 2026-06-26 §任务1：runs.thread_id → threads_meta 外键。生产里 thread
+    # 永远先于 run 创建；这些 repo 单测直接造 run，先种本文件用到的父 thread 行。
+    from deerflow.persistence.thread_meta import ThreadMetaRepository
+
+    thread_repo = ThreadMetaRepository(get_session_factory())
+    for tid in ("t1", "t2", "thread-1"):
+        await thread_repo.create(tid, user_id=None)
     return RunRepository(get_session_factory())
 
 
@@ -258,6 +265,10 @@ class TestRunRepository:
         url = f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"
         await init_engine("sqlite", url=url, sqlite_dir=str(tmp_path))
         repo = RunRepository(get_session_factory())
+        # spec §任务1 外键：先种父 thread 行（本测试用 thread-1）。
+        from deerflow.persistence.thread_meta import ThreadMetaRepository
+
+        await ThreadMetaRepository(get_session_factory()).create("thread-1", user_id=None)
 
         await repo.put("run-1", thread_id="thread-1", model_name="gpt-4o")
         row = await repo.get("run-1")

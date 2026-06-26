@@ -186,6 +186,27 @@ class RunRepository(RunStore):
             await session.delete(row)
             await session.commit()
 
+    async def count_by_thread(
+        self,
+        thread_id: str,
+        *,
+        user_id: str | None | _AutoSentinel = AUTO,
+    ) -> int:
+        """Count run rows for a thread (spec 2026-06-26 §任务1 观测日志用）。
+
+        删除 thread 前调一次，把 ``runs_deleted_count`` 写进结构化观测日志。FK
+        级联保证实际删除由 DB 完成，这里只读计数。memory backend 无 SQL repo，
+        路由侧对 None 容错（记 count=unknown）。
+        """
+        resolved_user_id = resolve_user_id(user_id, method_name="RunRepository.count_by_thread")
+        stmt = select(RunRow.run_id).where(RunRow.thread_id == thread_id)
+        if resolved_user_id is not None:
+            stmt = stmt.where(RunRow.user_id == resolved_user_id)
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return len(result.all())
+
+
     async def list_pending(self, *, before=None):
         if before is None:
             before_dt = datetime.now(UTC)

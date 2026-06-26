@@ -165,3 +165,48 @@ class TestThreadStateAnnotations:
         """spec phase0-3: charts_status must be Annotated with merge_charts_status."""
         hints = get_type_hints(ThreadState, include_extras=True)
         assert merge_charts_status in hints["charts_status"].__metadata__
+
+
+class TestMergeArtifactsRunScoped:
+    """spec 2026-06-26 §任务2（路 A）：artifact 按 (run_id, path) 去重。
+
+    同一 thread 内多 run 若产同名 chart（chart_id 来自 catalog 固定、与 run 无关），
+    旧 reducer 按 path 去重会让后一 run 覆盖前一 run 的产物（前端列表不变但磁盘
+    内容被换）。带 run_id 维度后：同 run 同 path 覆盖（正确），跨 run 同 path 不互覆盖。
+    """
+
+    def test_cross_run_same_path_not_overwritten(self):
+        """两个 run 各 present 同 path → 两条 artifact（按 run 区分）。"""
+        existing = [{"path": "/o.png", "kind": "chart", "run_id": "run-A"}]
+        new = [{"path": "/o.png", "kind": "chart", "run_id": "run-B"}]
+        merged = merge_artifacts(existing, new)
+        assert len(merged) == 2
+        run_ids = {m.get("run_id") for m in merged}
+        assert run_ids == {"run-A", "run-B"}
+
+    def test_same_run_same_path_dedupes(self):
+        """同 run 同 path 仍去重为一条（追问轮补全元数据，不回归）。"""
+        existing = [{"path": "/o.png", "kind": "chart", "run_id": "run-A", "output_mode": "per_subject"}]
+        new = [{"path": "/o.png", "kind": "chart", "run_id": "run-A", "output_mode": "aggregate", "chart_id": "o"}]
+        merged = merge_artifacts(existing, new)
+        assert len(merged) == 1
+        # 同 run 内新值覆盖旧值（元数据补全语义不变）
+        assert merged[0]["output_mode"] == "aggregate"
+        assert merged[0]["chart_id"] == "o"
+
+    def test_run_id_absent_falls_back_to_path_dedup(self):
+        """裸 string / 无 run_id 的 meta 仍按 path 去重（向后兼容旧产物）。"""
+        existing = ["/o.png"]  # 裸 string，无 run_id
+        new = [{"path": "/o.png", "kind": "chart"}]  # dict 无 run_id
+        merged = merge_artifacts(existing, new)
+        assert len(merged) == 1  # 都无 run_id → 按 path 去重
+
+    def test_distinct_paths_within_same_run_all_kept(self):
+        """per_subject 多张图 path 不同 → 各自保留（与 run_id 维度正交）。"""
+        metas = [
+            {"path": f"/o_{i}.png", "kind": "chart", "run_id": "run-A", "subject": str(i)}
+            for i in range(3)
+        ]
+        merged = merge_artifacts(None, metas)
+        assert len(merged) == 3
+
