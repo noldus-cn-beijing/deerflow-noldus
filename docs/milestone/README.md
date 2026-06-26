@@ -19,6 +19,8 @@
 | Feature | 状态 | Milestone | 最新 handoff |
 |---------|------|-----------|-------------|
 | **EV19 列语义对齐** | Sprint 1 已合 dev（自定义分析区列 HITL 对齐）· **Sprint 2 结构聚合机制已在线**（#98 已 CLOSED、方法论已交付；剩余=坐实+固化+补测，非阻塞） · [Sprint 2 spec](../superpowers/specs/2026-06-26-column-semantics-sprint2-structural-aggregation-spec.md) | [column-semantics-alignment.md](column-semantics-alignment.md) | [6/5 design v2](../design/2026-06-05-column-semantics-hitl-design-v2.md) |
+| **文件路径可靠性承重墙** | 📋 立项（治"路径类 bug"家族：DB 外键+run 隔离+解析单点强制；DeerFlow 已有 resolve_virtual_path、缺的自己补）· 未派实施 | — | [6/26 路径可靠性 spec](../superpowers/specs/2026-06-26-file-path-reliability-loadbearing-convergence-spec.md) |
+| **Experiment 跨范式对比** | 📋 立项（thread archive 归一为实验 + 快照提取 + synthesizer 跨范式综合；让项目更像 agent）· 工程骨架可建，**判读方法论待行为学同事** · 未派实施 | — | [6/26 experiment init 设计](../superpowers/specs/2026-06-26-experiment-cross-paradigm-comparison-init-design.md) |
 | **Skill 优化 → SFT（SkillOpt 方法论）** | 计划已就绪 · **🔴 阻塞于同事 Golden Cases**（benchmark 数量为零）· [Issue #90](https://github.com/noldus-cn-beijing/noldus-insight/issues/90) | — | [6/4 实施计划](../plans/2026-06-04-skillopt-skill-optimization-plan.md) |
 | **DeerFlow upstream sync（21 commit）** | ✅ 已合 dev（74e3e80c→f92a26d5，PR #113，受保护文件 surgical + full-follow 补回 2 处定制） | [deerflow-sync-2026-05-25-all-5-pr-merged.md](deerflow-sync-2026-05-25-all-5-pr-merged.md) | [6/9 sync21 review-fix + 409 merged](../handoffs/2026-06/2026-06-09-sync21-review-fix-and-409-merged-handoff.md) |
 | **Gateway 多 worker 切 thread 409 修复** | ✅ 已合 dev（PR #112，前端优雅降级 A + 默认单 worker B；共享 StreamBridge C 留 backlog） | — | [6/9 sync21 review-fix + 409 merged](../handoffs/2026-06/2026-06-09-sync21-review-fix-and-409-merged-handoff.md) |
