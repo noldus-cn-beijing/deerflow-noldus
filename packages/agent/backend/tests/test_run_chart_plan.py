@@ -943,3 +943,134 @@ class TestArtifactsRegistered:
         assert "artifacts" not in cmd.update, (
             f"red: 错误路径不应写 artifacts: {cmd.update}"
         )
+
+
+# ===================================================================
+# 核盘自洽性守卫（problem doc 2026-06-24-disk-race-false-partial §5）
+# ===================================================================
+
+
+class TestReconcileGuardFires:
+    """``_assert_reconcile_consistent`` fail-loud 结构守卫单元测试。
+
+    取证结论：run_chart_plan 本身无核盘竞态（fut.result()+shutdown(wait=True) 等所有
+    worker 退出才核盘，自首版 302a7046 即有），核盘循环每 idx 只 append 一侧，故
+    ``len(chart_files)+len(failed_charts)==n_total`` 本已结构成立。本守卫钉死该属性，
+    防未来重构（重新按 chart_id keying / 独立计 n_failed）静默重引入 silent-drop-completed
+    那类 n_failed≠len(failures) 自洽性破坏。
+    """
+
+    def test_assert_reconcile_consistent_raises_on_mismatch(self):
+        # rendered(2) + failed(1) = 3 != n_total(5) → fail-loud。
+        with pytest.raises(ValueError, match="reconcile"):
+            _TOOL._assert_reconcile_consistent(5, ["a", "b"], ["x"])
+
+    def test_assert_reconcile_consistent_passes_on_match(self):
+        # rendered(1) + failed(2) = 3 == n_total(3) → 不 raise。
+        _TOOL._assert_reconcile_consistent(3, ["a"], ["x", "y"])
+
+    def test_tool_returns_error_command_on_guard_violation(self, ws_and_outputs, monkeypatch):
+        # monkeypatch 守卫抛 ValueError → 工具走 _seal_failed + error_code=reconcile_inconsistent，
+        # 且**不写 artifacts**（镜像 test_error_path_returns_command_no_artifacts）。
+        workspace, outputs = ws_and_outputs
+        _write_plan(workspace, _plan([{"id": "box_open_arm", "output_mode": "aggregate"}]))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success(outputs=outputs))
+
+        def _boom(n_total, chart_files, failed_charts):
+            raise ValueError("reconcile 自洽性破坏: 模拟未来重构破坏划分")
+
+        monkeypatch.setattr(_TOOL, "_assert_reconcile_consistent", _boom)
+
+        cmd = _call_command(_runtime(workspace, outputs))
+        payload = json.loads(cmd.update["messages"][0].content)
+        assert payload["status"] == "failed", payload
+        assert payload["error_code"] == "reconcile_inconsistent", payload
+        assert "artifacts" not in cmd.update, f"守卫触发不应写 artifacts: {cmd.update}"
+        # _seal_failed 落盘 failed handoff（磁盘反映失败，不留 stale completed）。
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert h["status"] == "failed", h
+
+
+class TestReconcileInvariantHolds:
+    """证守卫在所有真实路径（成功/partial/rc0-no-png/abort）不 false-fire + 锁不变式。
+
+    每条经 result dict + 封存 handoff 双向断言：
+      n_rendered + n_failed == n_total，
+      n_failed == len(failures) == len(handoff.failed_charts)，
+      gate_signals.failed_charts == gate_signals.errors_count == n_failed。
+    """
+
+    def _assert_consistent(self, res, h):
+        n_total, n_rendered, n_failed = res["n_total"], res["n_rendered"], res["n_failed"]
+        assert n_rendered + n_failed == n_total, res
+        assert n_failed == len(res["failures"]), res
+        assert n_failed == len(h["failed_charts"]), (res, h["failed_charts"])
+        gs = res["gate_signals"]
+        assert gs["failed_charts"] == n_failed, gs
+        assert gs["errors_count"] == n_failed, gs
+
+    def _charts_112(self):
+        """1 aggregate + 112 per_subject（4×28，复现 dogfood 形态）。"""
+        charts = [{"id": "box_open_arm", "output_mode": "aggregate"}]
+        for cid in ("open_arm_time_ratio_bar", "zone_entry_distribution", "trajectory", "heatmap"):
+            for i in range(28):
+                charts.append({
+                    "id": cid,
+                    "output_mode": "per_subject",
+                    "subject_index": i,
+                    "output": f"/mnt/user-data/outputs/plot_{cid}_s{i}.png",
+                    "args": ["--input", "/mnt/user-data/uploads/fake.txt",
+                             "--output", f"/mnt/user-data/outputs/plot_{cid}_s{i}.png"],
+                })
+        return charts
+
+    def test_invariant_all_success_112(self, ws_and_outputs, monkeypatch):
+        workspace, outputs = ws_and_outputs
+        _write_plan(workspace, _plan(self._charts_112()))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_success(outputs=outputs))
+        res = _call(_runtime(workspace, outputs))
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert res["n_total"] == 113 and res["n_rendered"] == 113, res
+        self._assert_consistent(res, h)
+
+    def test_invariant_partial(self, ws_and_outputs, monkeypatch):
+        workspace, outputs = ws_and_outputs
+        charts = [
+            {"id": "box_open_arm", "output_mode": "aggregate"},
+            {"id": "trajectory_s0", "output_mode": "per_subject"},
+            {"id": "trajectory_s1", "output_mode": "per_subject"},
+        ]
+        _write_plan(workspace, _plan(charts))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_fail_on({"trajectory_s1"}, outputs=outputs))
+        res = _call(_runtime(workspace, outputs))
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert res["status"] == "partial" and res["n_failed"] == 1, res
+        self._assert_consistent(res, h)
+
+    def test_invariant_rc0_no_png(self, ws_and_outputs, monkeypatch):
+        # rc=0 但脚本没写 png = 半成功，磁盘是唯一真相 → 计入 failed。
+        workspace, outputs = ws_and_outputs
+        charts = [
+            {"id": "box_open_arm", "output_mode": "aggregate"},
+            {"id": "trajectory_s0", "output_mode": "per_subject"},
+        ]
+        _write_plan(workspace, _plan(charts))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_rc0_no_png({"trajectory_s0"}, outputs=outputs))
+        res = _call(_runtime(workspace, outputs))
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        assert res["n_failed"] == 1, res
+        self._assert_consistent(res, h)
+
+    def test_invariant_abort(self, ws_and_outputs, monkeypatch):
+        # on_error=abort：首个失败后续标 aborted，results 仍写满全 index → 不变式照样成立。
+        workspace, outputs = ws_and_outputs
+        charts = [
+            {"id": "c0", "output_mode": "per_subject"},
+            {"id": "c1", "output_mode": "per_subject"},
+            {"id": "c2", "output_mode": "per_subject"},
+        ]
+        _write_plan(workspace, _plan(charts))
+        monkeypatch.setattr(_TOOL, "_TASK_RUNNER_OVERRIDE", _runner_fail_on({"c0"}, outputs=outputs))
+        res = _call(_runtime(workspace, outputs), on_error="abort")
+        h = json.loads((workspace / "handoff_chart_maker.json").read_text(encoding="utf-8"))
+        self._assert_consistent(res, h)

@@ -278,6 +278,14 @@ def run_chart_plan_tool(
     n_rendered = len(chart_files)
     n_failed = n_total - n_rendered
 
+    # ---- Step 7.1: 核盘自洽性守卫（fail-loud，防未来重构静默破坏划分）----
+    try:
+        _assert_reconcile_consistent(n_total, chart_files, failed_charts)
+    except ValueError as e:
+        logger.error("[run_chart_plan] %s", e)
+        _seal_failed(workspace, ChartMakerHandoff, f"reconcile 自洽性破坏: {e}")
+        return _error_command(tool_call_id, "reconcile_inconsistent", str(e))
+
     # ---- Step 7.5: remaining_charts（P5 预算降级指纹，透传 plan.charts_budget_remaining）----
     remaining_charts: list[dict[str, str]] = []
     for c in plan.get("charts_budget_remaining") or []:
@@ -453,6 +461,25 @@ def _execute_tasks(
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
     return results, failures
+
+
+def _assert_reconcile_consistent(n_total: int, chart_files: list, failed_charts: list) -> None:
+    """Fail-loud 结构守卫：rendered + failed 必须恰好划分 n_total。
+
+    当前核盘循环（Step 7）每 idx 只 append chart_files 或 failed_charts 之一，故此式
+    必然成立——本断言钉死该属性，防未来重构（重新按 chart_id keying / 独立计 n_failed）
+    静默重引入 silent-drop-completed 那类 n_failed≠len(failures) 自洽性破坏。仅校验这一条
+    等式即足以钉住全部不变式（n_rendered=len(chart_files)、n_failed=n_total-n_rendered 皆其推论）。
+
+    注：run_chart_plan 本身无核盘竞态（_execute_tasks 对每个 future 调 fut.result() 阻塞到
+    worker 退出 + finally shutdown(wait=True)，核盘时 png 必已落盘）。本守卫纯防回归，非治竞态。
+    """
+    rendered, failed = len(chart_files), len(failed_charts)
+    if rendered + failed != n_total:
+        raise ValueError(
+            f"reconcile 自洽性破坏: n_rendered({rendered}) + n_failed({failed}) "
+            f"!= n_total({n_total})（核盘循环未恰好划分全部 task）"
+        )
 
 
 def _derive_status(n_total: int, n_rendered: int) -> str:
