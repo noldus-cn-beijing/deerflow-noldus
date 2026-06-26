@@ -384,6 +384,38 @@ export const enUS: Translations = {
     kindArtifact: "Artifact produced",
   },
 
+  workflowStages: {
+    navLabel: "Analysis progress",
+    names: {
+      upload: "Upload",
+      paradigm: "Paradigm",
+      align: "Column align",
+      compute: "Metrics",
+      qc: "Quality check",
+      interpret: "Interpret",
+      report: "Report",
+    },
+    statusPending: "Not started",
+    statusActive: "In progress",
+    statusWaiting: "Awaiting confirmation",
+    statusDone: "Done",
+    statusWarning: "Has notes",
+    statusFailed: "Error",
+    waitingHint: "Needs your input",
+    whatItDoes: {
+      upload: "Upload EthoVision trajectory data",
+      paradigm: "Identify the experiment paradigm (e.g. EPM / OFT)",
+      align: "Align column semantics for custom zones",
+      compute: "Compute behavioral metrics for the paradigm",
+      qc: "Run data quality gate checks",
+      interpret: "Statistical analysis and expert interpretation",
+      report: "Generate the APA-format report",
+    },
+    compactOf: (currentOrdinal: number) => `Stage ${currentOrdinal} of 7`,
+    compactExpand: "Show all stages",
+    compactCollapse: "Hide stages",
+  },
+
   // Token Usage
   tokenUsage: {
     title: "Token Usage",

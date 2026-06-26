@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
 import { AgentWelcome } from "@/components/workspace/agent-welcome";
+import { AnalysisRail } from "@/components/workspace/analysis-rail";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
 import { ChatBox, useThreadChat } from "@/components/workspace/chats";
 import { ExportTrigger } from "@/components/workspace/export-trigger";
@@ -155,9 +156,19 @@ export default function AgentChatPage() {
           </header>
 
           <main className="flex min-h-0 max-w-full grow flex-col">
+            {/* spec#4 分析进度轨：常驻 sticky 条（同源 spec#2 useRunTrace，前端推导）。 */}
+            {!isNewThread && (
+              <div className="pointer-events-none sticky top-14 z-20 mt-14 w-full">
+                <div className="pointer-events-auto mx-auto w-full max-w-(--container-width-md) px-4">
+                  <div className="bg-background/80 rounded-md px-2 py-1.5 backdrop-blur">
+                    <AnalysisRail messages={thread.messages} />
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex size-full justify-center">
               <MessageList
-                className={cn("size-full", !isNewThread && "pt-10")}
+                className={cn("size-full", !isNewThread && "pt-4")}
                 threadId={threadId}
                 thread={thread}
                 paddingBottom={messageListPaddingBottom}

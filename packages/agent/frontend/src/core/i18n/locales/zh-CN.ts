@@ -372,6 +372,38 @@ export const zhCN: Translations = {
     kindArtifact: "产物生成",
   },
 
+  workflowStages: {
+    navLabel: "分析进度",
+    names: {
+      upload: "上传",
+      paradigm: "范式识别",
+      align: "列对齐",
+      compute: "指标计算",
+      qc: "数据质检",
+      interpret: "统计解读",
+      report: "报告",
+    },
+    statusPending: "未开始",
+    statusActive: "进行中",
+    statusWaiting: "等待确认",
+    statusDone: "已完成",
+    statusWarning: "有提示",
+    statusFailed: "出错",
+    waitingHint: "等你确认",
+    whatItDoes: {
+      upload: "上传 EthoVision 导出的轨迹数据",
+      paradigm: "识别实验范式（如 EPM / OFT）",
+      align: "对齐自定义分析区的列语义",
+      compute: "按范式计算行为指标",
+      qc: "数据质量关卡检查",
+      interpret: "统计分析与专家解读",
+      report: "生成 APA 格式报告",
+    },
+    compactOf: (currentOrdinal: number) => `第 ${currentOrdinal} 阶段 / 共 7`,
+    compactExpand: "展开全部阶段",
+    compactCollapse: "收起阶段",
+  },
+
   // Token Usage
   tokenUsage: {
     title: "Token 用量",

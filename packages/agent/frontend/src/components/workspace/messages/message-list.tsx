@@ -86,18 +86,25 @@ export function MessageList({
   const renderedGroups = useMemo(
     () =>
       groupMessages(deferredMessages, (group) => {
+        // spec#4 进度轨锚点：每个 group 外层挂 data-message-id（= group.id = 种子
+        // message.id），供点阶段节点时 querySelector + scrollIntoView 定位。虚拟化
+        // (Phase0#7) 与非虚拟化两条渲染路径都透传这个属性，不影响分组/流式逻辑。
         if (group.type === "human" || group.type === "assistant") {
-          return group.messages.map((msg) => {
-            return (
-              <MessageListItem
-                key={`${group.id}/${msg.id}`}
-                message={msg}
-                isLoading={isLoading}
-                threadId={threadId}
-                messageRunIds={messageRunIds}
-              />
-            );
-          });
+          return (
+            <div key={group.id} data-message-id={group.id}>
+              {group.messages.map((msg) => {
+                return (
+                  <MessageListItem
+                    key={`${group.id}/${msg.id}`}
+                    message={msg}
+                    isLoading={isLoading}
+                    threadId={threadId}
+                    messageRunIds={messageRunIds}
+                  />
+                );
+              })}
+            </div>
+          );
         } else if (group.type === "assistant:clarification") {
           const message = group.messages[0];
           if (message && hasContent(message)) {
@@ -127,7 +134,7 @@ export function MessageList({
               }
             }
             return (
-              <div key={group.id}>
+              <div key={group.id} data-message-id={group.id}>
                 <MarkdownContent
                   content={stripClarificationOptionsFromContent(
                     extractContentFromMessage(message),
@@ -152,7 +159,7 @@ export function MessageList({
           // ArtifactMeta），不从消息裸路径猜。详见 InlineArtifactSummary。
           const hasPresentFileMessage = group.messages.some(hasPresentFiles);
           return (
-            <div className="w-full" key={group.id}>
+            <div className="w-full" key={group.id} data-message-id={group.id}>
               {group.messages[0] && hasContent(group.messages[0]) && (
                 <MarkdownContent
                   content={extractContentFromMessage(group.messages[0])}
@@ -326,6 +333,7 @@ export function MessageList({
           return (
             <div
               key={"subtask-group-" + group.id}
+              data-message-id={group.id}
               className="relative z-1 flex flex-col gap-2"
             >
               {results}
@@ -399,6 +407,7 @@ export function MessageList({
           return (
             <div
               key={"processing-group-" + group.id}
+              data-message-id={group.id}
               className="flex flex-col gap-2"
             >
               {results}

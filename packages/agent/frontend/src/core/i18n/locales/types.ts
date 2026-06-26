@@ -320,6 +320,46 @@ export interface Translations {
     kindArtifact: string;
   };
 
+  // Analysis Rail（分析进度轨 —— spec 2026-06-24-frontend-phase0-4）
+  workflowStages: {
+    /** nav 语义 aria-label（整条进度轨） */
+    navLabel: string;
+    /** 7 阶段名（key 与 WORKFLOW_STAGE_NAME_KEYS 对齐） */
+    names: {
+      upload: string;
+      paradigm: string;
+      align: string;
+      compute: string;
+      qc: string;
+      interpret: string;
+      report: string;
+    };
+    /** 阶段状态文字（色+图标+文字三件套 / color-not-only） */
+    statusPending: string;
+    statusActive: string;
+    statusWaiting: string;
+    statusDone: string;
+    statusWarning: string;
+    statusFailed: string;
+    /** 等待 HITL 时的微标：「等你确认」 */
+    waitingHint: string;
+    /** tooltip：该阶段在做什么（hover/聚焦时） */
+    whatItDoes: {
+      upload: string;
+      paradigm: string;
+      align: string;
+      compute: string;
+      qc: string;
+      interpret: string;
+      report: string;
+    };
+    /** 窄屏紧凑态：「第 N 阶段，共 7」（currentOrdinal 从 1 起） */
+    compactOf: (currentOrdinal: number) => string;
+    /** 窄屏紧凑态展开按钮 aria-label */
+    compactExpand: string;
+    compactCollapse: string;
+  };
+
   // Token Usage
   tokenUsage: {
     title: string;

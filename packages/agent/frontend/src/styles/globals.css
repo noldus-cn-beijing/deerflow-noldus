@@ -584,6 +584,30 @@
       opacity: 0;
     }
   }
+
+  /* HITL 等待态:琥珀脉冲(进度轨 waiting 节点,spec#4 §3.2)。与 pulse-soft 同结构,
+     仅色相改琥珀(--status-warning 家族),降饱和。reduced-motion 降级为静态描边。 */
+  .animate-pulse-warm {
+    animation: pulse-warm 2.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse-warm {
+    0%, 100% {
+      box-shadow: 0 0 0 1px oklch(0.72 0.12 75 / 0.22),
+                  0 4px 16px -4px oklch(0.72 0.12 75 / 0.14);
+    }
+    50% {
+      box-shadow: 0 0 0 1px oklch(0.72 0.12 75 / 0.38),
+                  0 6px 24px -4px oklch(0.72 0.12 75 / 0.24);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse-warm {
+      animation: none;
+      box-shadow: 0 0 0 1px oklch(0.72 0.12 75 / 0.28);
+    }
+  }
 }
 
 /* ============================================================

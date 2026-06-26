@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { type PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { AnalysisRail } from "@/components/workspace/analysis-rail";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
 import {
   ChatBox,
@@ -136,9 +137,21 @@ export default function ChatPage() {
             </div>
           </header>
           <main className="flex min-h-0 max-w-full grow flex-col">
+            {/* spec#4 分析进度轨：常驻 sticky 条，数据前端推导（同源 spec#2 useRunTrace）。
+                仅在有进展时渲染（AnalysisRail 内部判断）。mt-14 把初始位置推到 header(h-14) 下；
+                sticky top-14 滚动时钉在 header 下，不挤压消息流（bg 半透 + backdrop-blur）。 */}
+            {!isNewThread && (
+              <div className="pointer-events-none sticky top-14 z-20 mt-14 w-full">
+                <div className="pointer-events-auto mx-auto w-full max-w-(--container-width-md) px-4">
+                  <div className="bg-background/80 rounded-md px-2 py-1.5 backdrop-blur">
+                    <AnalysisRail messages={thread.messages} />
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex size-full justify-center">
               <MessageList
-                className={cn("size-full", !isNewThread && "pt-10")}
+                className={cn("size-full", !isNewThread && "pt-4")}
                 threadId={threadId}
                 thread={thread}
                 messageRunIds={messageRunIds}
