@@ -258,6 +258,12 @@ export const zhCN: Translations = {
     reportTitle: "分析报告",
     reportOpen: "查看完整报告",
     reportDownload: "下载报告",
+    // 报告多格式导出（spec 2026-06-29-report-export-formats-impl）：单一下载 → 导出菜单。
+    reportExport: "导出",
+    exportHtml: "HTML（原文）",
+    exportPdf: "PDF",
+    exportWord: "Word",
+    exportLatex: "LaTeX",
     backToChat: "返回对话",
     galleryPlaceholder:
       "完整画廊（分面筛选 + 虚拟化网格 + 小倍数对比）将在下一迭代上线。可先点「下载全部」带走所有图。",

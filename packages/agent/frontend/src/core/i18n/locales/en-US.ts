@@ -269,6 +269,12 @@ export const enUS: Translations = {
     reportTitle: "Analysis report",
     reportOpen: "View full report",
     reportDownload: "Download report",
+    // Report multi-format export (spec 2026-06-29-report-export-formats-impl): single download → export menu.
+    reportExport: "Export",
+    exportHtml: "HTML (original)",
+    exportPdf: "PDF",
+    exportWord: "Word",
+    exportLatex: "LaTeX",
     backToChat: "Back to chat",
     galleryPlaceholder:
       "Full gallery (facets + virtualized grid + small multiples) lands in the next iteration. Use “Download all” to take every chart with you.",

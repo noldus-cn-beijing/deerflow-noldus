@@ -61,6 +61,16 @@ export function dataTableExportURL(threadId: string): string {
 }
 
 /**
+ * 报告多格式导出端点（spec 2026-06-29-report-export-formats-impl）。
+ *
+ * 把线程 outputs/report.html 转成 pdf / docx / tex 返回 attachment。与
+ * archiveArtifactsURL / reportsArtifactsURL 同基础（getBackendBaseURL + /api/threads/…）。
+ */
+export function reportExportURL(threadId: string, format: "pdf" | "docx" | "tex"): string {
+  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/report/export?format=${format}`;
+}
+
+/**
  * Normalize an image src from report.md into an artifact API filepath.
  *
  * 规范形态（SSOT，2026-06-18）：report.md 内图片路径一律为带前导斜杠的虚拟

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ReportCard } from "./report-card";
@@ -26,6 +27,11 @@ const tGallery = {
   reportTitle: "报告",
   reportOpen: "展开",
   reportDownload: "下载",
+  reportExport: "导出",
+  exportHtml: "HTML（原文）",
+  exportPdf: "PDF",
+  exportWord: "Word",
+  exportLatex: "LaTeX",
   noArtifacts: "无",
 };
 
@@ -66,5 +72,51 @@ describe("ReportCard renderer routing", () => {
     });
     // md 路径仍渲染出文本（MarkdownContent 容器存在）
     expect(container.textContent).toContain("实验概况");
+  });
+});
+
+/**
+ * spec 2026-06-29-report-export-formats-impl §4.3：单一下载 → 导出菜单。
+ *
+ * 报告卡渲染「导出」下拉，展开含 HTML/PDF/Word/LaTeX 四项；点 PDF → window.open 以
+ * ?format=pdf URL 调用。Radix DropdownMenu 用 Portal 渲染到 document.body，用 screen 查。
+ */
+describe("ReportCard export dropdown", () => {
+  beforeEach(() => {
+    const noop = () => undefined;
+    window.matchMedia =
+      window.matchMedia ?? ((_q: unknown) => ({ matches: false, addEventListener: noop, removeEventListener: noop }));
+  });
+
+  it("renders export dropdown with HTML / PDF / Word / LaTeX options", async () => {
+    const user = userEvent.setup();
+    render(<ReportCard meta={makeMeta("/mnt/user-data/outputs/report.html")} threadId="t1" />);
+
+    // 触发器常驻（展开态前就渲染）
+    expect(screen.getByRole("button", { name: "导出" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "导出" }));
+    // 四个导出选项都出现（Radix Portal 渲染到 document.body）
+    expect(await screen.findByText("HTML（原文）")).toBeInTheDocument();
+    expect(screen.getByText("PDF")).toBeInTheDocument();
+    expect(screen.getByText("Word")).toBeInTheDocument();
+    expect(screen.getByText("LaTeX")).toBeInTheDocument();
+  });
+
+  it("clicking PDF opens the export URL with format=pdf", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    render(<ReportCard meta={makeMeta("/mnt/user-data/outputs/report.html")} threadId="t1" />);
+    await user.click(screen.getByRole("button", { name: "导出" }));
+    await user.click(await screen.findByText("PDF"));
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const firstCall = openSpy.mock.calls[0];
+    const calledUrl = (firstCall?.[0] ?? "") as string;
+    expect(calledUrl).toContain("/api/threads/t1/artifacts/report/export");
+    expect(calledUrl).toContain("format=pdf");
+
+    openSpy.mockRestore();
   });
 });

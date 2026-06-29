@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response, Streami
 
 from app.gateway.authz import require_permission
 from app.gateway.path_utils import resolve_thread_virtual_path
+from deerflow.tools.builtins.report_exporter import EXPORT_FORMATS, ExportError, export_report
 
 logger = logging.getLogger(__name__)
 
@@ -211,12 +212,12 @@ _PLAN_CHARTS_VIRTUAL = "/mnt/user-data/workspace/plan_charts.json"
 # ethoinsight/charts.py 的实际绘制调用（ax.bar/ax.plot/broken_barh/polar），不是猜。
 # 与 present_file_tool._derive_chart_type 同型，改时两处同步（SSOT 一处推导不漂移）。
 _CHART_TYPE_BY_ID: dict[str, str] = {
-    "zone_entry_distribution": "bar",      # ax.bar（分区进入次数分布），非 box
-    "center_entry_summary": "bar",          # ax.bar（中心区进入计数+停留时长）
-    "activity_intensity": "line",           # ax.plot 时间序列（活跃度随时间）
-    "time_progress": "line",                # 双轴 ax.plot（5-min bin 距离+中心时间）
+    "zone_entry_distribution": "bar",  # ax.bar（分区进入次数分布），非 box
+    "center_entry_summary": "bar",  # ax.bar（中心区进入计数+停留时长）
+    "activity_intensity": "line",  # ax.plot 时间序列（活跃度随时间）
+    "time_progress": "line",  # 双轴 ax.plot（5-min bin 距离+中心时间）
     "struggle_distribution": "timeseries",  # broken_barh 随时间的挣扎/不动区间
-    "rose": "rose",                         # 极坐标 bar（头朝向玫瑰图）
+    "rose": "rose",  # 极坐标 bar（头朝向玫瑰图）
 }
 
 # token 启发式 fallback：命名规整的图（含 box/bar/trajectory/heatmap/...）走这里。
@@ -382,6 +383,37 @@ async def get_report_artifacts(thread_id: str, request: Request) -> Response:
     return Response(
         content=json.dumps(list_report_artifacts(thread_id)),
         media_type="application/json",
+    )
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/report/export",
+    summary="Export Report (PDF/Word/LaTeX)",
+    description="Convert the thread's report.html to PDF (WeasyPrint) / docx / tex (pandoc) and return as attachment. LaTeX path pre-extracts base64 data-uris (pandoc latex writer drops them otherwise).",
+)
+@require_permission("threads", "read", owner_check=True)
+async def export_report_artifact(thread_id: str, request: Request, format: str = "pdf") -> Response:
+    """报告多格式导出（spec 2026-06-29-report-export-formats-impl）。
+
+    读 outputs/report.html → 转 format → 返回 attachment。源文件缺失/格式非法/
+    转换器报错 → 404/400/500。注册在 catch-all ``/artifacts/{path:path}`` 之前，
+    避免被吞（与 reports/charts 端点同模式）。
+    """
+    fmt = format.lower()
+    if fmt not in EXPORT_FORMATS:
+        raise HTTPException(status_code=400, detail=f"unsupported format: {format} (allowed: {', '.join(EXPORT_FORMATS)})")
+    outputs_dir = resolve_thread_virtual_path(thread_id, _OUTPUTS_VIRTUAL_PREFIX)
+    report_html = outputs_dir / "report.html"
+    if not report_html.is_file():
+        raise HTTPException(status_code=404, detail="report.html not found for this thread")
+    try:
+        content, mime, filename = export_report(report_html, fmt)
+    except ExportError as e:
+        raise HTTPException(status_code=500, detail=f"report export failed: {e}") from e
+    return Response(
+        content=content,
+        media_type=mime,
+        headers=_build_attachment_headers(filename),
     )
 
 

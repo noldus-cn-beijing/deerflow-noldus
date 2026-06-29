@@ -36,6 +36,11 @@ dependencies = [
     "aiosqlite>=0.19",
     "alembic>=1.13",
     "cryptography>=43.0.0",
+    # 报告多格式导出（spec 2026-06-29-report-export-formats-impl）：
+    # weasyprint→PDF、pypandoc_binary→docx/tex（自带 pandoc 二进制，免系统装 pandoc，
+    # 部署镜像确定性更好）。体积 ~167MB 是导出能力的必要成本（spike 已量化）。
+    "weasyprint>=69",
+    "pypandoc_binary>=1.17",
 ]
 
 [project.optional-dependencies]

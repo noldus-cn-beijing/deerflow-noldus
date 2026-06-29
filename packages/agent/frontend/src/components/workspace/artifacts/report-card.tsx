@@ -4,11 +4,12 @@ import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, FileTextIcon } from "l
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { HTMLContent } from "@/components/workspace/artifacts/html-content";
 import { MarkdownContent } from "@/components/workspace/messages/markdown-content";
 import { loadArtifactContent } from "@/core/artifacts/loader";
 import { type ArtifactMeta } from "@/core/artifacts/types";
-import { urlOfArtifact } from "@/core/artifacts/utils";
+import { reportExportURL, urlOfArtifact } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 
 /**
@@ -67,16 +68,26 @@ export function ReportCard({ meta, threadId }: { meta: ArtifactMeta; threadId: s
             {expanded ? <ChevronDownIcon className="size-4" /> : <ChevronRightIcon className="size-4" />}
             {t.gallery.reportOpen}
           </Button>
-          <Button type="button" variant="outline" size="sm" asChild>
-            <a
-              href={urlOfArtifact({ filepath: meta.path, threadId, download: true })}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <DownloadIcon className="size-4" />
-              {t.gallery.reportDownload}
-            </a>
-          </Button>
+          {/* spec 2026-06-29-report-export-formats-impl：单一下载 → 导出菜单（HTML / PDF / Word / LaTeX）。
+              HTML 走现有 download 链接；PDF/Word/LaTeX 走后端导出端点（同步返回，浏览器原生下载反馈）。 */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" className="gap-1">
+                <DownloadIcon className="size-4" />
+                {t.gallery.reportExport}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <a href={urlOfArtifact({ filepath: meta.path, threadId, download: true })} target="_blank" rel="noopener noreferrer">
+                  {t.gallery.exportHtml}
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.open(reportExportURL(threadId, "pdf"))}>{t.gallery.exportPdf}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.open(reportExportURL(threadId, "docx"))}>{t.gallery.exportWord}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.open(reportExportURL(threadId, "tex"))}>{t.gallery.exportLatex}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {expanded && (

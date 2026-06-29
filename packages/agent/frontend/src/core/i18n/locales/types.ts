@@ -202,6 +202,12 @@ export interface Translations {
     reportTitle: string;
     reportOpen: string;
     reportDownload: string;
+    // Report multi-format export (spec 2026-06-29-report-export-formats-impl)
+    reportExport: string;
+    exportHtml: string;
+    exportPdf: string;
+    exportWord: string;
+    exportLatex: string;
     backToChat: string;
     galleryPlaceholder: string;
     aggregate: string;
