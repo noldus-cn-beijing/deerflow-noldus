@@ -23,6 +23,7 @@ import {
 import type { Subtask } from "@/core/tasks";
 import { useUpdateSubtask } from "@/core/tasks/context";
 import type { AgentThreadState } from "@/core/threads";
+import { useDocumentVisibility } from "@/hooks/use-document-visibility";
 import { cn } from "@/lib/utils";
 
 import { StreamingIndicator } from "../streaming-indicator";
@@ -99,6 +100,23 @@ export function MessageList({
   // `groupMessages` logic is unchanged (only wrapped). See spec §1.5/§3.2.
   const deferredMessages = useDeferredValue(messages);
   const isLoading = thread.isLoading;
+  // Switchback jank fix (spec 2026-06-29-fix-tab-switchback-jank, 候选 B):
+  // `useDeferredValue` is what makes foreground streaming smooth (it lets
+  // React interrupt/merge high-frequency token renders). But while the tab is
+  // HIDDEN the React concurrent scheduler stalls while SSE keeps appending to
+  // `messages` — so every hidden-frame update piles up as a deferred batch
+  // waiting to be flushed. On switchback React flushes the whole backlog at
+  // once → multi-second main-thread block → the page jumps straight to the
+  // latest frame after freezing (the dogfooded symptom).
+  //
+  // Fix: while hidden, bypass the deferred value and render off the LIVE
+  // `messages` directly. There is nothing to interrupt for a hidden tab (no
+  // input/scroll to keep responsive), so the deferred throttling buys nothing
+  // here — and skipping it means no backlog accumulates. On switchback the
+  // next render is just the current final state, not a replay of N stale
+  // batches. Render-layer only; SSE/merge core is untouched.
+  const isHidden = useDocumentVisibility();
+  const renderMessages = isHidden ? messages : deferredMessages;
   // Streaming-render perf (spec 2026-06-29 Step 1.4): only the single in-flight
   // message (the last one in the thread, while `isLoading`) is still receiving
   // tokens — every earlier message's content is frozen. The extraction cache
@@ -107,7 +125,7 @@ export function MessageList({
   // deferred batch. `inFlightId` is the precise per-message streaming marker
   // the cache needs (thread-level `isLoading` alone would cache nothing during
   // a stream — defeating the fix).
-  const lastMessage = deferredMessages[deferredMessages.length - 1];
+  const lastMessage = renderMessages[renderMessages.length - 1];
   const inFlightId =
     isLoading && lastMessage && typeof lastMessage.id === "string"
       ? lastMessage.id
@@ -121,7 +139,7 @@ export function MessageList({
   );
   const renderedGroups = useMemo(
     () =>
-      groupMessages(deferredMessages, (group) => {
+      groupMessages(renderMessages, (group) => {
         // spec#4 进度轨锚点：每个 group 外层挂 data-message-id（= group.id = 种子
         // message.id），供点阶段节点时 querySelector + scrollIntoView 定位。虚拟化
         // (Phase0#7) 与非虚拟化两条渲染路径都透传这个属性，不影响分组/流式逻辑。
@@ -148,7 +166,7 @@ export function MessageList({
             const toolCallId =
               message.type === "tool" ? message.tool_call_id : undefined;
             const toolArgs = toolCallId
-              ? findToolCallArgs(toolCallId, deferredMessages)
+              ? findToolCallArgs(toolCallId, renderMessages)
               : undefined;
             const rawOptions = toolArgs?.options;
             // Options may arrive as a JSON-encoded string from certain LLMs
@@ -182,7 +200,7 @@ export function MessageList({
                 ? toolArgs.context
                 : undefined;
             const answeredIndex = answeredOptionIndex(
-              deferredMessages,
+              renderMessages,
               toolCallId,
               options,
             );
@@ -485,7 +503,7 @@ export function MessageList({
     // (artifacts/chartsStatus/artifactsRefetchSignal no longer used inside —
     // moved to the single trailing InlineArtifactSummary.)
     [
-      deferredMessages,
+      renderMessages,
       isLoading,
       threadId,
       messageRunIds,

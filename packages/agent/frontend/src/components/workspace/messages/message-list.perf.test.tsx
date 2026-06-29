@@ -135,3 +135,56 @@ describe("MessageList — streaming throttle (Phase0#7 Step 1)", () => {
     expect(callsAfter).toBeGreaterThan(callsBefore);
   });
 });
+
+// Switchback jank fix (spec 2026-06-29-fix-tab-switchback-jank, 候选 B):
+// While the tab is hidden, MessageList must render off the LIVE messages, not
+// the deferred value — so that SSE updates arriving while hidden do NOT pile
+// up as deferred batches that React would have to flush in one blocking pass
+// on switchback. This test pins that the first arg handed to groupMessages is
+// the live messages array when the tab is hidden.
+describe("MessageList — hidden tab renders live messages (no deferred backlog)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.defineProperty(document, "hidden", {
+      value: false,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it("passes the LIVE messages array to groupMessages while the tab is hidden", async () => {
+    const messages = [
+      { id: "h1", type: "human", content: "hi" },
+    ] as BaseStream<AgentThreadState>["messages"];
+
+    const view = renderWithProviders(
+      <MessageList
+        threadId="t1"
+        thread={makeThread({ messages })}
+        paddingBottom={0}
+      />,
+    );
+
+    // Simulate the user switching away: tab hidden while SSE keeps appending.
+    Object.defineProperty(document, "hidden", { value: true, configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    const grown = [
+      ...messages,
+      { id: "a1", type: "ai", content: "streaming token batch" },
+    ] as BaseStream<AgentThreadState>["messages"];
+    view.rerender(
+      <MessageList
+        threadId="t1"
+        thread={makeThread({ messages: grown, isLoading: true })}
+        paddingBottom={0}
+      />,
+    );
+
+    const calls = (groupMessages as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    // The most recent grouping pass must have been handed the LIVE grown array
+    // (the exact reference), proving the deferred value was bypassed while hidden.
+    const lastCallMessages = calls[calls.length - 1]?.[0];
+    expect(lastCallMessages).toBe(grown);
+  });
+});
