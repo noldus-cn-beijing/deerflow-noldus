@@ -1,7 +1,7 @@
 # Case-002: OFT（旷场）Baseline
 
 case_id: "case-002-oft-baseline"
-paradigm: "oft"
+paradigm: "open_field"                      # canonical academic name（catalog 文件名 oft.yaml，loader alias 双向兼容）
 species: ""                               # TODO
 strain: ""                                # TODO
 n_subjects: 0                             # TODO

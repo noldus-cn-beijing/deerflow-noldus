@@ -6,7 +6,7 @@
 #   light_latency     — 首次进入亮室潜伏期（值越高越焦虑）
 # ============================================================
 
-paradigm: "ldb"
+paradigm: "light_dark_box"      # canonical academic name（与 metadata.yaml 一致）
 species: ""                    # TODO
 n_subjects: 0                  # TODO
 groups:                        # TODO

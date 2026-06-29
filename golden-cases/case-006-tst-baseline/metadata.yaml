@@ -1,7 +1,7 @@
 # Case-006: TST（悬尾实验）Baseline
 
 case_id: "case-006-tst-baseline"
-paradigm: "tst"
+paradigm: "tail_suspension"                 # canonical academic name（catalog 文件名 tst.yaml，loader alias 双向兼容）
 species: ""                               # TODO
 strain: ""                                # TODO
 n_subjects: 0                             # TODO

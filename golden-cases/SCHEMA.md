@@ -2,7 +2,12 @@
 
 > 本文档定义 EthoInsight golden-case 的结构规范。
 > 行为学同事按此模板标注，工程师据此编写自动化校验和回归断言。
-> 最后更新：2026-04-22
+> 最后更新：2026-06-29（对齐 v0.1 六范式 canonical paradigm key + MetricExpectation 改 group 维度）
+
+> **golden-case 的三重角色**（v0.1）：
+> 1. **领域知识源** — 专家 reasoning 注入（notes.md 切成 SFT CoT 数据）
+> 2. **回归测试** — `required_keywords` / `forbidden_claims` / `should_not_contain` 做断言
+> 3. **SkillOpt eval benchmark + SFT/RL 评分基准** — Verifier 的 outcome/coverage 组件、IRC 校准的"成功/失败"标签、SkillOpt 优化循环的评分标准，全靠它提供 ground truth（详见 [docs/plans/2026-06-04-skillopt-skill-optimization-plan.md](../docs/plans/2026-06-04-skillopt-skill-optimization-plan.md)）
 
 ---
 
@@ -27,7 +32,7 @@ case 的身份信息，用于过滤和分组。
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `case_id` | string | 是 | 格式 `case-XXX-<paradigm>-<tag>`，如 `case-001-shoaling-baseline` |
+| `case_id` | string | 是 | 格式 `case-XXX-<paradigm>-<tag>`，如 `case-001-epm-baseline` |
 | `paradigm` | enum | 是 | 见下方范式枚举表 |
 | `species` | string | 是 | 如 `zebrafish`、`C57BL/6 mouse`、`Wistar rat` |
 | `strain` | string | 否 | 品系，如 `AB strain`、`Sprague-Dawley` |
@@ -45,24 +50,20 @@ case 的身份信息，用于过滤和分组。
 
 ### 范式枚举
 
-| 值 | 中文名 |
-|---|---|
-| `shoaling` | 斑马鱼鱼群行为 |
-| `epm` | 高架十字迷宫 |
-| `open_field` | 旷场实验 |
-| `fst` | 强迫游泳实验 |
-| `mwm` | 莫里斯水迷宫 |
-| `y_maze` | Y 迷宫 |
-| `o_maze` | O 迷宫 |
-| `barnes` | 巴恩斯迷宫 |
-| `nor` | 新物体识别 |
-| `three_chamber` | 三箱社交测试 |
-| `social_interaction` | 社会互动测试 |
-| `light_dark` | 明暗箱 |
-| `novel_suppressed_feeding` | 新奇抑制摄食 |
-| `footprint` | 足迹分析 |
-| `fine_behavior` | 动物精细行为识别 |
-| `phenotyper` | PhenoTyper 硬件系统 |
+**`paradigm` 字段必须填 canonical academic name**（不是 catalog 文件名短名）。canonical key 与 `ethoinsight.catalog.loader._PARADIGM_ALIASES` + `ev19_facts.SUPPORTED_PARADIGMS_V01` 两个 SSOT 对齐；`validate_golden_case.py` 只认 canonical name。
+
+**v0.1 支持的 6 范式**（catalog + metrics + scripts 全在）：
+
+| canonical 值 | 中文名 | catalog 文件名（短名，loader alias 兼容） |
+|---|---|---|
+| `epm` | 高架十字迷宫 | epm.yaml |
+| `open_field` | 旷场实验 | oft.yaml |
+| `light_dark_box` | 明暗箱 | ldb.yaml |
+| `forced_swim` | 强迫游泳实验 | fst.yaml |
+| `zero_maze` | 零迷宫（Zero Maze） | zero_maze.yaml |
+| `tail_suspension` | 悬尾实验 | tst.yaml |
+
+> 其他范式（鱼类 shoaling 已于 2026-05-26 下线、MWM / Y-maze / Barnes / NOR / 三箱社交 / PhenoTyper / 昆虫旷场等）属 **v1.0 范围**，v0.1 不支持——agent 在识别阶段就会反问「v0.1 未实现」，不会走分析流水线。这些范式的 golden-case 等 v1.0 启动时再建。
 
 ---
 
@@ -86,12 +87,17 @@ case 的身份信息，用于过滤和分组。
 
 用于断言 Layer A 的计算结果是否正确。
 
+> **维度是 `group` 不是 `subject`**：v0.1 判读哲学是**组间比较**（control vs treatment 是否有显著差异），**不预测单个动物的绝对值**（见 CLAUDE.md 第 9 条）。所以指标期望按**组**给范围（如"control 组开放臂时间比例 10%-30%"），不给单 subject 精确区间。这也和实际 6 个 case 模板的用法一致。
+
 | 字段 | 类型 | 必填 | 说明 | 示例 |
 |---|---|---|---|---|
-| `subject` | string | 是 | 受试者名 | `"Subject 3"` |
-| `metric` | string | 是 | 指标名（与 ethoinsight metrics.py 对齐） | `"mean_nnd"` |
-| `expected_range` | [float, float] | 是 | 允许区间 [min, max] | `[65, 75]` |
-| `unit` | string | 是 | 单位 | `"mm"` |
+| `metric` | string | 是 | 指标名（与 ethoinsight catalog `default_metrics[].id` 对齐） | `"open_arm_time_ratio"` |
+| `group` | string | 是 | 组名（必须出现在 `metadata.yaml` 的 `groups` 里） | `"control"` |
+| `expected_range` | [float, float] | 是 | 该组该指标的允许区间 [min, max]，给合理宽范围即可 | `[0.10, 0.30]` |
+| `unit` | string | 是 | 单位（与 catalog `output_unit` 对齐：ratio / s / count 等） | `"ratio"` |
+| `note` | string | 否 | 该范围的判读说明（方向、信心） | `"对照组正常范围"` |
+
+> `validate_golden_case.py` 对 `group`/`subject` 两种键都兼容（向后兼容旧 case）；新 case 一律用 `group`。
 
 ### FindingExpectation（洞察期望）
 
@@ -210,7 +216,7 @@ Step 5  工程师：跑校验 → 合入仓库 → 写自动化回归测试
 - YAML 语法正确
 
 **内容校验（警告级别）**：
-- `expected_metrics` 中 subject 在 groups 里有定义
+- `expected_metrics` 中 `group` 在 metadata 的 `groups` 里有定义
 - `required_keywords` 不为空列表（空列表 = 没有断言 = case 无意义）
 - `notes.md` 包含所有 6 个大纲标题
 
@@ -219,7 +225,7 @@ Step 5  工程师：跑校验 → 合入仓库 → 写自动化回归测试
 ## 7. 常见问题
 
 **Q: expected_range 的区间应该多宽？**
-A: 取决于指标的计算稳定性。纯算术指标（mean_nnd、distance_moved）±5% 即可。涉及随机采样的指标（如某些 bootstrap 结果）放宽到 ±10%。
+A: 取决于指标的计算稳定性。纯算术指标（distance_moved、immobility_time）±5% 即可。涉及随机采样的指标（如某些 bootstrap 结果）放宽到 ±10%。范围宽窄 = 对 agent 的严格程度，信心足就窄，没把握就宽。
 
 **Q: required_keywords 用中文还是英文？**
 A: 和用户语言一致。当前系统锁定中文输出，所以填中文关键词。

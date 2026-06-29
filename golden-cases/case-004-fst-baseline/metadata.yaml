@@ -1,7 +1,7 @@
 # Case-004: FST（强迫游泳）Baseline
 
 case_id: "case-004-fst-baseline"
-paradigm: "fst"
+paradigm: "forced_swim"                     # canonical academic name（catalog 文件名 fst.yaml，loader alias 双向兼容）
 species: ""                               # TODO
 strain: ""                                # TODO
 n_subjects: 0                             # TODO

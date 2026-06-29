@@ -8,7 +8,7 @@
 #   thigmotaxis_index     — 趋触性指数（贴壁程度）
 # ============================================================
 
-paradigm: "oft"
+paradigm: "open_field"          # canonical academic name（与 metadata.yaml 一致）
 species: ""                    # TODO
 n_subjects: 0                  # TODO
 groups:                        # TODO

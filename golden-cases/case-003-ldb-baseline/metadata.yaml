@@ -1,7 +1,7 @@
 # Case-003: LDB（明暗箱）Baseline
 
 case_id: "case-003-ldb-baseline"
-paradigm: "ldb"
+paradigm: "light_dark_box"                  # canonical academic name（catalog 文件名 ldb.yaml，loader alias 双向兼容）
 species: ""                               # TODO
 strain: ""                                # TODO
 n_subjects: 0                             # TODO

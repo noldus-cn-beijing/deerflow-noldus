@@ -37,23 +37,16 @@ ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_DIR = ROOT / "golden-cases"
 
 VALID_PARADIGMS = {
-    # v0.1 supported (catalog/<paradigm>.yaml exists)
-    "epm",
-    "open_field",
-    "fst",
-    "o_maze",
-    "light_dark",
-    # planned / paradigm knowledge exists but code-layer not implemented in v0.1
-    "mwm",
-    "y_maze",
-    "barnes",
-    "nor",
-    "three_chamber",
-    "social_interaction",
-    "novel_suppressed_feeding",
-    "footprint",
-    "fine_behavior",
-    "phenotyper",
+    # Canonical paradigm keys — 与 ethoinsight.catalog.loader._PARADIGM_ALIASES
+    # 和 ev19_facts.SUPPORTED_PARADIGMS_V01 对齐（academic name 是唯一 canonical
+    # key；catalog 文件名短名 oft/ldb/tst/fst 由 loader alias map 双向兼容，
+    # golden-case 只认 canonical academic name）。改前先核对上述两处 SSOT。
+    "epm",              # file: epm.yaml
+    "open_field",       # file: oft.yaml
+    "light_dark_box",   # file: ldb.yaml
+    "forced_swim",      # file: fst.yaml
+    "zero_maze",        # file: zero_maze.yaml
+    "tail_suspension",  # file: tst.yaml
 }
 
 VALID_SEVERITIES = {"low", "moderate", "high", "critical"}
