@@ -408,10 +408,35 @@ def sanitize_report_html(html_text: str) -> str:
     return parser.result
 
 
+class ImgResolveStats:
+    """占位符解析统计（HTML 模式），供 seal 做「有图可用却零内联」fail-loud 判断。
+
+    Attributes:
+        inlined: 实际被 base64 内联的占位符数（命中且磁盘 .png 存在）。
+        available: chart_files 里磁盘真实存在的代表性图数（声明但磁盘缺失不计）。
+    """
+
+    __slots__ = ("inlined", "available")
+
+    def __init__(self, inlined: int = 0, available: int = 0) -> None:
+        self.inlined = inlined
+        self.available = available
+
+    @property
+    def has_available_but_none_inlined(self) -> bool:
+        """True = chart handoff 有可用图但报告零占位符被内联 → seal 该 fail-loud。
+
+        这是间歇性丢图（dogfood thread a2a14b8f）的确定性判据：report-writer 没写
+        ``{{img:}}`` 占位符（lead 没把 chart handoff 路径塞进 task prompt 时常见），
+        但图其实已生成、磁盘可用。model 自报 errors=[]，seal 据此追加可见诊断。
+        """
+        return self.available > 0 and self.inlined == 0
+
+
 def _resolve_html_report_image_placeholders(
     report_host_path: Path,
     workspace: Path,
-) -> None:
+) -> ImgResolveStats | None:
     """Resolve ``{{img:<basename>}}`` placeholders in report.html → base64-inline.
 
     与 markdown 模式的 ``_resolve_report_image_placeholders`` 对称。占位符契约：
@@ -425,13 +450,20 @@ def _resolve_html_report_image_placeholders(
       （后者经 sanitize 会残留裸文本/坏 src——2026-06-29 嵌套 ``<img>`` 回归根因）。
     - chart_files 为空/不可读 → 保留占位符原样（人工诊断）。
 
-    report 文件不存在/不可读 → 静默跳过（seal 仍成功）。
+    report 文件不存在/不可读 → 静默跳过（seal 仍成功），返回 None。
+
+    Returns:
+        ``ImgResolveStats``（inlined/available 计数）供 seal 做 fail-loud 判断；
+        report 不存在/不可读时返回 None。
     """
+    stats = ImgResolveStats()
     if not report_host_path.is_file():
-        return
+        return None
 
     chart_files_map = _load_chart_files_map(workspace)
     outputs_dir = _outputs_dir_for(workspace)
+    # available = chart_files 里磁盘真实存在的图数（fail-loud 判据的分母）
+    stats.available = sum(1 for basename in chart_files_map if (outputs_dir / basename).is_file())
 
     try:
         original = report_host_path.read_text(encoding="utf-8")
@@ -440,7 +472,7 @@ def _resolve_html_report_image_placeholders(
             "seal_report_writer_handoff: report.html unreadable, skip base64 inline",
             exc_info=True,
         )
-        return
+        return None
 
     def _replace(match: re.Match[str]) -> str:
         basename = match.group(1).strip()
@@ -471,6 +503,7 @@ def _resolve_html_report_image_placeholders(
                 basename,
             )
             return ""  # <img src=""> 前端显示 alt，不破坏 HTML
+        stats.inlined += 1
         b64 = base64.b64encode(raw).decode("ascii")
         return f"data:image/png;base64,{b64}"
 
@@ -481,7 +514,7 @@ def _resolve_html_report_image_placeholders(
             "seal_report_writer_handoff: html base64 inline substitution skipped",
             exc_info=True,
         )
-        return
+        return stats
 
     if resolved != original:
         try:
@@ -495,6 +528,8 @@ def _resolve_html_report_image_placeholders(
                 "seal_report_writer_handoff: report.html rewrite failed after base64 inline",
                 exc_info=True,
             )
+
+    return stats
 
 
 def _normalize_report_image_paths(report_host_path: Path) -> None:
@@ -1561,7 +1596,20 @@ def seal_report_writer_handoff(
         _report_host = _ws.parent / "outputs" / _report_name
         if _is_html:
             # HTML 模式：{{img:}} → base64 data URI（仅代表性图，prompt 已指导）
-            _resolve_html_report_image_placeholders(_report_host, _ws)
+            _img_stats = _resolve_html_report_image_placeholders(_report_host, _ws)
+            # fail-loud（spec 2026-06-29 fix-html-report-inline-img）：chart handoff 有可用图
+            # 但报告零占位符被内联 → report-writer 漏放代表性图（lead 没塞 chart handoff 路径
+            # 时常见，dogfood thread a2a14b8f）。确定性追加诊断 error，让 model 自报的
+            # errors=[] 假成功暴露——堵住「写无可视化输出就能 errors:[]」的 reward-hacking 空子。
+            if _img_stats is not None and _img_stats.has_available_but_none_inlined:
+                _diag = (
+                    f"代表性图缺失：chart-maker 已产出 {_img_stats.available} 张可用图"
+                    f"（handoff_chart_maker.json），但 report.html 未引用任何一张"
+                    f"（零 {{img:}} 占位符被内联）。report-writer 应从 chart_files 挑 1-3 张"
+                    f"代表性图、用 <img src=\"{{{'{'}img:<文件名>{'}'} }}\"> 占位符写进报告。"
+                )
+                payload["errors"] = [*payload.get("errors", []), _diag]
+                logger.warning("seal_report_writer_handoff: %s", _diag)
             # 消毒：剥 <script>/on*/<iframe> 等（LLM 产出，封存时做一层确定性消毒）
             if _report_host.is_file():
                 try:

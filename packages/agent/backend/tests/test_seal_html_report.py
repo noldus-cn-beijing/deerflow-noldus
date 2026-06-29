@@ -15,10 +15,12 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from deerflow.tools.builtins.seal_handoff_tools import (
     _resolve_html_report_image_placeholders,
     sanitize_report_html,
+    seal_report_writer_handoff,
 )
 
 # ---------------------------------------------------------------------------
@@ -147,6 +149,201 @@ class TestHtmlPlaceholderBase64Inline:
         _resolve_html_report_image_placeholders(report, ws)
 
         assert report.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# §1.6 「有图可用却零占位符」fail-loud（治间歇性丢图）
+#
+# dogfood thread a2a14b8f 实证：chart-maker 产了 113 张图、handoff status=completed，
+# 但 lead 派遣 report-writer 时没把 handoff_chart_maker.json 路径塞进 task prompt
+# （只说「图表已生成」），report-writer 没去 read → 不写任何 {{img:}} 占位符 →
+# §3.4 写「（无可视化输出）」，而 handoff status=completed / errors=[] —— 假成功藏
+# 在全绿下。
+#
+# 结构性治本（非 prompt 提醒）：seal 时确定性检测「chart handoff 有可用图（chart_files
+# 非空且磁盘 .png 存在）但 report 零占位符被内联」→ 往 handoff errors[] 追加可见诊断，
+# 让假成功暴露，不再静默放过。reward-hacking 自检：堵住「写无可视化输出就能 errors:[]」
+# 的空子。
+# ---------------------------------------------------------------------------
+
+
+class TestMissingImageFailLoud:
+    def test_resolve_returns_stats_inlined_and_available(self, tmp_path):
+        """_resolve_html_report_image_placeholders 返回 (inlined, available) 统计。
+
+        available = chart_files 里磁盘真实存在的图数；inlined = 实际被内联的占位符数。
+        seal 据此判断是否 fail-loud。
+        """
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        png_bytes = b"\x89PNG\r\n\x1a\n" + b"image-data" * 4
+        _make_png(outputs, "plot_box.png", png_bytes)
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_box.png"])
+
+        report = outputs / "report.html"
+        report.write_text('<img src="{{img:plot_box.png}}">', encoding="utf-8")
+
+        stats = _resolve_html_report_image_placeholders(report, ws)
+
+        assert stats is not None
+        assert stats.inlined == 1
+        assert stats.available == 1
+
+    def test_stats_available_counts_disk_present_only(self, tmp_path):
+        """available 只数 chart_files 里磁盘真实存在的图（声明了但磁盘缺失不计）。"""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        _make_png(outputs, "real.png")
+        # ghost.png 在 chart_files 声明但磁盘不写
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/real.png", "/mnt/user-data/outputs/ghost.png"])
+
+        report = outputs / "report.html"
+        report.write_text('<img src="{{img:real.png}}">', encoding="utf-8")
+
+        stats = _resolve_html_report_image_placeholders(report, ws)
+
+        assert stats is not None
+        assert stats.inlined == 1
+        assert stats.available == 1  # ghost.png 磁盘缺失，不计入 available
+
+    def test_zero_placeholders_with_available_images_flags_missing(self, tmp_path):
+        """核心契约：有可用图 + report 零占位符 → stats 标记 missing=True（供 seal fail-loud）。
+
+        复现 a2a14b8f 故障形态：chart handoff 有图、磁盘有 png、但 report 写了
+        「（无可视化输出）」一个占位符都没有。
+        """
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        _make_png(outputs, "plot_box.png")
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_box.png"])
+
+        report = outputs / "report.html"
+        # 故障形态：零占位符
+        report.write_text("<h3>3.4 代表性图表</h3><p>（无可视化输出）</p>", encoding="utf-8")
+
+        stats = _resolve_html_report_image_placeholders(report, ws)
+
+        assert stats is not None
+        assert stats.inlined == 0
+        assert stats.available == 1
+        assert stats.has_available_but_none_inlined is True  # ← fail-loud 触发条件
+
+    def test_no_chart_handoff_does_not_flag_missing(self, tmp_path):
+        """无 chart handoff（真没画图）→ 不触发 fail-loud（available==0）。"""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        report = tmp_path / "report.html"
+        report.write_text("<h1>报告</h1><p>本次无可视化</p>", encoding="utf-8")
+
+        stats = _resolve_html_report_image_placeholders(report, ws)
+
+        # 无 chart handoff → available==0 → 不该 fail-loud
+        assert stats is not None
+        assert stats.available == 0
+        assert stats.has_available_but_none_inlined is False
+
+
+class TestSealLevelMissingImageFailLoud:
+    """seal_report_writer_handoff 端到端：有图可用但报告零占位符 → handoff errors[] 注入诊断。
+
+    复现 a2a14b8f 故障：model 自报 status=completed/errors=[]，但 seal 据真产物（report.html
+    零占位符 + chart handoff 有可用图）确定性追加可见 error，让假成功暴露。
+    """
+
+    def _make_runtime(self, workspace: Path) -> MagicMock:
+        runtime = MagicMock()
+        runtime.state = {"thread_data": {"workspace_path": str(workspace)}}
+        return runtime
+
+    def test_seal_injects_error_when_images_available_but_none_inlined(self, tmp_path):
+        """核心修复：model 传 errors=[]，但 report 零占位符 + 有可用图 → sealed handoff 含诊断 error。"""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        outputs.mkdir()
+        _make_png(outputs, "plot_box.png")
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_box.png"])
+        # experiment-context.json（S6 memory 注入会读；此处 patch 掉 memory 写入）
+        (ws / "experiment-context.json").write_text(json.dumps({"paradigm": "epm"}), encoding="utf-8")
+
+        # 故障形态：report 零占位符，写了「（无可视化输出）」
+        report = outputs / "report.html"
+        report.write_text(
+            "<html><body><h3>3.4 代表性图表</h3><p>（无可视化输出）</p></body></html>",
+            encoding="utf-8",
+        )
+
+        runtime = self._make_runtime(ws)
+        with patch("deerflow.tools.builtins.seal_handoff_tools._write_experiment_summary_memory"):
+            result = seal_report_writer_handoff.func(
+                status="completed",
+                report_path="/mnt/user-data/outputs/report.html",
+                sections_written=["实验概况", "结果"],
+                errors=[],  # model 自报无错
+                runtime=runtime,
+            )
+
+        assert result.startswith("OK: sealed handoff_report_writer.json")
+        sealed = json.loads((ws / "handoff_report_writer.json").read_text(encoding="utf-8"))
+        # model 自报 errors=[]，但 seal 确定性追加了诊断 error
+        assert any("代表性图" in e or "占位符" in e or "图表" in e for e in sealed["errors"]), sealed["errors"]
+
+    def test_seal_no_error_when_report_has_inlined_image(self, tmp_path):
+        """报告正常内联了图 → seal 不注入诊断 error（不误伤正常路径）。"""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        outputs.mkdir()
+        _make_png(outputs, "plot_box.png")
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_box.png"])
+        (ws / "experiment-context.json").write_text(json.dumps({"paradigm": "epm"}), encoding="utf-8")
+
+        report = outputs / "report.html"
+        report.write_text(
+            '<html><body><figure><img src="{{img:plot_box.png}}"></figure></body></html>',
+            encoding="utf-8",
+        )
+
+        runtime = self._make_runtime(ws)
+        with patch("deerflow.tools.builtins.seal_handoff_tools._write_experiment_summary_memory"):
+            seal_report_writer_handoff.func(
+                status="completed",
+                report_path="/mnt/user-data/outputs/report.html",
+                sections_written=["结果"],
+                errors=[],
+                runtime=runtime,
+            )
+
+        sealed = json.loads((ws / "handoff_report_writer.json").read_text(encoding="utf-8"))
+        # 正常路径：model errors=[] 且 seal 不追加诊断
+        assert not any("代表性图" in e or "占位符" in e for e in sealed["errors"]), sealed["errors"]
+
+    def test_seal_no_error_when_no_chart_handoff(self, tmp_path):
+        """真没画图（无 chart handoff）→ seal 不注入诊断 error（available==0）。"""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        outputs.mkdir()
+        (ws / "experiment-context.json").write_text(json.dumps({"paradigm": "epm"}), encoding="utf-8")
+
+        report = outputs / "report.html"
+        report.write_text("<html><body><p>本次无可视化输出</p></body></html>", encoding="utf-8")
+
+        runtime = self._make_runtime(ws)
+        with patch("deerflow.tools.builtins.seal_handoff_tools._write_experiment_summary_memory"):
+            seal_report_writer_handoff.func(
+                status="completed",
+                report_path="/mnt/user-data/outputs/report.html",
+                sections_written=["结果"],
+                errors=[],
+                runtime=runtime,
+            )
+
+        sealed = json.loads((ws / "handoff_report_writer.json").read_text(encoding="utf-8"))
+        assert not any("代表性图" in e or "占位符" in e for e in sealed["errors"]), sealed["errors"]
 
 
 # ---------------------------------------------------------------------------
