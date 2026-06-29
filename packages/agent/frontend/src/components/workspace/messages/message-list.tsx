@@ -1,5 +1,6 @@
 import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { useDeferredValue, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
+import { useCallback, useEffect, useDeferredValue, useMemo, useRef } from "react";
 import type { StickToBottomContext } from "use-stick-to-bottom";
 
 import {
@@ -8,8 +9,8 @@ import {
 } from "@/components/ai-elements/conversation";
 import { useI18n } from "@/core/i18n/hooks";
 import { answeredOptionIndex } from "@/core/messages/clarification-state";
+import { clearExtractionCache, extractContentCached } from "@/core/messages/extraction-cache";
 import {
-  extractContentFromMessage,
   extractQualityWarnings,
   extractTextFromMessage,
   findToolCallArgs,
@@ -79,6 +80,13 @@ export function MessageList({
   // (StickToBottom) so the virtualizer can read its scroll element. Declared
   // before any early return to satisfy the Rules of Hooks.
   const scrollContextRef = useRef<StickToBottomContext | null>(null);
+  // spec 2026-06-29-streaming-render-perf — the extraction cache is module-
+  // scoped (survives across thread mounts), so clear it on thread switch to
+  // avoid serving a stale entry from a prior thread should a message id ever
+  // collide, and to bound memory for a long multi-thread session.
+  useEffect(() => {
+    clearExtractionCache();
+  }, [threadId]);
   // Phase0#7 Step 1 — streaming throttle (render-layer only, zero touch to
   // hooks.ts SSE/merge core):
   //   1) `useDeferredValue` lets React interrupt/merge the high-frequency
@@ -91,6 +99,26 @@ export function MessageList({
   // `groupMessages` logic is unchanged (only wrapped). See spec §1.5/§3.2.
   const deferredMessages = useDeferredValue(messages);
   const isLoading = thread.isLoading;
+  // Streaming-render perf (spec 2026-06-29 Step 1.4): only the single in-flight
+  // message (the last one in the thread, while `isLoading`) is still receiving
+  // tokens — every earlier message's content is frozen. The extraction cache
+  // (extraction-cache.ts) long-caches terminal messages and bypasses the
+  // in-flight one, so historical messages stop being O(n)-re-scanned every
+  // deferred batch. `inFlightId` is the precise per-message streaming marker
+  // the cache needs (thread-level `isLoading` alone would cache nothing during
+  // a stream — defeating the fix).
+  const lastMessage = deferredMessages[deferredMessages.length - 1];
+  const inFlightId =
+    isLoading && lastMessage && typeof lastMessage.id === "string"
+      ? lastMessage.id
+      : null;
+  // `useCallback` so the predicate identity is stable across renders that keep
+  // the same `inFlightId` — required for the mapper `useMemo` dep array below
+  // (a fresh closure every render would defeat the memo).
+  const isStreamingFor = useCallback(
+    (message: { id?: unknown }) => inFlightId !== null && message.id === inFlightId,
+    [inFlightId],
+  );
   const renderedGroups = useMemo(
     () =>
       groupMessages(deferredMessages, (group) => {
@@ -106,6 +134,7 @@ export function MessageList({
                     key={`${group.id}/${msg.id}`}
                     message={msg}
                     isLoading={isLoading}
+                    isStreaming={isStreamingFor(msg)}
                     threadId={threadId}
                     messageRunIds={messageRunIds}
                   />
@@ -162,7 +191,7 @@ export function MessageList({
                 {onSelectClarificationOption ? (
                   <DecisionCard
                     question={stripClarificationOptionsFromContent(
-                      extractContentFromMessage(message),
+                      extractContentCached(message, isStreamingFor(message)),
                       options ?? [],
                     )}
                     context={contextText}
@@ -178,7 +207,7 @@ export function MessageList({
                   // question as markdown so the pause is visible without buttons.
                   <MarkdownContent
                     content={stripClarificationOptionsFromContent(
-                      extractContentFromMessage(message),
+                      extractContentCached(message, isStreamingFor(message)),
                       options ?? [],
                     )}
                     isLoading={isLoading}
@@ -199,7 +228,7 @@ export function MessageList({
             <div className="w-full" key={group.id} data-message-id={group.id}>
               {group.messages[0] && hasContent(group.messages[0]) && (
                 <MarkdownContent
-                  content={extractContentFromMessage(group.messages[0])}
+                  content={extractContentCached(group.messages[0], isStreamingFor(group.messages[0]))}
                   isLoading={isLoading}
                   className="mb-4"
                   threadId={threadId}
@@ -308,7 +337,7 @@ export function MessageList({
             // the moment the tool_call chunk lands, leaving an empty
             // container behind (the "横线 div" symptom seen in dogfood).
             if (hasContent(message)) {
-              const narrative = extractContentFromMessage(message);
+              const narrative = extractContentCached(message, isStreamingFor(message));
               if (narrative) {
                 results.push(
                   <MarkdownContent
@@ -400,7 +429,7 @@ export function MessageList({
               );
             }
             if (hasContent(message)) {
-              const narrative = extractContentFromMessage(message);
+              const narrative = extractContentCached(message, isStreamingFor(message));
               if (narrative) {
                 results.push(
                   <MarkdownContent
@@ -462,6 +491,7 @@ export function MessageList({
       messageRunIds,
       updateSubtask,
       onSelectClarificationOption,
+      isStreamingFor,
       t,
     ],
   );
@@ -479,6 +509,15 @@ export function MessageList({
     total: renderedGroups.length,
     enabled: progressiveEnabled,
   });
+  // spec 2026-06-29-streaming-render-perf Step 3 — stabilize the spacer's
+  // inline style identity (keyed on paddingBottom) so it isn't a fresh object
+  // every render. Low-priority (rendered once per commit, outside the message
+  // hot path) but listed in the spec's 零散 cleanup. Declared before the
+  // loading-skeleton early return to respect the Rules of Hooks.
+  const spacerStyle = useMemo(
+    () => ({ height: `${paddingBottom}px` }) as CSSProperties,
+    [paddingBottom],
+  );
   if (thread.isThreadLoading && messages.length === 0) {
     return <MessageListSkeleton />;
   }
@@ -492,7 +531,7 @@ export function MessageList({
       {/* 产物（图 + 报告）不再内嵌对话流——全部移到右侧 thread 资产面板（ThreadAssetsPanel），
           它从磁盘端点取产物、与 streaming 解耦，不随消息流/state/切 tab 漂移。对话流只保留
           消息与底部留白 spacer。 */}
-      <div style={{ height: `${paddingBottom}px` }} />
+      <div style={spacerStyle} />
     </>
   );
   return (

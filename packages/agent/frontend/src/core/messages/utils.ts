@@ -335,12 +335,40 @@ function splitInlineReasoningFromAIMessage(message: Message) {
   return splitInlineReasoning(message.content);
 }
 
+/**
+ * Single-pass content extraction for a string AI message body (spec
+ * 2026-06-29-streaming-render-perf Step 1.3): fold the `<think>` split AND the
+ * control-signal line strip into one pipeline entry so the content is scanned
+ * once, not twice. Output is byte-identical to the prior two-step chain
+ * (`splitInlineReasoning(content).content` → `stripControlSignalLines(…)`) —
+ * verified by utils.test.ts equivalence cases; the transforms run in the same
+ * order (think-strip first, then signal-strip) so no cross-contamination is
+ * possible.
+ *
+ * Returns the final display `content` (signal lines stripped) and the
+ * `reasoning` collected from `<think>` bodies, in one call.
+ */
+function splitAndStripInlineReasoning(content: string) {
+  const split = splitInlineReasoning(content);
+  return {
+    content: stripControlSignalLines(split.content),
+    reasoning: split.reasoning,
+  };
+}
+
 export function extractContentFromMessage(message: Message) {
   let text: string;
   if (typeof message.content === "string") {
-    text =
-      splitInlineReasoningFromAIMessage(message)?.content ??
-      message.content.trim();
+    // Single-pass for AI messages (think-strip + signal-strip folded into one
+    // pipeline entry — was two full-string scans). Non-AI string messages
+    // (human/tool) must NOT get `<think>` split (the old code guarded via
+    // `splitInlineReasoningFromAIMessage` returning null for non-AI and
+    // falling back to the raw trimmed body); they only get signal-strip.
+    if (message.type === "ai") {
+      text = splitAndStripInlineReasoning(message.content).content;
+    } else {
+      text = stripControlSignalLines(message.content.trim());
+    }
   } else if (Array.isArray(message.content)) {
     text = message.content
       .map((content) => {

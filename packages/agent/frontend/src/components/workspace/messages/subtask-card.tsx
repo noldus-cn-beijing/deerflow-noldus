@@ -37,6 +37,12 @@ import {
   type CoTStep,
 } from "./message-group";
 
+// spec 2026-06-29-streaming-render-perf Step 3 — hoisted to a module constant so
+// the `components` prop identity is stable across renders (an inline
+// `{{ a: CitationLink }}` literal here was a new object every render, which
+// would defeat streamdown's block-level memo on the prompt render).
+const PROMPT_STREAMDOWN_COMPONENTS = { a: CitationLink } as Components;
+
 // Phase0#7 Step 2 — memoized so an unrelated parent re-render (e.g. a
 // streaming token landing in a sibling subagent group) does not re-render
 // this card's subtree. Props (taskId/threadId/messageRunIds) are stable
@@ -176,7 +182,7 @@ export const SubtaskCard = memo(function SubtaskCard({
               <div className="pt-1">
                 <Streamdown
                   {...streamdownPlugins}
-                  components={{ a: CitationLink } as Components}
+                  components={PROMPT_STREAMDOWN_COMPONENTS}
                 >
                   {task.prompt}
                 </Streamdown>

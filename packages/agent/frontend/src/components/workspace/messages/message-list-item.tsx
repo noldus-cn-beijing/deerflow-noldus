@@ -22,9 +22,11 @@ import { Button } from "@/components/ui/button";
 import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import {
-  extractContentFromMessage,
+  extractContentCached,
+  extractReasoningCached,
+} from "@/core/messages/extraction-cache";
+import {
   extractQualityWarnings,
-  extractReasoningContentFromMessage,
   parseUploadedFiles,
   stripUploadedFilesTag,
   type FileInMessage,
@@ -46,12 +48,23 @@ export const MessageListItem = memo(function MessageListItem({
   className,
   message,
   isLoading,
+  isStreaming = false,
   threadId,
   messageRunIds,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
+  /**
+   * Whether THIS message is the one currently receiving stream tokens (the
+   * last message while the thread is loading). Drives the extraction cache:
+   * terminal messages (`isStreaming=false`) are long-cached so they stop being
+   * O(n)-re-scanned every deferred batch; the single in-flight message
+   * (`isStreaming=true`) bypasses the cache because its content is mutating
+   * this batch. Defaults to `false` (terminal) for callers that don't track
+   * per-message streaming — correct and cache-friendly.
+   */
+  isStreaming?: boolean;
   threadId?: string;
   messageRunIds?: Map<string, string>;
 }) {
@@ -65,6 +78,7 @@ export const MessageListItem = memo(function MessageListItem({
         className={isHuman ? "w-fit" : "w-full"}
         message={message}
         isLoading={isLoading}
+        isStreaming={isStreaming}
       />
       {!isLoading && !isHuman && threadId && message.id && (() => {
         const runId = messageRunIds?.get(message.id);
@@ -88,8 +102,10 @@ export const MessageListItem = memo(function MessageListItem({
           <div className="flex gap-1">
             <CopyButton
               clipboardData={
-                extractContentFromMessage(message) ??
-                extractReasoningContentFromMessage(message) ??
+                // CopyButton only renders when `!isLoading` (terminal), so the
+                // cache is safe here and serves a cached value.
+                extractContentCached(message, false) ??
+                extractReasoningCached(message, false) ??
                 ""
               }
             />
@@ -134,10 +150,12 @@ function MessageContent_({
   className,
   message,
   isLoading = false,
+  isStreaming = false,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
+  isStreaming?: boolean;
 }) {
   const isHuman = message.type === "human";
   const { thread_id } = useParams<{ thread_id: string }>();
@@ -150,8 +168,11 @@ function MessageContent_({
     [thread_id],
   );
 
-  const rawContent = extractContentFromMessage(message);
-  const reasoningContent = extractReasoningContentFromMessage(message);
+  // Cached extraction (spec 2026-06-29 Step 1.4): terminal messages are served
+  // from the per-message cache; only the in-flight (`isStreaming`) message
+  // re-scans. Output is byte-identical to the uncached extractor.
+  const rawContent = extractContentCached(message, isStreaming);
+  const reasoningContent = extractReasoningCached(message, isStreaming);
 
   const files = useMemo(() => {
     const files = message.additional_kwargs?.files;

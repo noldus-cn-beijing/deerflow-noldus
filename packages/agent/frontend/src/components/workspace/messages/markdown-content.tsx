@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
 import type { AnchorHTMLAttributes, ImgHTMLAttributes } from "react";
+import { memo, useMemo } from "react";
 
 import {
   MessageResponse,
@@ -30,8 +30,7 @@ export type MarkdownContentProps = {
   threadId?: string;
 };
 
-/** Renders markdown content. */
-export function MarkdownContent({
+function MarkdownContentImpl({
   content,
   rehypePlugins = streamdownPlugins.rehypePlugins,
   className,
@@ -39,6 +38,21 @@ export function MarkdownContent({
   components: componentsFromProps,
   threadId,
 }: MarkdownContentProps) {
+  // spec 2026-06-29-streaming-render-perf Step 2 — `components` identity must be
+  // stable so the underlying streamdown (via MessageResponse) block-level memo
+  // actually engages: a new `components` object every render would defeat that
+  // memo and force the whole markdown (incl. Shiki syntax highlighting) to
+  // re-parse every token.
+  //
+  // Deps are `[threadId, componentsFromProps]`:
+  //   - `threadId` is a string (value-stable across renders).
+  //   - `componentsFromProps` is reference-compared. Callers MUST pass a
+  //     memoized object (or none). message-list-item.tsx already memoizes its
+  //     `components` on `[thread_id]`; the other call sites pass none
+  //     (`undefined`, trivially stable). An inline-literal `components={...}`
+  //     here would re-trigger the memo every render — that is exactly the
+  //     "prop 不稳定" root cause and is why Step 3 hoists subtask-card's inline
+  //     object to a module constant.
   const components = useMemo(() => {
     return {
       a: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => {
@@ -97,3 +111,21 @@ export function MarkdownContent({
     </MessageResponse>
   );
 }
+
+/**
+ * Renders markdown content.
+ *
+ * spec 2026-06-29-streaming-render-perf Step 2 — wrapped in `React.memo` so a
+ * terminal (completed) message's markdown subtree does NOT re-render when a
+ * sibling streams a new token. Combined with the stable `components` identity
+ * above, this lets streamdown's built-in block-level memo (committed-prefix +
+ * live-tail) actually engage: historical markdown blocks are not re-parsed
+ * (incl. Shiki syntax highlighting) on every streaming batch.
+ *
+ * Default shallow comparison is correct here: `content`/`isLoading`/`className`
+ * /`threadId` are compared by value, `components`/`remarkPlugins`/`rehypePlugins`
+ * by reference (stable via callers' useMemo or the module-level streamdown
+ * constants). No custom comparator needed.
+ */
+export const MarkdownContent = memo(MarkdownContentImpl);
+MarkdownContent.displayName = "MarkdownContent";
