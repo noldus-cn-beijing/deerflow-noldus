@@ -31,6 +31,10 @@ export type HTMLContentProps = {
 function sanitizeHtml(html: string): string {
   if (typeof window === "undefined") return "";
   return DOMPurify.sanitize(html, {
+    // WHOLE_DOCUMENT:false（DOMPurify 默认）——传入完整文档时只渲染 <body> 内容，
+    // <head>/<title> 不进正文渲染区（dogfood 73b41dc3 的裸标题 bug 防线之一；
+    // 后端 seal 亦已把 <title> 整段删除，纵深防御）。
+    WHOLE_DOCUMENT: false,
     // 禁止所有可执行/远程加载内容；data: 图像保留（base64 内联的代表性图）。
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input", "button"],
     FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover", "onfocus", "onblur"],

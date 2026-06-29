@@ -297,7 +297,8 @@ class _ReportHtmlSanitizer(html.parser.HTMLParser):
     DOMPurify 二次 sanitize，构成纵深防御。
     """
 
-    # 标签名小写。这些标签**整段连同内容删除**（script/style 可执行，其余远程加载风险）。
+    # 标签名小写。这些标签**整段连同内容删除**（script/style 可执行，title 不该进正文，
+    # 其余远程加载风险）。
     _DROP_TAGS_WITH_CONTENT = frozenset({
         "script",
         "style",
@@ -306,9 +307,13 @@ class _ReportHtmlSanitizer(html.parser.HTMLParser):
         "embed",
         "noscript",
         "template",
+        # title 整段删除（连内容）：LLM 常产 <head><title>报告标题</title></head>，
+        # 若只剥标签留内容，标题文字会裸露在 <head>，前端解析时落入 body → 报告顶部
+        # 冒出一行裸标题（dogfood thread 73b41dc3 证实）。标题本就不该进正文渲染区。
+        "title",
     })
     # 这些标签删除标签本身但**保留内容**（meta/link/base 在 head 内、报告用不到）。
-    _STRIP_TAGS_KEEP_CONTENT = frozenset({"link", "meta", "base", "title"})
+    _STRIP_TAGS_KEEP_CONTENT = frozenset({"link", "meta", "base"})
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)

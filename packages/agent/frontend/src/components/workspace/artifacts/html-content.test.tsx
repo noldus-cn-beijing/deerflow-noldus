@@ -60,4 +60,34 @@ describe("HTMLContent sanitization", () => {
     expect(inner.toLowerCase()).not.toContain("<script");
     expect(inner).not.toContain("alert");
   });
+
+  it("applies prose class so typography styling engages", () => {
+    // spec 2026-06-29：prose 是死类的根因——@tailwindcss/typography 未装时 prose 不生成
+    // 任何 CSS。这里断言 className 上确有 prose（plugin 装没装另由 build grep 验收）。
+    const { container } = render(<HTMLContent content="<p>ok</p>" />);
+    const host = container.querySelector(".report-html-content");
+    expect(host?.className).toContain("prose");
+    expect(host?.className).toContain("prose-sm");
+  });
+
+  it("does not render <head>/<title> content into the body", () => {
+    // 后端 seal 已把 <title> 整段删除（drop-with-content），但纵深防御：即便传入完整文档，
+    // 前端也只应渲染 <body> 内容——<head>/<title> 文字不得冒进正文渲染区（dogfood 73b41dc3
+    // 的裸标题 bug）。DOMPurify 默认 WHOLE_DOCUMENT=false，对合法文档只返回 body 内容。
+    const { container } = render(
+      <HTMLContent
+        content={
+          '<!DOCTYPE html><html><head><title>裸露标题不该出现</title><meta charset="utf-8"></head>' +
+          "<body><h2>正文标题</h2><p>正文</p></body></html>"
+        }
+      />,
+    );
+    const inner = container.querySelector(".report-html-content")?.innerHTML ?? "";
+    expect(inner).not.toContain("裸露标题不该出现");
+    expect(inner).not.toContain("<title");
+    expect(inner).not.toContain("<head");
+    // body 正文保留
+    expect(inner).toContain("正文标题");
+    expect(inner).toContain("正文");
+  });
 });

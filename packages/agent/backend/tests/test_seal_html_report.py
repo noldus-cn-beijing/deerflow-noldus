@@ -313,3 +313,22 @@ class TestHtmlSanitization:
             "data:image/png;base64,QUJD",
         ):
             assert fragment in clean
+
+    def test_title_dropped_with_content(self):
+        """``<title>`` 内容必须连同标签一起删除，不能裸露。
+
+        dogfood thread 73b41dc3 的 report.html 证实：LLM 产 ``<head><title>EPM…报告</title></head>``，
+        旧实现把 title 放进 ``_STRIP_TAGS_KEEP_CONTENT``（剥标签留内容）→ 标题文字裸露在
+        ``<head>`` 里 → 前端 DOMPurify 解析时该孤儿文本落入 body → 报告顶部冒出一行裸标题。
+        治本：title 进 ``_DROP_TAGS_WITH_CONTENT``，整段删除（标题文字本就不该进正文渲染区）。
+        """
+        html = (
+            '<html lang="zh"><head><title>EPM 高架十字迷宫行为学研究报告</title></head>'
+            "<body><h2>1. 实验概况</h2><blockquote>正文</blockquote></body></html>"
+        )
+        clean = sanitize_report_html(html)
+        assert "<title" not in clean.lower()
+        assert "EPM 高架十字迷宫行为学研究报告" not in clean
+        # 正文内容不受影响
+        assert "<h2>1. 实验概况</h2>" in clean
+        assert "<blockquote>正文</blockquote>" in clean

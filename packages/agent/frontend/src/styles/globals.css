@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* @tailwindcss/typography 让 prose 类生效（spec 2026-06-29-fix-html-report-styling）。
+   此前 prose 是死类：HTMLContent/ReportCard/MarkdownContent 都套了 prose prose-sm，
+   但 typography 插件没装 → prose 不生成任何 CSS → HTML 报告/Markdown 渲染只剩浏览器默认弱样式。
+   v4 接插件在 CSS 里（@plugin），不是 v3 的 tailwind.config.js plugins:[]。 */
+@plugin "@tailwindcss/typography";
+
 @source "../node_modules/streamdown/dist/index.js";
 
 /* ============================================================
