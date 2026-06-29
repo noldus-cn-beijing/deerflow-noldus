@@ -20,8 +20,8 @@ import type { Translations } from "@/core/i18n";
 
 /**
  * 这两个函数只读 `t.toolCalls.stageBroadcast.*`。参数类型用窄的 Pick，既兼容现有调用方
- * （传完整 Translations 仍满足 Pick），又让只持有 Translations 子集的消费者（如运行轨迹
- * 的 useRunTrace）能直接复用，不必强转（LSP 安全）。
+ * （传完整 Translations 仍满足 Pick），又让只持有 Translations 子集的消费者能直接复用，
+ * 不必强转（LSP 安全）。
  */
 type StageBroadcastTranslations = Pick<Translations, "toolCalls">;
 

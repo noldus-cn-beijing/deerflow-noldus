@@ -7,7 +7,6 @@ import { useCallback, useState } from "react";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
 import { AgentWelcome } from "@/components/workspace/agent-welcome";
-import { AnalysisRail } from "@/components/workspace/analysis-rail";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
 import { ChatBox, useThreadChat } from "@/components/workspace/chats";
 import { ExportTrigger } from "@/components/workspace/export-trigger";
@@ -23,7 +22,6 @@ import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicator";
 import { Tooltip } from "@/components/workspace/tooltip";
-import { RunTraceWidget } from "@/components/workspace/trace";
 import { useAgent } from "@/core/agents";
 import { useI18n } from "@/core/i18n/hooks";
 import { useNotification } from "@/core/notification/hooks";
@@ -166,25 +164,12 @@ export default function AgentChatPage() {
                 </Button>
               </Tooltip>
               <TokenUsageIndicator messages={thread.messages} />
-              <RunTraceWidget messages={thread.messages} />
               <ExportTrigger threadId={threadId} />
               <ArtifactTrigger />
             </div>
           </header>
 
           <main className="flex min-h-0 max-w-full grow flex-col">
-            {/* spec#4 分析进度轨：常驻 sticky 条（同源 spec#2 useRunTrace，前端推导）。 */}
-            {!isNewThread && (
-              <div className="pointer-events-none sticky top-14 z-20 mt-14 w-full">
-                <div className="pointer-events-auto mx-auto w-full max-w-(--container-width-md) px-4">
-                  <div className="bg-background/80 rounded-md px-2 py-1.5 backdrop-blur">
-                    <AnalysisRail messages={thread.messages} />
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* 同 chats/[thread_id]：size-full(h-full) 会从 sticky 进度轨下方起算却取满 main 全高，
-                底部溢出视口致滚动条错位 + 末条藏到输入框后；改 flex-1 min-h-0 只吃剩余高度。 */}
             <div className="flex min-h-0 w-full flex-1 justify-center">
               <MessageList
                 className={cn("size-full", !isNewThread && "pt-4")}

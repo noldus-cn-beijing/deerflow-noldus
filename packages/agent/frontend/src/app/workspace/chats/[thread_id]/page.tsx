@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { type PromptInputMessage } from "@/components/ai-elements/prompt-input";
-import { AnalysisRail } from "@/components/workspace/analysis-rail";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
 import {
   ChatBox,
@@ -22,7 +21,6 @@ import { ThreadContext } from "@/components/workspace/messages/context";
 import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicator";
-import { RunTraceWidget } from "@/components/workspace/trace";
 import { Welcome } from "@/components/workspace/welcome";
 import { useI18n } from "@/core/i18n/hooks";
 import { useNotification } from "@/core/notification/hooks";
@@ -153,29 +151,11 @@ export default function ChatPage() {
             </div>
             <div className="flex items-center gap-2">
               <TokenUsageIndicator messages={thread.messages} />
-              <RunTraceWidget messages={thread.messages} />
               <ExportTrigger threadId={threadId} />
               <ArtifactTrigger />
             </div>
           </header>
           <main className="flex min-h-0 max-w-full grow flex-col">
-            {/* spec#4 分析进度轨：常驻 sticky 条，数据前端推导（同源 spec#2 useRunTrace）。
-                仅在有进展时渲染（AnalysisRail 内部判断）。mt-14 把初始位置推到 header(h-14) 下；
-                sticky top-14 滚动时钉在 header 下，不挤压消息流（bg 半透 + backdrop-blur）。 */}
-            {!isNewThread && (
-              <div className="pointer-events-none sticky top-14 z-20 mt-14 w-full">
-                <div className="pointer-events-auto mx-auto w-full max-w-(--container-width-md) px-4">
-                  <div className="bg-background/80 rounded-md px-2 py-1.5 backdrop-blur">
-                    <AnalysisRail messages={thread.messages} />
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* size-full（h-full=父全高）在此处错误：本 div 是 <main>(flex-col) 里 sticky 进度轨
-                之后的 flex 兄弟，h-full 取满 main 全高（900）却从轨道下方（y≈127）起算 → 底部
-                溢出视口 127px，把消息滚动区下沿推到屏幕外 → 滚动条错位 + 末条消息藏到输入框后。
-                改 flex-1 min-h-0：只吃轨道之后的剩余高度，滚动区下沿对齐视口底。新会话无轨道时
-                flex-1 仍 = 全高（行为不变）。 */}
             <div className="flex min-h-0 w-full flex-1 justify-center">
               <MessageList
                 className={cn("size-full", !isNewThread && "pt-4")}
