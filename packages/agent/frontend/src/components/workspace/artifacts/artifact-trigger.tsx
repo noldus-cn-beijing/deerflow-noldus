@@ -8,11 +8,10 @@ import { useArtifacts } from "./context";
 
 export const ArtifactTrigger = () => {
   const { t } = useI18n();
-  const { artifacts, setOpen: setArtifactsOpen } = useArtifacts();
+  const { setOpen: setArtifactsOpen } = useArtifacts();
 
-  if (!artifacts || artifacts.length === 0) {
-    return null;
-  }
+  // 始终渲染入口（不再据 state.artifacts.length 隐藏）。产物面板自身从磁盘端点取图/报告并
+  // 处理空态——入口隐藏曾依赖 state 冒泡（恒不全），导致「画完图入口还不出现/时有时无」。
   return (
     <Tooltip content="Show artifacts of this conversation">
       <Button

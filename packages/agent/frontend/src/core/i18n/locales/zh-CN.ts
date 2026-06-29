@@ -238,6 +238,10 @@ export const zhCN: Translations = {
   // Artifact gallery (spec phase0-3)
   gallery: {
     title: "产物画廊",
+    assetsTitle: "本对话产出物",
+    reportsSection: "报告",
+    chartsSection: "图表",
+    assetsEmpty: "本对话暂无产出物。运行分析后，图表与报告会在这里。",
     summaryCharts: (n: number) => `${n} 张汇总图`,
     summaryPerSubject: (n: number) => `${n} 张单样本图`,
     summaryAll: (n: number) => `共 ${n} 张图`,

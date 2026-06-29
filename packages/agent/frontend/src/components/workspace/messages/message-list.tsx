@@ -1,5 +1,5 @@
 import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef } from "react";
 import type { StickToBottomContext } from "use-stick-to-bottom";
 
 import {
@@ -24,7 +24,6 @@ import { useUpdateSubtask } from "@/core/tasks/context";
 import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
-import { InlineArtifactSummary } from "../artifacts/inline-artifact-summary";
 import { StreamingIndicator } from "../streaming-indicator";
 
 import { DecisionCard } from "./decision-card";
@@ -92,19 +91,6 @@ export function MessageList({
   // `groupMessages` logic is unchanged (only wrapped). See spec §1.5/§3.2.
   const deferredMessages = useDeferredValue(messages);
   const isLoading = thread.isLoading;
-  const artifacts = thread.values.artifacts;
-  // 对话流图廊 refetch 信号（spec 2026-06-26-conversation-gallery-empty §一触发时机）：
-  // run 完成（isLoading true→false）后递增，传给 InlineArtifactSummary 触发其重拉磁盘端点
-  // 补全量图（chart-maker 陆续落盘，首轮可能不全）。present-files 出现即首次拉，这里只补 run 完。
-  const wasLoadingRef = useRef(false);
-  const [artifactsRefetchSignal, setArtifactsRefetchSignal] = useState(0);
-  useEffect(() => {
-    if (wasLoadingRef.current && !isLoading) {
-      setArtifactsRefetchSignal((n) => n + 1);
-    }
-    wasLoadingRef.current = isLoading;
-  }, [isLoading]);
-  const chartsStatus = thread.values.charts_status;
   const renderedGroups = useMemo(
     () =>
       groupMessages(deferredMessages, (group) => {
@@ -503,20 +489,9 @@ export function MessageList({
   const trailing = (
     <>
       {thread.isLoading && <StreamingIndicator className="my-4" />}
-      {/* 产物摘要单点：对话流末尾渲染唯一一个 InlineArtifactSummary，承载图廊入口 + 报告卡。
-          它自走磁盘端点 /artifacts/charts 取图（磁盘=真相），有图/报告即显示「打开画廊/下载
-          ZIP/报告卡」、空则返回 null（零副作用）。放末尾（非挂在 present-files 组上）保证 run
-          之间不漂移、不闪烁——画图后、写报告后都稳定在同一处。仅非加载中 + 有消息时渲染，
-          避免流式中途闪现与新会话空态。 */}
-      {!isLoading && messages.length > 0 && (
-        <InlineArtifactSummary
-          className="mx-auto w-full max-w-(--container-width-md)"
-          threadId={threadId}
-          artifacts={artifacts}
-          chartsStatus={chartsStatus}
-          refetchSignal={artifactsRefetchSignal}
-        />
-      )}
+      {/* 产物（图 + 报告）不再内嵌对话流——全部移到右侧 thread 资产面板（ThreadAssetsPanel），
+          它从磁盘端点取产物、与 streaming 解耦，不随消息流/state/切 tab 漂移。对话流只保留
+          消息与底部留白 spacer。 */}
       <div style={{ height: `${paddingBottom}px` }} />
     </>
   );

@@ -302,6 +302,53 @@ async def get_chart_artifacts(thread_id: str, request: Request) -> Response:
     )
 
 
+# 报告/文档产物清单端点（thread 资产面板，磁盘为真相）。
+# report.md / *.html 等文档产物此前只在 LangGraph state.artifacts 里（lead present_files 才有，
+# 不确定且 subagent 边界丢失）。资产面板要稳定显示报告，需直接按磁盘列 outputs/ 下的文档产物，
+# 与 charts 端点对称。返回虚拟路径，前端用 urlOfArtifact + catch-all 端点取内容。
+_REPORT_EXTENSIONS = (".md", ".html", ".htm")
+
+
+def list_report_artifacts(thread_id: str) -> list[dict[str, Any]]:
+    """按磁盘列 outputs/ 下的文档产物（.md/.html），与 list_chart_artifacts 对称。
+
+    纯磁盘扫描，不依赖 state；缺目录返回 []。返回 [{path, kind:"report", filename, ext}]。
+    """
+    outputs_dir = resolve_thread_virtual_path(thread_id, _OUTPUTS_VIRTUAL_PREFIX)
+    if not outputs_dir.exists() or not outputs_dir.is_dir():
+        return []
+
+    reports: list[dict[str, Any]] = []
+    for f in sorted(p for p in outputs_dir.rglob("*") if p.is_file() and p.suffix.lower() in _REPORT_EXTENSIONS):
+        rel = f.relative_to(outputs_dir).as_posix()
+        reports.append(
+            {
+                "path": f"{_OUTPUTS_VIRTUAL_PREFIX}/{rel}",
+                "kind": "report",
+                "filename": f.name,
+                "ext": f.suffix.lower().lstrip("."),
+            }
+        )
+    return reports
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/reports",
+    summary="List Report Artifacts (disk)",
+    description="List all report/document artifacts (.md/.html) on disk for the thread. Disk is the source of truth (independent of LangGraph state bubbling).",
+)
+@require_permission("threads", "read", owner_check=True)
+async def get_report_artifacts(thread_id: str, request: Request) -> Response:
+    """报告产物数据源：磁盘 outputs/ 下 .md/.html → [{path, kind, filename, ext}]。
+
+    注册在 catch-all ``/artifacts/{path:path}`` 之前，避免被吞。
+    """
+    return Response(
+        content=json.dumps(list_report_artifacts(thread_id)),
+        media_type="application/json",
+    )
+
+
 @router.get(
     "/threads/{thread_id}/artifacts/{path:path}",
     summary="Get Artifact File",

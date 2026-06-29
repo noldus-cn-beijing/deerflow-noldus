@@ -47,6 +47,14 @@ export function chartsArtifactsURL(threadId: string): string {
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/charts`;
 }
 
+/**
+ * 报告产物清单端点（thread 资产面板）：磁盘 outputs/ 下 .md/.html → [{path,kind,filename,ext}]。
+ * 与 chartsArtifactsURL 对称，同样磁盘为真相、不依赖 state 冒泡。
+ */
+export function reportsArtifactsURL(threadId: string): string {
+  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/reports`;
+}
+
 /** 数据表 CSV 导出端点占位（spec §四 Step 5）。 */
 export function dataTableExportURL(threadId: string): string {
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/data-table`;

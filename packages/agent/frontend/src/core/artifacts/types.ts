@@ -28,6 +28,8 @@ export interface ArtifactMeta {
   thumb_path?: string;
   /** 可选增强（按 run 分面，spec §3.4.1 方案 B）；Phase 0 默认不填。 */
   run_id?: string;
+  /** 文件名（report/文档产物从 /artifacts/reports 端点带出，用于资产面板标题）。 */
+  filename?: string;
 }
 
 /** 向后兼容：老数据是 string → 归一化成 { path }。 */

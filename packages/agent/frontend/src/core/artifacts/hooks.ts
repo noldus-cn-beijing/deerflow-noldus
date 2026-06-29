@@ -7,7 +7,7 @@ import { fetch as fetchWithAuth } from "@/core/api/fetcher";
 import { loadArtifactContent, loadArtifactContentFromToolCall } from "./loader";
 import type { ArtifactMeta } from "./types";
 import { normalizeArtifacts } from "./types";
-import { chartsArtifactsURL } from "./utils";
+import { chartsArtifactsURL, reportsArtifactsURL } from "./utils";
 
 export function useArtifactContent({
   filepath,
@@ -138,4 +138,78 @@ export function useChartArtifacts(
   }, [load]);
 
   return { artifacts, loaded, error, refetch: load };
+}
+
+/**
+ * 报告产物磁盘端点（thread 资产面板）：拉 outputs/ 下 .md/.html 文档产物。
+ * 与 fetchChartArtifactsFromDisk 对称——磁盘为真相，不依赖 state.artifacts 冒泡。
+ * 端点不可达/非 200 抛错（由 useThreadAssets 的 catch 转空数组，报告区缺省不显示）。
+ */
+export async function fetchReportArtifactsFromDisk(threadId: string): Promise<ArtifactMeta[]> {
+  const resp = await fetchWithAuth(reportsArtifactsURL(threadId));
+  if (!resp.ok) {
+    throw new Error(`reports artifacts endpoint ${resp.status}`);
+  }
+  const json = (await resp.json()) as ArtifactMeta[];
+  return normalizeArtifacts(json);
+}
+
+export interface UseThreadAssetsResult {
+  /** 图表产物（磁盘 + plan_charts.json）。 */
+  charts: ArtifactMeta[];
+  /** 报告/文档产物（磁盘 .md/.html）。 */
+  reports: ArtifactMeta[];
+  /** 首次拉取完成（成功或失败兜底），供消费方区分加载中 vs 真空。 */
+  loaded: boolean;
+  /** 重新拉取——run 完成（onFinish）后调一次确保全量（产物陆续落盘）。 */
+  refetch: () => Promise<void>;
+}
+
+/**
+ * thread 级「产出物」数据源 hook（资产面板）。
+ *
+ * 并行拉两条磁盘端点（charts + reports），合并成稳定的 thread 资产视图。**完全不读
+ * streaming 消息流 / LangGraph state.artifacts**——产物 UI 因此不随 present_files 消息、
+ * 流式 re-render、切 tab 而出现/消失/漂移（本会话 dogfood 反复暴露的不稳定家族根治）。
+ *
+ * 性能：挂载拉一次 + refetchSignal（run 完成）补拉一次；不每帧拉、不轮询。
+ * 任一端点失败只让那一类产物为空，不整体崩（报告端点旧后端没有时图仍显示）。
+ */
+export function useThreadAssets(
+  threadId: string,
+  args: { refetchSignal?: number } = {},
+): UseThreadAssetsResult {
+  const { refetchSignal } = args;
+  const [charts, setCharts] = useState<ArtifactMeta[]>([]);
+  const [reports, setReports] = useState<ArtifactMeta[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    const [chartsRes, reportsRes] = await Promise.allSettled([
+      fetchChartArtifactsFromDisk(threadId),
+      fetchReportArtifactsFromDisk(threadId),
+    ]);
+    setCharts(chartsRes.status === "fulfilled" ? chartsRes.value : []);
+    setReports(reportsRes.status === "fulfilled" ? reportsRes.value : []);
+    setLoaded(true);
+  }, [threadId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await load();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (refetchSignal !== undefined && refetchSignal > 0) {
+      void load();
+    }
+  }, [refetchSignal, load]);
+
+  return { charts, reports, loaded, refetch: load };
 }

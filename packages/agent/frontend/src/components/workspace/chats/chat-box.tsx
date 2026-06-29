@@ -1,9 +1,8 @@
-import { FilesIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GroupImperativeHandle } from "react-resizable-panels";
 
-import { ConversationEmptyState } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
 import {
   ResizableHandle,
@@ -14,11 +13,7 @@ import { normalizeArtifact, normalizeArtifacts } from "@/core/artifacts/types";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
-import {
-  ArtifactFileDetail,
-  ArtifactFileList,
-  useArtifacts,
-} from "../artifacts";
+import { ThreadAssetsPanel, useArtifacts } from "../artifacts";
 import { useThread } from "../messages/context";
 
 const CLOSE_MODE = { chat: 100, artifacts: 0 };
@@ -40,8 +35,18 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
     setArtifacts,
     select: selectArtifact,
     deselect,
-    selectedArtifact,
   } = useArtifacts();
+
+  // 资产面板 refetch 信号：run 完成（thread.isLoading true→false）后递增 → ThreadAssetsPanel
+  // 重拉磁盘端点补全量产物（图/报告陆续落盘）。与 streaming 解耦，只在 run 边界触发一次。
+  const wasLoadingRef = useRef(false);
+  const [assetsRefetchSignal, setAssetsRefetchSignal] = useState(0);
+  useEffect(() => {
+    if (wasLoadingRef.current && !thread.isLoading) {
+      setAssetsRefetchSignal((n) => n + 1);
+    }
+    wasLoadingRef.current = thread.isLoading;
+  }, [thread.isLoading]);
 
   const [autoSelectFirstArtifact, setAutoSelectFirstArtifact] = useState(true);
   useEffect(() => {
@@ -75,7 +80,6 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
     autoSelectFirstArtifact,
     deselect,
     selectArtifact,
-    selectedArtifact,
     setArtifacts,
     thread.values.artifacts,
   ]);
@@ -137,51 +141,30 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
       >
         <div
           className={cn(
-            "h-full p-4 transition-transform duration-slow ease-brand-in-out",
+            "h-full transition-transform duration-slow ease-brand-in-out",
             artifactPanelOpen ? "translate-x-0" : "translate-x-full",
           )}
         >
-          {selectedArtifact ? (
-            <ArtifactFileDetail
-              className="size-full"
-              filepath={selectedArtifact}
-              threadId={threadId}
-            />
-          ) : (
-            <div className="relative flex size-full justify-center">
-              <div className="absolute top-1 right-1 z-30">
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setArtifactsOpen(false);
-                  }}
-                >
-                  <XIcon />
-                </Button>
-              </div>
-              {thread.values.artifacts?.length === 0 ? (
-                <ConversationEmptyState
-                  icon={<FilesIcon />}
-                  title="No artifact selected"
-                  description="Select an artifact to view its details"
-                />
-              ) : (
-                <div className="flex size-full max-w-(--container-width-sm) flex-col justify-center p-4 pt-8">
-                  <header className="shrink-0">
-                    <h2 className="text-lg font-medium">Artifacts</h2>
-                  </header>
-                  <main className="min-h-0 grow">
-                    <ArtifactFileList
-                      className="max-w-(--container-width-sm) p-4 pt-12"
-                      files={normalizeArtifacts(thread.values.artifacts ?? [])}
-                      threadId={threadId}
-                    />
-                  </main>
-                </div>
-              )}
+          <div className="relative size-full">
+            <div className="absolute top-2 right-2 z-30">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => {
+                  setArtifactsOpen(false);
+                }}
+              >
+                <XIcon />
+              </Button>
             </div>
-          )}
+            {/* thread 级资产面板：图 + 报告全部从磁盘端点取，与 streaming 解耦（稳定不漂移）。
+                run 完成（isLoading true→false）后递增 refetchSignal 补拉全量。 */}
+            <ThreadAssetsPanel
+              threadId={threadId}
+              chartsStatus={thread.values.charts_status}
+              refetchSignal={assetsRefetchSignal}
+            />
+          </div>
         </div>
       </ResizablePanel>
     </ResizablePanelGroup>

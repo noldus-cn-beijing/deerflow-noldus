@@ -248,6 +248,10 @@ export const enUS: Translations = {
   // Artifact gallery (spec phase0-3)
   gallery: {
     title: "Artifact Gallery",
+    assetsTitle: "Conversation Outputs",
+    reportsSection: "Reports",
+    chartsSection: "Charts",
+    assetsEmpty: "No outputs yet. Charts and reports will appear here after you run an analysis.",
     summaryCharts: (n: number) => `${n} summary chart${n === 1 ? "" : "s"}`,
     summaryPerSubject: (n: number) => `${n} per-subject chart${n === 1 ? "" : "s"}`,
     summaryAll: (n: number) => `${n} chart${n === 1 ? "" : "s"} in total`,

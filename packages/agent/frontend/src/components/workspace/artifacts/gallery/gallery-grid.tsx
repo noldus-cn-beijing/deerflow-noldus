@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
 
 const COLS = 3;
 const ROW_HEIGHT = 200;
+// 小于此数量的网格直接平铺（自然高度，无内层滚动容器）。只有真正的大图集（per_subject
+// 几十~上百张）才值得虚拟化。早先所有网格都套固定 `height: calc(100vh - 320px)` 的滚动容器，
+// 导致只有 1 张图的「汇总图」网格也撑出近一屏高的空白——汇总图与单样本图之间巨大空隙的根因。
+const VIRTUALIZE_THRESHOLD = 24;
 
 interface GalleryGridProps {
   items: ArtifactMeta[];
@@ -94,18 +98,41 @@ export function GalleryGrid({
 }: GalleryGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const rowCount = Math.ceil(items.length / COLS);
+  const shouldVirtualize = items.length > VIRTUALIZE_THRESHOLD;
 
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 2,
+    // 不虚拟化时禁用，避免它读取 parentRef（已无固定高度容器）产生无意义测量。
+    enabled: shouldVirtualize,
   });
 
   if (items.length === 0) {
     return null;
   }
 
+  // 小图集：自然高度平铺，无内层滚动容器（页面整体滚动）。彻底避免「1 张图撑出一屏空白」。
+  if (!shouldVirtualize) {
+    return (
+      <div className="grid grid-cols-3 gap-2 p-1 sm:grid-cols-4">
+        {items.map((item) => (
+          <ThumbCard
+            key={item.path}
+            meta={item}
+            threadId={threadId}
+            selected={selectedPaths?.has(item.path) ?? false}
+            onSelect={onSelect}
+            onOpen={onOpen}
+            compareMode={compareMode}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // 大图集（per_subject 几十~上百张）：虚拟化 + 有界滚动容器，DOM/显存恒定。
   return (
     <div
       ref={parentRef}

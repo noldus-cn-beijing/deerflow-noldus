@@ -182,6 +182,10 @@ export interface Translations {
   // Artifact gallery (spec phase0-3)
   gallery: {
     title: string;
+    assetsTitle: string;
+    reportsSection: string;
+    chartsSection: string;
+    assetsEmpty: string;
     summaryCharts: (n: number) => string;
     summaryPerSubject: (n: number) => string;
     summaryAll: (n: number) => string;
