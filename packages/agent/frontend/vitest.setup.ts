@@ -1,4 +1,13 @@
 import "@testing-library/jest-dom/vitest";
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+// @testing-library/react 在每个测试间自动清理 DOM（vitest 不像 jest 默认带 auto-cleanup）。
+// 不加的话同一文件多 test 的 render 会堆叠在 document.body，后一个测试会查到前一个测试的
+// 残留组件（gallery 测试因 per_subject 子区 DOM 堆叠被前一个用例的旧渲染污染而误判）。
+afterEach(() => {
+  cleanup();
+});
 
 // jsdom does not implement ResizeObserver, but several rendered components
 // (ai-elements Conversation → use-stick-to-bottom, @tanstack/react-virtual)

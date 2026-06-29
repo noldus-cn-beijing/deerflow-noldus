@@ -32,6 +32,13 @@ function perSubjectToggle() {
     .find((b) => b.getAttribute("aria-expanded") !== null);
 }
 
+/** per_subject chart_type 子区折叠入口（带 data-chart-subsection 属性）。 */
+function chartSubsectionToggles(): HTMLElement[] {
+  return screen
+    .getAllByRole("button")
+    .filter((b) => b.hasAttribute("data-chart-subsection"));
+}
+
 describe("ArtifactGallery per-subject collapse affordance", () => {
   it("collapsed toggle surfaces an explicit click-to-expand hint (not bare label)", () => {
     const metas = perSubjectMeta(112);
@@ -83,5 +90,89 @@ describe("ArtifactGallery per-subject collapse affordance", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     // 翻转后文案切到「收起」动作提示，证明状态确实翻转。
     expect(/collapse|收起/i.test(toggle.textContent ?? "")).toBe(true);
+  });
+});
+
+/**
+ * spec 2026-06-29-assets-gallery-fixes 问题3
+ *
+ * per_subject 单样本图按 chart_type 二次分组 → 每类型一个独立可折叠子区，各自虚拟化
+ * （box 28 张虚拟化、trajectory 15 张平铺）。100+ 张时按类型找图，不再一坨。
+ * 依赖问题2 先修（否则 chart_type=null 的图全落「未分类」桶）。
+ *
+ * 断言契约：
+ *   1. 多个 chart_type → 多个折叠子区，子区计数正确。
+ *   2. chart_type 为空的图不建 [类型] 子区（守 spec TDD：空类型不建子区）。
+ *   3. 顶层 facet filter 仍跨所有子区生效。
+ */
+function perSubjectWithTypes(): ArtifactMeta[] {
+  const make = (chart_type: string, n: number): ArtifactMeta[] =>
+    Array.from({ length: n }, (_, i) => ({
+      path: `/charts/${chart_type}_${i}.png`,
+      kind: "chart",
+      output_mode: "per_subject",
+      chart_id: `${chart_type}_${i}`,
+      chart_type,
+    }));
+  return [...make("box", 28), ...make("trajectory", 15)];
+}
+
+describe("ArtifactGallery per-subject chart-type subsections", () => {
+  it("groups per-subject charts into one collapsible subsection per chart_type with correct counts", async () => {
+    renderWithProviders(<ArtifactGallery artifacts={perSubjectWithTypes()} threadId="t1" />);
+
+    // 展开顶层 per_subject 区（子区在展开后才挂载）。
+    await userEvent.click(perSubjectToggle()!);
+
+    const toggles = chartSubsectionToggles();
+    // 两种 chart_type → 两个子区。
+    expect(toggles).toHaveLength(2);
+
+    const byType = new Map(toggles.map((b) => [b.getAttribute("data-chart-subsection"), b]));
+    const boxToggle = byType.get("box")!;
+    const trajToggle = byType.get("trajectory")!;
+
+    expect(boxToggle).toBeTruthy();
+    expect(trajToggle).toBeTruthy();
+    // 各子区计数正确（28 / 15）。
+    expect(boxToggle.textContent ?? "").toContain("28");
+    expect(trajToggle.textContent ?? "").toContain("15");
+    // 子区默认折叠（防图墙）。
+    expect(boxToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(trajToggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("does not create a type subsection for per-subject charts with empty chart_type", async () => {
+    // 无 chart_type 的图：不建 [类型] 子区（守 spec：空类型不建子区）。
+    const untyped: ArtifactMeta[] = Array.from({ length: 4 }, (_, i) => ({
+      path: `/charts/untyped_${i}.png`,
+      kind: "chart",
+      output_mode: "per_subject",
+      chart_id: `untyped_${i}`,
+      // chart_type 故意缺省
+    }));
+    const typed: ArtifactMeta[] = perSubjectWithTypes();
+
+    renderWithProviders(<ArtifactGallery artifacts={[...untyped, ...typed]} threadId="t1" />);
+    await userEvent.click(perSubjectToggle()!);
+
+    const toggles = chartSubsectionToggles();
+    // 只有 box + trajectory 两个子区；untyped 不建子区。
+    expect(toggles.map((b) => b.getAttribute("data-chart-subsection")).sort()).toEqual(
+      ["box", "trajectory"],
+    );
+  });
+
+  it("renders a single subsection's grid only when that subsection is expanded (independent collapse)", async () => {
+    renderWithProviders(<ArtifactGallery artifacts={perSubjectWithTypes()} threadId="t1" />);
+    await userEvent.click(perSubjectToggle()!);
+
+    const byType = new Map(
+      chartSubsectionToggles().map((b) => [b.getAttribute("data-chart-subsection"), b]),
+    );
+    // 展开 box 子区，trajectory 仍折叠——子区各自独立。
+    await userEvent.click(byType.get("box")!);
+    expect(byType.get("box")!.getAttribute("aria-expanded")).toBe("true");
+    expect(byType.get("trajectory")!.getAttribute("aria-expanded")).toBe("false");
   });
 });

@@ -155,6 +155,60 @@ def test_list_chart_artifacts_missing_plan_still_lists_disk_pngs(tmp_path, monke
     assert result[0]["path"] == "/mnt/user-data/outputs/plot_a.png"
 
 
+class TestDeriveChartType:
+    """_derive_chart_type: token 漏掉的图名靠显式映射表补正（spec 2026-06-29-assets-gallery-fixes 问题2）。
+
+    根因坐实：``zone_entry_distribution`` 的 chart_id/script 不含任何 token
+    （trajectory/timeseries/box/bar/...）→ 返回 None → 前端 box/bar filter 用精确匹配
+    把它永久吞掉。修法=显式 chart_id → type 映射表优先，token 启发式作 fallback。
+
+    两处推导（artifacts.py 网关画廊端点 + present_file_tool 同构）必须同型——这里同时
+    import 两份做 parity 断言，锁住「SSOT 一处推导」不漂移（见 CLAUDE.md 三大病理自检 #2）。
+    """
+
+    # 显式映射应覆盖的已知图（chart_id/script → type），证据来自 ethoinsight/charts.py 实际调用：
+    #   zone_entry_distribution / center_entry_summary → ax.bar → "bar"（非 box）
+    #   activity_intensity / time_progress → ax.plot 时间序列 → "line"
+    #   struggle_distribution → broken_barh 随时间 → "timeseries"
+    #   rose → 极坐标 bar → "rose"
+    CASES = [
+        # (chart_id, script, expected_type)
+        ("zone_entry_distribution", "ethoinsight.scripts.epm.plot_zone_entry_distribution", "bar"),
+        ("zone_entry_distribution", "ethoinsight.scripts.ldb.plot_zone_entry_distribution", "bar"),
+        ("center_entry_summary", "ethoinsight.scripts.oft.plot_center_entry_summary", "bar"),
+        ("activity_intensity", "ethoinsight.scripts.fst.plot_activity_intensity", "line"),
+        ("time_progress", "ethoinsight.scripts.oft.plot_time_progress", "line"),
+        ("struggle_distribution", "ethoinsight.scripts.fst.plot_struggle_distribution", "timeseries"),
+        ("rose", "ethoinsight.scripts.epm.plot_rose", "rose"),
+        # token 命中的仍走启发式 fallback，行为不变：
+        ("box_open_arm", "ethoinsight.scripts.epm.plot_box_open_arm", "box"),
+        ("open_arm_time_ratio_bar", "ethoinsight.scripts.epm.plot_open_arm_time_ratio_bar", "bar"),
+        ("trajectory", "ethoinsight.scripts._common.plot_trajectory", "trajectory"),
+        ("heatmap", "ethoinsight.scripts._common.plot_heatmap", "heatmap"),
+        ("timeseries_plot", "ethoinsight.scripts._common.plot_timeseries", "timeseries"),
+        # 未知（无显式映射、无 token 命中）仍 None——不强行猜：
+        ("something_unknown", "ethoinsight.scripts.epm.compute_mystery", None),
+    ]
+
+    def test_router_derive_covers_explicit_and_token(self) -> None:
+        for chart_id, script, expected in self.CASES:
+            got = artifacts_router._derive_chart_type(chart_id, script)
+            assert got == expected, f"router: {chart_id}/{script} → {got!r}, expected {expected!r}"
+
+    def test_present_file_tool_derive_matches_router(self) -> None:
+        """present_file_tool 与网关画廊端点两处 _derive_chart_type 必须同型（SSOT 不漂移）。"""
+        present_file_tool_module = __import__(
+            "deerflow.tools.builtins.present_file_tool", fromlist=["present_file_tool"]
+        )
+        for chart_id, script, expected in self.CASES:
+            got_router = artifacts_router._derive_chart_type(chart_id, script)
+            got_present = present_file_tool_module._derive_chart_type(chart_id, script)
+            assert got_router == got_present == expected, (
+                f"parity drift at {chart_id}/{script}: "
+                f"router={got_router!r} present={got_present!r} expected={expected!r}"
+            )
+
+
 def test_list_chart_artifacts_route_registered_and_authenticated(tmp_path, monkeypatch) -> None:
     """端点经 TestClient 真路径可达（路由已注册 + 鉴权放行）。"""
     outputs_dir = tmp_path / "outputs"

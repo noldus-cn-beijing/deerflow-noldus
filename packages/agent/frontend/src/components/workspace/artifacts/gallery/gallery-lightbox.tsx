@@ -65,7 +65,8 @@ export function GalleryLightbox({
         className="relative flex max-h-[90vh] max-w-[90vw] flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-2 flex items-center justify-end gap-2">
+        {/* 按钮行永远可见：shrink-0 防它被图区挤掉（spec 2026-06-29 问题1）。 */}
+        <div className="mb-2 flex shrink-0 items-center justify-end gap-2">
           <Button
             size="icon"
             variant="secondary"
@@ -99,7 +100,8 @@ export function GalleryLightbox({
           </Button>
         </div>
 
-        <div className="relative flex items-center gap-2">
+        {/* 图区占满剩余空间、按需滚动；min-h-0 让 flex 子项真能收缩，图随框自适应。 */}
+        <div className="relative flex min-h-0 flex-1 items-center justify-center gap-2 overflow-auto">
           <Button
             size="icon"
             variant="secondary"
@@ -115,7 +117,7 @@ export function GalleryLightbox({
             src={originalUrl}
             alt={alt}
             decoding="async"
-            className="max-h-[80vh] max-w-[80vw] rounded-lg object-contain"
+            className="max-h-full max-w-full rounded-lg object-contain"
           />
 
           <Button
@@ -131,7 +133,7 @@ export function GalleryLightbox({
         </div>
 
         {(meta.metric ?? meta.subject) && (
-          <p className="text-muted-foreground mt-2 text-center text-sm">
+          <p className="text-muted-foreground mt-2 shrink-0 text-center text-sm">
             {[meta.chart_id, meta.metric, meta.subject].filter(Boolean).join(" · ")}
           </p>
         )}

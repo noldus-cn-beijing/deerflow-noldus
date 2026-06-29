@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangleIcon, ChevronDownIcon, ChevronRightIcon, ColumnsIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 
 import { Button } from "@/components/ui/button";
@@ -30,12 +30,45 @@ export function ArtifactGallery({ artifacts, threadId, chartsStatus }: ArtifactG
   const { filters, setFilter, filteredMetas, facetOptions } = useGalleryFilters(images);
 
   const [perSubjectExpanded, setPerSubjectExpanded] = useState(false);
+  // spec 2026-06-29 问题3：per_subject 按 chart_type 二次分组，每类型一个独立折叠子区。
+  // 各子区折叠态独立（box 展开不影响 trajectory），虚拟化也按子区各自触发。
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
   const [compareMode, setCompareMode] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [lightboxMeta, setLightboxMeta] = useState<ArtifactMeta | null>(null);
 
   const aggregateMetas = filteredMetas.filter((m) => m.output_mode === "aggregate" || !m.output_mode);
   const perSubjectMetas = filteredMetas.filter((m) => m.output_mode === "per_subject");
+
+  // per_subject 按 chart_type 分组（spec 2026-06-29 问题3）。
+  // 有 chart_type 的图进对应类型子区；无类型的图（chart_type 空）不建类型子区，
+  // 单独留在 untyped 列表里平铺渲染（守「空类型不建子区」且不让它们消失）。
+  const perSubjectByType = useMemo(() => {
+    const groups = new Map<string, ArtifactMeta[]>();
+    const untyped: ArtifactMeta[] = [];
+    for (const m of perSubjectMetas) {
+      const t = m.chart_type?.trim();
+      if (!t) {
+        untyped.push(m);
+      } else {
+        const arr = groups.get(t);
+        if (arr) arr.push(m);
+        else groups.set(t, [m]);
+      }
+    }
+    // 稳定排序：按类型名字母序，便于眼睛定位。
+    const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+    return { typed: sorted, untyped };
+  }, [perSubjectMetas]);
+
+  function toggleType(type: string) {
+    setExpandedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }
 
   const failedCount = (chartsStatus?.failed?.length ?? 0) + (chartsStatus?.remaining?.length ?? 0);
 
@@ -145,14 +178,58 @@ export function ArtifactGallery({ artifacts, threadId, chartsStatus }: ArtifactG
           </button>
 
           {perSubjectExpanded && (
-            <GalleryGrid
-              items={perSubjectMetas}
-              threadId={threadId}
-              selectedPaths={selectedPaths}
-              onSelect={compareMode ? handleSelect : undefined}
-              onOpen={compareMode ? undefined : handleOpen}
-              compareMode={compareMode}
-            />
+            <div className="flex flex-col gap-3">
+              {perSubjectByType.typed.map(([type, metas]) => {
+                const isOpen = expandedTypes.has(type);
+                return (
+                  <div key={type} className="rounded-lg border bg-card/40 p-2">
+                    <button
+                      type="button"
+                      // spec 2026-06-29 问题3：每类型一个独立折叠子区。data-chart-subsection
+                      // 让测试/无障碍能定位子区；aria-expanded 体现各自独立折叠态。
+                      data-chart-subsection={type}
+                      aria-expanded={isOpen}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium",
+                        "duration-fast ease-[var(--ease-brand-out)]",
+                        "hover:bg-accent/50",
+                        "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+                      )}
+                      onClick={() => toggleType(type)}
+                    >
+                      {isOpen ? (
+                        <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate capitalize">{type} ({metas.length})</span>
+                    </button>
+                    {isOpen && (
+                      <GalleryGrid
+                        items={metas}
+                        threadId={threadId}
+                        selectedPaths={selectedPaths}
+                        onSelect={compareMode ? handleSelect : undefined}
+                        onOpen={compareMode ? undefined : handleOpen}
+                        compareMode={compareMode}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
+              {perSubjectByType.untyped.length > 0 && (
+                // 无 chart_type 的图不建类型子区，但仍可见（平铺在末尾，不丢图）。
+                <GalleryGrid
+                  items={perSubjectByType.untyped}
+                  threadId={threadId}
+                  selectedPaths={selectedPaths}
+                  onSelect={compareMode ? handleSelect : undefined}
+                  onOpen={compareMode ? undefined : handleOpen}
+                  compareMode={compareMode}
+                />
+              )}
+            </div>
           )}
         </section>
       )}

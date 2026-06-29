@@ -204,12 +204,48 @@ _OUTPUTS_VIRTUAL_PREFIX = "/mnt/user-data/outputs"
 _PLAN_CHARTS_VIRTUAL = "/mnt/user-data/workspace/plan_charts.json"
 
 
+# 显式 chart_id → type 映射表（spec 2026-06-29-assets-gallery-fixes 问题2）。
+# token 启发式对命名规整的图（box_*/_bar/trajectory/heatmap/...）有效，但漏掉一批
+# chart_id/script 不含任何 token 的图（如 zone_entry_distribution），它们会被前端
+# box/bar filter 的精确匹配永久吞掉。这里按 chart_id 显式归类——证据来自
+# ethoinsight/charts.py 的实际绘制调用（ax.bar/ax.plot/broken_barh/polar），不是猜。
+# 与 present_file_tool._derive_chart_type 同型，改时两处同步（SSOT 一处推导不漂移）。
+_CHART_TYPE_BY_ID: dict[str, str] = {
+    "zone_entry_distribution": "bar",      # ax.bar（分区进入次数分布），非 box
+    "center_entry_summary": "bar",          # ax.bar（中心区进入计数+停留时长）
+    "activity_intensity": "line",           # ax.plot 时间序列（活跃度随时间）
+    "time_progress": "line",                # 双轴 ax.plot（5-min bin 距离+中心时间）
+    "struggle_distribution": "timeseries",  # broken_barh 随时间的挣扎/不动区间
+    "rose": "rose",                         # 极坐标 bar（头朝向玫瑰图）
+}
+
+# token 启发式 fallback：命名规整的图（含 box/bar/trajectory/heatmap/...）走这里。
+# 顺序敏感——更具体的 token 放前面（trajectory 含 "line" 风险等），现表无交叉故顺序从简。
+_CHART_TYPE_TOKENS: tuple[tuple[str, str], ...] = (
+    ("trajectory", "trajectory"),
+    ("timeseries", "timeseries"),
+    ("time_series", "timeseries"),
+    ("box", "box"),
+    ("bar", "bar"),
+    ("heatmap", "heatmap"),
+    ("violin", "violin"),
+    ("scatter", "scatter"),
+    ("line", "line"),
+)
+
+
 def _derive_chart_type(chart_id: str, script: str) -> str | None:
-    """从 chart_id/script 确定性推导 chart_type（与 present_file_tool 同构，SSOT 一处推导）。"""
+    """从 chart_id/script 确定性推导 chart_type（与 present_file_tool 同构，SSOT 一处推导）。
+
+    优先查显式 ``_CHART_TYPE_BY_ID``（修 token 漏掉的图名）；未命中再退 token 启发式。
+    """
+    explicit = _CHART_TYPE_BY_ID.get(chart_id)
+    if explicit:
+        return explicit
     text = f"{chart_id} {script}".lower()
-    for token in ("trajectory", "timeseries", "time_series", "box", "bar", "heatmap", "violin", "scatter", "line"):
+    for token, chart_type in _CHART_TYPE_TOKENS:
         if token in text:
-            return "timeseries" if token in ("timeseries", "time_series") else token
+            return chart_type
     return None
 
 
