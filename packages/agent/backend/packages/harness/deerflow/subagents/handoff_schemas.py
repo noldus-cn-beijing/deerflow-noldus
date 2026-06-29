@@ -756,7 +756,9 @@ class ReportWriterHandoff(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     status: Literal["completed", "partial", "failed"]
-    report_path: str
+    report_path: str = Field(
+        description="报告产物虚拟路径（report.html；旧报告可能为 report.md），均在 /mnt/user-data/outputs/ 下。",
+    )
     sections_written: list[str] = Field(
         default_factory=list,
         description="E.g. ['Results', 'Discussion'].",
@@ -772,7 +774,7 @@ class ReportWriterHandoff(BaseModel):
         description=(
             "Handoff 来源标记（ETHO-1 spec 2026-06-23 §2.3 可观测性）。"
             "model = report-writer 自行调 seal 工具封存（正常路径）；"
-            "after_agent_artifacts = SealGate after_agent 在终止点从 outputs/report.md "
+            "after_agent_artifacts = SealGate after_agent 在终止点从 outputs/report.html "
             "确定性兜底（堵 L1 reminder-cap 放行口，消除 Task failed 中间态）；"
             "executor_artifacts = executor L3 在 seal-resume 失败后从产物重建。"
             "后两者触发率上升 = 上游 L1 在退化的信号，必须可观测。"

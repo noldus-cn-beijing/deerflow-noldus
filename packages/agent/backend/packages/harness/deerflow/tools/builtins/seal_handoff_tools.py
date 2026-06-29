@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import html.parser
 import json
 import logging
 import os
@@ -264,6 +266,218 @@ def _resolve_report_image_placeholders(
             "seal_report_writer_handoff: image placeholder resolution skipped",
             exc_info=True,
         )
+
+
+# ============================================================================
+# report.html —— HTML 模式：占位符 base64 内联 + XSS 消毒（spec 2026-06-29）
+#
+# 报告载体从 Markdown 改 HTML 后，seal 时对 .html 报告新增两层确定性处理：
+#   1. ``{{img:<basename>}}`` → 读对应 .png → base64 → 内联
+#      ``<img src="data:image/png;base64,...">``。只内联代表性图（prompt 已指导
+#      report-writer 只放 1-3 张），自包含、下载离线可看，治「下载丢图」。
+#   2. ``sanitize_report_html`` 剥 ``<script>`` / 内联 ``on*`` 事件 / ``<iframe>``
+#      等——HTML 来自 LLM 产出，封存时做一层确定性消毒（前端二次 sanitize 为兜底）。
+#
+# 纯 stdlib（``html.parser``）实现，不引新依赖、不增顶层 import（守导入环铁律）。
+# ============================================================================
+
+
+class _ReportHtmlSanitizer(html.parser.HTMLParser):
+    """确定性 HTML 消毒器：剥危险标签/属性，保留结构与 data URI 图。
+
+    - 删除整段危险标签及其内容：``<script>`` / ``<style>`` / ``<iframe>`` /
+      ``<object>`` / ``<embed>`` / ``<link>`` / ``<meta>`` / ``<base>``。
+      （``<style>`` 也能藏 expression()/@import 攻击，一并剥；报告样式由前端提供。）
+    - 剥所有 ``on*`` 内联事件属性（含 ``on click`` 这类带空白/制表的混淆形式），
+      以及 ``javascript:`` 伪协议的 href/src。
+    - 其余标签/属性原样保留（含 ``<img src="data:image/png;base64,...">``）。
+
+    注：``convert_charrefs=True``（默认）已把文本实体转回字符再交付 handle_data，
+    避免实体拆分绕过。本消毒器面向 report-writer LLM 产出（非任意网页），配合前端
+    DOMPurify 二次 sanitize，构成纵深防御。
+    """
+
+    # 标签名小写。这些标签**整段连同内容删除**（script/style 可执行，其余远程加载风险）。
+    _DROP_TAGS_WITH_CONTENT = frozenset({
+        "script",
+        "style",
+        "iframe",
+        "object",
+        "embed",
+        "noscript",
+        "template",
+    })
+    # 这些标签删除标签本身但**保留内容**（meta/link/base 在 head 内、报告用不到）。
+    _STRIP_TAGS_KEEP_CONTENT = frozenset({"link", "meta", "base", "title"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._out: list[str] = []
+        self._drop_depth = 0  # >0 表示当前在某 _DROP_TAGS_WITH_CONTENT 内，跳过输出
+
+    @property
+    def result(self) -> str:
+        return "".join(self._out)
+
+    @staticmethod
+    def _is_event_attr(name: str) -> bool:
+        """``on*`` 事件属性判定，容忍 ``on click`` / ``on\terror`` 等混淆形式。
+
+        规范化：去空白/制表后看是否以 ``on`` 开头且长度 > 2（on + 至少 1 字符）。
+        """
+        compact = name.strip().replace(" ", "").replace("\t", "").lower()
+        return compact.startswith("on") and len(compact) > 2
+
+    @staticmethod
+    def _has_script_protocol(value: str) -> bool:
+        """``javascript:`` / ``vbscript:`` / ``data:text/html`` 伪协议判定。"""
+        compact = value.strip().replace(" ", "").lower()
+        return compact.startswith(("javascript:", "vbscript:")) or compact.startswith("data:text/html")
+
+    def _filter_attrs(self, attrs: list[tuple[str, str | None]]) -> list[tuple[str, str | None]]:
+        kept: list[tuple[str, str | None]] = []
+        for name, value in attrs:
+            if self._is_event_attr(name):
+                continue
+            if name in ("href", "src", "xlink:href") and value is not None and self._has_script_protocol(value):
+                continue
+            kept.append((name, value))
+        return kept
+
+    @staticmethod
+    def _format_attrs(attrs: list[tuple[str, str | None]]) -> str:
+        parts: list[str] = []
+        for name, value in attrs:
+            if value is None:
+                parts.append(f" {name}")
+            else:
+                escaped = value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+                parts.append(f' {name}="{escaped}"')
+        return "".join(parts)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        low = tag.lower()
+        if low in self._DROP_TAGS_WITH_CONTENT:
+            self._drop_depth += 1
+            return
+        if low in self._STRIP_TAGS_KEEP_CONTENT:
+            return  # 剥标签、留内容（内容经 handle_data 输出）
+        filtered = self._filter_attrs(attrs)
+        self._out.append(f"<{low}{self._format_attrs(filtered)}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """自闭合标签（``<img ... />``）——同样过滤属性，不进 drop 栈。"""
+        low = tag.lower()
+        if low in self._DROP_TAGS_WITH_CONTENT or low in self._STRIP_TAGS_KEEP_CONTENT:
+            return
+        filtered = self._filter_attrs(attrs)
+        self._out.append(f"<{low}{self._format_attrs(filtered)} />")
+
+    def handle_endtag(self, tag: str) -> None:
+        low = tag.lower()
+        if low in self._DROP_TAGS_WITH_CONTENT:
+            if self._drop_depth > 0:
+                self._drop_depth -= 1
+            return
+        if low in self._STRIP_TAGS_KEEP_CONTENT:
+            return
+        self._out.append(f"</{low}>")
+
+    def handle_data(self, data: str) -> None:
+        if self._drop_depth > 0:
+            return
+        self._out.append(data)
+
+
+def sanitize_report_html(html_text: str) -> str:
+    """对 report-writer 产出的 HTML 做一层确定性 XSS 消毒。
+
+    剥 ``<script>`` / 内联 ``on*`` 事件 / ``<iframe>`` 等可执行或远程加载内容，
+    保留结构化标签与 ``data:`` URI 图。返回消毒后的 HTML 字符串。
+
+    纯 stdlib、无新依赖。前端会对返回结果再过一遍 DOMPurify（纵深防御）。
+    """
+    parser = _ReportHtmlSanitizer()
+    parser.feed(html_text)
+    parser.close()
+    return parser.result
+
+
+def _resolve_html_report_image_placeholders(
+    report_host_path: Path,
+    workspace: Path,
+) -> None:
+    """Resolve ``{{img:<basename>}}`` placeholders in report.html → base64-inline.
+
+    与 markdown 模式的 ``_resolve_report_image_placeholders`` 对称，但产物是自包含
+    HTML：每个命中的占位符换成 ``<img src="data:image/png;base64,...">``，封存后
+    下载离线即可看图（治「下载丢图」）。
+
+    - 命中且磁盘 .png 存在 → base64 内联 data URI。
+    - 命中但磁盘文件缺失（chart_files 声称有、实际没画）→ 留**可见提示** stub
+      （绝不产伪 data URI；列出缺失文件名供诊断）。
+    - chart_files 为空/不可读 → 保留占位符原样（人工诊断）。
+    - 占位符 basename 不在 chart_files → 可见错误 stub（列可用文件）。
+
+    report 文件不存在/不可读 → 静默跳过（seal 仍成功）。
+    """
+    if not report_host_path.is_file():
+        return
+
+    chart_files_map = _load_chart_files_map(workspace)
+    outputs_dir = _outputs_dir_for(workspace)
+
+    try:
+        original = report_host_path.read_text(encoding="utf-8")
+    except Exception:
+        logger.warning(
+            "seal_report_writer_handoff: report.html unreadable, skip base64 inline",
+            exc_info=True,
+        )
+        return
+
+    def _replace(match: re.Match[str]) -> str:
+        basename = match.group(1).strip()
+        if not chart_files_map:
+            return match.group(0)  # 无映射保留原样
+        if basename not in chart_files_map:
+            available = ", ".join(sorted(chart_files_map.keys())[:5])
+            suffix = f"；可用: {available}" if available else ""
+            return f"[图表 '{basename}' 未找到{suffix}]"
+        # 命中 → 读磁盘 .png → base64 内联
+        png_path = outputs_dir / basename
+        try:
+            raw = png_path.read_bytes()
+        except Exception:
+            logger.warning(
+                "seal_report_writer_handoff: chart png missing on disk for %r, leave visible note",
+                basename,
+            )
+            return f"[图表 '{basename}' 内联失败：磁盘未找到 {basename}]"
+        b64 = base64.b64encode(raw).decode("ascii")
+        return f'<img src="data:image/png;base64,{b64}" alt="{basename}">'
+
+    try:
+        resolved = _IMG_PLACEHOLDER_RE.sub(_replace, original)
+    except Exception:
+        logger.warning(
+            "seal_report_writer_handoff: html base64 inline substitution skipped",
+            exc_info=True,
+        )
+        return
+
+    if resolved != original:
+        try:
+            report_host_path.write_text(resolved, encoding="utf-8")
+            logger.info(
+                "seal_report_writer_handoff: base64-inlined image placeholders in %s",
+                report_host_path,
+            )
+        except Exception:
+            logger.warning(
+                "seal_report_writer_handoff: report.html rewrite failed after base64 inline",
+                exc_info=True,
+            )
 
 
 def _normalize_report_image_paths(report_host_path: Path) -> None:
@@ -1306,7 +1520,7 @@ def seal_report_writer_handoff(
 
     Args:
         status: "completed" / "failed"
-        report_path: 报告 md 文件路径
+        report_path: 报告文件路径（report.html / 旧 report.md）
         sections_written: 已写的段落，如 ["Results", "Discussion"]
         errors: 错误信息
         gate_signals: 决策信号
@@ -1319,31 +1533,52 @@ def seal_report_writer_handoff(
         "gate_signals": gate_signals,
     }
 
-    # 0. 解析 {{img:...}} 占位符（chart image placeholder system）
-    # Layer 1: resolves LLM-written placeholders to canonical virtual paths
-    # from handoff_chart_maker.json.chart_files before the Layer 2
-    # _normalize_report_image_paths prefix fix.
+    # 报告载体分支（spec 2026-06-29）：
+    #   .html → 占位符 base64 内联 + XSS 消毒（自包含 HTML，治「下载丢图」）。
+    #   .md   → 沿用既有 markdown 占位符解析 + 路径规整（旧报告不回归）。
+    _report_name = Path(report_path).name
+    _is_html = _report_name.lower().endswith((".html", ".htm"))
+
     try:
         _ws = _resolve_workspace(runtime)
-        _report_host = _ws.parent / "outputs" / Path(report_path).name
-        _resolve_report_image_placeholders(_report_host, _ws)
+        _report_host = _ws.parent / "outputs" / _report_name
+        if _is_html:
+            # HTML 模式：{{img:}} → base64 data URI（仅代表性图，prompt 已指导）
+            _resolve_html_report_image_placeholders(_report_host, _ws)
+            # 消毒：剥 <script>/on*/<iframe> 等（LLM 产出，封存时做一层确定性消毒）
+            if _report_host.is_file():
+                try:
+                    _raw = _report_host.read_text(encoding="utf-8")
+                    _clean = sanitize_report_html(_raw)
+                    if _clean != _raw:
+                        _report_host.write_text(_clean, encoding="utf-8")
+                        logger.info("seal_report_writer_handoff: sanitized report.html %s", _report_host)
+                except Exception:
+                    logger.warning("seal_report_writer_handoff: html sanitize skipped", exc_info=True)
+        else:
+            # markdown 模式（legacy）：占位符解析 + 路径规整，原样保留不回归。
+            # Layer 1: resolves LLM-written placeholders to canonical virtual paths
+            # from handoff_chart_maker.json.chart_files before the Layer 2
+            # _normalize_report_image_paths prefix fix.
+            _resolve_report_image_placeholders(_report_host, _ws)
     except Exception as _e:
         logger.warning("seal_report_writer_handoff: image placeholder resolution failed: %s", _e)
 
-    # 1. 规范化图片路径前缀（现有逻辑，保留）
+    # 1. 规范化图片路径前缀（仅 markdown 模式；HTML 模式图已 base64 内联，无路径可规整）
     # Normalise image paths in the report file before sealing: the artifacts API
     # requires ``mnt/user-data/outputs/file.png`` (no leading slash), but LLMs
     # often write ``outputs/file.png`` or ``/mnt/user-data/outputs/file.png``,
     # both of which return 400 Bad Request in the frontend. Fix it server-side
     # so the result is correct regardless of what the model wrote.
-    try:
-        _ws = _resolve_workspace(runtime)
-        # report_path is a virtual path like /mnt/user-data/outputs/report.md;
-        # derive the host path by replacing the virtual prefix with the outputs dir.
-        _report_host = _ws.parent / "outputs" / Path(report_path).name
-        _normalize_report_image_paths(_report_host)
-    except Exception as _e:
-        logger.warning("seal_report_writer_handoff: image normalisation pre-step failed: %s", _e)
+    if not _is_html:
+        try:
+            _ws = _resolve_workspace(runtime)
+            # report_path is a virtual path like /mnt/user-data/outputs/report.md;
+            # derive the host path by replacing the virtual prefix with the outputs dir.
+            _report_host = _ws.parent / "outputs" / _report_name
+            _normalize_report_image_paths(_report_host)
+        except Exception as _e:
+            logger.warning("seal_report_writer_handoff: image normalisation pre-step failed: %s", _e)
 
     result = _seal_handoff(ReportWriterHandoff, "handoff_report_writer.json", payload, runtime)
 

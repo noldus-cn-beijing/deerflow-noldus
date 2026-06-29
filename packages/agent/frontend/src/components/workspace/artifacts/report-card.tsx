@@ -4,6 +4,7 @@ import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, FileTextIcon } from "l
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { HTMLContent } from "@/components/workspace/artifacts/html-content";
 import { MarkdownContent } from "@/components/workspace/messages/markdown-content";
 import { loadArtifactContent } from "@/core/artifacts/loader";
 import { type ArtifactMeta } from "@/core/artifacts/types";
@@ -18,6 +19,12 @@ export function isReportArtifact(meta: ArtifactMeta): boolean {
   if (meta.kind === "report") return true;
   const p = meta.path.toLowerCase();
   return p.endsWith(".md") || p.endsWith(".html") || p.endsWith(".htm");
+}
+
+/** spec 2026-06-29: HTML 报告（report.html）走 HTMLContent，旧 md 报告仍走 MarkdownContent。 */
+function isHtmlReportPath(path: string): boolean {
+  const p = path.toLowerCase();
+  return p.endsWith(".html") || p.endsWith(".htm");
 }
 
 /**
@@ -77,7 +84,11 @@ export function ReportCard({ meta, threadId }: { meta: ArtifactMeta; threadId: s
           {loading ? (
             <p className="text-muted-foreground text-sm">{t.gallery.reportOpen}…</p>
           ) : hasContent ? (
-            <MarkdownContent content={content ?? ""} isLoading={false} className="prose prose-sm max-w-none" threadId={threadId} />
+            isHtmlReportPath(meta.path) ? (
+              <HTMLContent content={content ?? ""} className="prose prose-sm max-w-none" />
+            ) : (
+              <MarkdownContent content={content ?? ""} isLoading={false} className="prose prose-sm max-w-none" threadId={threadId} />
+            )
           ) : (
             <p className="text-muted-foreground text-sm">{t.gallery.noArtifacts}</p>
           )}

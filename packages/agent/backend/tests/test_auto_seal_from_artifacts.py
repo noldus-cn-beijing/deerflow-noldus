@@ -168,6 +168,31 @@ class TestAutoSealReportWriter:
         assert "结果" in data["sections_written"]
         assert len(data["sections_written"]) == 4
 
+    def test_report_html_preferred_over_md(self, tmp_path: Path):
+        """spec 2026-06-29: 产物改 report.html——auto-seal 优先认 .html，
+        report_path 指向 .html，sections 从 <h2>/<h3> 解析。旧 .md 仍可兜底。"""
+        ws, out = _mk_thread(tmp_path)
+        (out / "report.html").write_text(
+            "<!DOCTYPE html><html><body>"
+            "<blockquote>摘要</blockquote>"
+            "<h2>1. 实验概况</h2><p>概况</p>"
+            "<h2>3. 结果</h2><table></table>"
+            "</body></html>",
+            encoding="utf-8",
+        )
+        (Path(ws) / "experiment-context.json").write_text(
+            json.dumps({"analysis_config_id": "html-config"}),
+            encoding="utf-8",
+        )
+
+        ok = _auto_seal("report-writer", ws)
+        assert ok is True
+        data = json.loads((Path(ws) / "handoff_report_writer.json").read_text(encoding="utf-8"))
+        assert data["report_path"] == "/mnt/user-data/outputs/report.html"
+        # sections 从 HTML 标题解析
+        assert "1. 实验概况" in data["sections_written"]
+        assert "3. 结果" in data["sections_written"]
+
 
 # ===================================================================
 # Test: chart-maker auto-seal
@@ -718,7 +743,7 @@ class TestAutoSealCodeExecutorListParams:
         )
 
         ok = _auto_seal("code-executor", str(ws_path))
-        assert ok is True, f"auto-seal should succeed, but returned False"
+        assert ok is True, "auto-seal should succeed, but returned False"
 
         h = ws_path / "handoff_code_executor.json"
         assert h.exists()

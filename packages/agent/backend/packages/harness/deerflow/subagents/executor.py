@@ -369,25 +369,47 @@ def _attempt_auto_seal_from_artifacts(
         outputs = ws.parent / "outputs"
 
         if subagent_name == "report-writer":
-            report = outputs / "report.md"
-            if not report.exists() or report.stat().st_size == 0:
+            # spec 2026-06-29: 产物改 report.html（HTML）；旧报告仍是 report.md。
+            # 优先认 .html，回落 .md（catastrophic-forgetting：旧格式不回归）。
+            html_report = outputs / "report.html"
+            md_report = outputs / "report.md"
+            if html_report.exists() and html_report.stat().st_size > 0:
+                report = html_report
+                report_path = "/mnt/user-data/outputs/report.html"
+                is_html = True
+            elif md_report.exists() and md_report.stat().st_size > 0:
+                report = md_report
+                report_path = "/mnt/user-data/outputs/report.md"
+                is_html = False
+            else:
                 return False  # 没产出 → 不兜底
 
-            # 确定性构造：report_path + 从 markdown 标题解析 sections_written
+            # 确定性构造：report_path + 从标题解析 sections_written
             text = report.read_text(encoding="utf-8")
-            sections = [
-                ln.lstrip("#").strip()
-                for ln in text.splitlines()
-                if ln.strip().startswith("#")
-            ]
+            if is_html:
+                # HTML 报告：从 <h2>/<h3> 标签解析章节名
+                import re as _re
+
+                sections = [
+                    m.strip()
+                    for m in _re.findall(r"<h[23][^>]*>(.*?)</h[23]>", text, flags=_re.IGNORECASE | _re.DOTALL)
+                    if m.strip()
+                ]
+            else:
+                # markdown 报告：从 # 标题解析
+                sections = [
+                    ln.lstrip("#").strip()
+                    for ln in text.splitlines()
+                    if ln.strip().startswith("#")
+                ]
             payload = {
                 "status": "completed",
-                "report_path": "/mnt/user-data/outputs/report.md",
+                "report_path": report_path,
                 "sections_written": sections or ["（harness auto-seal：未能解析标题）"],
                 "errors": [
                     "harness auto-seal: report-writer 完成报告产出但未调用 "
                     "seal_report_writer_handoff 工具；handoff 由 harness 依据 "
-                    "outputs/report.md 确定性构造"
+                    f"{report_path} 确定性构造"
                 ],
                 "gate_signals": None,
             }
