@@ -1,8 +1,18 @@
 # Spec (feature): 报告多格式导出 —— PDF / Word / LaTeX
 
-> 状态：feature 立项（待实施；部分技术选型留待实施前 spike）
+> 状态：feature 立项（**实施前 spike 已完成，见下**；选型与端点已据 spike 细化，可进入实施）
 > 归属：报告体验（2026-06-29）
 > 定位澄清（用户）：**HTML 用于「展现」**（交互界面的可能性，保留）；**导出面向研究员实际使用的三种格式 PDF / Word / LaTeX**。当前完全没有导出能力（只能下原始 .html/.md）。
+
+## ✅ 实施前 spike 已完成（2026-06-29）
+
+结论全文：[spikes/2026-06-29-report-export-formats-spike.md](../spikes/2026-06-29-report-export-formats-spike.md)
+
+**一句话**：PDF / docx 开箱保真（图、中文、表格全进），LaTeX 必须**预处理 data-uri**（否则 pandoc 静默丢图，已验证治法）；选型 **WeasyPrint（PDF，+12MB）+ pandoc（docx/tex，+155MB）**，端点设计已细化。
+
+**前置依赖**：样式 #236 ✅ 已合；图内联 #234 逻辑已合但间歇性丢图 bug 由 **PR #237**（seal fail-loud）修——**#237 应先于导出实施落地**（导出依赖报告有图）。
+
+**实施前仍需人工确认**：用 #237 修复后新生成的「图正确内联」真 report.html，各转一次肉眼比对视觉（本次 spike 受限于无该样本，用构造样本代）。
 
 ## Context（为什么做）
 
