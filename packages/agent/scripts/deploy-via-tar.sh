@@ -195,14 +195,17 @@ echo "→ Restarting services via docker compose"
 cd "$DEPLOY_PATH/docker"
 
 # ── DB migrations (BEFORE bringing services up) ──────────────────────────────
-# The gateway boots with Base.metadata.create_all, which creates missing TABLES
-# but never ALTERs an existing table to add a column. So any upstream sync that
-# adds an ORM column (e.g. runs.token_usage_by_model) leaves the already-existing
-# prod DB short that column → every request on the hot path 500s with
-# `no such column`. We run Alembic inside the freshly-loaded gateway image (it
-# bakes in alembic + the migration files) against the host-persisted DB
-# (${DEER_FLOW_HOME} → /app/backend/.deer-flow). run-db-migrations.sh is
-# idempotent and auto-stamps legacy DBs that predate the alembic_version table.
+# The gateway boots with `bootstrap_schema` (persistence/bootstrap.py), which
+# also runs `alembic upgrade head` on versioned DBs — so why migrate at deploy
+# time? To FAIL FAST: a migration error aborts the deploy and leaves the old
+# (working) containers serving, instead of surfacing as a Gateway startup crash
+# after the new code is already live ("migrate before serving" rail).
+# We run Alembic inside the freshly-loaded gateway image (it bakes in alembic +
+# the migration files) against the host-persisted DB
+# (${DEER_FLOW_HOME} → /app/backend/.deer-flow). run-db-migrations.sh is now a
+# thin `alembic upgrade head` for versioned DBs; empty/legacy (no
+# alembic_version) DBs defer to first-boot bootstrap, which owns provisioning
+# (create_all + stamp). No hardcoded HEAD_REV — head is read from the chain.
 # Failure here ABORTS the deploy — better to keep the old (working) containers
 # running than to bring up new code against an un-migrated schema.
 echo "→ Running DB migrations (alembic) inside gateway image before service start"

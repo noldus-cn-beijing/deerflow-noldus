@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from deerflow.persistence.base import Base
@@ -48,11 +48,11 @@ class RunRow(Base):
     lead_agent_tokens: Mapped[int] = mapped_column(default=0)
     subagent_tokens: Mapped[int] = mapped_column(default=0)
     middleware_tokens: Mapped[int] = mapped_column(default=0)
-    # Per-model token breakdown. nullable=True so the column can be ALTER-added
-    # onto the pre-existing prod runs table (migration 20260622_1700; create_all
-    # never alters existing tables). Legacy rows read back NULL; the read path in
-    # run/sql.py coalesces with ``or {}`` and writes always pass a dict.
-    token_usage_by_model: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    # Per-model token breakdown. ``NOT NULL DEFAULT '{}'`` aligns with the
+    # upstream ``0001_baseline`` schema (and ``0002_runs_token_usage`` for
+    # legacy DBs) so ``safe_add_column`` sees no drift. Read path coalesces
+    # with ``or {}`` defensively.
+    token_usage_by_model: Mapped[dict] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
 
     # Follow-up association
     follow_up_to_run_id: Mapped[str | None] = mapped_column(String(64))
