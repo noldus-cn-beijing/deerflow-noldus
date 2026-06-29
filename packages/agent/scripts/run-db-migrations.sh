@@ -149,11 +149,18 @@ PY
 has_table() { [ -n "$(sql "SELECT name FROM sqlite_master WHERE type='table' AND name='$1';")" ]; }
 has_col()   { sql "PRAGMA table_info($1);" | grep -qiE "(^|\|)$2(\||$)"; }
 
-HEAD_REV="20260622_1700"
+# Alembic head revision (newest migration). Bump this every time a migration is
+# added under persistence/migrations/versions/ — the final verify and the
+# "legacy DB already at head column" branch compare against it.
+HEAD_REV="20260626_1700"   # 20260626_1700_thread_cascade_fk (runs/run_events → threads_meta ON DELETE CASCADE)
 
 # Map of (column → revision that introduced it), newest first. The correct
 # stamp baseline for a legacy (no alembic_version) DB is the NEWEST revision
 # whose column is ALREADY present — i.e. the DB is "at" that revision already.
+# NOTE: 20260626_1700 (thread_cascade_fk) adds NO column — it only adds CASCADE
+# foreign keys (batch_alter recreates tables). A legacy DB therefore detects at
+# most 20260622_1700 (newest column-adding rev) and `upgrade head` then applies
+# the FK migration on top. So this map intentionally stops at 20260622_1700.
 detect_baseline() {
     # newest → oldest
     if has_table runs     && has_col runs     token_usage_by_model; then echo "20260622_1700"; return; fi
