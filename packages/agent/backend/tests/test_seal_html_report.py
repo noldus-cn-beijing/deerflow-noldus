@@ -92,8 +92,13 @@ class TestHtmlPlaceholderBase64Inline:
         assert out.count("data:image/png;base64,") == 2
         assert "{{img:" not in out
 
-    def test_unmatched_placeholder_visible_stub(self, tmp_path):
-        """占位符 basename 不在 chart_files → 替换成可见错误 stub（不留裸占位符）。"""
+    def test_unmatched_placeholder_degrades_to_empty_src(self, tmp_path):
+        """占位符 basename 不在 chart_files → 降级为空 src（不破坏 HTML、不留裸占位符）。
+
+        spec 2026-06-29 方案 A：占位符在 ``<img src="...">`` 的值位置，缺图时返回
+        空串使 ``<img src="">`` 失效、前端显示 alt；诊断信息进日志，不塞进 src
+        （文本 stub 进 src 会变成坏 src 且经 sanitize 残留裸文本）。
+        """
         ws = tmp_path / "workspace"
         ws.mkdir()
         outputs = tmp_path / "outputs"
@@ -101,16 +106,18 @@ class TestHtmlPlaceholderBase64Inline:
         _make_chart_handoff(ws, ["/mnt/user-data/outputs/real.png"])
 
         report = outputs / "report.html"
-        report.write_text('<img src="{{img:phantom.png}}">', encoding="utf-8")
+        report.write_text('<img src="{{img:phantom.png}}" alt="phantom">', encoding="utf-8")
 
         _resolve_html_report_image_placeholders(report, ws)
 
         out = report.read_text(encoding="utf-8")
-        assert "{{img:" not in out
-        assert "phantom.png" in out  # 可见 stub 列出未找到的文件
+        assert "{{img:" not in out  # 占位符已消除
+        assert "data:image/png;base64," not in out  # 绝不产伪 data URI
+        assert "data:image png" not in out  # ``/`` 未被拆
+        assert "&lt;img" not in out  # 无嵌套
 
-    def test_missing_file_falls_back_to_textual_note(self, tmp_path):
-        """chart_files 声明了 basename 但磁盘 .png 不存在 → 不内联 data URI，留可见提示。"""
+    def test_missing_file_falls_back_to_empty_src(self, tmp_path):
+        """chart_files 声明了 basename 但磁盘 .png 不存在 → 不内联 data URI，降级空 src。"""
         ws = tmp_path / "workspace"
         ws.mkdir()
         outputs = tmp_path / "outputs"
@@ -119,14 +126,15 @@ class TestHtmlPlaceholderBase64Inline:
         _make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_box.png"])
 
         report = outputs / "report.html"
-        report.write_text('<img src="{{img:plot_box.png}}">', encoding="utf-8")
+        report.write_text('<img src="{{img:plot_box.png}}" alt="plot_box">', encoding="utf-8")
 
         _resolve_html_report_image_placeholders(report, ws)
 
         out = report.read_text(encoding="utf-8")
-        # 绝不产出一个指向不存在 data 的伪 data URI；留可见提示让用户诊断
+        # 绝不产出一个指向不存在 data 的伪 data URI；降级为空 src（alt 显示）
         assert "data:image/png;base64," not in out
-        assert "plot_box.png" in out
+        assert "{{img:" not in out
+        assert "&lt;img" not in out
 
     def test_no_placeholders_noop(self, tmp_path):
         """无占位符的报告原样不变。"""
@@ -139,6 +147,117 @@ class TestHtmlPlaceholderBase64Inline:
         _resolve_html_report_image_placeholders(report, ws)
 
         assert report.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# §1.5 占位符→内联后产物必须能被 HTML 渲染器正确解析（治嵌套 <img> 回归）
+#
+# spec: docs/superpowers/specs/2026-06-29-fix-html-report-inline-img.md
+#
+# prompt 让 LLM 把占位符写进 ``<img src="{{img:X}}">``（占位符是 src 的值），
+# 因此 seal 的替换必须只产 data URI 值，不能产整个 ``<img>`` 元素——否则得到
+# 嵌套 ``<img src="<img ...">">``，经 sanitize_report_html 后 ``/`` 被拆成空格、
+# 图全废。下方断言看**真产物能不能被渲染**（不只看占位符是否被替换），
+# 正是 #234 漏测导致带病合入的那条契约。
+# ---------------------------------------------------------------------------
+
+
+class TestHtmlPlaceholderNoNestingContract:
+    def test_resolved_img_is_value_not_nested_element(self, tmp_path):
+        """``<img src="{{img:X}}">`` 替换后是合法、无嵌套的 data URI src 值。
+
+        这条断言若存在于 #234，带病的「产整个 <img>」版本会立刻红：
+        嵌套产物经 sanitize 后出现 ``&lt;img``、``data:image png``（``/`` 被拆），
+        规范子串 ``data:image/png;base64,`` 被破坏。
+        """
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        outputs.mkdir()
+        png_bytes = b"\x89PNG\r\n\x1a\n" + b"image-data" * 4
+        _make_png(outputs, "plot_box.png", png_bytes)
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/plot_box.png"])
+
+        report = outputs / "report.html"
+        report.write_text(
+            '<figure><img src="{{img:plot_box.png}}"><figcaption>cap</figcaption></figure>',
+            encoding="utf-8",
+        )
+
+        _resolve_html_report_image_placeholders(report, ws)
+        out = report.read_text(encoding="utf-8")
+
+        # 规范 data URI 子串完整存在（``/`` 未被拆）
+        assert "data:image/png;base64," in out
+        # 不应出现嵌套 <img>（替换前 prompt 已写了外层 <img src="...">，
+        # 替换只应填值，不得再产第二个 <img）
+        assert out.count("<img") == 1
+        assert "&lt;img" not in out  # 未经 sanitize 也不应有转义嵌套 img
+
+    def test_end_to_end_through_sanitizer_parseable(self, tmp_path):
+        """resolve + sanitize 全链后产物可被 HTMLParser 无错解析、图可见。
+
+        模拟前端实际消费路径：report.html 先过占位符解析、再过确定性消毒。
+        断言最终 HTML 里 ``data:image/png;base64,`` 数 == 占位符数、``/`` 未被拆、
+        无 ``&lt;img``，且可被 HTMLParser 干净重解析。
+        """
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        outputs.mkdir()
+        png_a = b"\x89PNG\r\n\x1a\n" + b"AAAA" * 4
+        png_b = b"\x89PNG\r\n\x1a\n" + b"BBBB" * 4
+        _make_png(outputs, "a.png", png_a)
+        _make_png(outputs, "b.png", png_b)
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/a.png", "/mnt/user-data/outputs/b.png"])
+
+        report = outputs / "report.html"
+        report.write_text(
+            '<h1>R</h1><p>a <img src="{{img:a.png}}"> b <img src="{{img:b.png}}"></p>',
+            encoding="utf-8",
+        )
+
+        _resolve_html_report_image_placeholders(report, ws)
+        clean = sanitize_report_html(report.read_text(encoding="utf-8"))
+
+        # 嵌套被拆的特征必须缺席
+        assert "&lt;img" not in clean
+        assert "data:image png" not in clean
+        # 规范 data URI 子串 == 占位符数（每张图一条完整 data URI）
+        assert clean.count("data:image/png;base64,") == 2
+        # 产物可被标准 HTMLParser 干净重解析（结构稳定，重跑不丢图）
+        reparsed = sanitize_report_html(clean)
+        assert reparsed.count("data:image/png;base64,") == 2
+
+    def test_missing_image_degrades_without_breaking_html(self, tmp_path):
+        """缺图时占位符降级为不破坏 HTML 的形态，整篇仍可被 HTMLParser 解析。
+
+        spec 方案 A：缺图返回空串（``<img src="">``），前端加载失败显示 alt。
+        关键：缺图分支绝不能产文本 stub 塞进 src（那会变成坏 src 且残留裸文本）。
+        """
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outputs = tmp_path / "outputs"
+        outputs.mkdir()
+        # chart_files 声称有，磁盘没有
+        _make_chart_handoff(ws, ["/mnt/user-data/outputs/ghost.png"])
+
+        report = outputs / "report.html"
+        report.write_text(
+            '<p>ok</p><img src="{{img:ghost.png}}" alt="ghost"><p>after</p>',
+            encoding="utf-8",
+        )
+
+        _resolve_html_report_image_placeholders(report, ws)
+        clean = sanitize_report_html(report.read_text(encoding="utf-8"))
+
+        # 占位符已消除，不产伪 data URI，整篇结构完整可重解析
+        assert "{{img:" not in clean
+        assert "data:image/png;base64," not in clean
+        assert "ok" in clean and "after" in clean
+        # 重解析稳定（HTMLParser 不抛、结构文本保留）
+        reparsed = sanitize_report_html(clean)
+        assert "ok" in reparsed and "after" in reparsed
 
 
 # ---------------------------------------------------------------------------

@@ -409,15 +409,16 @@ def _resolve_html_report_image_placeholders(
 ) -> None:
     """Resolve ``{{img:<basename>}}`` placeholders in report.html → base64-inline.
 
-    与 markdown 模式的 ``_resolve_report_image_placeholders`` 对称，但产物是自包含
-    HTML：每个命中的占位符换成 ``<img src="data:image/png;base64,...">``，封存后
-    下载离线即可看图（治「下载丢图」）。
+    与 markdown 模式的 ``_resolve_report_image_placeholders`` 对称。占位符契约：
+    prompt 让 LLM 把占位符写进 ``<img src="{{img:<basename>}}">``——占位符是 src 的
+    **值**，因此这里只产 data URI 字符串（或空串降级），替换后得
+    ``<img src="data:image/png;base64,...">``，自包含、下载离线即可看图（治「下载丢图」）。
 
-    - 命中且磁盘 .png 存在 → base64 内联 data URI。
-    - 命中但磁盘文件缺失（chart_files 声称有、实际没画）→ 留**可见提示** stub
-      （绝不产伪 data URI；列出缺失文件名供诊断）。
+    - 命中且磁盘 .png 存在 → base64 内联 data URI 值。
+    - 命中但磁盘文件缺失，或 basename 不在 chart_files → 降级为空串（``<img src="">``，
+      前端加载失败显示 alt），诊断进日志。绝不产伪 data URI、绝不产文本 stub 塞进 src
+      （后者经 sanitize 会残留裸文本/坏 src——2026-06-29 嵌套 ``<img>`` 回归根因）。
     - chart_files 为空/不可读 → 保留占位符原样（人工诊断）。
-    - 占位符 basename 不在 chart_files → 可见错误 stub（列可用文件）。
 
     report 文件不存在/不可读 → 静默跳过（seal 仍成功）。
     """
@@ -438,24 +439,35 @@ def _resolve_html_report_image_placeholders(
 
     def _replace(match: re.Match[str]) -> str:
         basename = match.group(1).strip()
+        # 占位符契约：prompt 让 LLM 写 ``<img src="{{img:X}}">``——占位符是 src 的
+        # **值**，因此这里只产 data URI 字符串（或空串降级），绝不能产整个
+        # ``<img>`` 元素，否则得到嵌套 ``<img src="<img ...">">``，经
+        # sanitize_report_html 后 ``/`` 被拆成空格、图全废（#234 回归根因）。
         if not chart_files_map:
-            return match.group(0)  # 无映射保留原样
+            return match.group(0)  # 无映射保留原样（人工诊断）
         if basename not in chart_files_map:
             available = ", ".join(sorted(chart_files_map.keys())[:5])
             suffix = f"；可用: {available}" if available else ""
-            return f"[图表 '{basename}' 未找到{suffix}]"
+            logger.warning(
+                "seal_report_writer_handoff: chart %r not in chart_files%s, "
+                "degrade img to empty src (alt shown)",
+                basename,
+                suffix,
+            )
+            return ""  # <img src=""> 前端显示 alt，不破坏 HTML
         # 命中 → 读磁盘 .png → base64 内联
         png_path = outputs_dir / basename
         try:
             raw = png_path.read_bytes()
         except Exception:
             logger.warning(
-                "seal_report_writer_handoff: chart png missing on disk for %r, leave visible note",
+                "seal_report_writer_handoff: chart png missing on disk for %r, "
+                "degrade img to empty src (alt shown)",
                 basename,
             )
-            return f"[图表 '{basename}' 内联失败：磁盘未找到 {basename}]"
+            return ""  # <img src=""> 前端显示 alt，不破坏 HTML
         b64 = base64.b64encode(raw).decode("ascii")
-        return f'<img src="data:image/png;base64,{b64}" alt="{basename}">'
+        return f"data:image/png;base64,{b64}"
 
     try:
         resolved = _IMG_PLACEHOLDER_RE.sub(_replace, original)
