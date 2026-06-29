@@ -206,10 +206,15 @@ cd "$DEPLOY_PATH/docker"
 # Failure here ABORTS the deploy — better to keep the old (working) containers
 # running than to bring up new code against an un-migrated schema.
 echo "→ Running DB migrations (alembic) inside gateway image before service start"
+# The script is bind-mounted :ro (the container must not mutate the shipped
+# script), so it is NOT chmod'd +x — instead it is invoked explicitly via `bash`
+# (present in python:3.12-slim), which honors the script's `#!/usr/bin/env bash`
+# shebang and Bash semantics (BASH_SOURCE, `set -euo pipefail`). Using `sh`
+# instead would ignore the shebang and could misinterpret Bash-isms.
 docker compose -p deer-flow -f docker-compose.yaml run --rm --no-deps \
     -v "$DEPLOY_PATH/scripts/run-db-migrations.sh:/app/scripts/run-db-migrations.sh:ro" \
-    --entrypoint sh \
-    gateway -c "chmod +x /app/scripts/run-db-migrations.sh && /app/scripts/run-db-migrations.sh" \
+    --entrypoint bash \
+    gateway /app/scripts/run-db-migrations.sh \
     || { echo "✗ DB migration FAILED — aborting deploy, leaving existing containers running"; exit 1; }
 echo "✓ DB migrations applied (or already up to date)"
 

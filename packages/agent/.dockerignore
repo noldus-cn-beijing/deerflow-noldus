@@ -63,8 +63,19 @@ skills/
 frontend/.next
 frontend/node_modules
 backend/.venv
+backend/.deer-flow
+backend/.deer-flow.bak.*
 backend/htmlcov
 backend/.coverage
+# Runtime state persisted via volume mount at runtime (${DEER_FLOW_HOME}) —
+# MUST NOT ship in the image. checkpoints.db alone grows to GBs under dev use
+# and shipping it bloats the image tar (3.4GB+) and risks overwriting the
+# host's live data on first boot. Matches main dir + migration backups.
+.deer-flow
+.deer-flow.bak.*
+*.db
+*.db-wal
+*.db-shm
 *.md
 !README.md
 !frontend/README.md
