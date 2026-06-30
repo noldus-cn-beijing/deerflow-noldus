@@ -2,6 +2,7 @@
 
 import { PromptInputProvider } from "@/components/ai-elements/prompt-input";
 import { ArtifactsProvider } from "@/components/workspace/artifacts";
+import { StagesProvider } from "@/core/stages/context";
 import { SubtasksProvider } from "@/core/tasks/context";
 
 export default function AgentChatLayout({
@@ -11,9 +12,11 @@ export default function AgentChatLayout({
 }) {
   return (
     <SubtasksProvider>
-      <ArtifactsProvider>
-        <PromptInputProvider>{children}</PromptInputProvider>
-      </ArtifactsProvider>
+      <StagesProvider>
+        <ArtifactsProvider>
+          <PromptInputProvider>{children}</PromptInputProvider>
+        </ArtifactsProvider>
+      </StagesProvider>
     </SubtasksProvider>
   );
 }

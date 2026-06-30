@@ -321,22 +321,7 @@ export const zhCN: Translations = {
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
     skillInstallTooltip: "安装技能并使其可在 EthoInsight 中使用",
-    stageBroadcast: {
-      dispatchSubagent: (subagentType: string) => {
-        const labels: Record<string, string> = {
-          "code-executor": "🧮 正在计算指标，预计 30-60 秒...",
-          "data-analyst": "🔬 指标已完成，正在请专家解读，预计 1-2 分钟...",
-          "report-writer": "📝 解读已完成，正在生成中文研究报告...",
-          "knowledge-assistant": "📚 正在查阅领域知识...",
-        };
-        return labels[subagentType] ?? `🛠 正在派遣 ${subagentType}...`;
-      },
-      parseHeaders: "📂 正在解析 EthoVision 文件结构...",
-      resolveCatalog: "📋 正在生成指标计划...",
-      askClarification: "⚠️ 我需要先确认一件事...",
-      runScript: (scriptName: string) => `⚙️ 正在运行 ${scriptName}...`,
-      genericBash: "💻 正在执行命令...",
-    },
+    askClarification: "⚠️ 我需要先确认一件事...",
   },
 
   uploads: {

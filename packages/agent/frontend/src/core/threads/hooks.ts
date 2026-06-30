@@ -19,6 +19,7 @@ import { useI18n } from "../i18n/hooks";
 import { isHiddenFromUIMessage } from "../messages/utils";
 import type { FileInMessage } from "../messages/utils";
 import type { LocalSettings } from "../settings";
+import { useResetStages, useSetPlan, useUpdateStage } from "../stages/context";
 import { useFinalizeRunning, useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
@@ -421,6 +422,10 @@ export function useThreadStream({
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+  // A2: stage narration hooks — consume A1 backend stage events.
+  const setPlan = useSetPlan();
+  const updateStage = useUpdateStage();
+  const resetStages = useResetStages();
   // Deterministic run-terminal fallback (spec 2026-06-30 兜底): when the run
   // ends, flip any subtask still in_progress to a terminal state so no card
   // keeps spinning after the run is over.
@@ -434,6 +439,9 @@ export function useThreadStream({
     fetchStateHistory: { limit: 1 },
     onCreated(meta) {
       handleStreamStart(meta.thread_id, meta.run_id);
+      // A2: clear any stage narration carried over from a previous run so a
+      // fresh run starts with a clean slate (non-pipeline intent → no plan).
+      resetStages();
       const now = new Date().toISOString();
       upsertThreadInSearchCache(queryClient, {
         thread_id: meta.thread_id,
@@ -550,6 +558,46 @@ export function useThreadStream({
         };
         updateSubtask({ id: e.task_id, latestMessage: e.message });
         return;
+      }
+
+      // A2: A1 stage narration events. A1 emits on the `kind` field (distinct
+      // from the legacy `type`-field events above). 阶段状态唯一来源 = A1 后端事件，
+      // 前端不推导（守 spec「只认 A1 事件」，从根上避免 #214 卡死）。
+      if (
+        typeof event === "object" &&
+        event !== null &&
+        "kind" in event &&
+        event.kind === "stage_plan"
+      ) {
+        const e = event as {
+          kind: "stage_plan";
+          stages: string[];
+          skipped?: string[];
+        };
+        if (Array.isArray(e.stages)) {
+          setPlan({ stages: e.stages, skipped: e.skipped ?? [] });
+        }
+        return;
+      }
+
+      if (
+        typeof event === "object" &&
+        event !== null &&
+        "kind" in event &&
+        event.kind === "stage_update" &&
+        "stage" in event &&
+        typeof (event as { stage: unknown }).stage === "string" &&
+        "status" in event &&
+        ((event as { status: unknown }).status === "active" ||
+          (event as { status: unknown }).status === "completed")
+      ) {
+        const e = event as {
+          kind: "stage_update";
+          stage: string;
+          status: "active" | "completed";
+          narration?: string;
+        };
+        updateStage(e.stage, e.status, e.narration ?? "");
       }
 
       if (

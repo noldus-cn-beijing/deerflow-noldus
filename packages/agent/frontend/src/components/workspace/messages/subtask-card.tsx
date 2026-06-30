@@ -20,9 +20,9 @@ import { FeedbackButtons } from "@/components/feedback/feedback-buttons";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
 import { hasToolCalls } from "@/core/messages/utils";
+import { useActiveStageNarration } from "@/core/stages/context";
 import { streamdownPlugins } from "@/core/streamdown";
 import { useSubtask } from "@/core/tasks/context";
-import { getStageBroadcastForSubagent } from "@/core/tools/stage-broadcast";
 import { explainLastToolCall } from "@/core/tools/utils";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +61,9 @@ export const SubtaskCard = memo(function SubtaskCard({
 }) {
   const { t } = useI18n();
   const task = useSubtask(taskId)!;
+  // A2: stage narration from A1 backend events (replaces frontend query-table
+  // translation in stage-broadcast.ts). Source = backend only, never inferred.
+  const activeNarration = useActiveStageNarration();
   // 2A: subagent 运行中默认展开卡片，让用户看到 timeline（含 reasoning step）。
   // 用户手动折叠后不再跟随 status 变化，尊重用户操作。
   const cardToggledByUser = useRef(false);
@@ -105,19 +108,15 @@ export const SubtaskCard = memo(function SubtaskCard({
                 label={
                   task.status === "completed" ? (
                     <span className="text-muted-foreground">
-                      {getStageBroadcastForSubagent(task.subagent_type, t)}
-                      {" — "}
                       {t.subtasks.completed}
                     </span>
                   ) : task.status === "failed" ? (
                     <span className="text-red-500/67">
-                      {getStageBroadcastForSubagent(task.subagent_type, t)}
-                      {" — "}
                       {t.subtasks.failed}
                     </span>
                   ) : (
                     <Shimmer duration={3} spread={3}>
-                      {getStageBroadcastForSubagent(task.subagent_type, t)}
+                      {activeNarration ?? t.subtasks.in_progress}
                     </Shimmer>
                   )
                 }

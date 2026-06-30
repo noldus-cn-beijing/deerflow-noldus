@@ -29,7 +29,6 @@ import {
   extractReasoningContentFromMessage,
   findToolCallResult,
 } from "@/core/messages/utils";
-import { getStageBroadcastForBash } from "@/core/tools/stage-broadcast";
 import { extractTitleFromMarkdown } from "@/core/utils/markdown";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -425,8 +424,9 @@ export function ToolCall({
     const command: string | undefined = (args as { command: string })?.command;
     const description: string | undefined = (args as { description: string })
       ?.description;
-    const stageBroadcast = getStageBroadcastForBash(command ?? "", t);
-    const label = stageBroadcast ?? description ?? t.toolCalls.executeCommand;
+    // A2: bash 翻译不再查 stage-broadcast 表——由 A1 的阶段叙事覆盖；
+    // 纯 bash 步骤展示 description，无则用通用文案。
+    const label = description ?? t.toolCalls.executeCommand;
     return (
       <ChainOfThoughtStep
         key={id}
@@ -447,7 +447,7 @@ export function ToolCall({
     return (
       <ChainOfThoughtStep
         key={id}
-        label={t.toolCalls.stageBroadcast.askClarification}
+        label={t.toolCalls.askClarification}
         icon={MessageCircleQuestionMarkIcon}
       ></ChainOfThoughtStep>
     );
