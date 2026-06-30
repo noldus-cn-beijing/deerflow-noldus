@@ -166,6 +166,7 @@ export interface Translations {
     reportIssue: string;
     contactUs: string;
     about: string;
+    toggleTheme: string;
   };
 
   // Conversation

@@ -16,6 +16,8 @@ import { useI18n } from "@/core/i18n/hooks";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
+import { ThemeToggle } from "./theme-toggle";
+
 function NoldusWordmark({ className }: { className?: string }) {
   return (
     <Image
@@ -58,7 +60,10 @@ export function WorkspaceHeader({ className }: { className?: string }) {
                 <NoldusWordmark />
               </div>
             )}
-            <SidebarTrigger />
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <SidebarTrigger />
+            </div>
           </div>
         )}
       </div>

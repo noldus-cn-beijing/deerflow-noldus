@@ -425,6 +425,18 @@
   --shadow-raised:  0 2px 4px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.30);
   --shadow-overlap: 0 6px 16px -4px rgba(0, 0, 0, 0.50), 0 2px 4px rgba(0, 0, 0, 0.30);
   --shadow-overlay: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.30);
+  /* 悬浮输入框阴影：暗色下加深扩散（对齐 :root --shadow-float 的三层结构） */
+  --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.30),
+                  0 8px 24px -8px rgba(0, 0, 0, 0.45),
+                  0 24px 48px -16px rgba(0, 0, 0, 0.40);
+  /* 进度轨 stage 色：暗色下整体提亮度（L 0.60→0.70 档）保对比，色相/chroma 沿用 :root */
+  --stage-upload:    oklch(0.72 0.08 200);
+  --stage-paradigm:  oklch(0.70 0.10 175);
+  --stage-align:     oklch(0.70 0.12 155);
+  --stage-compute:   oklch(0.72 0.11 140);
+  --stage-qc:        oklch(0.76 0.12 110);
+  --stage-interpret: oklch(0.74 0.12  85);
+  --stage-report:    oklch(0.72 0.12  60);
 
   /* clay accent dark：明度抬高一档，与 light 同 hue。bare token 同 light 命名。 */
   --accent-clay:      oklch(0.74 0.045 70);

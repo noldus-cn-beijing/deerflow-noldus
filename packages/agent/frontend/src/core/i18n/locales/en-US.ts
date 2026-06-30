@@ -232,6 +232,7 @@ export const enUS: Translations = {
     reportIssue: "Report a issue",
     contactUs: "Contact us",
     about: "About EthoInsight",
+    toggleTheme: "Toggle theme",
   },
 
   // Conversation
