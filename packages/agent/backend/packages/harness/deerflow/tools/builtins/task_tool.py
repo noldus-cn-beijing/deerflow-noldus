@@ -545,6 +545,12 @@ async def task_tool(
     # Send Task Started message'
     writer({"type": "task_started", "task_id": task_id, "description": description})
 
+    # A1 stage narration: subagent 进入 → stage_update(active) on the custom track.
+    # 复用本派遣观测点（唯一知道 subagent 真实进/出的位置），映射走 stage_narration SSOT。
+    from deerflow.agents.middlewares.stage_narration import emit_dispatch_enter, emit_dispatch_exit
+
+    emit_dispatch_enter(subagent_type, writer=writer)
+
     try:
         while True:
             result = get_background_task_result(task_id)
@@ -552,6 +558,7 @@ async def task_tool(
             if result is None:
                 logger.error(f"[trace={trace_id}] Task {task_id} not found in background tasks")
                 writer({"type": "task_failed", "task_id": task_id, "error": "Task disappeared from background tasks"})
+                emit_dispatch_exit(subagent_type, succeeded=False, terminal_status="disappeared", writer=writer)
                 cleanup_background_task(task_id)
                 return f"Error: Task {task_id} disappeared from background tasks"
 
@@ -585,6 +592,7 @@ async def task_tool(
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 _report_subagent_usage(runtime, result)
                 writer({"type": "task_completed", "task_id": task_id, "result": result.result, "usage": usage})
+                emit_dispatch_exit(subagent_type, succeeded=True, terminal_status="completed", writer=writer)
                 logger.info(f"[trace={trace_id}] Task {task_id} completed after {poll_count} polls")
                 cleanup_background_task(task_id)
                 timeline = _build_progress_timeline(result.ai_messages or [])
@@ -594,6 +602,7 @@ async def task_tool(
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 _report_subagent_usage(runtime, result)
                 writer({"type": "task_failed", "task_id": task_id, "error": result.error, "usage": usage})
+                emit_dispatch_exit(subagent_type, succeeded=False, terminal_status="failed", writer=writer)
                 logger.error(f"[trace={trace_id}] Task {task_id} failed: {result.error}")
                 cleanup_background_task(task_id)
                 return f"Task failed. Error: {result.error}"
@@ -601,6 +610,7 @@ async def task_tool(
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 _report_subagent_usage(runtime, result)
                 writer({"type": "task_cancelled", "task_id": task_id, "error": result.error, "usage": usage})
+                emit_dispatch_exit(subagent_type, succeeded=False, terminal_status="cancelled", writer=writer)
                 logger.info(f"[trace={trace_id}] Task {task_id} cancelled: {result.error}")
                 cleanup_background_task(task_id)
                 return "Task cancelled by user."
@@ -608,6 +618,7 @@ async def task_tool(
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 _report_subagent_usage(runtime, result)
                 writer({"type": "task_timed_out", "task_id": task_id, "error": result.error, "usage": usage})
+                emit_dispatch_exit(subagent_type, succeeded=False, terminal_status="timed_out", writer=writer)
                 logger.warning(f"[trace={trace_id}] Task {task_id} timed out: {result.error}")
                 cleanup_background_task(task_id)
                 return f"Task timed out. Error: {result.error}"
@@ -629,6 +640,7 @@ async def task_tool(
                 usage = _summarize_usage(getattr(result, "token_usage_records", None))
                 _cache_subagent_usage(tool_call_id, usage, enabled=cache_token_usage)
                 writer({"type": "task_timed_out", "task_id": task_id, "usage": usage})
+                emit_dispatch_exit(subagent_type, succeeded=False, terminal_status="timed_out", writer=writer)
                 # The task may still be running in the background. Signal cooperative
                 # cancellation and schedule deferred cleanup to remove the entry from
                 # _background_tasks once the background thread reaches a terminal state.

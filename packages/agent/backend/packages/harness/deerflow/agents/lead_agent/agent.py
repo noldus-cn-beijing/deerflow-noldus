@@ -328,6 +328,16 @@ def build_middlewares(
     # Add TitleMiddleware
     middlewares.append(TitleMiddleware())
 
+    # A1 StageNarrationMiddleware — emit a one-shot ``stage_plan`` custom event
+    # when a multi-stage pipeline intent is declared (E2E_FULL / E2E_FULL_ASKVIZ /
+    # E2E_MIN). Non-pipeline intents (QA / chitchat / single-step) emit nothing →
+    # frontend renders no stepper. after_model observer reading messages; writer
+    # failures are swallowed internally. stage_update (per-stage enter/exit) is
+    # emitted from the task-tool dispatch boundary, not here. Spec 2026-06-30 A1.
+    from deerflow.agents.middlewares.stage_narration_middleware import StageNarrationMiddleware
+
+    middlewares.append(StageNarrationMiddleware())
+
     # Add MemoryMiddleware (after TitleMiddleware)
     middlewares.append(MemoryMiddleware(agent_name=agent_name))
 
