@@ -46,7 +46,18 @@ def _default_writer(payload: dict) -> None:
 
 
 class StageNarrationMiddleware(AgentMiddleware[AgentState]):
-    """Emit a one-shot ``stage_plan`` custom event when a pipeline intent is declared.
+    """Emit ``stage_plan`` (intent-determined) + 「识别范式」stage_update (tool-call) events.
+
+    Two observation points, both real-event-driven (no LLM self-report):
+
+    1. ``after_model`` — when the lead declares a pipeline ``[intent]``, emit a one-shot
+       ``stage_plan`` (人话阶段集) on the custom track.
+    2. ``wrap_tool_call`` (缺口 1, spec 2026-06-30-a1-stage-narration-coverage-gap-fix) —
+       「识别范式」阶段由 lead 自调工具完成（不派 subagent），故 task 派遣观测点收不到它。
+       在 lead 直接调识别类工具的边界同源发射：
+         - ``identify_ev19_template`` / ``inspect_uploaded_file`` → 识别范式 active（进入）
+         - ``prep_metric_plan`` 返回 ``status=ok`` → 识别范式 completed（识别完成、即将派
+           code-executor，grounded：失败/ambiguous/unsupported 不发 completed，叙事不撒谎）。
 
     Args:
         n_resolver: Optional callable returning the current batch subject count
@@ -69,6 +80,8 @@ class StageNarrationMiddleware(AgentMiddleware[AgentState]):
         self._writer = writer or _default_writer
         # Last intent we emitted a stage_plan for → idempotency within & across turns.
         self._last_emitted_intent: str | None = None
+        # 识别范式 active 是否已发（进入幂等：识别阶段重试不重复发 active，直至 completed 重置）。
+        self._identify_active_emitted: bool = False
 
     # ----- core ------------------------------------------------------------
 
@@ -101,6 +114,24 @@ class StageNarrationMiddleware(AgentMiddleware[AgentState]):
         except Exception:  # noqa: BLE001
             logger.debug("stage_narration: writer unavailable or failed; skipping event", exc_info=True)
 
+    # ----- 识别范式 tool-call observation (缺口 1) -------------------------
+
+    def _emit_identify_active(self) -> None:
+        """Fire 识别范式 active once per identification phase (idempotent until completed)."""
+        if self._identify_active_emitted:
+            return
+        self._safe_write(stage_narration.stage_update(stage_narration.STAGE_IDENTIFY, "active"))
+        self._identify_active_emitted = True
+
+    def _maybe_emit_identify_completed(self, tool_result) -> None:
+        """Fire 识别范式 completed only if prep_metric_plan truly succeeded (grounded)."""
+        content = getattr(tool_result, "content", None)
+        if not stage_narration.identify_done_succeeded(content):
+            return  # 失败/ambiguous/unsupported/解析失败 → 不撒谎
+        self._safe_write(stage_narration.stage_update(stage_narration.STAGE_IDENTIFY, "completed"))
+        # 识别阶段结束：重置 active 标志，下一轮识别（如换数据集重跑）可再发 active。
+        self._identify_active_emitted = False
+
     # ----- hooks -----------------------------------------------------------
 
     def after_model(self, state: AgentState, runtime: Runtime) -> dict | None:  # noqa: ARG002
@@ -112,6 +143,30 @@ class StageNarrationMiddleware(AgentMiddleware[AgentState]):
         messages = state.get("messages") if isinstance(state, dict) else None
         self._maybe_emit(messages)
         return None
+
+    def wrap_tool_call(self, request, handler):  # type: ignore[override]
+        """Observe lead's direct identification tools (缺口 1).
+
+        - identify_ev19_template / inspect_uploaded_file → 识别范式 active (before handler).
+        - prep_metric_plan → 识别范式 completed iff status=ok (after handler, grounded).
+        Handler exceptions propagate (ToolNode's handle_tool_errors handles them).
+        """
+        name = request.tool_call.get("name") if isinstance(request.tool_call, dict) else None
+        if stage_narration.is_identify_enter_tool(name or ""):
+            self._emit_identify_active()
+        result = handler(request)
+        if stage_narration.is_identify_done_tool(name or ""):
+            self._maybe_emit_identify_completed(result)
+        return result
+
+    async def awrap_tool_call(self, request, handler):  # type: ignore[override]
+        name = request.tool_call.get("name") if isinstance(request.tool_call, dict) else None
+        if stage_narration.is_identify_enter_tool(name or ""):
+            self._emit_identify_active()
+        result = await handler(request)
+        if stage_narration.is_identify_done_tool(name or ""):
+            self._maybe_emit_identify_completed(result)
+        return result
 
 
 def _default_n_resolver() -> int | None:

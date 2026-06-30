@@ -11,10 +11,12 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.prebuilt.tool_node import ToolCallRequest
 
 from deerflow.agents.middlewares.stage_narration_middleware import StageNarrationMiddleware
 
@@ -105,6 +107,7 @@ class TestStagePlanGrounding:
 
     def test_writer_unavailable_does_not_crash(self):
         """get_stream_writer 在非 graph 上下文会抛 → 中间件吞掉、不崩 turn。"""
+
         def boom(_payload):
             raise RuntimeError("no stream writer context")
 
@@ -120,3 +123,126 @@ class TestStagePlanGrounding:
         plans = [e for e in emitted if e.get("kind") == "stage_plan"]
         assert len(plans) == 1
         assert plans[0]["skipped"] == []
+
+
+# ---------------------------------------------------------------------------
+# 缺口 1 —— 「识别范式」阶段的 wrap_tool_call 派发观测点
+#
+# spec 2026-06-30-a1-stage-narration-coverage-gap-fix 缺口 1：「识别范式」由 lead 自调工具
+# 完成（identify_ev19_template / inspect_uploaded_file / prep_metric_plan），不派 subagent，
+# 故 A1 既有 task 派遣观测点收不到它。StageNarrationMiddleware 覆盖 wrap_tool_call：
+#   - identify_ev19_template / inspect_uploaded_file → 识别范式 active（调 handler 前）
+#   - prep_metric_plan 返回 status=ok → 识别范式 completed（调 handler 后，grounded）
+# ---------------------------------------------------------------------------
+
+
+def _tool_call_request(name: str, args: dict | None = None, call_id: str = "call_1") -> ToolCallRequest:
+    """Build a minimal ToolCallRequest for wrap_tool_call tests (no real tool needed)."""
+    return ToolCallRequest(
+        tool_call={"name": name, "args": args or {}, "id": call_id, "type": "tool_call"},
+        tool=None,
+        state={"messages": []},
+        runtime=None,
+    )
+
+
+def _handler_returning(tool_message: ToolMessage):
+    """Build a handler callable that ignores input and returns the given ToolMessage."""
+
+    def _handler(_request):
+        return tool_message
+
+    return _handler
+
+
+class TestIdentifyStageDispatch:
+    def test_identify_ev19_template_fires_active(self):
+        """调 identify_ev19_template → 在 handler 执行前发「识别范式」active。"""
+        mw, emitted = _make_mw()
+        req = _tool_call_request("identify_ev19_template", {"uploaded_files": ["/mnt/x.txt"], "user_message": "epm"})
+        result = mw.wrap_tool_call(req, _handler_returning(ToolMessage(content="ok", tool_call_id="call_1")))
+        acts = [e for e in emitted if e.get("kind") == "stage_update" and e["stage"] == "识别范式" and e["status"] == "active"]
+        assert len(acts) == 1
+        # handler 仍正常执行（返回值透传）
+        assert result.content == "ok"
+
+    def test_inspect_uploaded_file_fires_active(self):
+        """调 inspect_uploaded_file → 发「识别范式」active（识别阶段的探查工具）。"""
+        mw, emitted = _make_mw()
+        req = _tool_call_request("inspect_uploaded_file", {"paradigm": "epm"})
+        mw.wrap_tool_call(req, _handler_returning(ToolMessage(content="ok", tool_call_id="call_1")))
+        acts = [e for e in emitted if e.get("kind") == "stage_update" and e["stage"] == "识别范式" and e["status"] == "active"]
+        assert len(acts) == 1
+
+    def test_prep_metric_plan_ok_fires_completed(self):
+        """prep_metric_plan 返回 status=ok → 发「识别范式」completed（识别完成、即将派 code-executor）。"""
+        mw, emitted = _make_mw()
+        ok_result = {"status": "ok", "plan_path": "/mnt/.../plan_metrics.json", "plan_summary": {"subject_count": 2}}
+        req = _tool_call_request("prep_metric_plan", {"uploaded_files": ["/mnt/x.txt"], "paradigm": "epm"})
+        mw.wrap_tool_call(req, _handler_returning(ToolMessage(content=json.dumps(ok_result), tool_call_id="call_1")))
+        dones = [e for e in emitted if e.get("kind") == "stage_update" and e["stage"] == "识别范式" and e["status"] == "completed"]
+        assert len(dones) == 1
+
+    def test_prep_metric_plan_error_does_not_fire_completed(self):
+        """prep_metric_plan 返回 status=error → **不发** completed（叙事不撒谎，grounded）。
+
+        spec 验收：人为让识别失败 → 断言不发 completed。
+        """
+        mw, emitted = _make_mw()
+        err_result = {"status": "error", "error_code": "columns_missing", "message": "..."}
+        req = _tool_call_request("prep_metric_plan", {"uploaded_files": ["/mnt/x.txt"], "paradigm": "epm"})
+        mw.wrap_tool_call(req, _handler_returning(ToolMessage(content=json.dumps(err_result), tool_call_id="call_1")))
+        dones = [e for e in emitted if e.get("kind") == "stage_update" and e["stage"] == "识别范式" and e["status"] == "completed"]
+        assert dones == []
+
+    def test_prep_metric_plan_ambiguous_does_not_fire_completed(self):
+        """prep_metric_plan 返回非 ok 的任何状态（含解析失败/非 JSON）→ 不发 completed。"""
+        mw, emitted = _make_mw()
+        req = _tool_call_request("prep_metric_plan")
+        # 非 JSON content → 解析失败 → 当作非 ok
+        mw.wrap_tool_call(req, _handler_returning(ToolMessage(content="not json at all", tool_call_id="call_1")))
+        dones = [e for e in emitted if e.get("kind") == "stage_update" and e["stage"] == "识别范式" and e["status"] == "completed"]
+        assert dones == []
+
+    def test_unrelated_tool_fires_nothing(self):
+        """非识别类工具（如 present_files）→ 不发任何 stage_update。"""
+        mw, emitted = _make_mw()
+        req = _tool_call_request("present_files", {"files": ["/mnt/.../report.md"]})
+        mw.wrap_tool_call(req, _handler_returning(ToolMessage(content="ok", tool_call_id="call_1")))
+        assert emitted == []
+
+    def test_active_fires_only_once_until_completed(self):
+        """多次 identify 调用 + 最终 prep ok：active 幂等（识别阶段已 active 就不重复发），completed 仅一次。"""
+        mw, emitted = _make_mw()
+        # 第一次 identify → active
+        mw.wrap_tool_call(_tool_call_request("identify_ev19_template", call_id="c1"), _handler_returning(ToolMessage(content="ok", tool_call_id="c1")))
+        # 第二次 identify（重试）→ 不重复发 active
+        mw.wrap_tool_call(_tool_call_request("identify_ev19_template", call_id="c2"), _handler_returning(ToolMessage(content="ok", tool_call_id="c2")))
+        # prep ok → completed
+        mw.wrap_tool_call(_tool_call_request("prep_metric_plan", call_id="c3"), _handler_returning(ToolMessage(content=json.dumps({"status": "ok"}), tool_call_id="c3")))
+        acts = [e for e in emitted if e.get("kind") == "stage_update" and e["stage"] == "识别范式" and e["status"] == "active"]
+        dones = [e for e in emitted if e.get("kind") == "stage_update" and e["stage"] == "识别范式" and e["status"] == "completed"]
+        assert len(acts) == 1
+        assert len(dones) == 1
+
+    def test_narration_contains_no_viscera(self):
+        """防 vacuous（spec 验收）：发出的 narration/阶段名不含工具名 / gate 关键字。"""
+        mw, emitted = _make_mw()
+        mw.wrap_tool_call(_tool_call_request("identify_ev19_template", call_id="c1"), _handler_returning(ToolMessage(content="ok", tool_call_id="c1")))
+        mw.wrap_tool_call(_tool_call_request("prep_metric_plan", call_id="c2"), _handler_returning(ToolMessage(content=json.dumps({"status": "ok"}), tool_call_id="c2")))
+        forbidden = ["identify_ev19_template", "prep_metric_plan", "inspect_uploaded_file", "ev19_template", "stage_update"]
+        for e in emitted:
+            for field in ("stage", "narration"):
+                val = e.get(field, "")
+                for bad in forbidden:
+                    assert bad not in str(val), f"{field}={val!r} 含内脏词 {bad!r}"
+
+    def test_handler_exception_propagates(self):
+        """wrap_tool_call 不吞 handler 异常（守 langchain 契约：异常由 ToolNode handle_tool_errors 处理）。"""
+        mw, _emitted = _make_mw()
+
+        def boom(_request):
+            raise RuntimeError("tool exploded")
+
+        with pytest.raises(RuntimeError, match="tool exploded"):
+            mw.wrap_tool_call(_tool_call_request("identify_ev19_template"), boom)

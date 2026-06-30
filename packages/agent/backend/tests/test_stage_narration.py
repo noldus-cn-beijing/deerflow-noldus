@@ -93,6 +93,16 @@ class TestStageForDispatch:
     def test_report_writer_maps_to_report(self):
         assert stage_narration.stage_for_dispatch("report-writer") == "撰写报告"
 
+    def test_knowledge_assistant_maps_to_knowledge(self):
+        """缺口 2：knowledge-assistant 登记 → 知识问答派遣时发 stage_update（独立活动提示）。
+
+        spec 2026-06-30-a1-stage-narration-coverage-gap-fix 缺口 2：QA 意图是非流水线
+        意图（不在 _INTENT_STAGES，不发 stage_plan），knowledge-assistant 的 stage_update
+        在前端是「独立活动提示」而非 stepper 节点。登记本身在 SSOT 一处，task 工具既有
+        emit_dispatch_enter/exit 自动发，无需改 task_tool。
+        """
+        assert stage_narration.stage_for_dispatch("knowledge-assistant") == "查阅领域知识"
+
     def test_unknown_subagent_returns_none(self):
         """未登记的 subagent 不发 stage_update（不猜阶段名）。"""
         assert stage_narration.stage_for_dispatch("mystery-agent") is None
@@ -167,7 +177,7 @@ class TestNoVisceraLeakage:
             out.extend(plan["stages"])
             out.extend(plan["skipped"])
         # dispatch 阶段名
-        for sub in ["code-executor", "data-analyst", "chart-maker", "report-writer"]:
+        for sub in ["code-executor", "data-analyst", "chart-maker", "report-writer", "knowledge-assistant"]:
             name = stage_narration.stage_for_dispatch(sub)
             if name:
                 out.append(name)
