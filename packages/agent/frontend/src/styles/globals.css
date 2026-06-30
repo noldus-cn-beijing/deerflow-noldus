@@ -196,6 +196,33 @@
   --size-icon-md: 1.25rem;/* 20px — 中：按钮内、卡片头默认 */
   --size-icon-lg: 1.5rem; /* 24px — 大：空状态/强调 */
 
+  /* ── 字号 type scale（D1 DESIGN.md §3）──────────────────────
+     v4 的 --text-* 是真 namespace，自动生成 text-xs/sm/base/lg/xl/2xl
+     工具类。沿用 Phase0#6 立的 12 14 16 18 24 32 节奏，落成显式 token，
+     让 DESIGN.md 引用的 --text-* 真实存在（SSOT 不漂移）。正文 base=16px
+     （readable-font-size）。配套 line-height 锁定，避免各处裸 leading-。 */
+  --text-xs: 0.75rem;   /* 12px — 标签、时间戳、caption */
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;  /* 14px — 次级正文、表单 */
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;    /* 16px — 正文（默认）*/
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;  /* 18px — 卡片标题 */
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.5rem;    /* 24px — 区块标题 */
+  --text-xl--line-height: 2rem;
+  --text-2xl: 2rem;     /* 32px — 页面标题（极少）*/
+  --text-2xl--line-height: 2.5rem;
+
+  /* ── 字重 token（D1 DESIGN.md §3）──────────────────────────
+     v4 的 --font-weight-* 是真 namespace，生成 font-weight-* 工具类。
+     层级靠字号+留白不靠粗体轰炸（Shibui 克制）：标题 600、正文 400、
+     标签 500。取代裸 font-semibold/font-bold 散写。 */
+  --font-weight-regular: 400;  /* 正文（默认）*/
+  --font-weight-medium: 500;   /* 标签、按钮、次级标题 */
+  --font-weight-semibold: 600; /* 表头、区块标题 */
+  --font-weight-bold: 700;     /* 极少——仅强强调 */
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -249,6 +276,13 @@
      纪律:仅插画/空状态/极少点缀;不进数据可视化分类色/状态语义。 */
   --color-accent-clay: var(--accent-clay);
   --color-accent-clay-soft: var(--accent-clay-soft);
+
+  /* 新增:单一强调色 accent-strong（D1 DESIGN.md §2 色盲安全铁律）
+     全站唯一的高亮/关键数据点强调色，蓝 #0072B2（Wong 色盲安全板）。
+     映射到 Tailwind 生成 bg-accent-strong / text-accent-strong / border-accent-strong。
+     纪律:同一屏只出现一种强调色;绝不与红/绿对编码语义并用。 */
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-strong-soft: var(--accent-strong-soft);
 
   /* 新增:工作流阶段色(7 阶段,全部由品牌绿 hue 偏移,Phase 0 后续进度轨/决策卡用) */
   --color-stage-upload: var(--stage-upload);
@@ -354,6 +388,12 @@
   --accent-clay:      oklch(0.70 0.045 70);
   --accent-clay-soft: oklch(0.70 0.045 70 / 0.12);
 
+  /* 单一强调色（D1 DESIGN.md §2）：全站唯一高亮/关键数据点强调。
+     蓝 #0072B2（Wong 色盲安全板），与品牌绿正交、不撞状态色。
+     -soft 给强调元素的极淡底（callout/高亮行）。dark 下提亮一档保对比。 */
+  --accent-strong:      #0072B2;
+  --accent-strong-soft: oklch(0.55 0.15 250 / 0.10);
+
   /* 状态语义色:与品牌绿同 family 协调,降饱和、非荧光。
      呈现须"色 + 图标 + 文字"三件套(color-not-only),不可仅靠颜色表意。 */
   --status-info:    oklch(0.62 0.10 230);   /* 沉静蓝 */
@@ -441,6 +481,11 @@
   /* clay accent dark：明度抬高一档，与 light 同 hue。bare token 同 light 命名。 */
   --accent-clay:      oklch(0.74 0.045 70);
   --accent-clay-soft: oklch(0.74 0.045 70 / 0.14);
+
+  /* 单一强调色 dark：同 hue 提亮一档（L 0.55→0.70）保暗底下对比度。
+     bare token 同 light 命名（守 token 双主题不塌）。 */
+  --accent-strong:      oklch(0.70 0.13 250);
+  --accent-strong-soft: oklch(0.70 0.13 250 / 0.14);
 
   /* 状态语义色 dark 占位:同 hue 明度抬高一档保证 dark 下对比度。
      值留 Phase 2 精调(决策4),本 spec 只保证 token 齐全不塌。 */
