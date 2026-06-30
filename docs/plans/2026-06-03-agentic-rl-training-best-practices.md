@@ -1,11 +1,14 @@
 # EthoInsight Agentic RL 训练最佳实践
 
 > **创建日期**: 2026-06-03
+> **最后更新**: 2026-06-30（基座 Qwen3-30B → Qwen3.6-35B-A3B；补 §0.5 根本动因 + v4-flash teacher 路线 + §11 Weyaxi 工程坑）
 > **状态**: 决策文档（待团队对齐）
 > **来源**: DeepSeek-R1/V3/V4 技术报告 + 2025-2026 年 Agentic RL 文献综述 + 项目实际故障分析
 > **关联文档**:
+> - 基座 SSOT：memory `project_base_model_qwen36_35b_a3b`（Qwen3.6-35B-A3B，2026-06-30 拍板）+ `project_why_finetune_local_single_gpu_deployability`（根本动因=本地单卡部署）
 > - [docs/specs/llm-finetuning-strategy.md](../specs/llm-finetuning-strategy.md) — 原始微调策略（本文档替代其中的 CPT + RLHF 部分）
-> - [docs/plans/2026-05-13-base-model-decision-memo.md](2026-05-13-base-model-decision-memo.md) — 基座模型选型
+> - [docs/plans/2026-05-13-base-model-decision-memo.md](2026-05-13-base-model-decision-memo.md) — 历史基座选型（已被 Qwen3.6 取代，仅作历史记录）
+> - [docs/plans/2026-06-04-skillopt-skill-optimization-plan.md](2026-06-04-skillopt-skill-optimization-plan.md) — SkillOpt skill 优化（产出 SFT teacher 轨迹的另一路径，与本文档 §0.5 v4-flash teacher 互补）
 > - [docs/plans/2026-04-13-fine-tuning-small-model-design.md](2026-04-13-fine-tuning-small-model-design.md) — 历史决策记录
 
 ---
@@ -22,7 +25,42 @@
 
 ---
 
-## 1. 核心理念翻转：训操作能力，不训领域知识
+## 0.5 为什么必须微调（根本动因：本地单卡部署）
+
+> 2026-06-30 补充。本节回答"既然 v4-flash 速度够、能力够，为什么还要花大力气做 Qwen 后训练"。
+
+**根本动因不是提速、不是补能力，而是本地部署可行的模型体量约束。**
+
+| | deepseek-v4-flash（当前生产） | Qwen3.6-35B-A3B（微调目标） |
+|---|---|---|
+| 参数 | 284B 总 / 13B 激活（MoE） | 35B 总 / **3B 激活**（MoE） |
+| 部署形态 | 仅云端 API（284B 无法单卡） | **5090 32GB 单卡 FP8 可部署** |
+| 数据隐私 | 数据出墙 + 持续 API 付费 + 受限流影响 | **本地推理，数据不出** |
+| 能力上限 | 当前够用，但天花板是 API 提供方决定 | **可针对行为学分析 RL 定制，无天花板** |
+
+v4-flash 284B 总参决定了它**永远无法塞进客户单卡**——而客户场景（数据不出墙、离线、长期成本）要求本地部署。候选开源模型必须单卡可跑 → Qwen3.6-35B-A3B（3B 激活，5090 可跑）。但 35B 开箱即用能力 < v4-flash（尤其 agent/工具调用），**所以必须用 SFT + GRPO 把 v4-flash 级别的 EthoInsight 分析能力对齐进 Qwen**。
+
+**v4-flash 与 Qwen 是阶段切换，不冲突**：v0.1 生产用 v4-flash（云端），Qwen SFT/RL 成熟后切本地部署。
+
+### 0.5.1 v4-flash 作 SFT teacher（不卡 golden-case 的立即入口）
+
+golden-case 全空不阻塞 SFT——**当前线上 v4-flash 就是现成的、能力达标的 teacher**。training-data 飞轮已在录 v4-flash 完整轨迹（`.deer-flow/training-data/auto-collected/<thread_id>.jsonl`，含 thinking + subagent prompt/result）。
+
+```
+v4-flash 在真实/合成数据上跑出完整轨迹（已有）
+    ↓ training-data flywheel 已自动录制（含 thinking）
+按 golden-case schema 给每条轨迹打分（确定性 verifier）
+    ↓
+筛高分轨迹 → 转 verl SFT parquet → LoRA SFT 进 Qwen3.6
+    ↓
+产出一个能力≈v4-flash 下界的本地模型（不等 golden-case）
+```
+
+**关键约束（Agent Distillation 思想）**：蒸馏的不是"v4-flash 的推理能力"，而是它的**完整任务求解行为**（lead 怎么 dispatch、遇到 KeyError 怎么恢复、什么时机 seal）——即 §1 说的"agent 操作能力"。teacher 轨迹选筛标准 = §3 的 verifier 五组件得分，不是"看起来对"。
+
+⚠️ **on-policy 铁律不变**：v4-flash 轨迹只能用于 **SFT 冷启动**，**GRPO 必须用 Qwen 自己的 rollout**（§7 第 3 条）。teacher 蒸馏是 SFT 阶段的事，RL 阶段 strictly on-policy。
+
+---
 
 ### 1.1 为什么不做 CPT
 
@@ -72,7 +110,7 @@
 | **多 turn agent 稳定性** | Critic 在变长轨迹上发散 | 天然适应变长 |
 | **Binary reward 场景** | 需要 reward model 稠密化 | 组内归一化直接处理 |
 
-**选 GRPO。** DeepSeek-R1/R1-Zero/V3.2 全部使用 GRPO。PPO 的 Critic 网络在 agent 变长 trajectory 上极不稳定，且在 5090 32GB 上训练 30B-A3B MoE 时 Critic 显存占用不可接受。
+**选 GRPO。** DeepSeek-R1/R1-Zero/V3.2 全部使用 GRPO。PPO 的 Critic 网络在 agent 变长 trajectory 上极不稳定，且在 5090 32GB 上训练 35B-A3B MoE 时 Critic 显存占用不可接受。
 
 ### 2.2 GRPO 的核心机制
 
@@ -237,7 +275,7 @@ Phase 1: 按范式独立训练 specialist
   ...
 
 Phase 2: OPD 蒸馏
-  用 On-Policy Distillation 把多个 specialist 蒸馏到 Qwen3-30B-A3B
+  用 On-Policy Distillation 把多个 specialist 蒸馏到 Qwen3.6-35B-A3B
   student 自己产生 rollout，用 reverse KL 对齐每个 teacher
 
 Phase 3: 端到端微调
@@ -321,12 +359,14 @@ SFT 数据不要只保留成功轨迹。保留部分失败轨迹 + reward-condit
 
 不微调，纯推理摸底：
 
-1. 部署 Qwen3-30B-A3B-Instruct-2507（vLLM + NVFP4 量化）到 5090
+1. 部署 Qwen3.6-35B-A3B（vLLM，FP8 量化，5090 32GB；3B 激活 MoE 单卡可跑）
 2. 跑通现有 agent 架构（lead → code-executor → data-analyst → report-writer）
 3. 用 golden-cases 测试，量化指标：
-   - 端到端通过率（vs deepseek-v4-pro 基线）
+   - 端到端通过率（vs deepseek-v4-flash 云端基线）
    - tool calling 准确率
    - handoff 完整性（核心字段非空率）
+
+> ⚠️ **Gated DeltaNet 训练时冒烟**（Phase 0 必做）：Qwen3.6 的 Gated DeltaNet + Gated Attention 混合架构是新的，推理栈（vLLM≥0.19 / SGLang≥0.5.10）官方确认 OK，但 **verl 训练时（非推理时）对该架构的支持成熟度未充分实战验证**。Phase 0 用 1 个 golden-case + 2 step GRPO 做最小冒烟，确认训练栈不吃架构暗亏。若严重失败 → 退路 Qwen3.5-35B-A3B（架构同构、LoRA 可迁移、post-training 更成熟）。详见 memory `project_base_model_qwen36_35b_a3b`。
 
 ### Phase 1：Verifier 开发 + IRC 校准（2026-06 ~ 2026-07）
 
@@ -342,13 +382,13 @@ SFT 数据不要只保留成功轨迹。保留部分失败轨迹 + reward-condit
    - 从失败 trajectory 提取 + 注入 Error Simulator 诊断 + 恢复方案（~500 条）
    - 合成变体（~500 条）
    - 全部带上 reward-conditioning tags
-2. LoRA SFT 在 Qwen3-30B-A3B-Instruct
+2. LoRA SFT 在 Qwen3.6-35B-A3B（teacher 轨迹来源见 §0.5：v4-flash 高分轨迹 + Error Simulator 增强失败轨迹）
 3. 评估：golden-cases 通过率 + agent 编排稳定性
 
 ### Phase 3：GRPO 训练（2026-07 ~ 2026-08）
 
-1. 先从 Qwen3-8B 开始，验证 GRPO 循环 + reward 设计（5090 完全够用）
-2. 验证通过后切 30B-A3B，正式 GRPO 训练
+1. 先在 Qwen3.6-35B-A3B 上验证 GRPO 循环 + reward 设计（Phase 0 的 Gated DeltaNet 冒烟通过后）
+2. 正式 GRPO 训练（LoRA，TP=1 数据并行——见 §11 Weyaxi 实测：3B 激活小模型 TP>1 反而过拟合通信开销）
 3. 优先训 EPM specialist（v0.1 主范式）
 4. 逐个范式扩展：OFT → FST → LDB → Zero Maze → TST
 5. 训练基础设施：火山引擎 verl + vLLM
@@ -380,9 +420,9 @@ SFT 数据不要只保留成功轨迹。保留部分失败轨迹 + reward-condit
 | 组件 | 推荐 | 备注 |
 |---|---|---|
 | **RL 框架** | verl (VolcEngine RL) v0.4+ | DeepSeek-R1 训练底座，2026 年 agentic RL 论文最常用 |
-| **推理引擎** | vLLM v0.8.5+ | 并行 rollout 采样，NVFP4 量化 |
+| **推理引擎** | vLLM ≥0.19 / SGLang ≥0.5.10 | Qwen3.6 Gated DeltaNet 架构要求的最低版本；FP8 量化 + MTP 投机解码（Qwen3.6 原生支持，提速 1.5-2×） |
 | **分布式编排** | Ray + PyTorch | verl 内置支持 |
-| **基座模型** | Qwen3-30B-A3B-Instruct-2507 | NVFP4 量化，5090 32GB 部署 |
+| **基座模型** | Qwen3.6-35B-A3B（2026-06-30 拍板） | 35B/3B 激活 MoE，5090 32GB 单卡 FP8 可部署；退路 Qwen3.5-35B-A3B 同构 |
 | **训练方法** | LoRA | MoE 模型轻触式微调，不重训 router |
 | **验证环境** | ethoinsight sandbox + golden-cases | 已有基础设施 |
 
@@ -401,16 +441,37 @@ SFT 数据不要只保留成功轨迹。保留部分失败轨迹 + reward-condit
 | **T²PO** | Uncertainty-guided exploration 防止 hesitation 崩溃 | 2605.02178 (ICML 2026 Spotlight) |
 | **PROVE** | 程序化五组件奖励 + MCP 环境 + 无 LLM-as-judge | 2606.03892 |
 | **GRPO 理论分析** | Binary reward 下 GRPO = adaptive weighted contrastive loss | 2503.06639 |
+| **Agent Distillation (NeurIPS 2025)** | 蒸馏完整 agent 任务求解行为（含工具/检索）进 sLM，非仅推理能力；§0.5 v4-flash teacher 路线的理论依据 | 2505.17612 |
+| **Capacity-Aligned Agent Distillation (ACL 2026)** | 大 teacher → 小 student 容量不对齐时的能力蒸馏；直接对应 v4-flash(284B)→Qwen3.6(35B) 巨大容量差 | 2026.findings-acl.1349 |
+| **SLM Tool-Use via RL (2025)** | GRPO 增强小模型工具调用准确率，重工具 agent 直接相关 | 2509.04518 |
 
 ---
 
-## 10. 决策请求
+## 10. 工程坑预警（verl + Qwen 小模型 + LoRA 一手实测，2026-06-30 增补）
+
+> 来源：[Weyaxi — GRPO+LoRA+verl 工程手册](https://huggingface.co/blog/Weyaxi/engineering-handbook-grpo-lora-with-verl)（Qwen2.5-3B 多卡 GSM8K 实测，体量与 Qwen3.6-35B-A3B 的 3B 激活同量级）。这些坑 verl 上必踩，提前看省真金白银。
+
+| 坑 | 现象 | 解法 | 对应 Phase |
+|---|---|---|---|
+| **Oversharding** | 小模型设 TP>1 → GPU 全等通信同步，utilization 抖动不重合 | **TP=1 数据并行**（3B 激活小模型单卡放得下，无需切分），省 ~33% 训练时间 | Phase 0/3 |
+| **VRAM 饥饿** | `gpu_memory_utilization` 默认 0.6 → 80GB 卡只用 78%，KV cache 不够 | 调到 **0.8**（5090 32GB 对应调小，找到 sweet spot，过高 OOM） | Phase 0/3 |
+| **磁盘满崩溃** | checkpoint 巨大，Step 80 写盘时磁盘满崩 | `save_total_limit=3` + `save_freq` 调大（50）+ `resume_mode="auto"`；崩溃后删半写 checkpoint 再续 | Phase 3 |
+| **WandB login 陷阱** | 训练脚本加载模型编译 kernel 后才初始化 logger，未登录会跑 5 分钟才崩烧 GPU 时 | 训练前 `wandb login` | Phase 3 |
+| **格式过拟合** | 训练只用一种 prompt 模板，标准 benchmark 没看到训练集的 +25% 提升 | **template randomization**：SFT/RL 数据用多种 experiment_context 格式，否则模型只在"你喂的那种 raw-data 格式"上好 | Phase 2 |
+| **二元奖励致 reward hacking** | Weyaxi 实测纯 binary outcome reward + KL 惩罚 → 响应长度从 ~290 降到 ~220 token（"闭嘴直接算"） | ⚠️ **对 EthoInsight 是双刃剑**：你的 reward 必须**显式奖励过程完整性**（必需 findings 命中）+ 惩罚流程坍塌（seal 漏调走兜底），不能照搬二元奖励，否则模型学会跳过 data-analyst 混杂因素排查 | Phase 3 |
+| **收敛比预期快** | 3B 小模型 + LoRA 第 3 epoch 到 83%，剩 12 epoch 只换 +2% | `total_epochs` 从 15 砍到 **5**，省 ~60% 算力 | Phase 3 |
+
+**Weyaxi 实证与本文档 §3.1 IRC 发现的呼应**：二者都指向"reward 设计决定模型学什么"。Weyaxi 证明二元奖励会让模型变"精算师"（最短答案）；IRC 证明手工 dense reward 会 -14pp。**EthoInsight 的解法 = §3 的 verifier 五组件 + IRC 实证校准权重**，既不让模型偷懒（过程完整性奖励），也不手工拍脑袋赋权。
+
+---
+
+## 11. 决策请求
 
 请团队就以下问题对齐：
 
 1. ✅/❌ 同意不做 CPT，训练目标从"注入领域知识"翻转为"训练 agent 操作能力"
 2. ✅/❌ 同意算法选 GRPO（不选 PPO），奖励来自程序化 Verifier（不训练 Reward Model）
 3. ✅/❌ 同意按范式独立训练 specialist，最后 OPD 蒸馏（不一次性训全范式 agent）
-4. ✅/❌ 同意 Phase 0 基线验证（部署 30B-A3B 不微调摸底）作为微调启动前置条件
-5. ✅/❌ 同意 Phase 1 优先开发 Verifier + IRC 校准（先跑 8B 验证，再切 30B）
-6. ✅/❌ 同意 v0.1 微调预算上调到 $5K（对应 30B-A3B LoRA GRPO 训练成本）
+4. ✅/❌ 同意 Phase 0 基线验证（部署 Qwen3.6-35B-A3B 不微调摸底 + Gated DeltaNet 训练时冒烟）作为微调启动前置条件
+5. ✅/❌ 同意 Phase 1 优先开发 Verifier + IRC 校准（Qwen3.6-35B-A3B LoRA GRPO，TP=1 数据并行）
+6. ✅/❌ 同意 v0.1 微调预算上调到 $5K（对应 35B-A3B LoRA GRPO 训练成本，Weyaxi 同体量 GSM8K 实测 ~$40/次）

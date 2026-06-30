@@ -11,7 +11,7 @@
     ↓
 用优化后的 skill 驱动 agent → 生成高质量 SFT 轨迹
     ↓
-微调 Qwen3-30B → 模型内化 skill 知识
+微调 Qwen3.6-35B-A3B → 模型内化 skill 知识（SFT→GRPO）
 ```
 
 ## 阶段 1：Golden Cases — 行为学专家建立 Benchmark
@@ -215,8 +215,8 @@ python scripts/train.py --config configs/ethoinsight/fst.yaml
 
 ## 阶段 5：微调模型
 
-- 基座：Qwen3-30B-A3B-Instruct-2507 MoE
-- 平台：Fireworks.ai 或 Volcano Engine verl
+- 基座：**Qwen3.6-35B-A3B**（2026-06-30 拍板；历史曾写 Qwen3-30B-A3B-Instruct-2507 已作废）。SSOT 见 memory `project_base_model_qwen36_35b_a3b`。候选 Qwen3.5-35B-A3B 同构仅作退路（若 Gated DeltaNet 在 verl 训练时支持踩坑严重）
+- 平台：火山引擎 verl 或 Fireworks（客户硬件 RTX 5090 32GB，多卡或 LoRA-RL）
 - 数据：阶段 4 采集的高质量 SFT 数据
 - 目标：模型内化 v0.1 核心能力，推理时减少 skill 注入
 
