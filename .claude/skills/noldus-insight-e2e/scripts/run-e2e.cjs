@@ -70,6 +70,13 @@ const PERF_BUILD = detectBuild();
 const PERF_ENABLED = process.env.E2E_PERF !== '0';
 console.log(`[run-e2e] perf: build=${PERF_BUILD} base=${PERF_BASE_URL} enabled=${PERF_ENABLED}`);
 
+// page.goto waitUntil strategy. Default 'networkidle' matches the original
+// behavior (works against make dev on :2026). Against a prod build the frontend
+// polls /api/models every ~3s, so networkidle never settles and goto times out.
+// Set E2E_GOTO_WAIT=domcontentloaded to bypass (the upload/submit steps below
+// already wait on concrete elements, so domcontentloaded is sufficient).
+const GOTO_WAIT = process.env.E2E_GOTO_WAIT || 'networkidle';
+
 const touchTerminal = (reason) => {
   try { fs.writeFileSync(TERMINAL_MARKER, `${el()} ${reason}\n`); } catch {}
 };
@@ -115,7 +122,7 @@ const failUnmatched = (questionText) => {
     page.on('request', r => { const u = r.url(); if (u.includes('/api/')) apiLog.push({ t: el(), m: r.method(), u, status: null, body: r.postData() ? r.postData().slice(0, 1500) : null }); });
 
     // new chat
-    await page.goto(`${cfg.BASE_URL}/workspace/chats/new`, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto(`${cfg.BASE_URL}/workspace/chats/new`, { waitUntil: GOTO_WAIT, timeout: 30000 });
     await page.waitForTimeout(2500);
     let thread = '';
     try { thread = (page.url().split('/chats/')[1] || '').split(/[?#]/)[0]; } catch {}
@@ -126,11 +133,21 @@ const failUnmatched = (questionText) => {
     let chips = 0;
     for (let i = 0; i < 60; i++) {
       await page.waitForTimeout(1500);
-      chips = await page.locator('text=Remove').count().catch(() => 0);
+      // Chip "remove" affordance: locale-dependent. English shows `text=Remove`,
+      // zh-CN renders `aria-label="移除 <file>"`. Count either, de-duped by the
+      // chip container (one per file). `text=Remove` alone stayed at 0 under the
+      // zh-CN prod build, so the loop never saw the chips and the run submitted
+      // an empty conversation.
+      const byText = await page.locator('text=Remove').count().catch(() => 0);
+      const byAria = await page.locator('[aria-label*="移除"]').count().catch(() => 0);
+      chips = Math.max(byText, byAria);
       if (chips >= files.length) break;
     }
     console.log(`[run-e2e] chips=${chips}/${files.length}`);
-    if (chips < files.length) console.log(`[run-e2e] WARN: not all files chipped`);
+    if (chips < files.length) {
+      console.error(`FATAL: only ${chips}/${files.length} files attached — refusing to submit an empty conversation.`);
+      process.exit(1);
+    }
 
     // send analysis request
     await page.locator('textarea').first().fill(cfg.REQUEST_TEXT);
@@ -324,10 +341,10 @@ async function runPerfScript(page, thread) {
   if (thread) {
     try {
       await resetLongtasks();
-      await page.goto(`${PERF_BASE_URL}/workspace/chats/new`, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      await page.goto(`${PERF_BASE_URL}/workspace/chats/new`, { waitUntil: GOTO_WAIT, timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(800);
       const t0 = Date.now();
-      await page.goto(chatUrl, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      await page.goto(chatUrl, { waitUntil: GOTO_WAIT, timeout: 30000 }).catch(() => {});
       const interaction = await waitUntilMainQuiet();
       const lt = await drainLongtasks();
       actions.push({ name: 'switch_back_thread', ...lt, interaction_ms: [interaction], nav_ms: Date.now() - t0 });

@@ -24,7 +24,7 @@ async function regenerate(cfg) {
   try {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
-    await page.goto(`${cfg.BASE_URL}/login`, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto(`${cfg.BASE_URL}/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.fill('input[type="email"], input[name="email"]', cfg.LOGIN_EMAIL).catch(async () => {
       // fall back to placeholder-based selector if no type=email input
       await page.fill('input[placeholder*="邮"], input[type="text"]', cfg.LOGIN_EMAIL);
