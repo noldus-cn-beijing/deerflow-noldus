@@ -50,7 +50,11 @@ export default function AgentChatPage() {
   const isCenteredLayout = isNewThread && !welcomeDismissed;
 
   const { showNotification } = useNotification();
-  const { thread: streamThread, sendMessage } = useThreadStream({
+  const {
+    thread: streamThread,
+    sendMessage,
+    isReconnectingToTerminalRun,
+  } = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: { ...settings.context, agent_name: agent_name },
     onStart: () => {
@@ -105,8 +109,14 @@ export default function AgentChatPage() {
   );
 
   const handleStop = useCallback(async () => {
+    // Crash-reconnect stale-run spin (spec 2026-06-30): skip cancelling a
+    // dead run (would 409); the stale reconnect key is already cleared by
+    // useThreadStream, so the next submit starts a fresh run.
+    if (isReconnectingToTerminalRun) {
+      return;
+    }
     await thread.stop();
-  }, [thread]);
+  }, [thread, isReconnectingToTerminalRun]);
 
   const handleInputBoxHeightChange = useCallback((heightPx: number) => {
     setInputBoxHeight(heightPx);
@@ -212,7 +222,7 @@ export default function AgentChatPage() {
                   status={
                     thread.error
                       ? "error"
-                      : thread.isLoading
+                      : thread.isLoading && !isReconnectingToTerminalRun
                         ? "streaming"
                         : "ready"
                   }

@@ -24,7 +24,15 @@ import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
 import { fetchThreadTokenUsage } from "./api";
-import { getStreamErrorMessage, isRunNotOnThisWorkerError } from "./stream-error";
+import {
+  clearStaleReconnectRunId,
+  isReconnectingToTerminalRun as detectTerminalRunReconnect,
+} from "./reconnect";
+import {
+  getStreamErrorMessage,
+  isRunNotOnThisWorkerError,
+  isTerminalRunCancelError,
+} from "./stream-error";
 import { threadTokenUsageQueryKey } from "./token-usage";
 import type {
   AgentThread,
@@ -562,9 +570,14 @@ export function useThreadStream({
       // (spec 2026-06-30 兜底)
       finalizeRunning("failed");
       setOptimisticMessages([]);
-      if (isRunNotOnThisWorkerError(error)) {
+      if (
+        isRunNotOnThisWorkerError(error) ||
+        isTerminalRunCancelError(error)
+      ) {
         // Cross-worker re-join: content already shown via fetchStateHistory.
-        // Don't alarm the user with a red toast.
+        // — or — a cancel POSTed against an already-terminal run (spec
+        // 2026-06-30): the symptom of the crash-reconnect stale-run spin, not a
+        // user-actionable failure. Don't alarm the user with a red toast.
       } else {
         toast.error(getStreamErrorMessage(error));
       }
@@ -901,6 +914,36 @@ export function useThreadStream({
     return merged;
   }, [messageRunIds, historyMessageRunIds]);
 
+  // ── Crash-reconnect stale-run spin (spec 2026-06-30) ──────────────────────
+  // After a browser crash the SDK's reconnectOnMount re-joins the run id it
+  // persisted in sessionStorage["lg:stream:<threadId>"]; that key survives the
+  // crash and (per gateway logs) points at an already-`success` run, so the join
+  // spins with no events and thread.isLoading stays true. Detect that here and
+  // (a) surface it so the chat page can treat the UI as "ready" / no-op the stop
+  // press (修法 A), and (b) drop the stale key so the SDK won't POST a cancel
+  // against the dead run on the next stop() → no 409 (修法 B). Runs status is
+  // already cached by useThreadRuns (same query the history loader uses).
+  const staleReconnectRuns = useThreadRuns(threadId ?? undefined);
+  const isReconnectingToTerminalRun = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const tid = threadIdRef.current;
+    if (!tid) return false;
+    return detectTerminalRunReconnect({
+      storage: window.sessionStorage,
+      threadId: tid,
+      runs: staleReconnectRuns.data ?? [],
+    });
+  }, [staleReconnectRuns.data]);
+
+  useEffect(() => {
+    if (!isReconnectingToTerminalRun) return;
+    const tid = threadIdRef.current;
+    if (!tid || typeof window === "undefined") return;
+    // 修法 B (structural, automatic): remove the persisted reconnect run id so
+    // the SDK's stop() won't cancel the dead run and a remount won't re-join it.
+    clearStaleReconnectRunId(window.sessionStorage, tid);
+  }, [isReconnectingToTerminalRun]);
+
   return {
     thread: mergedThread,
     pendingUsageMessages,
@@ -908,6 +951,7 @@ export function useThreadStream({
     isUploading,
     mergedMessageRunIds,
     isHistoryLoading,
+    isReconnectingToTerminalRun,
     hasMoreHistory,
     loadMoreHistory,
   } as const;

@@ -56,3 +56,43 @@ export function isRunNotOnThisWorkerError(error: unknown): boolean {
     (status === 409 && msg.toLowerCase().includes("worker"))
   );
 }
+
+/**
+ * Terminal-run statuses the backend reports as `is not cancellable (status: X)`.
+ * Kept as a Set so the membership test in isTerminalRunCancelError stays exact
+ * (a bare substring "running"/"pending" must NOT match — those runs are live and
+ * a cancel against them, if it ever 409'd, would be a genuinely actionable error).
+ */
+const TERMINAL_RUN_STATUSES = new Set([
+  "success",
+  "error",
+  "timeout",
+  "cancelled",
+]);
+
+/**
+ * True when the error is the backend's 409 for POSTing a cancel against a run
+ * that is already in a terminal state — "Run <id> is not cancellable
+ * (status: success|error|timeout|cancelled)".
+ *
+ * This is the symptom of the crash-reconnect stale-run spin (spec
+ * 2026-06-30): after a browser crash the SDK's `reconnectOnMount` re-joins the
+ * last run id it persisted in sessionStorage; when the user hits "pause" the
+ * SDK `stop()` POSTs a cancel against that same (already-successful) run id and
+ * the backend correctly 409s. Cancelling a finished run is not a user-actionable
+ * failure — we classify it so onError can suppress the toast. This is purely a
+ * toast-suppression classifier; it does NOT fix the underlying spin (修法 A/B do).
+ */
+export function isTerminalRunCancelError(error: unknown): boolean {
+  const msg = getStreamErrorMessage(error);
+  // "is not cancellable (status: <terminal>)" — capture the parenthesised status
+  // word and require it to be one of the terminal statuses so a hypothetical
+  // "is not cancellable (status: running)" never matches.
+  const statusRe = /is not cancellable \(status: ([a-z]+)\)/i;
+  const statusMatch = statusRe.exec(msg);
+  const captured = statusMatch?.[1];
+  if (captured && TERMINAL_RUN_STATUSES.has(captured.toLowerCase())) {
+    return true;
+  }
+  return false;
+}

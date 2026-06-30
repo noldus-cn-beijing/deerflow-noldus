@@ -57,7 +57,13 @@ export default function ChatPage() {
 
   const { showNotification } = useNotification();
 
-  const { thread: streamThread, sendMessage, isUploading, mergedMessageRunIds: messageRunIds } = useThreadStream({
+  const {
+    thread: streamThread,
+    sendMessage,
+    isUploading,
+    mergedMessageRunIds: messageRunIds,
+    isReconnectingToTerminalRun,
+  } = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: settings.context,
     isMock,
@@ -106,8 +112,16 @@ export default function ChatPage() {
     [sendMessage, threadId],
   );
   const handleStop = useCallback(async () => {
+    // Crash-reconnect stale-run spin (spec 2026-06-30): when the SDK is
+    // re-joining an already-terminal run, the persisted run id is stale and a
+    // cancel POST would 409 ("is not cancellable (status: success)"). Skip the
+    // cancel — the stale reconnect key has already been cleared by useThreadStream
+    // (修法 B), so the next submit starts a fresh run and the spin clears.
+    if (isReconnectingToTerminalRun) {
+      return;
+    }
     await thread.stop();
-  }, [thread]);
+  }, [thread, isReconnectingToTerminalRun]);
 
   const handleInputBoxHeightChange = useCallback((heightPx: number) => {
     setInputBoxHeight(heightPx);
@@ -198,7 +212,7 @@ export default function ChatPage() {
                     status={
                       thread.error
                         ? "error"
-                        : thread.isLoading
+                        : thread.isLoading && !isReconnectingToTerminalRun
                           ? "streaming"
                           : "ready"
                     }
