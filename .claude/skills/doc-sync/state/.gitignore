@@ -1,0 +1,2 @@
+# last-sync.json 是 doc-sync skill 的运行时状态(每台机器不同), 不进 git
+last-sync.json
