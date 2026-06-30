@@ -55,6 +55,19 @@ A sample answers file lives at `<skilldir>/references/e2e-answers.example.yaml`.
   point `E2E_PERF_BASE_URL` at a prod-started server (`pnpm build && pnpm
   start`, or the prod compose `:2026`) and set `E2E_PERF_BUILD=prod`. Do NOT
   treat a green dev perf run as evidence of anything.
+- **⚠️ `pnpm start` (:3000) is FRONTEND-ONLY — never use it for anything that
+  touches `/api/*` (auth, login, thread messages, screenshots of real flows).**
+  `pnpm build && pnpm start` boots only the Next.js frontend on `:3000`, with
+  NO nginx and NO gateway. nginx is the sole front door that proxies
+  `/api/v1/auth/*`, `/api/langgraph/*`, `/api/threads/*` to the gateway:8001
+  (see `docker/nginx/nginx.conf`); `:3000` owns only `location /` (the UI).
+  So curling/visiting `:3000/api/...` returns **404 by design** — it is NOT a
+  build/auth breakage, just the missing front door. It is ONLY valid for
+  client-render perf timing (no API). **For login, real-flow screenshots, or
+  any `/api/*` assertion, you MUST go through nginx `:2026` (`make dev`) or the
+  full prod compose (`docker/docker-compose.yaml`: nginx + frontend + gateway)
+  — never bare `:3000`.** (D0 audit 2026-06-30 fell into exactly this trap and
+  mis-filed it as a P0 prod-breakage.)
 - **Do not auto-run subagent reproduction (手段 c).** If a panel shows a
   regression, offer it as a next step the user can request; do not spawn it.
 

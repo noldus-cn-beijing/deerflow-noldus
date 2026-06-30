@@ -10,7 +10,7 @@
 - **数据**：`~/DemoData/real_data/Raw data-EPM-Xuhui-28`（EPM，4 组 × 7：Group=XX/XY/YY/YZ，28 trial）。
 - **HITL 答案**：FewZones 模板；列语义 `open=开臂, closed=闭臂`；分组 `Group=XX 对照组 / XY/YY/YZ 实验组`（见 `e2e-answers.yaml`）。
 - **实跑路**：thread `8827351d-e2b1-4292-b69e-a3bde14b5fb0`，完整跑通到 report（report-writer 出 `report.html` 6 段）。
-- **⚠️ 视觉证据采自 dev :2026，非 prod :3000**：spec 要求 prod build 视觉真实，但 prod :3000 build 缺关键 API route（`/api/langgraph/threads/{id}/runs/{id}/messages` 404）+ auth 端点断裂（`/api/v1/auth/*` 404），无法登录采图。dev :2026 采集 + **prod build 断裂本身列为头号 L5 发现**（见 L5-1）。L3 视觉判断受此限制，但读码路不受影响。
+- **⚠️ 视觉证据采自 dev :2026（nginx 门面），非裸 :3000**：spec 要求 prod build 视觉真实，但裸 `pnpm start` 的 `:3000` 是 **frontend-only**（无 nginx/gateway），`/api/*` 一律 404 无法登录采图。**这不是 prod 断裂、是采图用错 prod 形态**（详见 L5-1 复诊更正）。改在 dev :2026（nginx 门面）采集；L3 视觉判断受「非 prod build 优化」限制，但读码路不受影响。
 - **截图证据**：`evidence/` 下 3 张关键态（首屏回放 / 反问态 / report 完成态）+ 磁盘产物真相（113 图 / report.html / experiment-context.json / handoffs）。
 - **本次采集发现的 tooling 问题**（非产品 bug，记此供 e2e skill 改进，不入 findings）：playwright `setInputFiles` 与该上传组件不兼容（卡第 4 个文件）；e2e driver `networkidle` goto 在 prod polling 下超时（已加 `E2E_GOTO_WAIT` env）；chip 探测 `text=Remove` 在中文 i18n 下失效（已修为 `aria-label*=移除`）。
 
@@ -28,15 +28,18 @@
 | 违背理念 | L4（不暴露/编造内脏）+ 判读正确性（CLAUDE.md 第 9 条：判读只看组间差异，不脑补实验设计语义） |
 | 修复方向 | **归 A2 + 输出宪法**：HITL 反问增加「组名语义」确认（是剂量梯度？基因型？处理？），agent **禁用未确认的剂量/处理命名**，未知组用「实验组 1/2/3」中性命名。report-writer 守宪法拒绝写「剂量-反应」 unless 用户确认剂量设计。 |
 
-### 🔴 L5-1 ［高］prod build 缺关键 API route + auth 端点断裂，研究员在 prod 下无法登录/查看
+### ⚪ L5-1 ［作废→方法论修正］「prod build/auth 断裂」前提错误：采图用错 prod 形态（裸 :3000 绕过 nginx）
+
+> **2026-06-30 复诊更正**：本条原记为「🔴 高 / P0 阶断：prod build 缺 API route + auth 端点断裂」。复诊（配置层坐实）证明**前提错误，不是产品 bug**，降级为审计方法论修正。
 
 | 字段 | 内容 |
 |---|---|
-| 问题 | prod :3000（`pnpm build && pnpm start`）：`/api/v1/auth/setup-status` 404、`/api/v1/auth/login/local` 404（无法登录）；`/api/langgraph/threads/{id}/runs/{id}/messages` 404（登录后看不到消息）。dev :2026 同端点 200/422（正常）。**这是用户「前端崩溃什么都看不到」的真因**——不是浏览器崩溃，是 prod build/auth 部署断裂。 |
-| 在哪 | 部署/构建层；证据：`curl :3000/api/v1/auth/setup-status` → 404 vs `:2026` → 200；截图采集被迫降级到 dev |
-| 严重度 | **高**（阻断级：prod 环境研究员完全无法使用） |
-| 违背理念 | L5（异常态/部署态一致） |
-| 修复方向 | **归部署链 + A2**：核 prod nginx 是否代理 `/api/v1/auth/*` 到 gateway；核 prod build 是否漏编译 app router 的 `/api/threads/{id}/runs/{id}/messages` route handler；prod 发布前加「auth 端点可达 + thread 消息端点 200」冒烟门。 |
+| 原始观察 | 测试者跑 `pnpm build && pnpm start` 起 `:3000`，curl `/api/v1/auth/setup-status`、`/api/v1/auth/login/local`、`…/runs/{id}/messages` 全 404；`:2026` 同端点 200/422。据此判「prod build/auth 断裂、研究员无法登录」。 |
+| 复诊根因 | **`:3000` 是 Next.js 前端单进程，从不负责 `/api/*`。** nginx 才是唯一公网门面，代理 `/api/v1/auth/*`、`/api/langgraph/*`（rewrite→`/api/*`）、`/api/threads/*` 到 gateway:8001（`docker/nginx/nginx.conf:69/163/233`）；`:3000` 只拥有 `location /`（UI）。三个「缺失」端点**都在 gateway 里、build 没漏任何东西**：`setup-status`=`backend/app/gateway/routers/auth.py:392`、`login/local`=`auth.py:275`、`runs/{id}/messages`=`thread_runs.py:384`。裸 `pnpm start` 没起 nginx 也没起 gateway，curl `:3000/api/...` → **404 是设计内行为**，非断裂。真 prod（`docker/docker-compose.yaml`）跑 nginx+frontend+gateway 三服务，研究员走 nginx，三端点全可达。 |
+| 严重度 | **作废**（非 bug；无部署链可修） |
+| 违背理念 | 无（产品侧）。属审计采集方法论错误：守 `feedback_dev_prod_behavior_alignment`（dev/prod 行为对齐 compose）+ `feedback_e2e_testing_deterministic_playwright_not_llm_browser_use`（prod 视觉必须起对的 prod 形态）。 |
+| 修复方向 | **归 e2e skill 方法论**（非部署链）：prod 视觉/登录/任何 `/api/*` 采集必经 nginx `:2026`（`make dev`）或完整 prod compose，**禁止直连 :3000**。护栏已加进 `.claude/skills/noldus-insight-e2e/SKILL.md`（perf 段后新增「`:3000` 是 frontend-only」bullet）。 |
+| ⚠️ 牵连更正 | 原 L5-1 把「用户前端崩溃什么都看不到」归因于此。**真因是浏览器端崩溃**（findings.md 软分支态表已正确记述：chart-maker 跑 113 图时**浏览器**崩溃 16:50，后端 thread 不受影响、重连后端点 200 恢复）。崩溃与 prod 部署无关，原 L5-1 误将两者合并。 |
 
 ### 🟡 L4-2 ［中］交付物清单暴露内部字段名 / analysis config id
 
@@ -85,7 +88,7 @@
 | 问题 | 留白充足、信息密度适中、accent 色条克制（非整卡变色）、颜色饱和度低、反问卡 color-not-only 三件套（图标+色+文字）。入场用 `animate-pulse-warm`/`ease-brand-out`（非 linear）。 |
 | 在哪 | 截图 `evidence/03-clarification-report-confirm.png`、`05-gallery-with-report.png`（视觉分析确认）；`globals.css` 的 `--ease-*` / `animate-pulse-warm` |
 | 严重度 | 低（正向） |
-| 违背理念 | L3（达成，注：dev 视觉，prod 受 L5-1 限制未核） |
+| 违背理念 | L3（达成，注：dev :2026 视觉，非 prod build 优化态未核——见 L5-1 复诊：prod 视觉须经 nginx 门面采集） |
 | 修复方向 | 保持。 |
 
 ### 🟢 C2-1 ［低］thread-assets-panel 两段式画廊（报告 + 图表），113 图缩略图 + ZIP 下载（已知设计点）
@@ -104,7 +107,7 @@
 
 | 软分支态 | 状态 | 证据 |
 |---|---|---|
-| **崩溃重连** | ✅ 自然触发 | 用户浏览器在 chart-maker 跑 113 图时崩溃（真实事件 16:50）；后端 thread 不受影响继续跑；重连后 history/runs/artifacts 端点 200 恢复。**发现 L5-1**：崩溃真因是 prod build/auth 断裂非内存。 |
+| **崩溃重连** | ✅ 自然触发 | 用户**浏览器**在 chart-maker 跑 113 图时崩溃（真实事件 16:50）；后端 thread 不受影响继续跑；重连后 history/runs/artifacts 端点 200 恢复。**崩溃真因 = 浏览器端崩溃，与 prod 部署无关**（原 L5-1 误归因 prod build/auth 断裂，已复诊作废）。 |
 | **多轮追问** | ✅ 自然触发 | 3 轮 clarification（gate1 范式/分组 → viz 可视化 → report 生成）；对话变长后滚动行为正常（`use-stick-to-bottom` + progressive mount）。截图 `03-clarification-report-confirm.png`。 |
 | **n=1 单样本** | ⚠️ 未触发，原因：本次 4 组 × 7 = 28 样本，无 n<2 组。降级态（lead fast-path 跳 data-analyst）未覆盖。 | 需独立场景（单 subject 数据）驱动。 |
 | **知识问答空态** | ⚠️ 未触发，原因：本次全程有数据分析产物，无「无数据纯问答」路径。 | 需独立场景（不发数据纯提问）驱动。 |
@@ -136,12 +139,12 @@ D1 真正该改的不是 token，是 **agent 输出层**（lead 收尾文案 / e
 
 ## 给下游的优先级建议
 
-1. **P0（阻断级）**：L5-1 prod build/auth 断裂 → 部署链立即修（否则 prod 完全不可用）。
-2. **P0（判读可信度）**：L4-1 剂量幻觉 → A2 + 输出宪法，HITL 加组名语义确认 + report-writer 守宪法。
-3. **P1**：L4-2 交付清单暴露 config id / 内部字段 → A2 文案模板。
-4. **P2**：L4-3 quality-warning code、L4-4 token 指示器 → D2 组件库。
-5. **P3**：C2-1 画廊两段式 → C2 轨。
-6. **保持**：L1-1、L3-1（正向发现，无需改）。
+1. **P0（判读可信度）**：L4-1 剂量幻觉 → A2 + 输出宪法，HITL 加组名语义确认 + report-writer 守宪法。**现唯一 P0。**
+2. **P1**：L4-2 交付清单暴露 config id / 内部字段 → A2 文案模板。
+3. **P2**：L4-3 quality-warning code、L4-4 token 指示器 → D2 组件库。
+4. **P3**：C2-1 画廊两段式 → C2 轨。
+5. **保持**：L1-1、L3-1（正向发现，无需改）。
+6. **作废（非 bug）**：L5-1（复诊：采图用错 prod 形态、非 prod 断裂）→ 已归 e2e skill 方法论护栏，无部署链待办。
 
 ---
 
