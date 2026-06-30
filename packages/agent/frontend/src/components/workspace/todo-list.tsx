@@ -67,32 +67,34 @@ export function TodoList({
       </header>
       <main
         className={cn(
-          "bg-accent flex grow px-2 transition-[height] duration-slow ease-brand-in-out",
-          collapsed ? "h-0 pb-3" : "h-28 pb-4",
+          "bg-accent grid grow px-2 transition-[grid-template-rows] duration-slow ease-brand-in-out",
+          collapsed ? "grid-rows-[0fr] pb-0" : "grid-rows-[1fr] pb-4",
         )}
       >
-        <QueueList className="bg-background mt-0 w-full rounded-t-xl">
-          {todos.map((todo, i) => (
-            <QueueItem key={i + (todo.content ?? "")}>
-              <div className="flex items-center gap-2">
-                <QueueItemIndicator
-                  className={
-                    todo.status === "in_progress" ? "bg-primary/70" : ""
-                  }
-                  completed={todo.status === "completed"}
-                />
-                <QueueItemContent
-                  className={
-                    todo.status === "in_progress" ? "text-primary/70" : ""
-                  }
-                  completed={todo.status === "completed"}
-                >
-                  {todo.content}
-                </QueueItemContent>
-              </div>
-            </QueueItem>
-          ))}
-        </QueueList>
+        <div className="overflow-hidden">
+          <QueueList className="bg-background mt-0 w-full rounded-t-xl">
+            {todos.map((todo, i) => (
+              <QueueItem key={i + (todo.content ?? "")}>
+                <div className="flex items-center gap-2">
+                  <QueueItemIndicator
+                    className={
+                      todo.status === "in_progress" ? "bg-primary/70" : ""
+                    }
+                    completed={todo.status === "completed"}
+                  />
+                  <QueueItemContent
+                    className={
+                      todo.status === "in_progress" ? "text-primary/70" : ""
+                    }
+                    completed={todo.status === "completed"}
+                  >
+                    {todo.content}
+                  </QueueItemContent>
+                </div>
+              </QueueItem>
+            ))}
+          </QueueList>
+        </div>
       </main>
     </div>
   );
