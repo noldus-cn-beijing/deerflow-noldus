@@ -6,6 +6,13 @@ import type { Subtask } from "./types";
 export interface SubtaskContextValue {
   tasks: Record<string, Subtask>;
   setTasks: (tasks: Record<string, Subtask>) => void;
+  /**
+   * Deterministic last-resort (spec 2026-06-30 兜底): flip every subtask still
+   * `in_progress` to `finalStatus`. Called when the run reaches a terminal
+   * state (success → completed, error → failed) so no card can keep spinning
+   * after the run is over, regardless of whether 修法 A's per-task flush fired.
+   */
+  finalizeRunning: (finalStatus: "completed" | "failed") => void;
 }
 
 export const SubtaskContext = createContext<SubtaskContextValue>({
@@ -13,12 +20,34 @@ export const SubtaskContext = createContext<SubtaskContextValue>({
   setTasks: () => {
     /* noop */
   },
+  finalizeRunning: () => {
+    /* noop */
+  },
 });
 
 export function SubtasksProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Record<string, Subtask>>({});
+  // Function-style update so this reads the freshest tasks at call time
+  // (onFinish/onError fire from useStream callbacks and may hold a stale
+  // `tasks` closure). Only mutates entries that are genuinely in_progress,
+  // so already-terminal cards are untouched.
+  const finalizeRunning = useCallback((finalStatus: "completed" | "failed") => {
+    setTasks((prev) => {
+      let changed = false;
+      const next: Record<string, Subtask> = {};
+      for (const [id, task] of Object.entries(prev)) {
+        if (task.status === "in_progress") {
+          next[id] = { ...task, status: finalStatus };
+          changed = true;
+        } else {
+          next[id] = task;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
   return (
-    <SubtaskContext.Provider value={{ tasks, setTasks }}>
+    <SubtaskContext.Provider value={{ tasks, setTasks, finalizeRunning }}>
       {children}
     </SubtaskContext.Provider>
   );
@@ -90,13 +119,48 @@ export function useUpdateSubtask() {
       // rendering MessageList" because MessageList calls updateSubtask
       // synchronously during render to mirror tool_call metadata into the
       // subtask store. (See upstream deerflow useUpdateSubtask — same shape.)
+      const prevStatus = existing?.status;
       tasks[update.id] = {
         ...(existing ?? ({ messages: [] } as unknown as Subtask)),
         ...update,
         messages: existing?.messages ?? [],
       } as Subtask;
+
+      // 修法 A (spec 2026-06-30): the in-place mutation above relies on "a
+      // LATER MessageList re-render (triggered by some other message change)
+      // flushing this terminal state to the UI". That assumption breaks for
+      // the LAST pipeline step (e.g. report-writer): its "Task Succeeded"
+      // ToolMessage arrives, the run is already success, the stream stops,
+      // and no further message change ever triggers that bail-out re-render
+      // → the card keeps spinning `animate-spin` forever.
+      //
+      // Fix: when status makes a REAL transition into a terminal state
+      // (non-terminal → completed/failed), schedule ONE deferred setTasks so
+      // the terminal state reaches subscribers without relying on a later
+      // re-render. queueMicrotask runs after the current render commits, so
+      // it does NOT trip the "Cannot update while rendering" warning that
+      // the in-place branch exists to avoid. Idempotent: a second walk with
+      // the same terminal status is not a transition, so it schedules nothing.
+      const nextStatus = update.status ?? prevStatus;
+      const isTerminalTransition =
+        !!update.status &&
+        (nextStatus === "completed" || nextStatus === "failed") &&
+        prevStatus !== "completed" &&
+        prevStatus !== "failed";
+      if (isTerminalTransition) {
+        const snapshot = tasks;
+        queueMicrotask(() => {
+          setTasks({ ...snapshot });
+        });
+      }
     },
     [tasks, setTasks],
   );
   return updateSubtask;
+}
+
+/** Accessor for the deterministic run-terminal fallback (spec 2026-06-30 兜底). */
+export function useFinalizeRunning() {
+  const { finalizeRunning } = useSubtaskContext();
+  return finalizeRunning;
 }

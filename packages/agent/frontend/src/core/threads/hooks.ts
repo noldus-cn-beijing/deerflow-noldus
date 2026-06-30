@@ -19,7 +19,7 @@ import { useI18n } from "../i18n/hooks";
 import { isHiddenFromUIMessage } from "../messages/utils";
 import type { FileInMessage } from "../messages/utils";
 import type { LocalSettings } from "../settings";
-import { useUpdateSubtask } from "../tasks/context";
+import { useFinalizeRunning, useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
@@ -413,6 +413,10 @@ export function useThreadStream({
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+  // Deterministic run-terminal fallback (spec 2026-06-30 兜底): when the run
+  // ends, flip any subtask still in_progress to a terminal state so no card
+  // keeps spinning after the run is over.
+  const finalizeRunning = useFinalizeRunning();
 
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
@@ -554,6 +558,9 @@ export function useThreadStream({
       }
     },
     onError(error) {
+      // Run errored → any subtask still spinning is now failed, not running.
+      // (spec 2026-06-30 兜底)
+      finalizeRunning("failed");
       setOptimisticMessages([]);
       if (isRunNotOnThisWorkerError(error)) {
         // Cross-worker re-join: content already shown via fetchStateHistory.
@@ -573,6 +580,9 @@ export function useThreadStream({
       }
     },
     onFinish(state) {
+      // Run reached a terminal state normally → no subtask should still be
+      // spinning. (spec 2026-06-30 兜底)
+      finalizeRunning("completed");
       listeners.current.onFinish?.(state.values);
       pendingUsageBaselineMessageIdsRef.current = new Set(
         messagesRef.current
