@@ -36,7 +36,9 @@ C3 的选区引用**不走文件上传通道**，而是新增一个与现有 `fo
 
 - **做什么**：把 C1 的 `metrics_table.json` 渲成可选区表格。点单元格选一格；点行头选整行（一个 subject）；点列头选整列（一个指标）；shift/拖拽选连续矩形区。维护本地 `selection` 状态（一组 `{rowKey, colKey}` 坐标）。选中后在表格角落浮出「追问此选区」按钮。
 - **接口**：父层传入 `tableData`（来自 C1 JSON）+ 回调 `onAskSelection(selection: SelectionRef)`。点按钮 → 调回调 → 清本地选区高亮。
-- **依赖**：C1 的 `metrics_table.json` 形状（`per_subject: [{subject, group, <指标>:值, outlier_flags}]` + `groups`）。**这是 C3 对 C1 的唯一硬依赖点。**
+- **依赖（C1 已落地 #255，下为实际产出形状，2026-06-30 复核更正）**：C1 的 `metrics_table.json` =
+  `{paradigm, metric_names: string[], groups: [{group, n, metrics: {<指标>:{mean,std,n}}}], per_subject: [{subject, group, values: {<指标>:值|null}, outlier_flags: {<指标>:bool}}]}`。
+  **⚠️ 关键修正**：每行的指标值**嵌在 `values` 子对象**下（`row.values[指标]`），**不是**平铺在行上（早期 spec 误写 `{subject, group, <指标>:值}`）。离群标记同样在 `outlier_flags` 子对象。前端已建的 `metrics-table-card.tsx`（`SubjectRow` 类型 + `r.values?.[m]` 读值，`metrics-table-card.tsx:49-53/204`）就是 C3 选区层要挂载/复用的组件。**这是 C3 对 C1 的唯一硬依赖点，已按 #255 实际产出冻结。**
 
 ### 单元 2：选区序列化纯函数 `serializeSelection(ref, tableMeta): string`
 
@@ -107,14 +109,14 @@ C3 **100% 落在 deerflow 子树外、纯前端**：
 
 ## 依赖时序
 
-- **C3 对 C1 的唯一硬依赖** = 单元 1 消费的 `metrics_table.json` 形状。C1 spec 已冻结该契约（`2026-06-30-c1-metrics-table-export-and-gallery-overview-first-design.md:46`），故 C3 spec 可现在写完。
-- **C3 实施前置 = C1 已 merge dev**（否则单元 1 无表可挂、组件测试无渲染目标）。实施 plan 第一步必须**核实 C1 实际产出的 `metrics_table.json` 形状与本 spec 假设一致**（防 C1 实施期 schema 漂移）。
+- **C3 对 C1 的唯一硬依赖** = 单元 1 消费的 `metrics_table.json` 形状。**✅ 已对 C1 实际落地（#255 / `5a45d865`）复核完成**：契约按真实产出冻结（见单元 1 依赖块）。复核发现一处 schema 漂移并已更正——指标值嵌在 `per_subject[].values` 子对象下，非平铺行键（早期 spec 误写）。源：`metrics_table_export.py:159-176`（导出）+ `metrics-table-card.tsx:49-53/204`（前端类型与读值）。
+- **C3 实施前置 = C1 已 merge dev**：✅ 已满足（#255 在 dev）。实施时单元 1/2 按 `row.values[指标]` 读值、按 `row.outlier_flags[指标]` 读离群标记，复用/挂载到已存在的 `metrics-table-card.tsx`（不要从零另建表组件，除非 C2 重排了画廊布局）。
 - 路线图依赖（`roadmap:29`）C3 = A2 + C2：A2（前端分轨渲染）+ C2（画廊布局）就绪后，指标表在画廊中的呈现位置才稳定。实施时按 C1/C2 实际落地的表组件名对齐选区层挂载点。
 
 ## 文件影响清单（实施 plan 精确化）
 
 **新建**：
-- `packages/agent/frontend/src/components/workspace/.../metrics-table.tsx`（或在 C1 已建的表组件上加选区层——实施时按 C1 实际落地的组件名对齐）
+- 在 C1 已落地的 `packages/agent/frontend/src/components/workspace/artifacts/metrics-table-card.tsx` **上加选区层**（不另建表组件）；若选区逻辑较重可抽到同目录 `metrics-table-selection.ts`，但渲染挂载点是这个已存在的卡。
 - 选区序列化纯函数 `.../selection/serialize-selection.ts` + 类型 `SelectionRef`
 - 3 个测试文件（序列化纯函数 + `MetricsTable` + `input-box` 选区路径）
 
