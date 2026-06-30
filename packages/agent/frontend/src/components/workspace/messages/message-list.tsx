@@ -8,7 +8,10 @@ import {
   ConversationContent,
 } from "@/components/ai-elements/conversation";
 import { useI18n } from "@/core/i18n/hooks";
-import { answeredOptionIndex } from "@/core/messages/clarification-state";
+import {
+  answeredOptionIndex,
+  lastClarificationIsAwaiting,
+} from "@/core/messages/clarification-state";
 import { clearExtractionCache, extractContentCached } from "@/core/messages/extraction-cache";
 import {
   extractQualityWarnings,
@@ -545,7 +548,19 @@ export function MessageList({
       : renderedGroups;
   const trailing = (
     <>
-      {thread.isLoading && <StreamingIndicator className="my-4" />}
+      {thread.isLoading &&
+        // spec 2026-06-30-clarification-awaiting-streaming-dots-fix —
+        // `ask_clarification` interrupts the run via `Command(goto=END)`, but
+        // the SSE stream isn't torn down so `thread.isLoading` stays true on
+        // the frontend. Without this guard the three bouncing dots keep going
+        // while the agent is actually paused on a DecisionCard waiting for the
+        // user — reading as "still working". `lastClarificationIsAwaiting` is
+        // the existing pure helper (SSOT) for "stream ends on an unanswered
+        // clarification"; reuse it instead of re-deriving. Fed the live
+        // `messages` (thread.messages), the authoritative terminal-state view.
+        !lastClarificationIsAwaiting(messages) && (
+          <StreamingIndicator className="my-4" />
+        )}
       {/* 产物（图 + 报告）不再内嵌对话流——全部移到右侧 thread 资产面板（ThreadAssetsPanel），
           它从磁盘端点取产物、与 streaming 解耦，不随消息流/state/切 tab 漂移。对话流只保留
           消息与底部留白 spacer。 */}
