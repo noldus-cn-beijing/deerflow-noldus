@@ -49,12 +49,15 @@ inspect_uploaded_file 报告有**未被系统识别的自定义分析区列**时
 
 ### 5. 落盘
 
-调用 `set_experiment_paradigm(column_semantics={...})` 将决议写入 `experiment-context.json`。
+调用 `set_experiment_paradigm(column_semantics={...}, column_semantics_source=...)` 将决议写入 `experiment-context.json`。
 
 - `resolves_to` 填**概念关键词**（如 `center` / `open_arms`），**不是**机器列名（系统自动翻译成数据能匹配的列）
 - 用户确认忽略的列：`resolves_to: null, ignore: true`
 - `meaning_zh` 填中文叙述语义（如 "中心分析区"），喂给 report-writer
-- 所有列（含忽略）都须 `confirmed: true`
+- 用户本轮确认的列：`confirmed: true`
+- **`column_semantics_source` 必须如实声明这些值的来源**（守 HITL 铁律：不能替用户确认用户本轮没回答的项）：
+  - `"user_current_turn"`：用户本轮明确回答了这些列 → `confirmed: true` 生效，分析放行。
+  - `"prefilled_from_memory"`：这些值来自 memory 历史偏好（用户本轮没回答列语义，例如只回了模板/分组）→ 系统确定性把每列降级为 `confirmed: false`（待确认预填），code-executor 派遣会被门拦下并触发 ask_clarification 重问；memory 历史偏好的正确用法是**预填进反问选项让用户一键确认**，不是替用户跳过确认。
 
 ### 6. 二次确认（用户否决时）
 

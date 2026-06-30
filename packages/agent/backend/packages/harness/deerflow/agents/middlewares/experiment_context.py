@@ -32,6 +32,17 @@ CONTAINER_CONTEXT_PATH = "/mnt/user-data/workspace/experiment-context.json"
 
 _EMERGENCY_DOWNGRADE_FILE = "/tmp/disable_strict_handoff"
 
+# Provenance of a column_semantics / resolved_facts value (spec 2026-06-30).
+# Only values proven to come from the CURRENT user turn may be stamped
+# `confirmed=true`; memory historical prefs may only be prefilled as
+# `confirmed=false` (pending) — the agent must not confirm on the user's
+# behalf for items the user did NOT answer this turn.
+COLUMN_SOURCE_USER_CURRENT_TURN = "user_current_turn"
+COLUMN_SOURCE_PREFILLED_FROM_MEMORY = "prefilled_from_memory"
+_COLUMN_SOURCE_VALUES = frozenset(
+    {COLUMN_SOURCE_USER_CURRENT_TURN, COLUMN_SOURCE_PREFILLED_FROM_MEMORY}
+)
+
 
 class HandoffStrictMode(str, enum.Enum):
     OFF = "off"
@@ -200,6 +211,40 @@ def _normalize_column_semantics(cs: dict) -> dict:
     return cs
 
 
+def _stamp_column_semantics_provenance(cs: dict, source: str | None) -> dict:
+    """Stamp each column entry with ``confirmed_source`` and enforce the
+    confirmation-provenance invariant (spec 2026-06-30 三.1).
+
+    - ``user_current_turn``: the user answered these columns THIS turn →
+      ``confirmed`` is honored as-is (left ``true``) and the source is recorded.
+    - ``prefilled_from_memory``: the values came from memory historical prefs,
+      NOT a this-turn user answer → deterministically **downgraded** to
+      ``confirmed=false`` (pending). The agent must not confirm on the user's
+      behalf; these become prefilled suggestions the user must still confirm.
+
+    ``source=None`` (legacy callers / no declaration): provenance is not
+    recorded and ``confirmed`` is left untouched, preserving prior behavior.
+
+    Mutates ``cs`` in place (each column entry) and returns it.
+    """
+    if source is None:
+        return cs
+    columns = cs.get("columns", {})
+    if not isinstance(columns, dict):
+        return cs
+    downgrade = source == COLUMN_SOURCE_PREFILLED_FROM_MEMORY
+    for entry in columns.values():
+        if not isinstance(entry, dict):
+            continue
+        entry["confirmed_source"] = source
+        if downgrade:
+            # The load-bearing line (spec 四.4 anti-vacuous): memory-prefilled
+            # values may never be confirmed — only the user can confirm, and
+            # only in the turn they actually answered.
+            entry["confirmed"] = False
+    return cs
+
+
 def _derive_column_aliases(cs: dict) -> dict[str, str]:
     """D8/D11: derive column_aliases from column_semantics.columns.
 
@@ -307,16 +352,32 @@ def _thread_id_from_runtime(runtime: ToolRuntime | None) -> str | None:
     return None
 
 
-def _apply_resolved_facts(data: dict, resolved_facts: list[dict]) -> None:
-    """Merge resolved_facts into the data dict under the ``resolved`` key (SSOT §4 authority)."""
+def _apply_resolved_facts(
+    data: dict, resolved_facts: list[dict], source: str | None = None
+) -> None:
+    """Merge resolved_facts into the data dict under the ``resolved`` key (SSOT §4 authority).
+
+    When ``source`` is one of the provenance values (spec 2026-06-30 三.3), each
+    written key is also recorded under ``resolved.sources`` so a downstream
+    consumer can tell memory-prefilled facts (``prefilled_from_memory`` — the
+    user did NOT answer them this turn) apart from this-turn-confirmed facts
+    (``user_current_turn``). ``source=None`` preserves the prior behavior.
+    """
     resolved: dict = data.get("resolved", {})
     if not isinstance(resolved, dict):
         resolved = {}
+    sources: dict = resolved.get("sources", {})
+    if not isinstance(sources, dict):
+        sources = {}
     for item in resolved_facts:
         key = item.get("key")
         value = item.get("value")
         if key and value is not None:
             resolved[key] = value
+            if source is not None:
+                sources[key] = source
+    if sources:
+        resolved["sources"] = sources
     data["resolved"] = resolved
 
 
@@ -348,6 +409,7 @@ def set_experiment_paradigm_tool(
     ev19_template: str | None = None,
     acknowledge_quality: bool = False,
     column_semantics: dict | None = None,
+    column_semantics_source: str | None = None,
     confirm_template_change: bool = False,
     user_confirmed_template: bool = False,
     parameter_overrides: dict[str, float | int | str] | None = None,
@@ -395,6 +457,15 @@ def set_experiment_paradigm_tool(
                              experiment-context.json is read and only gate_completed is updated.
         column_semantics: Column semantics dict (Sprint 1). Written as-is; column_aliases
                           is derived from it as a deterministic projection.
+        column_semantics_source: Provenance of the column_semantics values (spec 2026-06-30).
+                          ``"user_current_turn"`` = the user answered these columns THIS
+                          turn → ``confirmed`` is honored. ``"prefilled_from_memory"`` =
+                          the values came from memory historical prefs, NOT a this-turn
+                          user answer → each entry is deterministically downgraded to
+                          ``confirmed=false`` (pending); the agent must not confirm on the
+                          user's behalf for items the user did not answer this turn. None
+                          (legacy) leaves ``confirmed`` untouched. Also applied to
+                          ``resolved_facts`` when combined on the same call.
         confirm_template_change: Set True to confirm intentional change of ev19_template
                                  when it was already set. Required to prevent accidental
                                  mid-analysis template switching. Default False.
@@ -432,6 +503,20 @@ def set_experiment_paradigm_tool(
 
     existing = read_context(actual_workspace)
 
+    # Validate column_semantics_source up front (fail-loud on an unknown value
+    # rather than silently treating it as legacy None).
+    if column_semantics_source is not None and column_semantics_source not in _COLUMN_SOURCE_VALUES:
+        return json.dumps(
+            {
+                "status": "error",
+                "message": (
+                    f"Unknown column_semantics_source: {column_semantics_source!r}. "
+                    f"Choose from {sorted(_COLUMN_SOURCE_VALUES)}."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
     # --- Gate 2: quality acknowledgement ---
     if acknowledge_quality:
         if existing is None:
@@ -451,7 +536,7 @@ def set_experiment_paradigm_tool(
 
         # Spec B: resolved_facts write-through (can combine with Gate 2)
         if resolved_facts:
-            _apply_resolved_facts(data, resolved_facts)
+            _apply_resolved_facts(data, resolved_facts, source=column_semantics_source)
 
         path = Path(actual_workspace) / "experiment-context.json"
         with path.open("w", encoding="utf-8") as f:
@@ -499,6 +584,7 @@ def set_experiment_paradigm_tool(
             )
         data = dict(existing)  # inherit all existing fields (Bug 3 defensive: don't clobber)
         cs = _normalize_column_semantics(column_semantics)  # reuse existing pure fn
+        _stamp_column_semantics_provenance(cs, column_semantics_source)  # spec 2026-06-30
         data["column_semantics"] = cs
         aliases = _derive_column_aliases(cs)  # reuse existing pure fn
         if aliases:
@@ -507,7 +593,7 @@ def set_experiment_paradigm_tool(
         # resolved_facts may ride the same call (same combination semantics as the
         # other channels: Gate 2 / resolved_facts standalone all accept it).
         if resolved_facts:
-            _apply_resolved_facts(data, resolved_facts)
+            _apply_resolved_facts(data, resolved_facts, source=column_semantics_source)
 
         path = Path(actual_workspace) / "experiment-context.json"
         with path.open("w", encoding="utf-8") as f:
@@ -534,7 +620,7 @@ def set_experiment_paradigm_tool(
             )
 
         data = dict(existing)
-        _apply_resolved_facts(data, resolved_facts)
+        _apply_resolved_facts(data, resolved_facts, source=column_semantics_source)
 
         path = Path(actual_workspace) / "experiment-context.json"
         with path.open("w", encoding="utf-8") as f:
@@ -611,6 +697,7 @@ def set_experiment_paradigm_tool(
     # column_aliases as a deterministic, write-time projection (D8/D11).
     if column_semantics is not None and isinstance(column_semantics, dict):
         cs = _normalize_column_semantics(column_semantics)
+        _stamp_column_semantics_provenance(cs, column_semantics_source)  # spec 2026-06-30
         data["column_semantics"] = cs
         aliases = _derive_column_aliases(cs)
         if aliases:
@@ -618,7 +705,7 @@ def set_experiment_paradigm_tool(
 
     # Spec B: resolved_facts write-through (can combine with Gate 1)
     if resolved_facts:
-        _apply_resolved_facts(data, resolved_facts)
+        _apply_resolved_facts(data, resolved_facts, source=column_semantics_source)
 
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)
