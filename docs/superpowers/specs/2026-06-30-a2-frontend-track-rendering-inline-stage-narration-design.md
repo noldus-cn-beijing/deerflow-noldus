@@ -13,6 +13,9 @@ A1 在后端把信息分了轨（messages 正文 / reasoning 思考 / custom 阶
 1. **甲方案：阶段叙事内联进对话流**，不做独立横向进度轨。
    - 承接 `#231`（`2026-06-29-remove-progress-rails.md` / commit `bf9b48ed`）——用户已删除 `#214` 的 7 阶段常驻横轨，理由是「状态卡死 + 与对话流信息重复」。A2 不重蹈覆辙：不再造横轨，阶段叙事作为对话流的有机部分。
 2. **A 方案：后端翻译取代前端查表**。删除 `stage-broadcast.ts`（前端把 tool_call 查表翻译成中文文案的机制），改为直接渲染 A1 事件携带的后端 `narration`。消除漂移源（工具改了前端翻译没跟上），守 single-source-of-truth。
+   - ⚠️ **前置依赖（2026-06-30 核实发现的覆盖缺口，必须先补）**：删 `stage-broadcast` 前，A1 必须先补齐两个缺口，否则删完会出现「状态空白」。详见 `2026-06-30-a1-stage-narration-coverage-gap-fix-spec.md`，**A2 实施严格 gate 在该缺口修复合入之后**：
+     - **缺口 1（识别范式阶段空白）**：A1 的 `stage_update` 只在派遣 subagent（`task_tool.py:emit_dispatch_enter`）时发，而「识别范式」阶段由 lead 自调工具（`identify_ev19_template`/`inspect_uploaded_file`/`prep_metric_plan`）完成、**不派 subagent** → 该阶段永不点亮。从上传到 code-executor 被派遣（含 HITL 反问，可能几十秒）前端将无任何「在动」提示——而旧 `stage-broadcast` 的 `parseHeaders`/`resolveCatalog` 恰好覆盖了这段。
+     - **缺口 2（knowledge-assistant 漏登记）**：A1 `_DISPATCH_STAGE` 未登记 `knowledge-assistant` → 纯知识问答场景无 stage_update。
 3. **阶段状态只认 A1 后端事件**，前端不推导。`#214` 卡死的真根因正是「前端从 trace 推导阶段、推不出 run 结束信号」；A2 的阶段 active/completed **只由 A1 的 `stage_update` 驱动**，从根上避免卡死。
 
 ---
