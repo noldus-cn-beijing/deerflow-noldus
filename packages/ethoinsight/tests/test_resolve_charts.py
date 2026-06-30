@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from ethoinsight.catalog.resolve import resolve_charts, ResolveError
+from ethoinsight.catalog.resolve import (
+    resolve_charts,
+    plan_charts_to_dict,
+    ResolveError,
+)
 
 
 EPM_COLUMNS_SAMPLE = [
@@ -239,3 +243,83 @@ def test_groups_finalshape_passthrough(tmp_path):
     materialised = json.loads((tmp_path / Path(groups_arg).name).read_text(encoding="utf-8"))
     assert set(materialised["control"]) == set(raw_files[:3])
     assert set(materialised["treatment"]) == set(raw_files[3:])
+
+
+# ============================================================================
+# source_filename（spec 2026-06-29-chart-display-name-source-filename）
+# per_subject 图每张带来源 raw data 文件 basename，使多文件下 N 张同类图可区分。
+# aggregate 图跨所有文件，source_filename 留空。
+# ============================================================================
+
+
+def _per_subject_charts(pc):
+    """Return [(chart, source_filename)] for charts expanded per-subject (subject_index>=0
+    且 output_mode == 'per_subject')。trajectory/heatmap 是典型 per_subject 图。"""
+    return [(c, c.source_filename) for c in pc.charts if c.output_mode == "per_subject"]
+
+
+def test_per_subject_chart_carries_source_filename_basename(tmp_path):
+    """per_subject 图的 source_filename 必须是对应 raw_file 的 basename（保留原始文件名含多空格）。
+
+    修复前必红：PlanChart 无 source_filename 字段。28 张 heatmap 会全显示成 sN/chart_id，
+    用户无法分辨哪张对应哪个 trial。
+    """
+    raw_files = [
+        "/mnt/user-data/uploads/Raw data-EPM-Xuhui-Trial     1.xlsx",
+        "/mnt/user-data/uploads/Raw data-EPM-Xuhui-Trial    15.xlsx",
+    ]
+    pc = resolve_charts(
+        paradigm="epm", columns=EPM_COLUMNS_SAMPLE, raw_files=raw_files,
+        workspace_dir=str(tmp_path), total_subjects=2, n_per_group=1, n_groups=2,
+    )
+    per_subject = _per_subject_charts(pc)
+    assert per_subject, "EPM 应产出 per_subject 图（trajectory/heatmap）"
+    # 每个 per_subject 图必须带非空 source_filename
+    for _chart, src in per_subject:
+        assert src, f"per_subject 图 source_filename 不应为空：{[c.id for c in pc.charts]}"
+    # subject_index 0/1 必须分别对到第 0/1 个 raw_file 的 basename
+    by_idx = {c.subject_index: c.source_filename for c in pc.charts if c.output_mode == "per_subject"}
+    assert by_idx.get(0) == "Raw data-EPM-Xuhui-Trial     1.xlsx"
+    assert by_idx.get(1) == "Raw data-EPM-Xuhui-Trial    15.xlsx"
+
+
+def test_aggregate_chart_source_filename_empty(tmp_path):
+    """aggregate 图（output_mode=='aggregate'，跨所有文件）source_filename 必须留空。
+
+    box_open_arm 是典型 aggregate 图（组间对比，1 张/全文件），强加单一来源名会误导。
+    """
+    raw_files = [f"/mnt/user-data/uploads/arena{i}.txt" for i in range(1, 7)]
+    pc = resolve_charts(
+        paradigm="epm", columns=EPM_COLUMNS_SAMPLE, raw_files=raw_files,
+        workspace_dir=str(tmp_path), total_subjects=6, n_per_group=3, n_groups=2,
+        groups={"control": raw_files[:3], "treatment": raw_files[3:]},
+    )
+    aggregate = [c for c in pc.charts if c.output_mode == "aggregate"]
+    assert aggregate, "EPM 多组数据应产出 aggregate 图（box/bar）"
+    for c in aggregate:
+        assert c.source_filename == "", f"aggregate 图 {c.id} source_filename 应留空，got {c.source_filename!r}"
+
+
+def test_source_filename_serialized_into_plan_charts_dict(tmp_path):
+    """plan_charts_to_dict 必须把 source_filename 带进 charts[] 每条目（后端 list_chart_artifacts 读它填 ArtifactMeta）。
+
+    修复前必红：序列化推导无 source_filename key。
+    """
+    raw_files = [
+        "/mnt/user-data/uploads/Raw data-EPM-Xuhui-Trial     1.xlsx",
+        "/mnt/user-data/uploads/Raw data-EPM-Xuhui-Trial    15.xlsx",
+    ]
+    pc = resolve_charts(
+        paradigm="epm", columns=EPM_COLUMNS_SAMPLE, raw_files=raw_files,
+        workspace_dir=str(tmp_path), total_subjects=2, n_per_group=1, n_groups=2,
+    )
+    d = plan_charts_to_dict(pc)
+    charts = d["charts"]
+    assert charts, "plan_charts 应有条目"
+    per_subject_entries = [e for e in charts if e.get("output_mode") == "per_subject"]
+    assert per_subject_entries, "应含 per_subject 条目"
+    # 每条 per_subject 条目必须有 source_filename key 且对到 basename
+    by_idx = {e["subject_index"]: e.get("source_filename") for e in per_subject_entries}
+    assert "source_filename" in per_subject_entries[0], "序列化漏带 source_filename key"
+    assert by_idx[0] == "Raw data-EPM-Xuhui-Trial     1.xlsx"
+    assert by_idx[1] == "Raw data-EPM-Xuhui-Trial    15.xlsx"

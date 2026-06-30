@@ -55,6 +55,8 @@ def test_list_chart_artifacts_returns_disk_pngs_with_plan_metadata(tmp_path, mon
                 "output_mode": "per_subject",
                 "subject": "subject_0",
                 "script": "ethoinsight.scripts.epm.plot_trajectory",
+                # spec 2026-06-29-chart-display-name-source-filename：per_subject 图带来源 raw data basename
+                "source_filename": "Raw data-EPM-Xuhui-Trial     1.xlsx",
             },
         ],
     }
@@ -76,10 +78,14 @@ def test_list_chart_artifacts_returns_disk_pngs_with_plan_metadata(tmp_path, mon
     assert agg["paradigm"] == "epm"
     assert agg["metric"] == "open_arm_time_ratio"
     assert agg["chart_type"] == "box"
+    # aggregate 图跨文件、plan 未带 source_filename → None（不强加单一来源名）
+    assert agg.get("source_filename") is None
 
     per_subj = by_path["/mnt/user-data/outputs/trajectory_subject_0.png"]
     assert per_subj["output_mode"] == "per_subject"
     assert per_subj["chart_type"] == "trajectory"
+    # per_subject 图来源 raw data basename 原样透传（含多空格），前端展示层再折叠空格
+    assert per_subj["source_filename"] == "Raw data-EPM-Xuhui-Trial     1.xlsx"
 
 
 def test_list_chart_artifacts_excludes_thumb_files(tmp_path, monkeypatch) -> None:

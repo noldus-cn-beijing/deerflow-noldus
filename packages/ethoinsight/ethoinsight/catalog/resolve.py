@@ -1167,6 +1167,7 @@ def _chart_to_plan(
                 input=str(Path(effective_workspace) / inputs_name),
                 output=output_path,
                 subject_index=idx,
+                source_filename=Path(raw_file).name,  # basename，保留原文件名（含多空格）；spec 2026-06-29
                 display_name_zh=ch.display_name_zh,
                 confidence=ch.confidence,
                 args=args,
@@ -1437,7 +1438,8 @@ def plan_to_dict(plan: Plan) -> dict:
             }
         ),
         "charts": [
-            {"id": c.id, "script": c.script, "input": c.input, "output": c.output, "subject_index": c.subject_index}
+            {"id": c.id, "script": c.script, "input": c.input, "output": c.output,
+             "subject_index": c.subject_index, "source_filename": c.source_filename}
             for c in plan.charts
         ],
         "skipped": [
@@ -1614,6 +1616,7 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
             {
                 "id": c.id, "script": c.script, "input": c.input, "output": c.output,
                 "subject_index": c.subject_index,
+                "source_filename": c.source_filename,
                 "display_name_zh": c.display_name_zh,
                 "confidence": c.confidence,
                 "output_mode": c.output_mode,
@@ -1625,6 +1628,7 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
             {
                 "id": c.id, "script": c.script, "input": c.input, "output": c.output,
                 "subject_index": c.subject_index,
+                "source_filename": c.source_filename,
                 "display_name_zh": c.display_name_zh,
                 "confidence": c.confidence,
                 "output_mode": c.output_mode,
@@ -1636,6 +1640,7 @@ def plan_charts_to_dict(pc: PlanCharts) -> dict:
             {
                 "id": c.id, "script": c.script, "input": c.input, "output": c.output,
                 "subject_index": c.subject_index,
+                "source_filename": c.source_filename,
                 "display_name_zh": c.display_name_zh,
                 "confidence": c.confidence,
                 "output_mode": c.output_mode,

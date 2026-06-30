@@ -24,6 +24,12 @@ export interface ArtifactMeta {
   subject?: string;
   group?: string;
   chart_type?: string;
+  /**
+   * 来源 raw data 文件 basename（per_subject 图专用，spec 2026-06-29-chart-display-name-source-filename）。
+   * 多文件下 N 张同类 per_subject 图（如 28 张 heatmap）借此区分各自 trial。aggregate 图 / 旧 plan 留空。
+   * 与 filename（报告产物标题语义）正交，不复用。
+   */
+  source_filename?: string;
   /** 后端 Pillow 缩略图（spec §3.1.6）；缺则前端退化原 path + decoding=async。 */
   thumb_path?: string;
   /** 可选增强（按 run 分面，spec §3.4.1 方案 B）；Phase 0 默认不填。 */

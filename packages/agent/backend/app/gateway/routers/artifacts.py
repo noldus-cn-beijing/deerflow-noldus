@@ -310,6 +310,10 @@ def list_chart_artifacts(thread_id: str, request: Request | None) -> list[dict[s
                 "metric": entry.get("metric"),
                 "subject": entry.get("subject"),
                 "group": entry.get("group"),
+                # spec 2026-06-29-chart-display-name-source-filename：per_subject 图的来源 raw data
+                # 文件 basename，前端画廊据此区分多文件下 N 张同类图（如 28 张 heatmap）。
+                # aggregate 图跨文件、旧 plan 无此字段 → None，前端退化不显示来源段。
+                "source_filename": entry.get("source_filename") or None,
                 "chart_type": _derive_chart_type(chart_id, str(entry.get("script") or "")),
             }
         else:

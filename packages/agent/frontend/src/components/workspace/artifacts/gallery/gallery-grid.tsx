@@ -38,7 +38,15 @@ function ThumbCard({ meta, threadId, selected, onSelect, onOpen, compareMode }: 
     ? urlOfArtifact({ filepath: meta.thumb_path, threadId })
     : null;
   const originalUrl = urlOfArtifact({ filepath: meta.path, threadId });
-  const alt = [meta.chart_id, meta.metric, meta.subject].filter(Boolean).join(" · ") || meta.path;
+  // 来源 raw data 文件短名（去扩展名 + 折叠多空格），per_subject 图专用（spec 2026-06-29）。
+  // 多文件下 N 张同类图（如 28 张 heatmap）借此区分各自 trial；aggregate 图无来源 → null，退化原显示。
+  const sourceLabel = meta.source_filename
+    ? meta.source_filename.replace(/\.[^.]+$/, "").replace(/\s+/g, " ").trim()
+    : null;
+  const altParts = [sourceLabel, meta.chart_id, meta.metric, meta.subject].filter(Boolean);
+  const alt = altParts.length ? altParts.join(" · ") : meta.path;
+  // 角标：来源优先，无来源退 metric；都无则不渲染（spec 2026-06-29）。
+  const badge = sourceLabel ? `${sourceLabel}${meta.metric ? " · " + meta.metric : ""}` : meta.metric;
 
   function handleClick() {
     if (compareMode && onSelect) {
@@ -79,9 +87,9 @@ function ThumbCard({ meta, threadId, selected, onSelect, onOpen, compareMode }: 
           </svg>
         </div>
       )}
-      {meta.metric && (
+      {badge && (
         <div className="absolute right-0 bottom-0 left-0 truncate bg-black/40 px-2 py-1 text-xs text-white">
-          {meta.metric}
+          {badge}
         </div>
       )}
     </button>

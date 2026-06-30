@@ -252,6 +252,9 @@ class PlanChart:
     input: str
     output: str
     subject_index: int = 0  # 0-based index into inputs.raw_files; 0 for single-subject plans
+    source_filename: str = ""  # 源 raw data 文件 basename（per_subject 专用；aggregate 跨文件留空）
+                               # spec 2026-06-29-chart-display-name-source-filename：多文件下 N 张同类
+                               # per_subject 图（如 28 张 heatmap）借此区分各自 trial，前端画廊展示。
     display_name_zh: str = ""           # 1.1: 中文图名，透传自 ChartEntry
     confidence: str = "optional"        # 透传自 ChartEntry.confidence
     args: list[str] = field(default_factory=list)  # 1.1: resolve 阶段填充的 CLI 参数数组
