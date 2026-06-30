@@ -50,3 +50,6 @@ packages/agent/temp/
 
 # Git worktrees (temporary, should never be committed)
 .claude/worktrees/
+
+# Agent-generated report artifacts (HTML/PNG), local only
+reports/
