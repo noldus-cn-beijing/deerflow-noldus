@@ -1535,6 +1535,18 @@ def ls_tool(runtime: Runtime, description: str, path: str) -> str:
             # Custom mount paths are resolved by LocalSandbox._resolve_path()
         children = sandbox.list_dir(path)
         if not children:
+            # Disambiguate the three states that all produced "(empty)" before:
+            #   ls <existing file>  -> list_dir returns [] (is_dir() False)
+            #   ls <missing path>   -> list_dir returns []
+            #   ls <empty dir>      -> list_dir returns []
+            # Without this, an agent that probes file existence with `ls <file>`
+            # misreads "(empty)" as "file missing" (root cause of the
+            # 2026-06-30 code-executor「plan_metrics.json 缺失」false failure).
+            resolved = Path(path)
+            if resolved.is_file():
+                return f"{requested_path} is a file, not a directory. (ls lists directory contents; the file exists.)"
+            if not resolved.exists():
+                return f"Path not found: {requested_path}"
             return "(empty)"
         output = "\n".join(children)
         if thread_data is not None:
