@@ -55,6 +55,27 @@ export function reportsArtifactsURL(threadId: string): string {
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/reports`;
 }
 
+/**
+ * 指标结果表（data 类产物）清单端点（spec 2026-06-30 C1 模块2）。
+ *
+ * 现状画廊只认 .png/.md/.html 两类扩展名——任何 data 类产物直接消失。本端点把
+ * metrics_table.json 作为「指标结果表」data artifact 暴露，与 charts/reports 并列。
+ * 与 charts/reports 对称：磁盘为真相、不依赖 state 冒泡。
+ */
+export function dataArtifactsURL(threadId: string): string {
+  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/data`;
+}
+
+/**
+ * 指标结果表干净 JSON 端点（spec 2026-06-30 C1 模块2/3）。
+ *
+ * 返回 metrics_table.json（已剥内脏的干净结构：groups 综述 + per_subject + IQR 离群标记），
+ * 供前端指标表卡渲染用。专用端点（不走 catch-all），保持显式、避免耦合。
+ */
+export function metricsTableJSONURL(threadId: string): string {
+  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/metrics-table`;
+}
+
 /** 数据表 CSV 导出端点占位（spec §四 Step 5）。 */
 export function dataTableExportURL(threadId: string): string {
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts/data-table`;

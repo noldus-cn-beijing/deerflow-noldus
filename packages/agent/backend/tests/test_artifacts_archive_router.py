@@ -73,10 +73,10 @@ def test_archive_404_when_no_outputs(tmp_path, monkeypatch):
 
 
 def test_export_data_table_returns_first_csv(tmp_path, monkeypatch):
-    """CSV 占位：返回 outputs/ 里第一个 .csv。"""
+    """spec 2026-06-30 C1：返回 outputs/metrics_table.csv（run_metric_plan 确定性导出的指标表）。"""
     outputs_dir = tmp_path / "out"
     outputs_dir.mkdir(parents=True)
-    (outputs_dir / "metrics.csv").write_text("a,b\n1,2\n")
+    (outputs_dir / "metrics_table.csv").write_text("subject,group,ratio\nctrl,Control,0.3\n")
     _stub_outputs_dir(monkeypatch, outputs_dir)
 
     with _client() as client:
@@ -85,6 +85,7 @@ def test_export_data_table_returns_first_csv(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "text/csv; charset=utf-8"
     assert "attachment" in resp.headers["content-disposition"]
+    assert "metrics_table.csv" in resp.headers["content-disposition"]
 
 
 def test_export_data_table_404_when_no_csv(tmp_path, monkeypatch):

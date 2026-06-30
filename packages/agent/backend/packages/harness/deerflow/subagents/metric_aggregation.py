@@ -162,6 +162,7 @@ def aggregate_metrics_to_handoff(
             "status": "failed",
             "metrics_summary": {},
             "per_subject": {},
+            "subject_groups": {},
             "output_files": {"metrics": []},
             "data_quality_warnings": [],
             "errors": ["aggregate: plan has no metrics[] to reconcile"],
@@ -187,6 +188,7 @@ def aggregate_metrics_to_handoff(
             "status": "failed",
             "metrics_summary": {},
             "per_subject": {},
+            "subject_groups": {},
             "output_files": {"metrics": []},
             "data_quality_warnings": [],
             "errors": ["aggregate: plan metrics have no output paths to reconcile"],
@@ -222,6 +224,9 @@ def aggregate_metrics_to_handoff(
 
     metrics_summary: dict[str, dict[str, dict]] = {}
     per_subject: dict[str, dict[str, Any]] = {}
+    # subject_name -> group_name (spec 2026-06-30 C1：导出指标表需要每 subject 的组归属。
+    # 复用循环内已推导的 group_name，避免在导出器里重复 subject→group 推导致漂移——SSOT)。
+    subject_groups: dict[str, str] = {}
     output_files_metrics: list[str] = []
     errors: list[str] = []
 
@@ -247,6 +252,7 @@ def aggregate_metrics_to_handoff(
         group_name = groups.get(
             subject_file, groups.get(Path(subject_file).name, "unknown")
         )
+        subject_groups[subject_name] = group_name
 
         # per_subject
         if subject_name not in per_subject:
@@ -306,6 +312,7 @@ def aggregate_metrics_to_handoff(
         "status": status,
         "metrics_summary": metrics_summary,
         "per_subject": per_subject,
+        "subject_groups": subject_groups,
         "output_files": {"metrics": output_files_metrics},
         "data_quality_warnings": data_quality_warnings,
         "errors": errors,

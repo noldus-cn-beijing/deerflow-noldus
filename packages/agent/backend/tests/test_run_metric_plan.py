@@ -382,6 +382,104 @@ class TestSSOTParity:
             "ctrl": {"open_arm_time_ratio": 0.30},
             "drug": {"open_arm_time_ratio": 0.55},
         }
+        # spec 2026-06-30 C1：聚合器额外返回 subject_groups（subject stem → 组），
+        # 供指标表导出器复用同一 subject→group 推导（SSOT，不在导出器重推致漂移）。
+        assert agg["subject_groups"] == {"ctrl": "Control", "drug": "Treatment"}
+
+
+def test_aggregate_returns_subject_groups_on_empty_plan(tmp_path):
+    """spec 2026-06-30 C1：空 plan / 无 output 早退路径也带 subject_groups={} 键（恒在）。"""
+    from deerflow.subagents.metric_aggregation import aggregate_metrics_to_handoff
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    # 无 metrics[] → 早退 1。
+    agg_empty = aggregate_metrics_to_handoff({"paradigm": "epm"}, ws, run_validation=False)
+    assert agg_empty["subject_groups"] == {}
+
+    # metrics 有 id 但无 output → 早退 2。
+    agg_no_output = aggregate_metrics_to_handoff(
+        {"paradigm": "epm", "metrics": [{"id": "x", "subject_index": 0}]}, ws, run_validation=False
+    )
+    assert agg_no_output["subject_groups"] == {}
+
+
+# ===================================================================
+# spec 2026-06-30 C1 模块1：Step 9.6 确定性导出指标结果表到 outputs/
+# ===================================================================
+
+
+class TestMetricsTableExport:
+    """run_metric_plan 完成后确定性写 metrics_table.csv + .json 到 outputs/。
+
+    导出是 best-effort UI 产物：失败不得中断 run（handoff 已 sealed）。
+    """
+
+    def test_run_metric_plan_writes_metrics_table_to_outputs(self, tmp_path):
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        metrics = [
+            {"id": "open_arm_time_ratio_s0", "subject_index": 0},
+            {"id": "open_arm_time_ratio_s1", "subject_index": 1},
+        ]
+        _TASK_METRIC.update({"open_arm_time_ratio_s0": "open_arm_time_ratio",
+                             "open_arm_time_ratio_s1": "open_arm_time_ratio"})
+        _FAKE_VALUES.update({"open_arm_time_ratio_s0": 0.30, "open_arm_time_ratio_s1": 0.55})
+        plan = _plan(
+            metrics, workspace=ws,
+            raw_files=["/mnt/user-data/uploads/ctrl.txt", "/mnt/user-data/uploads/drug.txt"],
+        )
+        (ws / "groups.json").write_text(
+            json.dumps({"/mnt/user-data/uploads/ctrl.txt": "Control",
+                        "/mnt/user-data/uploads/drug.txt": "Treatment"}),
+            encoding="utf-8",
+        )
+        _write_plan(ws, plan)
+
+        res = _call(_runtime(ws))
+
+        assert res["status"] == "completed", res
+        outputs = ws.parent / "outputs"
+        csv_path = outputs / "metrics_table.csv"
+        json_path = outputs / "metrics_table.json"
+        assert csv_path.is_file() and json_path.is_file()
+
+        # JSON 值匹配 handoff per_subject（SSOT，不双算）。
+        h = json.loads((ws / "handoff_code_executor.json").read_text(encoding="utf-8"))
+        j = json.loads(json_path.read_text(encoding="utf-8"))
+        by_subj = {row["subject"]: row for row in j["per_subject"]}
+        assert by_subj["ctrl"]["values"]["open_arm_time_ratio"] == h["per_subject"]["ctrl"]["open_arm_time_ratio"]
+        assert by_subj["drug"]["values"]["open_arm_time_ratio"] == h["per_subject"]["drug"]["open_arm_time_ratio"]
+
+        # JSON 不含内脏（反 vacuous —— 导出从 agg 读，构造保证）。
+        viscera = {"gate_signals", "handoff", "assessment", "statistics", "confidence", "inputs", "sealed_by"}
+        assert viscera.isdisjoint(j.keys())
+
+    def test_run_metric_plan_continues_when_export_fails(self, tmp_path, monkeypatch):
+        """导出器抛错 → run 仍 completed 且 handoff sealed（best-effort，不中断）。"""
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        metrics = [{"id": "open_arm_time_ratio_s0", "subject_index": 0}]
+        _TASK_METRIC.update({"open_arm_time_ratio_s0": "open_arm_time_ratio"})
+        _FAKE_VALUES.update({"open_arm_time_ratio_s0": 0.30})
+        plan = _plan(metrics, workspace=ws)
+        _write_plan(ws, plan)
+
+        # 让导出器炸：monkeypatch 模块内的 export_metrics_table 抛错。
+        import deerflow.subagents.metrics_table_export as export_mod
+
+        def _boom(**_kw):
+            raise RuntimeError("simulated export failure")
+
+        monkeypatch.setattr(export_mod, "export_metrics_table", _boom)
+
+        res = _call(_runtime(ws))
+
+        assert res["status"] == "completed", res  # 不中断
+        # handoff 仍 sealed（导出失败前已落盘）。
+        assert (ws / "handoff_code_executor.json").is_file()
+        # outputs 没有指标表（导出失败了）。
+        assert not (ws.parent / "outputs" / "metrics_table.csv").is_file()
 
 
 # ===================================================================

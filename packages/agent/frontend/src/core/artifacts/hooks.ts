@@ -7,7 +7,7 @@ import { fetch as fetchWithAuth } from "@/core/api/fetcher";
 import { loadArtifactContent, loadArtifactContentFromToolCall } from "./loader";
 import type { ArtifactMeta } from "./types";
 import { normalizeArtifacts } from "./types";
-import { chartsArtifactsURL, reportsArtifactsURL } from "./utils";
+import { chartsArtifactsURL, dataArtifactsURL, reportsArtifactsURL } from "./utils";
 
 export function useArtifactContent({
   filepath,
@@ -154,11 +154,29 @@ export async function fetchReportArtifactsFromDisk(threadId: string): Promise<Ar
   return normalizeArtifacts(json);
 }
 
+/**
+ * 指标结果表（data 类产物）磁盘端点（spec 2026-06-30 C1 模块2）。
+ *
+ * 拉 outputs/metrics_table.json 作为「指标结果表」data artifact，与 charts/reports 对称。
+ * 端点不可达/非 200 抛错（由 useThreadAssets 的 catch 转空数组，指标表区缺省不显示）。
+ * 旧后端无此端点时只让该类为空，不整体崩（charts/reports 仍显示）。
+ */
+export async function fetchDataArtifactsFromDisk(threadId: string): Promise<ArtifactMeta[]> {
+  const resp = await fetchWithAuth(dataArtifactsURL(threadId));
+  if (!resp.ok) {
+    throw new Error(`data artifacts endpoint ${resp.status}`);
+  }
+  const json = (await resp.json()) as ArtifactMeta[];
+  return normalizeArtifacts(json);
+}
+
 export interface UseThreadAssetsResult {
   /** 图表产物（磁盘 + plan_charts.json）。 */
   charts: ArtifactMeta[];
   /** 报告/文档产物（磁盘 .md/.html）。 */
   reports: ArtifactMeta[];
+  /** 指标结果表 data 产物（磁盘 metrics_table.json，spec 2026-06-30 C1）。 */
+  data: ArtifactMeta[];
   /** 首次拉取完成（成功或失败兜底），供消费方区分加载中 vs 真空。 */
   loaded: boolean;
   /** 重新拉取——run 完成（onFinish）后调一次确保全量（产物陆续落盘）。 */
@@ -168,12 +186,12 @@ export interface UseThreadAssetsResult {
 /**
  * thread 级「产出物」数据源 hook（资产面板）。
  *
- * 并行拉两条磁盘端点（charts + reports），合并成稳定的 thread 资产视图。**完全不读
+ * 并行拉磁盘端点（charts + reports + data），合并成稳定的 thread 资产视图。**完全不读
  * streaming 消息流 / LangGraph state.artifacts**——产物 UI 因此不随 present_files 消息、
  * 流式 re-render、切 tab 而出现/消失/漂移（本会话 dogfood 反复暴露的不稳定家族根治）。
  *
  * 性能：挂载拉一次 + refetchSignal（run 完成）补拉一次；不每帧拉、不轮询。
- * 任一端点失败只让那一类产物为空，不整体崩（报告端点旧后端没有时图仍显示）。
+ * 任一端点失败只让那一类产物为空，不整体崩（指标表端点旧后端没有时图/报告仍显示）。
  */
 export function useThreadAssets(
   threadId: string,
@@ -182,15 +200,18 @@ export function useThreadAssets(
   const { refetchSignal } = args;
   const [charts, setCharts] = useState<ArtifactMeta[]>([]);
   const [reports, setReports] = useState<ArtifactMeta[]>([]);
+  const [data, setData] = useState<ArtifactMeta[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    const [chartsRes, reportsRes] = await Promise.allSettled([
+    const [chartsRes, reportsRes, dataRes] = await Promise.allSettled([
       fetchChartArtifactsFromDisk(threadId),
       fetchReportArtifactsFromDisk(threadId),
+      fetchDataArtifactsFromDisk(threadId),
     ]);
     setCharts(chartsRes.status === "fulfilled" ? chartsRes.value : []);
     setReports(reportsRes.status === "fulfilled" ? reportsRes.value : []);
+    setData(dataRes.status === "fulfilled" ? dataRes.value : []);
     setLoaded(true);
   }, [threadId]);
 
@@ -211,5 +232,5 @@ export function useThreadAssets(
     }
   }, [refetchSignal, load]);
 
-  return { charts, reports, loaded, refetch: load };
+  return { charts, reports, data, loaded, refetch: load };
 }

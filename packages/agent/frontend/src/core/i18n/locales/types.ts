@@ -186,6 +186,14 @@ export interface Translations {
     assetsTitle: string;
     reportsSection: string;
     chartsSection: string;
+    dataSection: string;
+    metricsTableTitle: string;
+    metricsTableExpand: string;
+    metricsTableGroupN: (n: number) => string;
+    outlierFlag: string;
+    downloadCsv: string;
+    metricsTableEmpty: string;
+    metricsTableLoading: string;
     assetsEmpty: string;
     summaryCharts: (n: number) => string;
     summaryPerSubject: (n: number) => string;

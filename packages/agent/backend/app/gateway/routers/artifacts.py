@@ -134,7 +134,6 @@ async def archive_artifacts(thread_id: str, request: Request) -> StreamingRespon
         100+ 张全量进内存会爆）。``zipfile`` 不支持真正的 pipe 流式，所以用 SpooledTemporaryFile
         滚动落盘 + 分块读回 yield 的折中（内存有界，超大图集自动溢出磁盘）。
         """
-        import io
         import tempfile
 
         buf = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, suffix=".zip")
@@ -169,25 +168,20 @@ async def archive_artifacts(thread_id: str, request: Request) -> StreamingRespon
 
 @router.get(
     "/threads/{thread_id}/artifacts/data-table",
-    summary="Export Data Table (CSV placeholder)",
-    description="Placeholder for data-table CSV export (spec Step 5: full implementation deferred; returns the first .csv artifact or 404).",
+    summary="Export Data Table (metrics_table.csv)",
+    description="Download the clean metrics results table (metrics_table.csv), exported deterministically by run_metric_plan. Returns 404 if absent.",
 )
 @require_permission("threads", "read", owner_check=True)
 async def export_data_table(thread_id: str, request: Request) -> Response:
-    """数据表导出占位（spec §四 Step 5：CSV 完整实现顺延，不阻塞画廊主体）。
+    """指标结果表 CSV 下载（spec 2026-06-30 C1 模块2）。
 
-    Phase 0：返回 outputs/ 里第一个 ``.csv`` 文件（metric 计算结果若有 CSV 产物即取）。
-    无 CSV → 404，前端按钮置灰。完整数据表实现（按指标/组别重组）顺延。
+    返回 ``outputs/metrics_table.csv``（run_metric_plan 确定性导出的干净结果表：
+    一行一 subject，全量全列，给研究员下载进 SPSS/Prism）。无 → 404。
     """
     outputs_dir = resolve_thread_virtual_path(thread_id, "/mnt/user-data/outputs")
-    if not outputs_dir.exists() or not outputs_dir.is_dir():
-        raise HTTPException(status_code=404, detail="No data table available")
-
-    csv_files = sorted(p for p in outputs_dir.rglob("*.csv") if p.is_file())
-    if not csv_files:
-        raise HTTPException(status_code=404, detail="No data table available")
-
-    csv_path = csv_files[0]
+    csv_path = outputs_dir / "metrics_table.csv"
+    if not csv_path.is_file():
+        raise HTTPException(status_code=404, detail="No metrics table available")
     return FileResponse(
         path=csv_path,
         media_type="text/csv",
@@ -388,6 +382,74 @@ async def get_report_artifacts(thread_id: str, request: Request) -> Response:
         content=json.dumps(list_report_artifacts(thread_id)),
         media_type="application/json",
     )
+
+
+# 指标结果表（data 类产物）清单端点（spec 2026-06-30 C1 模块2）。
+# 现状画廊只认 .png/.md/.html 两类扩展名（charts/reports 端点），任何 data 类产物
+# 直接消失——ArtifactKind 虽定义了 "data" 但没有端点列它。本端点把 metrics_table.json
+# 作为「指标结果表」data artifact 暴露，与 charts/reports 并列。
+_DATA_TABLE_FILES = ("metrics_table.json",)
+
+
+def list_data_artifacts(thread_id: str) -> list[dict[str, Any]]:
+    """按磁盘列 outputs/ 下的指标结果表 data 产物（metrics_table.json），与 list_chart/list_report 对称。
+
+    纯磁盘扫描，不依赖 state；缺目录/文件返回 []。返回 [{path, kind:"data", filename, ext}]。
+    """
+    outputs_dir = resolve_thread_virtual_path(thread_id, _OUTPUTS_VIRTUAL_PREFIX)
+    if not outputs_dir.exists() or not outputs_dir.is_dir():
+        return []
+
+    items: list[dict[str, Any]] = []
+    for name in _DATA_TABLE_FILES:
+        f = outputs_dir / name
+        if f.is_file():
+            items.append(
+                {
+                    "path": f"{_OUTPUTS_VIRTUAL_PREFIX}/{name}",
+                    "kind": "data",
+                    "filename": name,
+                    "ext": name.rsplit(".", 1)[-1].lower(),
+                }
+            )
+    return items
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/data",
+    summary="List Data Artifacts (disk)",
+    description="List metrics-table data artifacts on disk (metrics_table.json) for the thread. Disk is the source of truth.",
+)
+@require_permission("threads", "read", owner_check=True)
+async def get_data_artifacts(thread_id: str, request: Request) -> Response:
+    """指标结果表 data 产物清单：磁盘 outputs/metrics_table.json → [{path, kind, filename, ext}]。
+
+    注册在 catch-all ``/artifacts/{path:path}`` 之前，避免被吞。
+    """
+    return Response(
+        content=json.dumps(list_data_artifacts(thread_id)),
+        media_type="application/json",
+    )
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/metrics-table",
+    summary="Get Metrics Table (clean JSON)",
+    description="Return the clean metrics results table JSON (groups summary + per_subject + IQR outlier flags; no handoff viscera) for the frontend table. Returns 404 if absent.",
+)
+@require_permission("threads", "read", owner_check=True)
+async def get_metrics_table(thread_id: str, request: Request) -> Response:
+    """指标结果表干净 JSON（spec 2026-06-30 C1 模块2/3）。
+
+    读 ``outputs/metrics_table.json``（已干净，剥内脏）→ 原样返回，前端渲染表格用。
+    缺 → 404。注册在 catch-all ``/artifacts/{path:path}`` 之前，避免被吞。
+    """
+    outputs_dir = resolve_thread_virtual_path(thread_id, _OUTPUTS_VIRTUAL_PREFIX)
+    json_path = outputs_dir / "metrics_table.json"
+    if not json_path.is_file():
+        raise HTTPException(status_code=404, detail="No metrics table available")
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    return Response(content=json.dumps(data, ensure_ascii=False), media_type="application/json")
 
 
 @router.get(

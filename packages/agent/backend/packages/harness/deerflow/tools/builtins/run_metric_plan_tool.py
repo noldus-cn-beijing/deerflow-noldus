@@ -370,6 +370,23 @@ def run_metric_plan_tool(
         logger.error("[run_metric_plan] seal schema 校验失败: %s", e)
         return _error_result("seal_failed", f"handoff schema 校验失败: {e}")
 
+    # ---- Step 9.6: 确定性导出指标结果表（CSV + JSON）到 outputs/（spec 2026-06-30 C1 模块1）----
+    # best-effort 用户产物：handoff 已 sealed（关键产物），导出失败不得中断 run。
+    # 从 agg 读（SSOT、预内脏）——不从 sealed payload 读，剥内脏由构造保证。
+    # 惰性 import（cycle-safety，同其他 subagents 惰性 import 习语）。
+    try:
+        from deerflow.subagents.metrics_table_export import export_metrics_table
+
+        export_metrics_table(
+            metrics_summary=agg["metrics_summary"],
+            per_subject=agg["per_subject"],
+            subject_groups=agg.get("subject_groups", {}),
+            outputs_dir=workspace.parent / "outputs",
+            paradigm=agg.get("paradigm", "") or plan.get("paradigm", ""),
+        )
+    except Exception:
+        logger.warning("[run_metric_plan] metrics table export failed (non-fatal)", exc_info=True)
+
     result = {
         "status": status,
         "handoff_path": "/mnt/user-data/workspace/handoff_code_executor.json",
