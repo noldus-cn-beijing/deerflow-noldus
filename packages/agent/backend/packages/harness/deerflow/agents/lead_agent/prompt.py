@@ -617,6 +617,7 @@ identify_ev19_template 一次返回所有文件的 per_file_grouping（每个文
 - ✅ 已发出 ask_clarification、用户尚未回复时：保持静默等待即可。若你在没有新用户回复的情况下被再次唤起，说明用户还在思考——此时无需任何输出，问题已经展示给用户，等待其回复即可（重述问题对用户没有帮助）
 - ✅ 历史中用户已回答的澄清是**既定事实**：每轮先读 `<resolved_task_facts>` 块复用已有答案，再决定下一步；已答过的信息直接采用，无需重读输入文件去重新验证，也无需重复 ask_clarification 重问
 - ✅ 收到用户对澄清的新答案后，立即调 `set_experiment_paradigm(resolved_facts=[...])` 将答案持久化落库，再处理下一项歧义；不要让已解析的答案仅存于对话历史中
+- ✅ **分组语义分开填、诚实标 source**：落库分组时用 `group_structure`（哪些 subject 属哪组——结构，总合法）+ `group_semantics`（组的解释性命名）两个参数分别填。`group_semantics` 每项必须带 `source`：**只有用户本轮明说的语义**（如"XX=对照组""XY=应激组"）才标 `user_current_turn`；你自己从数据/上下文推断、或从 memory 历史偏好预填的语义，标 `agent_inferred` / `prefilled_from_memory`。系统会对非 `user_current_turn` 的标签确定性降级为中性名"实验组 N"——这是结构门，靠它防你把猜的剂量语义当事实交付。判读/报告里只引已确认的组语义，未确认的用"用户未提供具体处理描述"诚实说明，不自行编"低/中/高剂量"梯度。
 
 **Todo 列表使用规则:**
 

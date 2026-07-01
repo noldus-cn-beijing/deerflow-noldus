@@ -43,6 +43,29 @@ _COLUMN_SOURCE_VALUES = frozenset(
     {COLUMN_SOURCE_USER_CURRENT_TURN, COLUMN_SOURCE_PREFILLED_FROM_MEMORY}
 )
 
+# Provenance of a group_semantics interpretive label (spec 2026-07-01, L4-1).
+# Only labels whose source is the CURRENT user turn may survive into
+# resolved.group_semantics; agent_inferred / prefilled_from_memory are
+# deterministically downgraded to a neutral name ("实验组 N") so a downstream
+# report physically cannot fabricate a dose-response narrative out of a label
+# the user never confirmed this turn. The per-item ``source`` lives on each
+# group_semantics entry; ``source=None`` (legacy / undeclared) leaves the entry
+# untouched (back-compat).
+GROUP_SOURCE_USER_CURRENT_TURN = COLUMN_SOURCE_USER_CURRENT_TURN
+GROUP_SOURCE_AGENT_INFERRED = "agent_inferred"
+GROUP_SOURCE_PREFILLED_FROM_MEMORY = COLUMN_SOURCE_PREFILLED_FROM_MEMORY
+_GROUP_SOURCE_VALUES = frozenset(
+    {
+        GROUP_SOURCE_USER_CURRENT_TURN,
+        GROUP_SOURCE_AGENT_INFERRED,
+        GROUP_SOURCE_PREFILLED_FROM_MEMORY,
+    }
+)
+# Sources that must be downgraded (NOT a this-turn user confirmation).
+_GROUP_SOURCE_DOWNGRADE = frozenset(
+    {GROUP_SOURCE_AGENT_INFERRED, GROUP_SOURCE_PREFILLED_FROM_MEMORY}
+)
+
 
 class HandoffStrictMode(str, enum.Enum):
     OFF = "off"
@@ -245,6 +268,134 @@ def _stamp_column_semantics_provenance(cs: dict, source: str | None) -> dict:
     return cs
 
 
+def _stamp_group_semantics_provenance(
+    group_semantics: dict, group_structure: dict | None, source: str | None = None
+) -> dict:
+    """Stamp each group_semantics entry and enforce the over-claim invariant
+    (spec 2026-07-01 L4-1).
+
+    The interpretive label of a group (e.g. "低剂量", "高剂量") may only
+    survive into ``resolved.group_semantics`` if the user confirmed it THIS
+    turn. Anything the agent inferred or pulled from memory historical prefs
+    is deterministically **downgraded to a neutral name** (``实验组 N``,
+    numbered stably by group_structure order; a user-confirmed 对照组 retains
+    its label) and marked ``confirmed=false``.
+
+    Per-item ``source`` (on each entry) takes precedence; the call-level
+    ``source`` arg is the legacy caller fallback for entries with no per-item
+    source. ``source=None`` (legacy / undeclared) leaves entries untouched.
+
+    SOFT GATE: this only degrades labels at write time. It does NOT block
+    analysis — group_structure (subject→group mapping) is written verbatim
+    elsewhere so between-group comparison still runs.
+
+    Args:
+        group_semantics: ``{group_label: {"label_text": str, "source": str}}``.
+            Mutated in place (each entry) and returned.
+        group_structure: ``{group_label: [subjects...]}``. Used only to number
+            neutral names stably by structure order. May be None — then
+            structure key order is used.
+        source: call-level fallback source for entries lacking a per-item one.
+
+    Returns:
+        The mutated ``group_semantics`` dict.
+    """
+    if not isinstance(group_semantics, dict):
+        return group_semantics
+
+    # Determine the stable iteration order from group_structure (keys), else
+    # fall back to the group_semantics key order. Insertion-order dicts in
+    # 3.12 make this deterministic.
+    structure = group_structure if isinstance(group_structure, dict) else {}
+    order = [k for k in structure.keys() if k in group_semantics]
+    order += [k for k in group_semantics.keys() if k not in order]
+
+    neutral_counter = 0
+    for key in order:
+        entry = group_semantics.get(key)
+        if not isinstance(entry, dict):
+            continue
+        # Per-item source wins; else legacy call-level source; else undeclared.
+        item_source = entry.get("source")
+        if item_source is None:
+            item_source = source
+
+        if item_source is None:
+            # Legacy / undeclared → leave untouched (back-compat). Don't touch
+            # confirmed and don't record a source we don't have.
+            continue
+
+        entry["confirmed_source"] = item_source
+        if item_source == GROUP_SOURCE_USER_CURRENT_TURN:
+            # User confirmed this turn → keep label, honor confirmed.
+            entry["confirmed"] = True
+        elif item_source in _GROUP_SOURCE_DOWNGRADE:
+            # The load-bearing downgrade (spec 四.6 anti-vacuous): replace the
+            # fabricated semantic label with a stable neutral name and mark
+            # unconfirmed. Neutral name is numbered among downgraded groups by
+            # structure order → same input, same output.
+            neutral_counter += 1
+            entry["label_text"] = f"实验组{neutral_counter}"
+            entry["confirmed"] = False
+        else:
+            # Unknown source → treat as unconfirmed, record it, but don't
+            # fabricate a downgrade (defensive; the schema validates callers).
+            entry["confirmed"] = False
+    return group_semantics
+
+
+def _apply_group_fields(
+    data: dict, group_structure: dict | None, group_semantics: dict | None
+) -> str | None:
+    """Validate + stamp + write group_structure / group_semantics into the
+    ``resolved`` SSOT block of ``data`` (spec 2026-07-01 L4-1).
+
+    - ``group_structure``: written verbatim into ``resolved.group_structure``
+      (always legitimate — observable grouping fact; between-group comparison
+      must keep running).
+    - ``group_semantics``: each entry's per-item ``source`` is validated
+      (fail-loud on unknown); provenance is stamped via
+      :func:`_stamp_group_semantics_provenance` (unconfirmed labels → neutral
+      name), and the (possibly redacted) dict is written into
+      ``resolved.group_semantics``.
+
+    Returns an error message string when validation fails (caller returns it
+    to the agent), or None on success.
+    """
+    if group_structure is None and group_semantics is None:
+        return None
+
+    # Validate per-item group_semantics sources up front (fail-loud).
+    if group_semantics is not None:
+        if not isinstance(group_semantics, dict):
+            return "group_semantics must be a dict of {group_label: {label_text, source}}."
+        for key, entry in group_semantics.items():
+            if not isinstance(entry, dict):
+                continue
+            src = entry.get("source")
+            if src is not None and src not in _GROUP_SOURCE_VALUES:
+                return (
+                    f"Unknown group_semantics source {src!r} on group {key!r}. "
+                    f"Choose from {sorted(_GROUP_SOURCE_VALUES)} or omit (legacy)."
+                )
+
+    resolved: dict = data.get("resolved", {})
+    if not isinstance(resolved, dict):
+        resolved = {}
+
+    if group_structure is not None and isinstance(group_structure, dict):
+        resolved["group_structure"] = group_structure
+
+    if group_semantics is not None:
+        # Stamp on a shallow-copied dict so the caller's input is not mutated.
+        gs = {k: dict(v) if isinstance(v, dict) else v for k, v in group_semantics.items()}
+        _stamp_group_semantics_provenance(gs, group_structure, source=None)
+        resolved["group_semantics"] = gs
+
+    data["resolved"] = resolved
+    return None
+
+
 def _derive_column_aliases(cs: dict) -> dict[str, str]:
     """D8/D11: derive column_aliases from column_semantics.columns.
 
@@ -410,6 +561,8 @@ def set_experiment_paradigm_tool(
     acknowledge_quality: bool = False,
     column_semantics: dict | None = None,
     column_semantics_source: str | None = None,
+    group_structure: dict | None = None,
+    group_semantics: dict | None = None,
     confirm_template_change: bool = False,
     user_confirmed_template: bool = False,
     parameter_overrides: dict[str, float | int | str] | None = None,
@@ -466,6 +619,22 @@ def set_experiment_paradigm_tool(
                           user's behalf for items the user did not answer this turn. None
                           (legacy) leaves ``confirmed`` untouched. Also applied to
                           ``resolved_facts`` when combined on the same call.
+        group_structure: Grouping STRUCTURE (spec 2026-07-01 L4-1) — which subjects
+                         belong to which group, a mapping of group_label to a list of
+                         subject ids. Always legitimate (it is observable fact from
+                         the data); written verbatim into resolved.group_structure so
+                         between-group comparison runs unaffected. Pass None when
+                         only the semantics are being recorded.
+        group_semantics: Interpretive group labels (spec 2026-07-01 L4-1) — a mapping
+                         of group_label to a dict holding label_text and source, where
+                         source is the per-item provenance. Only labels whose source is
+                         user_current_turn (the user confirmed the label THIS turn)
+                         survive into resolved.group_semantics; agent_inferred /
+                         prefilled_from_memory are deterministically downgraded to a
+                         neutral name (实验组 N, numbered stably by group_structure
+                         order; a user-confirmed 对照组 retains its label) and marked
+                         confirmed=false. This SOFT gate degrades at write time — it
+                         does NOT block analysis.
         confirm_template_change: Set True to confirm intentional change of ev19_template
                                  when it was already set. Required to prevent accidental
                                  mid-analysis template switching. Default False.
@@ -573,6 +742,39 @@ def set_experiment_paradigm_tool(
     # "No experiment-context.json found". Mirrors the guardrail Bug 1
     # generalization: "carries a paradigm/template field" = "this is a Gate 1 call".
     _is_paradigm_call = bool(paradigm or ev19_template)
+
+    # --- Standalone group_structure / group_semantics path (spec 2026-07-01 L4-1) ---
+    # Symmetric with the column_semantics / resolved_facts standalone paths: a
+    # call carrying ONLY group fields (no paradigm/template) writes them into
+    # resolved.group_structure / resolved.group_semantics without forcing a
+    # Gate 1 round-trip. group_structure is written verbatim; group_semantics
+    # is provenance-stamped (unconfirmed labels downgraded to a neutral name).
+    # A FIRST call carrying paradigm fields TOGETHER with group fields is a real
+    # Gate 1 call and is handled at the Gate 1 block below — not hijacked here.
+    _has_group_fields = group_structure is not None or group_semantics is not None
+    if not _is_paradigm_call and _has_group_fields:
+        if existing is None:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "No experiment-context.json found. Call set_experiment_paradigm with paradigm fields first.",
+                },
+                ensure_ascii=False,
+            )
+        data = dict(existing)  # inherit all existing fields (don't clobber)
+        err = _apply_group_fields(data, group_structure, group_semantics)
+        if err is not None:
+            return json.dumps({"status": "error", "message": err}, ensure_ascii=False)
+
+        path = Path(actual_workspace) / "experiment-context.json"
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+
+        return json.dumps(
+            {"status": "ok", "path": str(path), "group_fields_saved": True},
+            ensure_ascii=False,
+        )
+
     if not _is_paradigm_call and column_semantics is not None and isinstance(column_semantics, dict):
         if existing is None:
             return json.dumps(
@@ -706,6 +908,14 @@ def set_experiment_paradigm_tool(
     # Spec B: resolved_facts write-through (can combine with Gate 1)
     if resolved_facts:
         _apply_resolved_facts(data, resolved_facts, source=column_semantics_source)
+
+    # Spec 2026-07-01 L4-1: group_structure / group_semantics write-through
+    # (can combine with Gate 1). Validation errors surface as a returned error
+    # JSON here so a bad per-item source fails loud rather than corrupting state.
+    if group_structure is not None or group_semantics is not None:
+        err = _apply_group_fields(data, group_structure, group_semantics)
+        if err is not None:
+            return json.dumps({"status": "error", "message": err}, ensure_ascii=False)
 
     path = Path(actual_workspace) / "experiment-context.json"
     path.parent.mkdir(parents=True, exist_ok=True)
