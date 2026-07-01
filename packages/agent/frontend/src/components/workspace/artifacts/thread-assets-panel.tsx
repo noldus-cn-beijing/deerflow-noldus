@@ -7,6 +7,8 @@ import { useI18n } from "@/core/i18n/hooks";
 import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
+import { EmptyState } from "../kit/empty-state";
+
 import { ArtifactGallery } from "./gallery/artifact-gallery";
 import { MetricsTableCard } from "./metrics-table-card";
 import { ReportCard } from "./report-card";
@@ -92,7 +94,7 @@ export function ThreadAssetsPanel({
         <h2 className="text-lg font-medium">{t.gallery.assetsTitle}</h2>
       </header>
 
-      {isEmpty && <p className="text-muted-foreground text-sm">{t.gallery.assetsEmpty}</p>}
+      {isEmpty && <EmptyState title={t.gallery.assetsEmpty} />}
 
       {sections.map((section) => (
         <section

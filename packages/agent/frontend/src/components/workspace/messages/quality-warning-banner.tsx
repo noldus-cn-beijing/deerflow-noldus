@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
+import { statusTextClass, type Status } from "../kit/status-badge";
+
 export interface QualityWarning {
   severity: "critical" | "warning" | "info";
   code: string;
@@ -20,41 +22,38 @@ export interface QualityWarning {
   blocks_downstream?: boolean;
 }
 
+/**
+ * severity → 视觉调性。颜色统一由 kit `Status` SSOT 派生（statusTextClass），
+ * 不再手写 text-red/orange/yellow/blue 原始 Tailwind 调色板——D2 收敛：对话业务
+ * 卡片的状态色一律走 D1 `--color-status-*` 色盲安全 token。
+ *
+ * severity→Status 映射（spec D2 Task5）：critical（含 blocks_downstream）→ danger，
+ * warning → warning，info → info。`variant` 是 shadcn Alert 壳的样式档（destructive
+ * 给 critical 加重边框），与状态色正交、保留。
+ */
 function warningStyle(w: QualityWarning): {
   variant: "destructive" | "default";
-  colorClass: string;
+  status: Status;
   label: string;
-  iconClass: string;
 } {
-  if (w.severity === "critical" && w.blocks_downstream) {
-    return {
-      variant: "destructive",
-      colorClass: "text-red-600",
-      label: "阻断级警告",
-      iconClass: "text-red-500",
-    };
-  }
   if (w.severity === "critical") {
     return {
       variant: "destructive",
-      colorClass: "text-orange-600",
-      label: "严重警告",
-      iconClass: "text-orange-500",
+      status: "danger",
+      label: w.blocks_downstream ? "阻断级警告" : "严重警告",
     };
   }
   if (w.severity === "warning") {
     return {
       variant: "default",
-      colorClass: "text-yellow-600",
+      status: "warning",
       label: "提示",
-      iconClass: "text-yellow-500",
     };
   }
   return {
     variant: "default",
-    colorClass: "text-blue-600",
+    status: "info",
     label: "信息",
-    iconClass: "text-blue-500",
   };
 }
 
@@ -74,11 +73,12 @@ export function QualityWarningBanner({
     critical.length > 0
       ? warningStyle(critical[0]!)
       : warningStyle(warnings[0]!);
+  const colorClass = statusTextClass(style.status);
 
   return (
     <Alert variant={style.variant} className="my-2">
-      <ExclamationTriangleIcon className={cn("size-4", style.iconClass)} />
-      <AlertTitle className={cn("text-sm font-medium", style.colorClass)}>
+      <ExclamationTriangleIcon className={cn("size-4", colorClass)} />
+      <AlertTitle className={cn("text-sm font-medium", colorClass)}>
         {warnings.length} 条数据质量警告
         {critical.length > 0 && `（含 ${critical.length} 条阻断级）`}
       </AlertTitle>
@@ -99,7 +99,7 @@ export function QualityWarningBanner({
                 const ws = warningStyle(w);
                 return (
                   <li key={i} className="text-xs">
-                    <span className={cn("font-medium", ws.colorClass)}>
+                    <span className={cn("font-medium", statusTextClass(ws.status))}>
                       [{ws.label} {w.code}]
                     </span>{" "}
                     <span className="text-muted-foreground">{w.message}</span>

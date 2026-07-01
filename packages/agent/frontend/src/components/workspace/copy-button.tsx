@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { writeTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
 
+import { statusTextClass } from "./kit/status-badge";
 import { Tooltip } from "./tooltip";
 
 export function CopyButton({
@@ -40,7 +41,7 @@ export function CopyButton({
         {...props}
       >
         {copied ? (
-          <CheckIcon className="text-green-500" size={12} />
+          <CheckIcon className={statusTextClass("success")} size={12} />
         ) : (
           <CopyIcon size={12} />
         )}

@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 
 import { CitationLink } from "../citations/citation-link";
 import { FlipDisplay } from "../flip-display";
+import { statusTextClass } from "../kit/status-badge";
 
 import { MarkdownContent } from "./markdown-content";
 import {
@@ -77,7 +78,7 @@ export const SubtaskCard = memo(function SubtaskCard({
     if (task.status === "completed") {
       return <CheckCircleIcon className="size-3" />;
     } else if (task.status === "failed") {
-      return <XCircleIcon className="size-3 text-red-500" />;
+      return <XCircleIcon className={cn("size-3", statusTextClass("danger"))} />;
     } else if (task.status === "in_progress") {
       return <Loader2Icon className="size-3 animate-spin" />;
     }
@@ -111,7 +112,7 @@ export const SubtaskCard = memo(function SubtaskCard({
                       {t.subtasks.completed}
                     </span>
                   ) : task.status === "failed" ? (
-                    <span className="text-red-500/67">
+                    <span className={cn(statusTextClass("danger"), "opacity-70")}>
                       {t.subtasks.failed}
                     </span>
                   ) : (
@@ -127,7 +128,7 @@ export const SubtaskCard = memo(function SubtaskCard({
                   <div
                     className={cn(
                       "text-muted-foreground flex items-center gap-1 text-xs font-normal",
-                      task.status === "failed" ? "text-red-500 opacity-67" : "",
+                      task.status === "failed" ? cn(statusTextClass("danger"), "opacity-70") : "",
                     )}
                   >
                     {icon}
@@ -196,8 +197,8 @@ export const SubtaskCard = memo(function SubtaskCard({
           )}
           {task.status === "failed" && (
             <ChainOfThoughtStep
-              label={<div className="text-red-500">{task.error}</div>}
-              icon={<XCircleIcon className="size-4 text-red-500" />}
+              label={<div className={statusTextClass("danger")}>{task.error}</div>}
+              icon={<XCircleIcon className={cn("size-4", statusTextClass("danger"))} />}
             ></ChainOfThoughtStep>
           )}
         </ChainOfThoughtContent>

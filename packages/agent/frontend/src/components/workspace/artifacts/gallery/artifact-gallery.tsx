@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangleIcon, ChevronDownIcon, ChevronRightIcon, ColumnsIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ColumnsIcon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 
@@ -10,6 +10,8 @@ import { urlOfArtifact } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
+
+import { STATUS_ICON } from "../../kit/status-badge";
 
 import { GalleryFacetBar } from "./gallery-facet-bar";
 import { GalleryGrid } from "./gallery-grid";
@@ -101,8 +103,16 @@ export function ArtifactGallery({ artifacts, threadId, chartsStatus }: ArtifactG
       />
 
       {failedCount > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-[var(--color-status-warning)]/40 bg-[var(--color-status-warning)]/10 p-2 text-sm">
-          <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-[var(--color-status-warning)]" />
+        // 失败图表数提示：颜色/图标走 kit danger SSOT（status→token 单一来源）。
+        // spec D2 Task6：只动视觉状态外壳，不碰 6 条 dogfood 不变式（chart_type 分组 /
+        // per_subject 折叠 / aggregate 段 / lightbox / compare / ZIP）。
+        // border-/bg- 带透明度用与 kit BAR_CLASS 同源的 D1 token（bg-status-danger），
+        // Tailwind 静态抽取需字面量，故不动态拼。
+        <div className="flex items-start gap-2 rounded-lg border border-status-danger/40 bg-status-danger/10 p-2 text-sm">
+          {(() => {
+            const FailedIcon = STATUS_ICON.danger;
+            return <FailedIcon className="text-status-danger mt-0.5 size-4 shrink-0" />;
+          })()}
           <div className="min-w-0">
             <div className="font-medium">{g.failedGenerated(failedCount)}</div>
             <ul className="text-muted-foreground mt-1 space-y-0.5 text-xs">

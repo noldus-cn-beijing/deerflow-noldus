@@ -12,6 +12,8 @@ import {
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
+import { statusBarClass, statusTextClass, type Status } from "../kit/status-badge";
+
 import { ClarificationOptions } from "./clarification-options";
 import { MarkdownContent } from "./markdown-content";
 
@@ -37,13 +39,19 @@ import { MarkdownContent } from "./markdown-content";
  *   `animate-pulse-warm` 媒体查询负责，本组件不另写）。
  */
 
-/** clarification_type → 视觉调性映射（spec §3.5）。 */
+/**
+ * clarification_type → 视觉调性映射（spec §3.5）。
+ *
+ * 状态色（accent bar / 标题文字 / 柔和底色）统一由 kit 的 `Status` SSOT 派生
+ * （`statusBarClass` / `statusTextClass`），不在本卡里手写 `bg-status-*` 字符串。
+ * 本卡只保留自己的 type-specific 图标（ShieldAlertIcon 等，非 kit `STATUS_ICON`），
+ * 因为各 clarification_type 的语义图标不同（spec D2 Task5：decision-card keeps
+ * its own `icon` field; only the color goes through kit）。
+ */
 interface Tone {
-  /** accent bar / 标题色 utility（spec#1 状态色 token）。 */
-  accent: string;
-  /** 标题背景柔和底色。 */
-  soft: string;
-  /** lucide 图标（color-not-only 三件套之一）。 */
+  /** kit 状态 SSOT —— accent / 标题色 / 柔和底色都从它派生。 */
+  status: Status;
+  /** lucide 图标（color-not-only 三件套之一；type-specific，非 kit SSOT）。 */
   icon: LucideIcon;
   /** 是否脉动（suggestion 弱信号不脉动，spec §3.5）。 */
   pulse: boolean;
@@ -54,39 +62,15 @@ interface Tone {
 function toneFor(type: string | undefined): Tone {
   switch (type) {
     case "risk_confirmation":
-      return {
-        accent: "bg-status-danger",
-        soft: "bg-status-danger/10",
-        icon: ShieldAlertIcon,
-        pulse: true,
-        titleKey: "cardRiskTitle",
-      };
+      return { status: "danger", icon: ShieldAlertIcon, pulse: true, titleKey: "cardRiskTitle" };
     case "suggestion":
-      return {
-        accent: "bg-status-info",
-        soft: "bg-status-info/10",
-        icon: LightbulbIcon,
-        pulse: false,
-        titleKey: "cardPausedTitle",
-      };
+      return { status: "info", icon: LightbulbIcon, pulse: false, titleKey: "cardPausedTitle" };
     case "approach_choice":
-      return {
-        accent: "bg-status-warning",
-        soft: "bg-status-warning/10",
-        icon: HelpCircleIcon,
-        pulse: true,
-        titleKey: "cardPausedTitle",
-      };
+      return { status: "warning", icon: HelpCircleIcon, pulse: true, titleKey: "cardPausedTitle" };
     case "missing_info":
     case "ambiguous_requirement":
     default:
-      return {
-        accent: "bg-status-warning",
-        soft: "bg-status-warning/10",
-        icon: AlertTriangleIcon,
-        pulse: true,
-        titleKey: "cardPausedTitle",
-      };
+      return { status: "warning", icon: AlertTriangleIcon, pulse: true, titleKey: "cardPausedTitle" };
   }
 }
 
@@ -125,12 +109,15 @@ export function DecisionCard({
   // 等待中才脉动；已答 / suggestion（弱信号）不脉动。
   const pulse = !answered && tone.pulse;
 
-  // accent / 标题色：已答转 success（闭环反馈）。
-  const accentClass = answered ? "bg-status-success" : tone.accent;
-  const titleColorClass = answered
-    ? "text-status-success"
-    : tone.accent.replace("bg-", "text-");
-  const titleSoftClass = answered ? "bg-status-success/10" : tone.soft;
+  // 状态色统一由 kit `Status` SSOT 派生：已答转 success（闭环反馈），否则用 tone.status。
+  const status: Status = answered ? "success" : tone.status;
+  // accent bar 是绝对定位覆盖条（card 用 padding 布局，非 flex），故保留本卡的定位
+  // DOM（spec D2 Task5：decision-card 守自己的 accent bar 结构，test 契约不变），
+  // 仅把颜色走 kit 的 statusBarClass/statusTextClass SSOT。
+  const accentClass = statusBarClass(status);
+  const titleColorClass = statusTextClass(status);
+  // 柔和底色 = 状态 token 的 /10 透明度（D1 状态色 token 支持 alpha 变体）。
+  const titleSoftClass = `${statusBarClass(status)}/10`;
 
   const contextText =
     typeof context === "string" ? context.trim() : "";
