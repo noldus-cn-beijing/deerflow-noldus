@@ -102,11 +102,11 @@ lead/grouping agent 识别分组
 3. `user_current_turn` 的"对照组" → 保留标签、`confirmed=true`（不误伤）。
 4. `source=None`（legacy）→ 不动（向后兼容）。
 5. 中性名编号稳定（按 structure 顺序）→ 同输入同输出。
-6. **防 vacuous 探针**：删降级那行 → 测试 1/2 必须变红。
+6. **防 vacuous 探针（必须实跑观察，非声称）**：实施 agent 必须**真的**临时删掉/注释掉 `_stamp_group_semantics_provenance` 里的"降级那行"（把 `agent_inferred`→中性名的赋值去掉），**跑测试 1/2 观察它们变红**（贴出红的输出证据），**再恢复那行**跑绿。仅"写了探针测试"不算——要证明"被测行为不存在时该测试会红"。（守 `feedback_deterministic_html_image_product_needs_end_to_end_reparse_assertion` 同源：断言必须能在坏产物上失败。）
 
-**端到端越权不变式**（治越权的验收）：
-7. "XY=低剂量(agent_inferred)"走完整写盘 → `resolved.group_semantics` **物理无"剂量"字样**、只中性名。
-8. `group_structure` 照写照跑 → 组间比较不受影响（软门不阻断）。
+**端到端越权不变式（治越权的验收）——断言结构，不查 substring：**
+7. "XY=低剂量(agent_inferred) + XX=对照(user_current_turn)"走完整写盘后，遍历 `resolved.group_semantics` 每一项，**逐项断言**：`source == "user_current_turn"` 的项 label 保留原值（XX="对照组"），**其余每一项** label **必须匹配中性名模式**（`实验组\d+` 或原始组标签，绝不含 agent 自推的语义文本）。**不要**只写 `"剂量" not in str(resolved)`——那是 substring 巧合命中的假绿（agent 换个词"高浓度"就漏）；要断言"每个未确认项都被换成了中性名"这个**结构不变式**。
+8. `group_structure` 照写照跑 → 组间比较不受影响（软门不阻断）：断言 `resolved.group_structure` 原样保留 subject→group 映射，且分析路径（data-analyst 派遣）未被门 deny。
 
 **裸导入两入口**（改 harness 核心，守铁律）：
 9. `PYTHONPATH=. python -c "import app.gateway"` + `from deerflow.agents import make_lead_agent` 两者 0 退出。
@@ -129,7 +129,7 @@ lead/grouping agent 识别分组
 
 1. 未确认组语义（agent_inferred/memory）确定性降级中性名、`confirmed=false`、记 source。
 2. 用户本轮确认的语义保留、不误伤。
-3. `resolved.group_semantics` 端到端物理无未确认剂量语义 → report 写不出剂量-反应。
+3. `resolved.group_semantics` 端到端**结构不变式**：每个未确认项 label 都是中性名（`实验组N`/原标签），只有 `source=user_current_turn` 的项保留语义值 → report 无从写出未确认的剂量-反应（断言结构，非查 substring）。
 4. 分组结构照写、组间比较不受影响（软门不阻断）。
 5. 纯函数全测 + 防 vacuous 探针 + 裸导入两入口绿。
 6. 宪法一句指向 resolved.group_semantics；prompt 指引分开填 structure/semantics。
