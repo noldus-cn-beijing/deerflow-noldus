@@ -609,6 +609,23 @@ def _any_concept_matches_pattern(
     for k, v in column_aliases.items():
         norm_aliases.setdefault(normalize_column_name(k), v)
 
+    # 裸 in_zone*（rstrip("*")=="in_zone"，无 concept keyword）是「存在分析 zone 列即可」的弱声明
+    # （作者若要精确会写 in_zone_open* 像 metric 那样）。本函数只遍历 column_aliases 的对齐 concept
+    # （已排除 None/__ignore__），所以只要有任一 available 列对齐到非忽略 concept，就说明存在真实 zone 列，
+    # 弱声明即满足。修前 _concept_matches_pattern 对裸 in_zone* 做 pat[8:] 越界成空串→keyword=""
+    # →短路 False，致 EZM/LDB/OFT 的 box/bar 图（requires_columns 用裸 in_zone*）经 alias 对齐后
+    # 被误判缺列而 skip。挑对/算对是 chart 脚本层责任（脚本已用 aliases 对齐）。
+    # 注意：此放行只作用于本「门」函数；_build_zone_aliases_overrides 的 zone 路由枚举不经过此函数，
+    # 裸 in_zone* 在那里仍由 _extract_concept_keyword 判定无 keyword → 不参与具体 concept 路由。
+    if pat.startswith("in_zone") and pat.rstrip("*") == "in_zone":
+        for col in available:
+            concept = column_aliases.get(col, _UNSET)
+            if concept is _UNSET:
+                concept = norm_aliases.get(normalize_column_name(col), _UNSET)
+            if concept is not _UNSET and concept not in (None, "__ignore__"):
+                return True
+        return False
+
     for col in available:
         concept = column_aliases.get(col, _UNSET)
         if concept is _UNSET:
