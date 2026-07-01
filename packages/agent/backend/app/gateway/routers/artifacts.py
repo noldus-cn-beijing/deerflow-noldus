@@ -9,6 +9,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 
+from app.gateway.artifact_registry import REGISTRY
 from app.gateway.authz import require_permission
 from app.gateway.path_utils import resolve_thread_virtual_path
 from deerflow.tools.builtins.report_exporter import EXPORT_FORMATS, ExportError, export_report
@@ -332,7 +333,7 @@ async def get_chart_artifacts(thread_id: str, request: Request) -> Response:
     注册在 catch-all ``/artifacts/{path:path}`` 之前，避免被吞。
     """
     return Response(
-        content=json.dumps(list_chart_artifacts(thread_id, request)),
+        content=json.dumps(list_artifacts_by_kind("chart", thread_id, request)),
         media_type="application/json",
     )
 
@@ -379,7 +380,7 @@ async def get_report_artifacts(thread_id: str, request: Request) -> Response:
     注册在 catch-all ``/artifacts/{path:path}`` 之前，避免被吞。
     """
     return Response(
-        content=json.dumps(list_report_artifacts(thread_id)),
+        content=json.dumps(list_artifacts_by_kind("report", thread_id, request)),
         media_type="application/json",
     )
 
@@ -415,6 +416,20 @@ def list_data_artifacts(thread_id: str) -> list[dict[str, Any]]:
     return items
 
 
+def list_artifacts_by_kind(kind: str, thread_id: str, request: Request | None) -> list[dict[str, Any]]:
+    """Dispatch to the registered builder for ``kind`` (spec 2026-07-01 C2b).
+
+    Resolves the builder NAME from REGISTRY against this module, then calls it.
+    Only the chart builder takes ``request``; the others take just thread_id —
+    the call shape per kind is byte-identical to the pre-refactor endpoints.
+    """
+    builder_name = REGISTRY[kind]  # KeyError on unknown kind — intentional (registry is SSOT).
+    builder = globals()[builder_name]
+    if kind == "chart":
+        return builder(thread_id, request)
+    return builder(thread_id)
+
+
 @router.get(
     "/threads/{thread_id}/artifacts/data",
     summary="List Data Artifacts (disk)",
@@ -427,7 +442,7 @@ async def get_data_artifacts(thread_id: str, request: Request) -> Response:
     注册在 catch-all ``/artifacts/{path:path}`` 之前，避免被吞。
     """
     return Response(
-        content=json.dumps(list_data_artifacts(thread_id)),
+        content=json.dumps(list_artifacts_by_kind("data", thread_id, request)),
         media_type="application/json",
     )
 
